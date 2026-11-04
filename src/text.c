@@ -14,18 +14,18 @@ static int take_line(const char *s, int max_w, int *draw_n, int *advance) {
     int limit = max_w < 8 ? 8 : max_w;
     while (s[bytes] && s[bytes] != '\n') {
         int adv = 0;
-        const uint8_t *rows = 0;
-        if (!font_next(s + bytes, &adv, &rows) || adv <= 0) {
+        int px = 0;
+        if (!typeface_next(1, s + bytes, &adv, &px) || adv <= 0) {
             break;
         }
-        if (width + 8 > limit && bytes > 0) {
+        if (width + px > limit && bytes > 0) {
             break;
         }
         if (s[bytes] == ' ') {
             last_space = bytes;
         }
         bytes += adv;
-        width += 8;
+        width += px;
     }
     if (bytes == 0) {
         return 0;
@@ -54,7 +54,7 @@ int text_height(const char *text, int max_w) {
         p += adv;
         lines++;
     }
-    return lines * 10;
+    return lines * typeface_line_height(1);
 }
 
 void text_draw(void *fb_ptr, int x, int y, int max_w, uint32_t color, const char *text) {
@@ -73,6 +73,6 @@ void text_draw(void *fb_ptr, int x, int y, int max_w, uint32_t color, const char
             fb_text_n(fb, x, cy, color, p, draw_n);
         }
         p += adv;
-        cy += 10;
+        cy += typeface_line_height(1);
     }
 }

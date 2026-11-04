@@ -67,11 +67,18 @@ static void draw_kind(Fb *fb, int x, int y, int kind) {
     }
 }
 
+static int text_y(int box_y, int box_h) {
+    int lh = typeface_line_height(0);
+    int y = box_y + (box_h - lh) / 2;
+    return y < box_y ? box_y : y;
+}
+
 static void draw_label(Fb *fb, int cx, int y, const char *name, int selected, int desktop) {
     int tw = fb_text_width(name);
     int x = cx - tw / 2;
+    int lh = typeface_line_height(0);
     if (selected) {
-        fb_fill(fb, x - 2, y - 1, tw + 4, 10, C_BLACK);
+        fb_fill(fb, x - 2, y - 1, tw + 4, lh + 2, C_BLACK);
         fb_text(fb, x, y, C_WHITE, name);
     } else if (desktop) {
         fb_text(fb, x + 1, y + 1, C_BLACK, name);
@@ -93,7 +100,7 @@ static void paint_desktop_icons(Fb *fb, const Session *s) {
             icon_trash(fb, icon.x, icon.y);
         }
         if (s->desk_sel == which) {
-            fb_invert(fb, icon.x, icon.y, icon.w, icon.h);
+            fb_frame(fb, icon.x - 2, icon.y - 2, icon.w + 4, icon.h + 4, C_BLACK);
         }
         draw_label(fb, icon.x + 16, icon.y + 34, names[which], s->desk_sel == which, 1);
     }
@@ -177,7 +184,7 @@ static void paint_items(Fb *fb, const Window *w, const Layout *lay) {
         int y = lay->content.y + row * CELL_H + 4 - w->scroll;
         draw_kind(fb, x, y, w->items[i].kind);
         if (w->items[i].selected) {
-            fb_invert(fb, x, y, 32, 32);
+            fb_frame(fb, x - 2, y - 2, 36, 36, C_BLACK);
         }
         draw_label(fb, x + 16, y + 34, w->items[i].name, w->items[i].selected, 0);
     }
@@ -199,7 +206,7 @@ static void paint_window(Fb *fb, const Session *s, int index) {
                  space);
         int tw = fb_text_width(info);
         fb_clip(fb, lay.info.x + 4, lay.info.y, lay.info.w - 8, lay.info.h);
-        fb_text(fb, lay.info.x + (lay.info.w - tw) / 2, lay.info.y + 4, C_BLACK, info);
+        fb_text(fb, lay.info.x + (lay.info.w - tw) / 2, text_y(lay.info.y, lay.info.h), C_BLACK, info);
         fb_unclip(fb);
     }
     rbox(fb, lay.closeb, held(s, index, Z_CLOSE, lay.closeb));
@@ -216,8 +223,9 @@ static void paint_window(Fb *fb, const Session *s, int index) {
     fb_clip(fb, lay.title.x + 40, lay.title.y + 1, lay.title.w - 80, lay.title.h - 2);
     int tw = fb_text_width(w->title);
     int tx = lay.title.x + (lay.title.w - tw) / 2;
-    fb_text(fb, tx + 1, lay.title.y + 6, C_WHITE, w->title);
-    fb_text(fb, tx, lay.title.y + 5, C_BLACK, w->title);
+    int ty = text_y(lay.title.y, lay.title.h);
+    fb_text(fb, tx + 1, ty + 1, C_WHITE, w->title);
+    fb_text(fb, tx, ty, C_BLACK, w->title);
     fb_unclip(fb);
     if (!w->collapsed && lay.content.w > 0 && lay.content.h > 0) {
         fb_clip(fb, lay.content.x, lay.content.y, lay.content.w, lay.content.h);
@@ -243,7 +251,7 @@ static void paint_menus(Fb *fb, Session *s) {
         if (open) {
             fb_fill(fb, r.x, 1, r.w, 18, C_BLACK);
         }
-        fb_text(fb, r.x + 8, 6, open ? C_WHITE : C_BLACK, menu_title(i));
+        fb_text(fb, r.x + 8, text_y(0, 19), open ? C_WHITE : C_BLACK, menu_title(i));
     }
     time_t now = time(NULL);
     struct tm tm;
@@ -253,8 +261,9 @@ static void paint_menus(Fb *fb, Session *s) {
     const char *clk = clock[0] == ' ' ? clock + 1 : clock;
     int finder_w = fb_text_width("Finder");
     int clock_w = fb_text_width(clk);
-    fb_text(fb, s->sw - finder_w - 12, 6, C_BLACK, "Finder");
-    fb_text(fb, s->sw - finder_w - 28 - clock_w, 6, C_BLACK, clk);
+    int my = text_y(0, 19);
+    fb_text(fb, s->sw - finder_w - 12, my, C_BLACK, "Finder");
+    fb_text(fb, s->sw - finder_w - 28 - clock_w, my, C_BLACK, clk);
     if (s->menu < 0) {
         return;
     }
@@ -288,10 +297,11 @@ static void paint_menus(Fb *fb, Session *s) {
             fb_fill(fb, r.x + 6, r.y + 6, 6, 6, color);
             tx = r.x + 18;
         }
-        fb_text(fb, tx, r.y + 5, color, it->label);
+        int iy = text_y(r.y, r.h);
+        fb_text(fb, tx, iy, color, it->label);
         if (it->shortcut) {
             int sw = fb_text_width(it->shortcut);
-            fb_text(fb, r.x + r.w - sw - 8, r.y + 5, color, it->shortcut);
+            fb_text(fb, r.x + r.w - sw - 8, iy, color, it->shortcut);
         }
     }
 }
@@ -307,7 +317,7 @@ static void paint_dialog(Fb *fb, const Session *s) {
     stripes(fb, (Rect){box.x, box.y, box.w, TITLE_H});
     fb_frame(fb, box.x, box.y, box.w, box.h, C_BLACK);
     int tw = fb_text_width(s->dialog_title);
-    fb_text(fb, box.x + (box.w - tw) / 2, box.y + 6, C_BLACK, s->dialog_title);
+    fb_text(fb, box.x + (box.w - tw) / 2, text_y(box.y, TITLE_H), C_BLACK, s->dialog_title);
     fb_clip(fb, box.x + 12, box.y + TITLE_H, box.w - 24, box.h - TITLE_H - 48);
     text_draw(fb, box.x + 16, box.y + 32, box.w - 32, C_BLACK, s->dialog_body);
     fb_unclip(fb);
@@ -315,11 +325,11 @@ static void paint_dialog(Fb *fb, const Session *s) {
     int cancel_hot = s->dialog_down == 2 && rect_has(cancel, s->mx, s->my);
     rbox(fb, ok, ok_hot);
     int ow = fb_text_width("OK");
-    fb_text(fb, ok.x + (ok.w - ow) / 2, ok.y + 7, C_BLACK, "OK");
+    fb_text(fb, ok.x + (ok.w - ow) / 2, text_y(ok.y, ok.h), C_BLACK, "OK");
     if (cancel.w > 0) {
         rbox(fb, cancel, cancel_hot);
         int cw = fb_text_width("Cancel");
-        fb_text(fb, cancel.x + (cancel.w - cw) / 2, cancel.y + 7, C_BLACK, "Cancel");
+        fb_text(fb, cancel.x + (cancel.w - cw) / 2, text_y(cancel.y, cancel.h), C_BLACK, "Cancel");
     }
 }
 

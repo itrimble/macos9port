@@ -10,7 +10,16 @@ work, and it does not contain an Apple ROM.
 
 ## Try it on a Mac
 
-You need [SDL2](https://www.libsdl.org/) (`brew install sdl2`) and clang.
+You need [SDL2](https://www.libsdl.org/) (`brew install sdl2`), FreeType
+(`brew install freetype`), and clang. To open a classic program you also
+need [Systemless](https://github.com/benletchford/systemless):
+
+```bash
+brew install benletchford/tap/systemless
+```
+
+Systemless is GPL-3 and it is not part of this repository. OS Pi runs
+that installed program. It does not contain a Toolbox or an Apple ROM.
 
 ```bash
 make run
@@ -42,18 +51,27 @@ Shortcuts: Cmd-N new folder, Cmd-O open, Cmd-W close, Cmd-Q quit.
 Double-click a title bar to windowshade it. The pi menu has About and
 Shut Down.
 
-## What it does not do
+File, Install from Garden, takes a `macintoshgarden.org` link from the
+clipboard and downloads that page's archive into Applications. If the
+main download host refuses the file, OS Pi tries the same path on the
+page's other two Garden hosts. The original StuffIt or MacBinary file
+stays in the folder. Double-click it and Systemless opens the program
+in its own window. Many programs still fail. I do not commit those
+downloads.
 
-It does not run classic Mac applications. There is no 68k or PowerPC
-translator, no Toolbox, and no networking stack in this build. Those are
-the point of the project, and they are not in 0.1.
+There is no networking stack inside OS Pi. The download is the host's
+`curl`. OS Pi does not serve SSH or SFTP, and it does not include video
+or audio codecs. A QuickTime page on Macintosh Garden is a classic
+installer disk. Opening it does not play a movie.
 
-I have built and run this on an Apple Silicon Mac. I have not run it on
-a Raspberry Pi or on x86_64 yet. The sources are the same C. On Debian
+I have built and run this on an Apple Silicon Mac. On 4 November 2026
+`make test` passed in a Debian 12 arm64 container on that Mac, using
+Apple's `container` tool. I have not opened the windowed app on a
+Raspberry Pi or on x86_64 yet. The sources are the same C. On Debian
 or Raspberry Pi OS:
 
 ```bash
-sudo apt install build-essential libsdl2-dev pkg-config
+sudo apt install build-essential libsdl2-dev libfreetype6-dev pkg-config
 make
 ./build/ospi --volume ./volume
 ```
@@ -61,11 +79,20 @@ make
 The Mac build links Homebrew's arm64 SDL2, so the app on this machine
 is arm64 only.
 
-## Font
+## Fonts
 
-The letters are the public-domain [font8x8](https://github.com/dhepper/font8x8)
-set by Daniel Hepper. The pi glyph in the menu is mine. None of the
-type is Chicago.
+Menus use [ChicagoFLF](fonts/ChicagoFLF.ttf). Robin Casady drew it and
+put it in the public domain. The notice is in the font and in
+`fonts/LICENSE.txt`. It is a revival. It is not Apple's Chicago, and
+Apple's Chicago, Charcoal, and Geneva are not in this repository.
+
+FreeType also opens TrueType (`.ttf`, `.ttc`), OpenType (`.otf`), and
+PostScript Type 1 (`.pfa`, `.pfb`). Drop those into
+`System Folder/Fonts` on the volume. If this Mac already has Geneva,
+that face is used for documents. The 8 by 8 public-domain
+[font8x8](https://github.com/dhepper/font8x8) set is the fallback when
+FreeType or a font file is missing. The pi glyph, when the outline face
+has no pi, is mine.
 
 Mac, Mac OS, and Finder are trademarks of Apple. OS Pi is an independent
 program.

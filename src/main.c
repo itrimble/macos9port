@@ -6,6 +6,21 @@
 #include <stdlib.h>
 #include <string.h>
 
+static const char *flag_arg(int argc, char **argv, const char *flag) {
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], flag) == 0 && i + 1 < argc) {
+            return argv[i + 1];
+        }
+    }
+    return NULL;
+}
+
+static void take_clip(Session *s) {
+    char *text = SDL_GetClipboardText();
+    session_set_clip(s, text ? text : "");
+    SDL_free(text);
+}
+
 static int resolve_volume(int argc, char **argv, char *out, size_t n) {
     const char *chosen = NULL;
     for (int i = 1; i < argc; i++) {
@@ -64,6 +79,18 @@ int main(int argc, char **argv) {
         return 1;
     }
     fprintf(stderr, "OS Pi 0.1  %s\n", volume);
+    const char *install_url = flag_arg(argc, argv, "--install");
+    if (install_url) {
+        char rel[OSPI_PATH];
+        char err[240];
+        err[0] = 0;
+        if (install_garden(volume, install_url, rel, sizeof rel, err, sizeof err) != 0) {
+            fprintf(stderr, "OS Pi: %s\n", err[0] ? err : "install failed");
+            return 1;
+        }
+        fprintf(stderr, "OS Pi installed %s\n", rel);
+        return 0;
+    }
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
         fprintf(stderr, "OS Pi: SDL_Init failed: %s\nInstall SDL2 (brew install sdl2, or apt install libsdl2-dev).\n",
                 SDL_GetError());
@@ -119,6 +146,7 @@ int main(int argc, char **argv) {
             if (ev.type == SDL_QUIT) {
                 s->quit = 1;
             } else if (ev.type == SDL_MOUSEBUTTONDOWN && ev.button.button == SDL_BUTTON_LEFT) {
+                take_clip(s);
                 logical_point(win, ev.button.x, ev.button.y, &x, &y);
                 session_down(s, x, y, ev.button.clicks);
             } else if (ev.type == SDL_MOUSEBUTTONUP && ev.button.button == SDL_BUTTON_LEFT) {

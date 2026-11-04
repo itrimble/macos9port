@@ -27,7 +27,9 @@ enum {
     CMD_EMPTY_ASK,
     CMD_EMPTY_DO,
     CMD_CLEANUP,
-    CMD_HELP
+    CMD_HELP,
+    CMD_INSTALL,
+    CMD_INSTALL_DO
 };
 enum { MI_DISABLED = 1, MI_CHECKED = 2 };
 
@@ -96,6 +98,8 @@ struct Session {
     int dialog_down;
     char dialog_title[64];
     char dialog_body[384];
+    char clip[512];
+    char install_url[512];
 };
 
 enum {
@@ -157,6 +161,15 @@ void session_tick(Session *s, uint32_t now_ms);
 int session_quit(const Session *s);
 void session_command(Session *s, int cmd);
 void session_clamp(Session *s);
+void session_set_clip(Session *s, const char *text);
+
+int garden_page_ok(const char *url);
+int garden_pick_url(const char *html, char *out, size_t n);
+int garden_alt_url(const char *url, int which, char *out, size_t n);
+int install_garden(const char *root, const char *page_url, char *created_rel, size_t created_n,
+                   char *err, size_t err_n);
+int classic_is_program(const char *name);
+int classic_launch(const char *path, char *err, size_t err_n);
 
 int ospi_item_center(const Session *s, int win, int index, int *x, int *y);
 int ospi_control_center(const Window *w, int which, int *x, int *y);

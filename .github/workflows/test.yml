@@ -7,5 +7,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Font engine
+        run: brew install freetype
       - name: Headless checks
         run: make test

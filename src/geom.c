@@ -132,7 +132,7 @@ int desktop_which(int sw, int sh, int x, int y) {
 
 void dialog_layout(const Session *s, Rect *box, Rect *cancel, Rect *ok) {
     box->w = 360;
-    box->h = 168;
+    box->h = 220;
     box->x = (s->sw - box->w) / 2;
     box->y = (s->sh - box->h) / 2;
     ok->w = 88;

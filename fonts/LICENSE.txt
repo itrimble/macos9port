@@ -1,0 +1,18 @@
+ChicagoFLF
+Copyright Robin Casady
+
+The notice embedded in ChicagoFLF.ttf reads:
+
+The FLF were created by various authors including myself and Mike Wright.
+When Casady & Greene, Inc. closed the rights went back to the authors.
+I created ChicagoFLF and CheckboxFLF. You are free to use them as you wish.
+I consider those two in the public domain.
+
+Robin Casady
+Public Domain
+
+This file is Robin Casady's revival. It is not Apple's Chicago, Charcoal,
+or Geneva, and those faces are not in this repository. OS Pi will still
+use a TrueType, OpenType, or PostScript Type 1 font of those names when
+one is already installed on the machine or dropped into the volume's
+System Folder/Fonts. Those files stay where the owner put them.

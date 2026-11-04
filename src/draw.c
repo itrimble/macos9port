@@ -96,67 +96,12 @@ void fb_invert(Fb *fb, int x, int y, int w, int h) {
     }
 }
 
-static int glyph_width(const char *s, int nbytes, int *glyphs) {
-    int used = 0;
-    int n = 0;
-    const char *p = s;
-    while (*p && (nbytes < 0 || used < nbytes)) {
-        int adv = 0;
-        const uint8_t *rows = 0;
-        if (!font_next(p, &adv, &rows) || adv <= 0) {
-            break;
-        }
-        if (nbytes >= 0 && used + adv > nbytes) {
-            break;
-        }
-        used += adv;
-        p += adv;
-        n++;
-    }
-    if (glyphs) {
-        *glyphs = n;
-    }
-    return used;
-}
-
-int fb_text_width_n(const char *s, int nbytes) {
-    int n = 0;
-    if (!s) {
-        return 0;
-    }
-    glyph_width(s, nbytes, &n);
-    return n * 8;
-}
+int fb_text_width_n(const char *s, int nbytes) { return typeface_width(0, s, nbytes); }
 
 int fb_text_width(const char *s) { return fb_text_width_n(s, -1); }
 
 void fb_text_n(Fb *fb, int x, int y, uint32_t c, const char *s, int nbytes) {
-    if (!s) {
-        return;
-    }
-    int used = 0;
-    int cx = x;
-    while (*s && (nbytes < 0 || used < nbytes)) {
-        int adv = 0;
-        const uint8_t *rows = 0;
-        if (!font_next(s, &adv, &rows) || adv <= 0 || !rows) {
-            break;
-        }
-        if (nbytes >= 0 && used + adv > nbytes) {
-            break;
-        }
-        for (int row = 0; row < 8; row++) {
-            uint8_t bits = rows[row];
-            for (int col = 0; col < 8; col++) {
-                if (bits & (uint8_t)(1u << col)) {
-                    fb_fill(fb, cx + col, y + row, 1, 1, c);
-                }
-            }
-        }
-        s += adv;
-        used += adv;
-        cx += 8;
-    }
+    typeface_draw(fb, 0, x, y, c, s, nbytes);
 }
 
 void fb_text(Fb *fb, int x, int y, uint32_t c, const char *s) { fb_text_n(fb, x, y, c, s, -1); }

@@ -1,3 +1,4 @@
+#include "draw.h"
 #include "ospi.h"
 
 #include <stdio.h>
@@ -90,9 +91,32 @@ int main(void) {
     CHECK(at(px, 2, 19) == 0);
     CHECK(is_desk(at(px, 8, 400)));
     CHECK(at(px, s->win[0].x, s->win[0].y) == 0);
-    /* File menu: F is the first glyph. font8x8 stores the left pixel in bit 0. */
-    CHECK(at(px, 40, 6) == 0);
-    CHECK(at(px, 47, 6) == 0xEEEEEEu);
+    /* font8x8 stores the left pixel of F in bit 0. The screen check follows the menu rect. */
+    const uint8_t *frows = NULL;
+    int fadv = 0;
+    CHECK(font_next("F", &fadv, &frows) == 1);
+    CHECK(fadv == 1 && frows && (frows[0] & 1u) != 0 && (frows[0] & 0x80u) == 0);
+    Rect file_title;
+    menu_title_rect(1, &file_title);
+    int ink = 0;
+    int gray = 0;
+    for (int y = file_title.y; y < file_title.y + file_title.h && y < 19; y++) {
+        for (int x = file_title.x; x < file_title.x + file_title.w && x < OSPI_W; x++) {
+            uint32_t c = at(px, x, y);
+            if (c == 0xEEEEEEu) {
+                gray = 1;
+            } else {
+                ink = 1;
+            }
+        }
+    }
+    CHECK(ink == 1);
+    CHECK(gray == 1);
+#ifdef OSPI_FREETYPE
+    CHECK(typeface_ready() == 1);
+    CHECK(typeface_probe("fonts/ChicagoFLF.ttf") == 1);
+    CHECK(strstr(typeface_label(), "Chicago") != NULL);
+#endif
     write_ppm(px, "/tmp/ospi-boot.ppm");
 
     int ax, ay;
@@ -182,6 +206,36 @@ int main(void) {
     write_ppm(px, "/tmp/ospi-after.ppm");
     session_key(s, 'q', MOD_CMD);
     CHECK(session_quit(s) == 1);
+
+    char url[512];
+    char err[240];
+    const char *html =
+        "<a href=\"//download.macintoshgarden.org/apps/NativeChecker.SIT?expires=1&amp;token=abc\">www</a>";
+    CHECK(garden_pick_url(html, url, sizeof url) == 0);
+    CHECK(strcmp(url, "https://download.macintoshgarden.org/apps/NativeChecker.SIT?expires=1&token=abc") == 0);
+    {
+        char alt[512];
+        CHECK(garden_alt_url(url, 0, alt, sizeof alt) == 0);
+        CHECK(strcmp(alt, "https://old.mac.gdn/apps/NativeChecker.SIT") == 0);
+        CHECK(garden_alt_url(url, 1, alt, sizeof alt) == 0);
+        CHECK(strcmp(alt, "https://gardenmirror.oldapplestuff.com/apps/NativeChecker.SIT") == 0);
+        CHECK(garden_alt_url("https://evil.example/apps/x", 0, alt, sizeof alt) != 0);
+    }
+    CHECK(garden_page_ok("https://macintoshgarden.org/apps/nativechecker") == 1);
+    CHECK(garden_page_ok("https://www.macintoshgarden.org/apps/nativechecker") == 1);
+    CHECK(garden_page_ok("https://evil.example/apps/x") == 0);
+    CHECK(install_garden(dir, "http://evil.example/", url, sizeof url, err, sizeof err) != 0);
+    CHECK(classic_is_program("NativeChecker.sit") == 1);
+    CHECK(classic_is_program("Game.SITX") == 1);
+    CHECK(classic_is_program("Notes") == 0);
+    CHECK(classic_is_program("About Fonts") == 0);
+    err[0] = 0;
+    CHECK(classic_launch("/tmp/ospi-no-such-program.sit", err, sizeof err) != 0);
+    CHECK(err[0] != 0);
+    const char *type1 = getenv("OSPI_TYPE1");
+    if (type1 && type1[0]) {
+        CHECK(typeface_probe(type1) == 1);
+    }
 
     session_destroy(s);
     free(px);

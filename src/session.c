@@ -1,4 +1,5 @@
 #include "ospi.h"
+#include "draw.h"
 #include "session_int.h"
 
 #include <stdio.h>
@@ -166,6 +167,16 @@ void open_item(Session *s, Window *w, int index) {
         return;
     }
     if (w->items[index].kind == ITEM_FILE) {
+        if (classic_is_program(w->items[index].name)) {
+            char full[OSPI_PATH];
+            char err[240];
+            err[0] = 0;
+            if (volume_join(full, sizeof full, s->root, rel) != 0 ||
+                classic_launch(full, err, sizeof err) != 0) {
+                dialog_info(s, "Open", err[0] ? err : "Could not open that program.");
+            }
+            return;
+        }
         char buf[OSPI_TEXT];
         if (volume_read(s->root, rel, buf, sizeof buf) != 0) {
             dialog_info(s, "Open", "Could not read that file.");
@@ -305,13 +316,16 @@ void session_command(Session *s, int cmd) {
         char body[OSPI_TEXT];
         format_ram(ram, sizeof ram, s->ram);
         snprintf(body, sizeof body,
-                 "OS Pi 0.1\n%s  ·  %s memory\n\n"
+                 "OS Pi 0.1\n%s, %s memory\n"
+                 "Letters: %s\n\n"
                  "A clean-room desktop in the style\n"
                  "of the classic Mac. This is not\n"
                  "Mac OS 9. There is no Apple ROM\n"
                  "and no Apple Toolbox here.\n\n"
+                 "Classic programs open in Systemless,\n"
+                 "a separate program, in their own window.\n\n"
                  "Your files are here:\n%s\n",
-                 s->arch, ram, s->root);
+                 s->arch, ram, typeface_label(), s->root);
         if (open_text(s, "About OS Pi", ":about", body) != 0) {
             dialog_info(s, "About OS Pi", "Close a window first.");
         }
@@ -328,6 +342,11 @@ void session_command(Session *s, int cmd) {
                  "Cmd-O  Open\n"
                  "Cmd-W  Close\n"
                  "Cmd-Q  Quit\n\n"
+                 "File, Install from Garden, copies\n"
+                 "an app or game you copied from\n"
+                 "macintoshgarden.org. Double-click\n"
+                 "the archive. Systemless opens it.\n"
+                 "Many classic programs still fail.\n\n"
                  "The volume on disk:\n%s\n\n"
                  "Quit, then delete that folder,\n"
                  "to get the original files back.\n",
@@ -337,9 +356,53 @@ void session_command(Session *s, int cmd) {
         }
         break;
     }
+    case CMD_INSTALL: {
+        if (!garden_page_ok(s->clip)) {
+            dialog_info(s, "Install",
+                        "Copy an app or game link from\n"
+                        "macintoshgarden.org, then choose\n"
+                        "Install from Garden again.");
+            break;
+        }
+        snprintf(s->install_url, sizeof s->install_url, "%s", s->clip);
+        char body[384];
+        snprintf(body, sizeof body,
+                 "Install this page into Applications?\n\n%s\n\n"
+                 "Double-click the archive to open it.\n"
+                 "Many classic programs still fail.",
+                 s->install_url);
+        dialog_confirm(s, "Install", body, CMD_INSTALL_DO);
+        break;
+    }
+    case CMD_INSTALL_DO: {
+        char err[240];
+        char rel[OSPI_PATH];
+        err[0] = 0;
+        if (install_garden(s->root, s->install_url, rel, sizeof rel, err, sizeof err) != 0) {
+            dialog_info(s, "Install", err[0] ? err : "Could not install that page.");
+            break;
+        }
+        open_folder(s, rel);
+        dialog_info(s, "Install",
+                    "Saved in Applications.\n\n"
+                    "Double-click the archive.\n"
+                    "It opens in its own window.");
+        break;
+    }
     default:
         break;
     }
+}
+
+void session_set_clip(Session *s, const char *text) {
+    if (!s) {
+        return;
+    }
+    s->clip[0] = 0;
+    if (!text) {
+        return;
+    }
+    snprintf(s->clip, sizeof s->clip, "%s", text);
 }
 
 void session_clamp(Session *s) {
@@ -403,6 +466,7 @@ Session *session_create(const char *root) {
     s->press_win = -1;
     s->sw = OSPI_W;
     s->sh = OSPI_H;
+    typeface_init(s->root);
     s->ram = host_ram();
     snprintf(s->arch, sizeof s->arch, "%s", host_arch());
     volume_free_bytes(s->root, &s->free_bytes);

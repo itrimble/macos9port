@@ -11,6 +11,7 @@ static const MenuItem k_file[] = {
     {"New Folder", CMD_NEW_FOLDER, 0, "Cmd-N", 'n'},
     {"Open", CMD_OPEN, 0, "Cmd-O", 'o'},
     {"Close", CMD_CLOSE, 0, "Cmd-W", 'w'},
+    {"Install from Garden", CMD_INSTALL, 0, NULL, 0},
     {NULL, 0, 0, NULL, 0},
     {"Quit", CMD_QUIT, 0, "Cmd-Q", 'q'},
 };
@@ -43,7 +44,7 @@ static const struct {
     int n;
 } k_menus[] = {
     {"π", k_pi, 3},
-    {"File", k_file, 5},
+    {"File", k_file, 6},
     {"Edit", k_edit, 5},
     {"View", k_view, 2},
     {"Special", k_special, 2},
@@ -94,7 +95,13 @@ static int popup_width(int menu) {
     return w;
 }
 
-static int item_h(const MenuItem *it) { return it->label ? 18 : 8; }
+static int item_h(const MenuItem *it) {
+    if (!it->label) {
+        return 8;
+    }
+    int h = typeface_line_height(0) + 4;
+    return h < 18 ? 18 : h;
+}
 
 void menu_title_rect(int index, Rect *r) {
     int x = 6;

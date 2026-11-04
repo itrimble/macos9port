@@ -41,4 +41,13 @@ int fb_text_width(const char *s);
 int fb_text_width_n(const char *s, int nbytes);
 void fb_desktop(Fb *fb);
 
+int typeface_init(const char *root);
+int typeface_ready(void);
+const char *typeface_label(void);
+int typeface_line_height(int body);
+int typeface_next(int body, const char *s, int *byte_adv, int *px);
+int typeface_width(int body, const char *s, int nbytes);
+void typeface_draw(void *fb, int body, int x, int y, uint32_t color, const char *s, int nbytes);
+int typeface_probe(const char *path);
+
 #endif

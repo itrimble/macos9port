@@ -16,10 +16,10 @@ static const struct {
 } k_seed[] = {
     {"Applications/Nothing Installed Yet",
      "No classic applications are installed.\n\n"
-     "OS Pi does not run original Mac programs\n"
-     "in this build. This folder is a normal\n"
-     "directory on the computer OS Pi is\n"
-     "running on.\n"},
+     "File, Install from Garden, copies a\n"
+     "Macintosh Garden page here. Double-click\n"
+     "a StuffIt archive to open it in\n"
+     "Systemless. Many programs still fail.\n"},
     {"Documents/Notes",
      "Notes live here as plain text.\n\n"
      "Double-click a document to read it.\n"},
@@ -45,6 +45,15 @@ static const struct {
      "that screenshot. Nothing in it is an\n"
      "Apple system file.\n"},
     {"Trash/.keep", ""},
+    {"System Folder/Fonts/About Fonts",
+     "Drop TrueType, OpenType, or PostScript\n"
+     "Type 1 fonts in this folder.\n"
+     "Extensions: .ttf .otf .ttc .pfa .pfb\n\n"
+     "OS Pi ships ChicagoFLF, which Robin\n"
+     "Casady placed in the public domain.\n"
+     "It is not Apple's Chicago. Geneva,\n"
+     "Charcoal, and Monaco are used only\n"
+     "when this computer already has them.\n"},
 };
 
 int volume_join(char *out, size_t n, const char *root, const char *rel) {
@@ -244,7 +253,11 @@ int volume_read(const char *root, const char *rel, char *buf, size_t n) {
     for (size_t i = 0; i < got; i++) {
         unsigned char c = (unsigned char)buf[i];
         if (c != '\n' && c != '\r' && c != '\t' && c < 32) {
-            snprintf(buf, n, "This is not a text file.\n");
+            snprintf(buf, n,
+                     "OS Pi cannot show this file as text.\n\n"
+                     "Double-click a StuffIt, MacBinary,\n"
+                     "or disk image to open it in\n"
+                     "Systemless. Other files stay put.\n");
             return 0;
         }
     }
