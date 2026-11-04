@@ -5,6 +5,7 @@
 #include <string.h>
 
 void session_wheel(Session *s, int dy) {
+    s->click_valid = 0;
     if (s->dialog || s->nwin <= 0) {
         return;
     }
@@ -21,7 +22,28 @@ static void note_mouse(Session *s, int x, int y) {
     s->my = y;
 }
 
+/* Some event sources report every press as clicks=1. Promote only a completed
+ * click on this exact icon, with elapsed time supplied by session_tick. */
+static int icon_double(Session *s, int valid, int kind, const char *dir,
+                       const char *name, int x, int y, int clicks) {
+    uint32_t elapsed = s->input_now_ms - s->click_ms;
+    int dx = x - s->click_x, dy = y - s->click_y;
+    int repeat = valid && elapsed > 0 && elapsed <= 500 &&
+                 dx >= -4 && dx <= 4 && dy >= -4 && dy <= 4 &&
+                 kind == s->click_kind && strcmp(dir, s->click_dir) == 0 &&
+                 strcmp(name, s->click_name) == 0;
+    s->click_ms = s->input_now_ms;
+    s->click_kind = kind;
+    s->click_x = x;
+    s->click_y = y;
+    snprintf(s->click_dir, sizeof s->click_dir, "%s", dir);
+    snprintf(s->click_name, sizeof s->click_name, "%s", name);
+    return clicks >= 2 || repeat;
+}
+
 void session_down(Session *s, int x, int y, int clicks) {
+    int prior_click = s->click_valid;
+    s->click_valid = 0;
     session_clamp(s);
     note_mouse(s, x, y);
     s->down = 1;
@@ -142,7 +164,7 @@ void session_down(Session *s, int x, int y, int clicks) {
                 select_only(w, idx);
                 s->press_zone = Z_ITEM;
                 s->press_item = idx;
-                if (clicks >= 2) {
+                if (icon_double(s, prior_click, 1, w->rel, w->items[idx].name, x, y, clicks)) {
                     open_item(s, w, idx);
                     s->down = 0;
                 }
@@ -157,7 +179,9 @@ void session_down(Session *s, int x, int y, int clicks) {
     int which = desktop_which(s->sw, s->sh, x, y);
     if (which == 0 || which == 1) {
         s->desk_sel = which;
-        if (clicks >= 2) {
+        s->press_zone = Z_DESKTOP;
+        s->press_item = which;
+        if (icon_double(s, prior_click, 2, "", which == 0 ? "disk" : "trash", x, y, clicks)) {
             open_folder(s, which == 0 ? "" : "Trash");
             s->down = 0;
         }
@@ -188,11 +212,11 @@ void session_move(Session *s, int x, int y) {
         w->h = s->orig_h + (y - s->press_y);
         w->zoomed = 0;
         session_clamp(s);
-    } else if (s->press_zone == Z_ITEM) {
+    } else if (s->press_zone == Z_ITEM || s->press_zone == Z_DESKTOP) {
         int dx = x - s->press_x;
         int dy = y - s->press_y;
         if (dx * dx + dy * dy > 16) {
-            s->drag = 3;
+            s->drag = s->press_zone == Z_ITEM ? 3 : 4;
         }
     }
 }
@@ -223,6 +247,11 @@ void session_up(Session *s, int x, int y) {
     int win = s->press_win;
     int drag = s->drag;
     int item = s->press_item;
+    int dx = x - s->press_x, dy = y - s->press_y;
+    if ((zone == Z_ITEM || zone == Z_DESKTOP) && !drag &&
+        dx >= -4 && dx <= 4 && dy >= -4 && dy <= 4) {
+        s->click_valid = 1;
+    }
     s->down = 0;
     s->drag = 0;
     if (win >= 0 && win < s->nwin) {
@@ -255,6 +284,7 @@ void session_up(Session *s, int x, int y) {
 }
 
 void session_key(Session *s, int key, int mods) {
+    s->click_valid = 0;
     if (key >= 'A' && key <= 'Z') {
         key = key - 'A' + 'a';
     }

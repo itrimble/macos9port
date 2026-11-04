@@ -18,8 +18,9 @@ static const struct {
      "No classic applications are installed.\n\n"
      "File, Install from Garden, copies a\n"
      "Macintosh Garden page here. Double-click\n"
-     "a StuffIt archive to open it in\n"
-     "Systemless. Many programs still fail.\n"},
+     "a StuffIt archive, or a program beside\n"
+     "it, to open it in Systemless.\n"
+     "Many programs still fail.\n"},
     {"Documents/Notes",
      "Notes live here as plain text.\n\n"
      "Double-click a document to read it.\n"},
@@ -176,7 +177,8 @@ int volume_free_bytes(const char *root, uint64_t *out) {
 }
 
 static int hidden(const char *root_rel, const char *name) {
-    if (name[0] == '.') {
+    size_t n = strlen(name);
+    if (name[0] == '.' || (n > 5 && strcasecmp(name + n - 5, ".rsrc") == 0)) {
         return 1;
     }
     if ((!root_rel || !root_rel[0]) && strcmp(name, "Trash") == 0) {

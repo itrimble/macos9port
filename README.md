@@ -11,15 +11,16 @@ work, and it does not contain an Apple ROM.
 ## Try it on a Mac
 
 You need [SDL2](https://www.libsdl.org/) (`brew install sdl2`), FreeType
-(`brew install freetype`), and clang. To open a classic program you also
-need [Systemless](https://github.com/benletchford/systemless):
+(`brew install freetype`), and clang. The older archive-launch fallback uses
+[Systemless](https://github.com/benletchford/systemless):
 
 ```bash
 brew install benletchford/tap/systemless
 ```
 
-Systemless is GPL-3 and it is not part of this repository. OS Pi runs
-that installed program. It does not contain a Toolbox or an Apple ROM.
+Systemless is GPL-3 and it is not part of this repository. Extracted applications
+with supported CODE resources now use OS Pi's independent development runtime.
+Neither path includes an Apple ROM in this repository.
 
 ```bash
 make run
@@ -55,8 +56,11 @@ File, Install from Garden, takes a `macintoshgarden.org` link from the
 clipboard and downloads that page's archive into Applications. If the
 main download host refuses the file, OS Pi tries the same path on the
 page's other two Garden hosts. The original StuffIt or MacBinary file
-stays in the folder. Double-click it and Systemless opens the program
-in its own window. Many programs still fail. I do not commit those
+stays in the folder. Double-click that archive, or a program file
+next to it, and Systemless opens the program in its own window.
+Systemless starts the application it can actually run. On the
+WordPerfect 3.5e archive that is Corel OrgChart Builder, not
+WordPerfect. Many programs still fail. I do not commit those
 downloads.
 
 There is no networking stack inside OS Pi. The download is the host's
@@ -78,6 +82,43 @@ make
 
 The Mac build links Homebrew's arm64 SDL2, so the app on this machine
 is arm64 only.
+
+## Independent runtime development
+
+I have added a separate `ospi-runtime` helper. It uses the open-source Musashi
+instruction interpreter and our own resource loader and Macintosh API adapters.
+It loads original 68k game code without an Apple ROM or System file. It does not
+yet play the target games. Color drawing, sound, and save support are incomplete.
+
+```bash
+BUILDFLEET_LOCAL=1 make test runtime
+./build/ospi-runtime --inspect '/path/Game.rsrc'
+./build/ospi-runtime --window --indexed --steps 100000000 '/path/Game.rsrc'
+./build/ospi-runtime --window --indexed --interactive '/path/Game.rsrc'
+python3 scripts/runtime-checkpoint.py --indexed '/path/Game.rsrc'
+```
+
+Desktop launches use `--interactive`: the window runs until closed or a runtime
+failure occurs. CPU batches and callback work remain bounded. Headless probes
+retain instruction limits; `--interactive` cannot be combined with `--steps`.
+
+The first build downloads a pinned, hash-checked Musashi revision into ignored
+`build/deps/`. The local-build flag follows Ian's explicit instruction to bypass
+the build orchestrator for this project. Read
+[the development checklist](docs/DEVELOPMENT-CHECKLIST.md) and
+[the first loop record](docs/RUNTIME-LOOP-2026-11-04.md) before continuing.
+
+Keep an extracted application file beside its `Name.rsrc` sidecar and game data
+inside the OS Pi volume. Double-click the application, or select it and use
+Cmd-O. The helper must sit beside `ospi`; `make app` packages both. Quit that
+bundle before rebuilding it. Native resource forks also work. Unsupported
+runtime calls stop with a diagnostic; they do not silently switch to Systemless.
+The runtime currently reads only ASCII-named sibling data files, with no writes.
+
+The SDL helper requests an accelerated presentation backend. Guest rasterization
+and framebuffer conversion remain CPU work. That is not full game acceleration.
+Chromium, modern browsing, networking, and classic QuickTime playback remain
+separate unchecked goals. Guest execution is not a security sandbox.
 
 ## Fonts
 

@@ -148,6 +148,9 @@ int main(int argc, char **argv) {
             } else if (ev.type == SDL_MOUSEBUTTONDOWN && ev.button.button == SDL_BUTTON_LEFT) {
                 take_clip(s);
                 logical_point(win, ev.button.x, ev.button.y, &x, &y);
+                /* Several queued clicks can be drained in one frame. Use each
+                 * event's time so the fallback can distinguish those clicks. */
+                s->input_now_ms = ev.button.timestamp ? ev.button.timestamp : SDL_GetTicks();
                 session_down(s, x, y, ev.button.clicks);
             } else if (ev.type == SDL_MOUSEBUTTONUP && ev.button.button == SDL_BUTTON_LEFT) {
                 logical_point(win, ev.button.x, ev.button.y, &x, &y);

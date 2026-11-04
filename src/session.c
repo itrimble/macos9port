@@ -167,12 +167,15 @@ void open_item(Session *s, Window *w, int index) {
         return;
     }
     if (w->items[index].kind == ITEM_FILE) {
-        if (classic_is_program(w->items[index].name)) {
-            char full[OSPI_PATH];
-            char err[240];
-            err[0] = 0;
-            if (volume_join(full, sizeof full, s->root, rel) != 0 ||
-                classic_launch(full, err, sizeof err) != 0) {
+        char full[OSPI_PATH];
+        char err[240];
+        int opened = 1;
+        err[0] = 0;
+        if (volume_join(full, sizeof full, s->root, rel) == 0) {
+            opened = classic_open(s->root, full, w->items[index].name, err, sizeof err);
+        }
+        if (opened <= 0) {
+            if (opened < 0) {
                 dialog_info(s, "Open", err[0] ? err : "Could not open that program.");
             }
             return;
@@ -480,6 +483,7 @@ void session_destroy(Session *s) { free(s); }
 int session_quit(const Session *s) { return s && s->quit; }
 
 void session_tick(Session *s, uint32_t now_ms) {
+    s->input_now_ms = now_ms;
     if (s->last_stat != 0 && now_ms - s->last_stat < 1000) {
         return;
     }

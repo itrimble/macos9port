@@ -50,6 +50,19 @@ static int find_win(const Session *s, const char *title) {
     return -1;
 }
 
+static int write_bytes(const char *path, const void *data, size_t n) {
+    FILE *f = fopen(path, "wb");
+    if (!f) {
+        return -1;
+    }
+    if (n && fwrite(data, 1, n, f) != n) {
+        fclose(f);
+        return -1;
+    }
+    fclose(f);
+    return 0;
+}
+
 static int find_item(const Window *w, const char *name) {
     for (int i = 0; i < w->nitems; i++) {
         if (strcmp(w->items[i].name, name) == 0) {
@@ -57,6 +70,77 @@ static int find_item(const Window *w, const char *name) {
         }
     }
     return -1;
+}
+
+static void test_repeat_clicks(const char *dir) {
+    Session *s = session_create(dir);
+    CHECK(s != NULL);
+    if (!s) return;
+    int ax, ay, dx, dy;
+    CHECK(ospi_item_center(s, 0, 0, &ax, &ay) == 0);
+    CHECK(ospi_item_center(s, 0, 1, &dx, &dy) == 0);
+    session_tick(s, 100);
+    click(s, ax, ay, 1);
+    CHECK(s->nwin == 1);
+    session_tick(s, 300);
+    click(s, ax + 2, ay + 1, 1);
+    CHECK(s->nwin == 2 && strcmp(s->win[1].rel, "Applications") == 0);
+    session_key(s, 'w', MOD_CMD);
+
+    session_tick(s, 1000);
+    click(s, ax, ay, 1);
+    session_tick(s, 1200);
+    click(s, dx, dy, 1);
+    CHECK(s->nwin == 1); /* Different item cannot complete the first click. */
+    session_key(s, 27, 0);
+    session_tick(s, 2000);
+    click(s, ax, ay, 1);
+    session_tick(s, 2501);
+    click(s, ax, ay, 1);
+    CHECK(s->nwin == 1); /* Outside the 500 ms window. */
+    session_key(s, 27, 0);
+    session_tick(s, 3000);
+    click(s, ax, ay, 1);
+    click(s, ax, ay, 1);
+    CHECK(s->nwin == 1); /* No elapsed clock means no inferred double click. */
+    session_key(s, 27, 0);
+    /* Queued SDL events provide individual timestamps even when the frame's
+     * session_tick ran only once. This is how main drains a batched pair. */
+    session_tick(s, 3500);
+    s->input_now_ms = 3520;
+    click(s, ax, ay, 1);
+    s->input_now_ms = 3640;
+    click(s, ax, ay, 1);
+    CHECK(s->nwin == 2 && strcmp(s->win[1].rel, "Applications") == 0);
+    session_key(s, 'w', MOD_CMD);
+    session_tick(s, 4000);
+    session_down(s, ax, ay, 1);
+    session_move(s, ax + 20, ay);
+    session_move(s, ax, ay);
+    session_up(s, ax, ay);
+    session_tick(s, 4200);
+    click(s, ax, ay, 1);
+    CHECK(s->nwin == 1); /* Drag-and-return is not a click. */
+    session_key(s, 27, 0);
+    session_tick(s, 5000);
+    click(s, ax, ay, 1);
+    session_tick(s, 5100);
+    int mx, my;
+    CHECK(ospi_menu_center(1, -1, &mx, &my) == 0);
+    click(s, mx, my, 1);
+    session_key(s, 27, 0);
+    session_tick(s, 5200);
+    click(s, ax, ay, 1);
+    CHECK(s->nwin == 1); /* Intervening menu cancels the pair. */
+    session_key(s, 'w', MOD_CMD);
+    CHECK(s->nwin == 0);
+    CHECK(ospi_desktop_center(s, 0, &ax, &ay) == 0);
+    session_tick(s, 6000);
+    click(s, ax, ay, 1);
+    session_tick(s, 6200);
+    click(s, ax, ay, 1);
+    CHECK(s->nwin == 1 && strcmp(s->win[0].rel, "") == 0);
+    session_destroy(s);
 }
 
 int main(void) {
@@ -67,6 +151,7 @@ int main(void) {
         return 1;
     }
     CHECK(volume_seed(dir) == 0);
+    test_repeat_clicks(dir);
     Session *s = session_create(dir);
     CHECK(s != NULL);
     if (!s) {
@@ -227,11 +312,67 @@ int main(void) {
     CHECK(install_garden(dir, "http://evil.example/", url, sizeof url, err, sizeof err) != 0);
     CHECK(classic_is_program("NativeChecker.sit") == 1);
     CHECK(classic_is_program("Game.SITX") == 1);
+    CHECK(classic_is_program("Expander.zip") == 1);
     CHECK(classic_is_program("Notes") == 0);
     CHECK(classic_is_program("About Fonts") == 0);
     err[0] = 0;
-    CHECK(classic_launch("/tmp/ospi-no-such-program.sit", err, sizeof err) != 0);
+    CHECK(classic_launch("/tmp/ospi-no-such-program.sit", NULL, err, sizeof err) != 0);
     CHECK(err[0] != 0);
+    {
+        char demo[OSPI_PATH];
+        char widget[OSPI_PATH];
+        char notes[OSPI_PATH];
+        char sit[OSPI_PATH];
+        char rsrc[OSPI_PATH];
+        char blob[OSPI_PATH];
+        char longpath[OSPI_PATH];
+        char launch[OSPI_PATH];
+        char hint[40];
+        const char *longname = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        Item listed[16];
+        int listed_n;
+        int saw_rsrc = 0;
+        snprintf(demo, sizeof demo, "%s/Applications/Demo", dir);
+        CHECK(volume_mkdir_p(demo) == 0);
+        snprintf(sit, sizeof sit, "%s/Demo.sit", demo);
+        snprintf(widget, sizeof widget, "%s/Widget", demo);
+        snprintf(notes, sizeof notes, "%s/Notes", demo);
+        snprintf(rsrc, sizeof rsrc, "%s/Widget.rsrc", demo);
+        snprintf(longpath, sizeof longpath, "%s/%s", demo, longname);
+        snprintf(blob, sizeof blob, "%s/Documents/Blob", dir);
+        CHECK(write_bytes(sit, "sit", 3) == 0);
+        CHECK(write_bytes(widget, "W\0", 2) == 0);
+        CHECK(write_bytes(notes, "plain\n", 6) == 0);
+        CHECK(write_bytes(rsrc, "rs", 2) == 0);
+        {
+            char img[OSPI_PATH];
+            char zip[OSPI_PATH];
+            snprintf(img, sizeof img, "%s/Demo.img", demo);
+            snprintf(zip, sizeof zip, "%s/Demo.zip", demo);
+            CHECK(write_bytes(img, "img", 3) == 0);
+            CHECK(write_bytes(zip, "PK", 2) == 0);
+        }
+        CHECK(write_bytes(longpath, "L\0", 2) == 0);
+        CHECK(write_bytes(blob, "B\0", 2) == 0);
+        CHECK(classic_bundle(dir, widget, "Widget", launch, sizeof launch, hint, sizeof hint) == 0);
+        CHECK(strlen(launch) > 8 && strcmp(launch + strlen(launch) - 8, "Demo.sit") == 0);
+        CHECK(strcmp(hint, "Widget") == 0);
+        CHECK(classic_bundle(dir, sit, "Demo.sit", launch, sizeof launch, hint, sizeof hint) == 0);
+        CHECK(strcmp(launch, sit) == 0);
+        CHECK(hint[0] == 0);
+        CHECK(classic_bundle(dir, notes, "Notes", launch, sizeof launch, hint, sizeof hint) == 1);
+        CHECK(classic_bundle(dir, blob, "Blob", launch, sizeof launch, hint, sizeof hint) == 1);
+        CHECK(classic_bundle(dir, longpath, longname, launch, sizeof launch, hint, sizeof hint) == 0);
+        CHECK(strcmp(hint, "ABCDEFGHIJKLMNOPQRSTUVWXYZ01234") == 0);
+        listed_n = volume_list(dir, "Applications/Demo", listed, 16);
+        CHECK(listed_n == 6);
+        for (int i = 0; i < listed_n; i++) {
+            if (strcmp(listed[i].name, "Widget.rsrc") == 0) {
+                saw_rsrc = 1;
+            }
+        }
+        CHECK(saw_rsrc == 0);
+    }
     const char *type1 = getenv("OSPI_TYPE1");
     if (type1 && type1[0]) {
         CHECK(typeface_probe(type1) == 1);

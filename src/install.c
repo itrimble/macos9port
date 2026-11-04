@@ -474,7 +474,7 @@ int install_garden(const char *root, const char *page_url, char *created_rel, si
     char ex_tmpl[] = "/tmp/ospi-ex-XXXXXX";
     char *ex = mkdtemp(ex_tmpl);
     if (ex) {
-        char *unar_argv[] = {"unar", "-q", "-D", "-o", ex, arch_tmp, NULL};
+        char *unar_argv[] = {"unar", "-q", "-k", "visible", "-D", "-o", ex, arch_tmp, NULL};
         if (run_argv(unar_argv) == 0) {
             copy_tree(ex, dest, 0);
         }

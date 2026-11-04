@@ -1,0 +1,235 @@
+#include "mac_cpu.h"
+#include "m68k.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+struct MacCpu {
+    uint8_t *ram;
+    size_t ram_size;
+    void *context;
+    MacCpuTrap trap;
+    void *trap_user;
+    uint64_t cycles;
+    int halted;
+    MacCpuModel model;
+    char error[192];
+};
+
+static MacCpu *active;
+
+void mac_cpu_halt(MacCpu *cpu, const char *reason) {
+    if (!cpu || cpu->halted) {
+        return;
+    }
+    cpu->halted = 1;
+    snprintf(cpu->error, sizeof cpu->error, "%s", reason ? reason : "halted");
+    if (active == cpu) {
+        m68k_end_timeslice();
+    }
+}
+
+static int valid_access(MacCpu *cpu, uint32_t address, unsigned width) {
+    if (!cpu || cpu->halted) {
+        return 0;
+    }
+    if ((width != 1 && width != 2 && width != 4) || address > cpu->ram_size ||
+        width > cpu->ram_size - address || (width != 1 && (address & 1))) {
+        char error[160];
+        snprintf(error, sizeof error, "invalid %u-byte memory access at %08x (PC %08x)",
+                 width, address, mac_cpu_get(cpu, MAC_PC));
+        mac_cpu_halt(cpu, error);
+        return 0;
+    }
+    return 1;
+}
+
+uint32_t mac_cpu_read(MacCpu *cpu, uint32_t address, unsigned width) {
+    if (!valid_access(cpu, address, width)) {
+        return 0;
+    }
+    uint32_t value = 0;
+    for (unsigned i = 0; i < width; i++) {
+        value = (value << 8) | cpu->ram[address + i];
+    }
+    return value;
+}
+
+int mac_cpu_write(MacCpu *cpu, uint32_t address, unsigned width, uint32_t value) {
+    if (!valid_access(cpu, address, width)) {
+        return -1;
+    }
+    for (unsigned i = 0; i < width; i++) {
+        cpu->ram[address + width - i - 1] = (uint8_t)(value >> (8 * i));
+    }
+    return 0;
+}
+
+static uint32_t bus_read(uint32_t address, unsigned width) {
+    if (!active) return 0;
+    address &= 0xffffff; /* Initial classic Macintosh addressing mode. */
+    if (active->model == MAC_CPU_68000 && width > 1 && (address & 1))
+        return mac_cpu_read(active, address, width); /* Checked alignment fault. */
+    uint32_t value = 0;
+    for (unsigned i = 0; i < width; i++)
+        value = (value << 8) | mac_cpu_read(active, (address + i) & 0xffffff, 1);
+    return value;
+}
+static void bus_write(uint32_t address, unsigned width, uint32_t value) {
+    if (!active) return;
+    address &= 0xffffff;
+    if (active->model == MAC_CPU_68000 && width > 1 && (address & 1)) {
+        mac_cpu_write(active, address, width, value); return;
+    }
+    /* Check every translated byte before writing, including address-bus wrap.
+     * A failed instruction must not leave a partially written guest word. */
+    for (unsigned i = 0; i < width; i++) {
+        if (((address + i) & 0xffffff) >= active->ram_size) {
+            mac_cpu_halt(active, "CPU bus write exceeds guest RAM."); return;
+        }
+    }
+    for (unsigned i = 0; i < width; i++)
+        mac_cpu_write(active, (address + i) & 0xffffff, 1, value >> (8 * (width - i - 1)));
+}
+unsigned int m68k_read_memory_8(unsigned int address) { return bus_read(address, 1); }
+unsigned int m68k_read_memory_16(unsigned int address) { return bus_read(address, 2); }
+unsigned int m68k_read_memory_32(unsigned int address) { return bus_read(address, 4); }
+void m68k_write_memory_8(unsigned int address, unsigned int value) {
+    bus_write(address, 1, value);
+}
+void m68k_write_memory_16(unsigned int address, unsigned int value) {
+    bus_write(address, 2, value);
+}
+void m68k_write_memory_32(unsigned int address, unsigned int value) {
+    bus_write(address, 4, value);
+}
+
+static int illegal_instruction(int opcode) {
+    char error[128];
+    snprintf(error, sizeof error, "illegal instruction %04x at %08x", opcode & 0xffff,
+             m68k_get_reg(NULL, M68K_REG_PPC));
+    mac_cpu_halt(active, error);
+    return 1;
+}
+
+MacCpu *mac_cpu_create(size_t ram_size) {
+    return mac_cpu_create_model(ram_size, MAC_CPU_68000);
+}
+
+MacCpu *mac_cpu_create_model(size_t ram_size, MacCpuModel model) {
+    if (active || ram_size < 4096 || ram_size > 0x1000000 || (ram_size & 1) ||
+        (model != MAC_CPU_68000 && model != MAC_CPU_68020)) {
+        return NULL;
+    }
+    MacCpu *cpu = calloc(1, sizeof *cpu);
+    if (!cpu) {
+        return NULL;
+    }
+    cpu->ram = calloc(ram_size, 1);
+    cpu->context = calloc(1, m68k_context_size());
+    cpu->ram_size = ram_size;
+    cpu->model = model;
+    if (!cpu->ram || !cpu->context) {
+        mac_cpu_destroy(cpu);
+        return NULL;
+    }
+    active = cpu;
+    m68k_init();
+    m68k_set_cpu_type(model == MAC_CPU_68020 ? M68K_CPU_TYPE_68020 : M68K_CPU_TYPE_68000);
+    m68k_pulse_reset();
+    /* Consume reset latency without executing an instruction. */
+    m68k_execute(1);
+    for (int i = MAC_D0; i <= MAC_A7; i++) {
+        m68k_set_reg((m68k_register_t)i, 0);
+    }
+    m68k_set_reg(M68K_REG_SR, 0);
+    m68k_set_reg(M68K_REG_SP, (unsigned int)ram_size);
+    m68k_set_reg(M68K_REG_PC, 0);
+    m68k_set_illg_instr_callback(illegal_instruction);
+    m68k_get_context(cpu->context);
+    active = NULL;
+    return cpu;
+}
+
+void mac_cpu_destroy(MacCpu *cpu) {
+    if (cpu && active != cpu) {
+        free(cpu->context);
+        free(cpu->ram);
+        free(cpu);
+    }
+}
+
+uint8_t *mac_cpu_ram(MacCpu *cpu) { return cpu ? cpu->ram : NULL; }
+size_t mac_cpu_ram_size(const MacCpu *cpu) { return cpu ? cpu->ram_size : 0; }
+
+uint32_t mac_cpu_get(const MacCpu *cpu, MacCpuReg reg) {
+    if (!cpu || reg < MAC_D0 || reg > MAC_SR) {
+        return 0;
+    }
+    return m68k_get_reg(active == cpu ? NULL : cpu->context, (m68k_register_t)reg);
+}
+
+void mac_cpu_set(MacCpu *cpu, MacCpuReg reg, uint32_t value) {
+    if (!cpu || reg < MAC_D0 || reg > MAC_SR || (active && active != cpu)) {
+        return;
+    }
+    if (!active) {
+        m68k_set_context(cpu->context);
+    }
+    m68k_set_reg((m68k_register_t)reg, value);
+    if (!active) {
+        m68k_get_context(cpu->context);
+    }
+}
+
+void mac_cpu_set_trap(MacCpu *cpu, MacCpuTrap trap, void *user) {
+    if (cpu) {
+        cpu->trap = trap;
+        cpu->trap_user = user;
+    }
+}
+
+size_t mac_cpu_run(MacCpu *cpu, size_t instruction_budget) {
+    if (!cpu || cpu->halted || active || !instruction_budget) {
+        return 0;
+    }
+    active = cpu;
+    m68k_set_context(cpu->context);
+    size_t attempted = 0;
+    while (attempted < instruction_budget && !cpu->halted) {
+        uint32_t pc = mac_cpu_get(cpu, MAC_PC) & 0xffffff;
+        mac_cpu_set(cpu, MAC_PC, pc);
+        uint16_t opcode = (uint16_t)mac_cpu_read(cpu, pc, 2);
+        if (cpu->halted) {
+            break;
+        }
+        attempted++;
+        if ((opcode & 0xf000) == 0xa000) {
+            mac_cpu_set(cpu, MAC_PC, (pc + 2) & 0xffffff);
+            if (!cpu->trap || cpu->trap(cpu, opcode, pc, cpu->trap_user) != 0) {
+                char error[128];
+                snprintf(error, sizeof error, "unhandled A-line trap %04x at %08x", opcode, pc);
+                mac_cpu_halt(cpu, error);
+            }
+            cpu->cycles += 4; /* Adapter dispatch work, not a Macintosh timing model. */
+        } else if ((opcode & 0xf000) == 0xf000 || opcode == 0x4e72) {
+            char error[128];
+            snprintf(error, sizeof error, "unsupported instruction %04x at %08x", opcode, pc);
+            mac_cpu_halt(cpu, error);
+        } else {
+            int cycles = m68k_execute(1);
+            if (cycles > 0) {
+                cpu->cycles += (unsigned int)cycles;
+            }
+        }
+    }
+    mac_cpu_set(cpu, MAC_PC, mac_cpu_get(cpu, MAC_PC) & 0xffffff);
+    m68k_get_context(cpu->context);
+    active = NULL;
+    return attempted;
+}
+
+int mac_cpu_halted(const MacCpu *cpu) { return !cpu || cpu->halted; }
+const char *mac_cpu_error(const MacCpu *cpu) { return cpu ? cpu->error : "no CPU"; }
+uint64_t mac_cpu_cycles(const MacCpu *cpu) { return cpu ? cpu->cycles : 0; }

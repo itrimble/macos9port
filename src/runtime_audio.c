@@ -1,0 +1,77 @@
+#include "runtime_audio.h"
+#include "mac_sound_double.h"
+#include <SDL.h>
+#include <stdio.h>
+#include <string.h>
+/* SDL owns a copy of submitted PCM. Guest execution and mixing stay on the
+ * caller's thread; there is no guest CPU access from an audio callback. */
+#define AUDIO_TARGET_FRAMES 2048u
+#define AUDIO_CHUNK_FRAMES 64u
+int runtime_audio_open(RuntimeAudio *audio) {
+    if (audio->device) return 0;
+    if (!(SDL_WasInit(SDL_INIT_AUDIO) & SDL_INIT_AUDIO)) {
+        if (SDL_InitSubSystem(SDL_INIT_AUDIO)) return -1;
+        audio->owns_audio = 1;
+    }
+    SDL_AudioSpec wanted, obtained;
+    SDL_zero(wanted);
+    wanted.freq = MAC_SOUND_RATE;
+    wanted.format = AUDIO_S16SYS;
+    wanted.channels = 2;
+    wanted.samples = 512;
+    audio->device = SDL_OpenAudioDevice(NULL, 0, &wanted, &obtained, 0);
+    if (!audio->device) { runtime_audio_close(audio); return -1; }
+    if (obtained.freq != wanted.freq || obtained.format != wanted.format ||
+        obtained.channels != wanted.channels) {
+        runtime_audio_close(audio);
+        SDL_SetError("Audio device did not provide the requested PCM format");
+        return -1;
+    }
+    SDL_PauseAudioDevice(audio->device, 0);
+    return 0;
+}
+int runtime_audio_pump(RuntimeAudio *audio, MacRuntime *rt,
+                       size_t callback_budget, size_t *callback_instructions) {
+    *callback_instructions = 0;
+    if (!rt->sound || mac_cpu_halted(rt->cpu)) return 0;
+    if (!audio->device && runtime_audio_open(audio)) {
+        fprintf(stderr, "Cannot open audio output: %s\n", SDL_GetError());
+        return -1;
+    }
+    uint32_t bytes = SDL_GetQueuedAudioSize(audio->device);
+    if (bytes > AUDIO_TARGET_FRAMES * 4 || bytes % 4) {
+        SDL_SetError("Audio queue violated the bounded stereo-frame contract");
+        return -1;
+    }
+    unsigned available = AUDIO_TARGET_FRAMES - bytes / 4;
+    int16_t pcm[AUDIO_CHUNK_FRAMES * 2];
+    for (unsigned work = 0; available && work < AUDIO_TARGET_FRAMES / AUDIO_CHUNK_FRAMES; work++) {
+        size_t ran = mac_sound_poll(rt, callback_budget);
+        callback_budget -= ran;
+        *callback_instructions += ran;
+        if (mac_cpu_halted(rt->cpu)) return -1;
+        ran = mac_sound_double_poll(rt, callback_budget);
+        callback_budget -= ran;
+        *callback_instructions += ran;
+        if (mac_cpu_halted(rt->cpu)) return -1;
+        unsigned frames = available < AUDIO_CHUNK_FRAMES ? available : AUDIO_CHUNK_FRAMES;
+        size_t rendered = mac_sound_render(rt, pcm, frames);
+        if (rendered != frames || mac_cpu_halted(rt->cpu)) return -1;
+        if (SDL_QueueAudio(audio->device, pcm, frames * sizeof(int16_t) * 2)) {
+            fprintf(stderr, "Cannot submit audio output: %s\n", SDL_GetError());
+            return -1;
+        }
+        audio->submitted_frames += frames;
+        available -= frames;
+    }
+    return 0;
+}
+void runtime_audio_close(RuntimeAudio *audio) {
+    if (audio->device) {
+        SDL_PauseAudioDevice(audio->device, 1);
+        SDL_ClearQueuedAudio(audio->device);
+        SDL_CloseAudioDevice(audio->device);
+    }
+    if (audio->owns_audio) SDL_QuitSubSystem(SDL_INIT_AUDIO);
+    memset(audio, 0, sizeof *audio);
+}

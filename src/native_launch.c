@@ -1,0 +1,210 @@
+#include "native_launch.h"
+#include "mac_resource.h"
+
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
+
+static int problem(char *err, size_t n, const char *message) {
+    if (err && n) snprintf(err, n, "%s", message);
+    return -1;
+}
+
+static int contained(const char *root, const char *path) {
+    size_t n = strlen(root);
+    return !strncmp(root, path, n) &&
+           ((n == 1 && root[0] == '/') || path[n] == '/' || path[n] == 0);
+}
+
+static int application_fork(const char *path, char *err, size_t n) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return problem(err, n, "Could not read this application's resource fork.");
+    struct stat st;
+    if (fstat(fileno(f), &st) || !S_ISREG(st.st_mode) || st.st_size < 0 ||
+        st.st_size > 64 * 1024 * 1024) {
+        fclose(f);
+        return problem(err, n, "Resource fork is not a regular file below 64 MiB.");
+    }
+    size_t size = (size_t)st.st_size;
+    uint8_t *bytes = malloc(size ? size : 1);
+    if (!bytes || fread(bytes, 1, size, f) != size) {
+        free(bytes); fclose(f);
+        return problem(err, n, "Could not read this application's resource fork.");
+    }
+    fclose(f);
+    MacResourceFork fork;
+    MacResource code;
+    int result = mac_resource_open_container(&fork, bytes, size, err, n);
+    if (!result) result = mac_resource_find(&fork, MAC_RESOURCE_TYPE('C','O','D','E'), 0, &code);
+    free(bytes);
+    return result;
+}
+
+static int resolve_fork(const char *root, const char *full, char *out, size_t n,
+                        char *err, size_t err_n) {
+    char canonical_root[PATH_MAX], candidate[PATH_MAX], resolved[PATH_MAX];
+    if (!root || !full || !realpath(root, canonical_root))
+        return problem(err, err_n, "Could not resolve the OS Pi volume.");
+    size_t length = strlen(full);
+    int explicit_fork = length > 5 && !strcasecmp(full + length - 5, ".rsrc");
+    const char *suffixes[] = {".rsrc", "/..namedfork/rsrc"};
+    int count = explicit_fork ? 1 : 2;
+    for (int i = 0; i < count; i++) {
+        int k = snprintf(candidate, sizeof candidate, "%s%s", full, explicit_fork ? "" : suffixes[i]);
+        if (k < 0 || (size_t)k >= sizeof candidate)
+            return problem(err, err_n, "Application path is too long.");
+        struct stat st;
+        if (lstat(candidate, &st)) {
+            if (errno == ENOENT || errno == ENOTDIR) continue;
+            return problem(err, err_n, "Could not inspect this application's resource fork.");
+        }
+        if (!explicit_fork && i == 1) {
+            /* macOS treats ..namedfork as a virtual suffix: realpath rejects
+             * it even when open succeeds. Resolve/check the base file first. */
+            if (!realpath(full, resolved) || !contained(canonical_root, resolved))
+                return problem(err, err_n, "Application resource fork is outside the OS Pi volume.");
+            k = snprintf(candidate, sizeof candidate, "%s/..namedfork/rsrc", resolved);
+            if (k < 0 || (size_t)k >= sizeof candidate)
+                return problem(err, err_n, "Application path is too long.");
+            memcpy(resolved, candidate, (size_t)k + 1);
+        } else if (!realpath(candidate, resolved) || !contained(canonical_root, resolved)) {
+            return problem(err, err_n, "Application resource fork is outside the OS Pi volume.");
+        }
+        int result = application_fork(resolved, err, err_n);
+        if (result < 0) return -1;
+        if (result == 1) continue;
+        if (strlen(resolved) >= n) return problem(err, err_n, "Application path is too long.");
+        memcpy(out, resolved, strlen(resolved) + 1);
+        return 0;
+    }
+    return 1;
+}
+
+static int runtime_path(char *out, size_t n) {
+    const char *override = getenv("OSPI_RUNTIME_PATH");
+    char path[PATH_MAX], resolved[PATH_MAX];
+    if (override && override[0]) {
+        if (override[0] != '/' || strlen(override) >= sizeof path) return -1;
+        memcpy(path, override, strlen(override) + 1);
+    } else {
+#if defined(__APPLE__)
+        uint32_t size = sizeof path;
+        if (_NSGetExecutablePath(path, &size)) return -1;
+#else
+        ssize_t size = readlink("/proc/self/exe", path, sizeof path - 1);
+        if (size < 0) return -1;
+        path[size] = 0;
+#endif
+        if (!realpath(path, resolved)) return -1;
+        char *slash = strrchr(resolved, '/');
+        if (!slash) return -1;
+        *slash = 0;
+        int k = snprintf(path, sizeof path, "%s/ospi-runtime", resolved);
+        if (k < 0 || (size_t)k >= sizeof path) return -1;
+    }
+    struct stat st;
+    if (!realpath(path, resolved) || stat(resolved, &st) || !S_ISREG(st.st_mode) ||
+        access(resolved, X_OK) || strlen(resolved) >= n) return -1;
+    memcpy(out, resolved, strlen(resolved) + 1);
+    return 0;
+}
+
+static int wait_startup(pid_t child) {
+    struct timespec started;
+    if (clock_gettime(CLOCK_MONOTONIC, &started)) return 125;
+    uint64_t start = (uint64_t)started.tv_sec * 1000000000u + (uint64_t)started.tv_nsec;
+    for (;;) {
+        struct timespec now;
+        if (clock_gettime(CLOCK_MONOTONIC, &now)) return 125;
+        uint64_t elapsed = (uint64_t)now.tv_sec * 1000000000u + (uint64_t)now.tv_nsec - start;
+        if (elapsed >= 800000000u) return 0;
+        int status;
+        pid_t got;
+        do { got = waitpid(child, &status, WNOHANG); } while (got < 0 && errno == EINTR);
+        if (got == child) return WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
+        if (got < 0) return 125;
+        uint64_t remaining = 800000000u - elapsed;
+        struct timespec rest = {0, (long)(remaining < 50000000u ? remaining : 50000000u)};
+        while (nanosleep(&rest, &rest) && errno == EINTR) {}
+    }
+}
+
+static void summarize_log(const char *path, char *out, size_t n) {
+    if (!n) return;
+    out[0] = 0;
+    FILE *f = fopen(path, "rb");
+    if (!f) return;
+    if (fseek(f, 0, SEEK_END)) { fclose(f); return; }
+    long end = ftell(f);
+    if (end < 0 || fseek(f, end > 4096 ? end - 4096 : 0, SEEK_SET)) { fclose(f); return; }
+    char text[4097];
+    size_t got = fread(text, 1, sizeof text - 1, f);
+    text[got] = 0;
+    fclose(f);
+    char *line = text;
+    while (*line) {
+        char *next = strchr(line, '\n');
+        if (next) *next++ = 0;
+        if (*line && strncmp(line, "resources=", 10) && strncmp(line, "instructions=", 13)) {
+            for (char *p = line; *p; p++) if ((unsigned char)*p < 32) *p = ' ';
+            snprintf(out, n, "%s", line);
+        }
+        if (!next) break;
+        line = next;
+    }
+}
+
+int native_open(const char *root, const char *full, char *err, size_t n) {
+    if (err && n) err[0] = 0;
+    char fork_path[PATH_MAX], runtime[PATH_MAX];
+    int applicable = resolve_fork(root, full, fork_path, sizeof fork_path, err, n);
+    if (applicable != 0) return applicable;
+    if (runtime_path(runtime, sizeof runtime))
+        return problem(err, n, "OS Pi's independent runtime is missing. Build and install ospi-runtime beside OS Pi.");
+    char log_path[] = "/tmp/ospi-runtime-XXXXXX";
+    int log = mkstemp(log_path);
+    if (log < 0) return problem(err, n, "Could not create the private runtime log.");
+    pid_t mid = fork();
+    if (mid == 0) {
+        if (setsid() < 0) _exit(125);
+        pid_t child = fork();
+        if (child == 0) {
+            int input = open("/dev/null", O_RDONLY);
+            if (input < 0 || dup2(input, STDIN_FILENO) < 0 ||
+                dup2(log, STDOUT_FILENO) < 0 || dup2(log, STDERR_FILENO) < 0) _exit(125);
+            if (input > STDERR_FILENO) close(input);
+            if (log > STDERR_FILENO) close(log);
+            char *argv[] = {runtime, "--window", "--indexed", "--interactive", fork_path, NULL};
+            execv(runtime, argv);
+            dprintf(STDERR_FILENO, "Could not execute OS Pi runtime: %s\n", strerror(errno));
+            _exit(127);
+        }
+        close(log);
+        _exit(child < 0 ? 125 : wait_startup(child));
+    }
+    close(log);
+    int status = 0;
+    pid_t got = -1;
+    if (mid > 0) do { got = waitpid(mid, &status, 0); } while (got < 0 && errno == EINTR);
+    if (mid < 0 || got != mid || !WIFEXITED(status) || WEXITSTATUS(status)) {
+        char detail[112];
+        summarize_log(log_path, detail, sizeof detail);
+        int code = got == mid && WIFEXITED(status) ? WEXITSTATUS(status) : 125;
+        if (err && n) snprintf(err, n, "OS Pi runtime stopped (%d).\n%s\nLog: %s",
+                               code, detail[0] ? detail : "Startup failed.", log_path);
+        return -1;
+    }
+    if (err && n) snprintf(err, n, "Runtime started. Log: %s", log_path);
+    return 0;
+}

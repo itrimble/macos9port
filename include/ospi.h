@@ -84,6 +84,9 @@ struct Session {
     uint64_t ram;
     char arch[16];
     uint32_t last_stat;
+    uint32_t input_now_ms, click_ms;
+    int click_valid, click_kind, click_x, click_y;
+    char click_dir[OSPI_PATH], click_name[OSPI_NAME];
     int sw, sh;
     int mx, my;
     int down;
@@ -110,7 +113,8 @@ enum {
     Z_ZOOM,
     Z_GROW,
     Z_ITEM,
-    Z_CONTENT
+    Z_CONTENT,
+    Z_DESKTOP
 };
 
 void window_layout(const Window *w, Layout *lay);
@@ -169,7 +173,10 @@ int garden_alt_url(const char *url, int which, char *out, size_t n);
 int install_garden(const char *root, const char *page_url, char *created_rel, size_t created_n,
                    char *err, size_t err_n);
 int classic_is_program(const char *name);
-int classic_launch(const char *path, char *err, size_t err_n);
+int classic_bundle(const char *root, const char *full, const char *name, char *launch, size_t launch_n,
+                   char *hint, size_t hint_n);
+int classic_launch(const char *path, const char *hint, char *err, size_t err_n);
+int classic_open(const char *root, const char *full, const char *name, char *err, size_t err_n);
 
 int ospi_item_center(const Session *s, int win, int index, int *x, int *y);
 int ospi_control_center(const Window *w, int which, int *x, int *y);
