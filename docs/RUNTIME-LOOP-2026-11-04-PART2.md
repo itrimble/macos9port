@@ -489,8 +489,9 @@ Ian's earlier doubled notes.
 Castle's windowed run opens `INTERP.TXT` (2,372 bytes); its `CODE/1`,
 `cnfg/128`, `gama/128`, `PICT/200`, and `ftbl/128` lookups succeed. It never
 requests `RESOURCE.MAP` or `RESOURCE.000`–`.003` before Alert 143, `Can't load
-!??`; audio output is zero. The installed files are present. This narrows the
-failure to startup before the SCI resource-map load, but does not identify why.
+!??`; audio output is zero. A local parser validated 455 SCI1 map entries and
+their offsets against the four present data files; this does not explain the
+pre-map failure. Layout reference: [SierraWiki, Chapter 2](https://wiki.sierrahelp.com/index.php/SCI_Specifications:_Chapter_2_-_Resource_files).
 REA 6.8.0's artifact inspector rejects the Mac resource fork; for `RESOURCE.MAP`
 it returns root-only inventory with no format semantics. Native decompilers are
 not configured here. The traced runtime SHA-256 is
