@@ -29,6 +29,11 @@ int main(void) {
     CHECK(guest_cycle_slice(100000, &guest_elapsed_us) == 533328 && guest_elapsed_us == 66666);
     CHECK(guest_cycle_slice(100000, &guest_elapsed_us) == 533328 && guest_elapsed_us == 99999);
     CHECK(guest_cycle_slice(100000, &guest_elapsed_us) == 16 && guest_elapsed_us == 100000);
+    guest_elapsed_us = 120000;
+    CHECK(!guest_clock_rebase_after_gap(250000, 100000, &guest_elapsed_us) && guest_elapsed_us == 120000);
+    CHECK(guest_clock_rebase_after_gap(250001, 100000, &guest_elapsed_us) && guest_elapsed_us == 100000);
+    CHECK(guest_cycle_slice(100000, &guest_elapsed_us) == 0);
+    CHECK(!guest_clock_rebase_after_gap(10000000, 0, NULL));
     MacCpu cpu = {{0}};
     MacRuntime rt = {0};
     uint32_t pixels[16];

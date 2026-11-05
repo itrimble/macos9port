@@ -11,6 +11,7 @@ typedef struct {
     uint32_t last_pump_frames;
     uint64_t trace_frames, trace_pump_ticks_total, trace_pump_ticks_max;
     uint64_t trace_queue_frames_total, trace_queue_samples;
+    uint64_t trace_rendered_frames, trace_clipped_frames;
     uint32_t trace_pumps, trace_empty_queue_checks;
     uint32_t trace_queue_min, trace_queue_max;
 } RuntimeAudio;

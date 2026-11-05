@@ -1,4 +1,5 @@
 #include "mac_sound_int.h"
+#include <stdlib.h>
 #include <string.h>
 /* CPU reference PCM mixer. Rendering is explicitly pulled by a consumer; it
  * never claims host playback or advances sound merely because CPU time passed. */
@@ -14,6 +15,7 @@ static int16_t clamp(int value){return (int16_t)(value>32767?32767:value< -32768
 size_t mac_sound_render(MacRuntime*r,int16_t *out,size_t frames){
  if(!out || frames>4096){mac_sound_fail(r,"Audio pull exceeds the4096-frame work bound.");return 0;}
  memset(out,0,frames*2*sizeof *out);if(!r->sound || mac_cpu_halted(r->cpu))return 0;
+ int trace=getenv("OSPI_AUDIO_TRACE")!=NULL;
  for(size_t f=0;f<frames;f++){
   int left=0,right=0;
   for(unsigned i=0;i<MAC_SOUND_CHANNELS;i++){
@@ -32,6 +34,13 @@ size_t mac_sound_render(MacRuntime*r,int16_t *out,size_t frames){
    int value=mac_sound_sample(r,c);
    if(mac_cpu_halted(r->cpu))return f;
    value=value*(int)c->amp/255;left+=value*(int)c->left/256;right+=value*(int)c->right/256;
+  }
+  if(trace){
+   unsigned peak=(unsigned)(left<0?-left:left),right_peak=(unsigned)(right<0?-right:right);
+   if(right_peak>peak)peak=right_peak;
+   r->sound->rendered_frames++;
+   if(left>32767 || left< -32768 || right>32767 || right< -32768)r->sound->clipped_frames++;
+   if(peak>r->sound->peak_absolute)r->sound->peak_absolute=peak;
   }
   out[f*2]=clamp(left);out[f*2+1]=clamp(right);
  }

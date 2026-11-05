@@ -96,6 +96,9 @@ Evidence IDs are retained in the loop record. CPU traces are separate evidence.
   offscreen buffers, fonts, and direct framebuffer writes used by target games.
 - [ ] R05 Implement Sound Manager behavior, mixing, timing, callbacks, and
   independent media decoding. Test synchronization and resource cleanup.
+  For the MI1 SCUMM Bar opening, record a fresh note trace and correlate it
+  with listening: the reported first ~20 seconds sounded doubled before
+  settling. Zero clipped samples or a healthy host queue alone do not pass.
 - [ ] R06 Add PowerPC/PEF/CFM and Mixed Mode only against selected targets and
   separate tests; a 68k pass does not establish PPC compatibility.
 - [ ] R07 Make the independent runtime the application launch path. Remove

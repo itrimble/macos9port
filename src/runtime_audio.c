@@ -67,13 +67,23 @@ int runtime_audio_pump(RuntimeAudio *audio, MacRuntime *rt,
                 (double)audio->trace_frames * 1000.0 / interval_ms : 0.0;
             double queue_avg = audio->trace_queue_samples ?
                 (double)audio->trace_queue_frames_total / audio->trace_queue_samples : 0.0;
-            fprintf(stderr, "audio-trace ms=%llu host-queued-frames=%u submitted=%llu callback-budget=%zu last-pump-ticks=%llu last-pump-frames=%u pump-count=%u pump-avg-us=%.3f pump-max-us=%.3f mixed-frames=%llu mixed-fps=%.1f queue-samples=%llu queue-avg-frames=%.1f queue-min-frames=%u queue-max-frames=%u empty-queue-checks=%u\n",
+            uint64_t rendered = rt->sound->rendered_frames;
+            uint64_t clipped = rt->sound->clipped_frames;
+            uint64_t interval_rendered = rendered - audio->trace_rendered_frames;
+            uint64_t interval_clipped = clipped - audio->trace_clipped_frames;
+            double clip_rate = interval_rendered ?
+                (double)interval_clipped * 100.0 / interval_rendered : 0.0;
+            audio->trace_rendered_frames = rendered;
+            audio->trace_clipped_frames = clipped;
+            fprintf(stderr, "audio-trace ms=%llu host-queued-frames=%u submitted=%llu callback-budget=%zu last-pump-ticks=%llu last-pump-frames=%u pump-count=%u pump-avg-us=%.3f pump-max-us=%.3f mixed-frames=%llu mixed-fps=%.1f clip-frames=%llu clip-rate-pct=%.3f peak-abs=%u queue-samples=%llu queue-avg-frames=%.1f queue-min-frames=%u queue-max-frames=%u empty-queue-checks=%u\n",
                     (unsigned long long)now, bytes / 4,
                     (unsigned long long)audio->submitted_frames, callback_budget,
                     (unsigned long long)audio->last_pump_ticks, audio->last_pump_frames,
                     audio->trace_pumps, avg_us, max_us,
                     (unsigned long long)audio->trace_frames,
                     mixed_fps,
+                    (unsigned long long)interval_clipped, clip_rate,
+                    rt->sound->peak_absolute,
                     (unsigned long long)audio->trace_queue_samples,
                     queue_avg,
                     audio->trace_queue_min,

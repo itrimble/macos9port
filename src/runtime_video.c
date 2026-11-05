@@ -9,6 +9,7 @@
 
 #define GUEST_CPU_CLOCK_HZ UINT64_C(16000000)
 #define GUEST_CPU_MAX_CATCHUP_US UINT64_C(33333)
+#define GUEST_CLOCK_GAP_THRESHOLD_US UINT64_C(250000)
 #define GUEST_CPU_INSTRUCTION_QUANTUM 10000u
 
 #ifndef OSPI_VIDEO_CONVERSION_TEST
@@ -33,6 +34,13 @@ static uint64_t guest_cycle_slice(uint64_t wall_elapsed_us,
     return slice_us * GUEST_CPU_CLOCK_HZ / 1000000;
 }
 
+static int guest_clock_rebase_after_gap(uint64_t gap_us, uint64_t last_elapsed_us,
+                                        uint64_t *guest_elapsed_us) {
+    if (!guest_elapsed_us || gap_us <= GUEST_CLOCK_GAP_THRESHOLD_US) return 0;
+    *guest_elapsed_us = last_elapsed_us;
+    return 1;
+}
+
 /* This backend accelerates presentation only. Guest QuickDraw and framebuffer
  * conversion still run on the CPU; it is not full guest graphics acceleration. */
 static int elapsed_microseconds(uint64_t counter, uint64_t frequency, uint64_t base, uint64_t *out) {
@@ -49,10 +57,23 @@ static int elapsed_microseconds(uint64_t counter, uint64_t frequency, uint64_t b
 static int run_guest_worker(void *context) {
     GuestWorker *worker = context;
     MacRuntime *rt = worker->rt;
+    uint64_t last_wall_counter = worker->began, last_elapsed_us = 0;
     uint64_t trace_ticks = SDL_GetTicks(), trace_instructions = rt->instructions;
     uint64_t trace_cycles = mac_cpu_cycles(rt->cpu);
     worker->result = 4;
     while (!SDL_AtomicGet(&worker->stop)) {
+        uint64_t wall_counter = SDL_GetPerformanceCounter();
+        uint64_t gap_us = 0;
+        if (wall_counter >= last_wall_counter)
+            elapsed_microseconds(wall_counter - last_wall_counter,
+                worker->frequency, 0, &gap_us);
+        if (guest_clock_rebase_after_gap(gap_us, last_elapsed_us,
+                                         &worker->guest_elapsed_us)) {
+            worker->began += wall_counter - last_wall_counter;
+            fprintf(stderr, "Guest clock paused across host scheduling gap (%llu ms); dropped catch-up debt.\n",
+                    (unsigned long long)(gap_us / 1000));
+        }
+        last_wall_counter = wall_counter;
         SDL_LockMutex(worker->lock);
         if (rt->instructions >= worker->budget || mac_cpu_halted(rt->cpu)) {
             worker->result = mac_cpu_halted(rt->cpu) ? (rt->exited ? 0 : 3) : 4;
@@ -60,7 +81,7 @@ static int run_guest_worker(void *context) {
             break;
         }
         uint64_t now_us;
-        if (elapsed_microseconds(SDL_GetPerformanceCounter() - worker->began,
+        if (elapsed_microseconds(wall_counter - worker->began,
                 worker->frequency, worker->base_clock, &now_us) || mac_time_set(rt, now_us)) {
             mac_cpu_halt(rt->cpu, "Host monotonic clock is unavailable or overflowed.");
             worker->result = 3;
@@ -68,6 +89,7 @@ static int run_guest_worker(void *context) {
             break;
         }
         uint64_t elapsed_us = now_us - worker->base_clock;
+        last_elapsed_us = elapsed_us;
         uint64_t cycle_budget = guest_cycle_slice(elapsed_us, &worker->guest_elapsed_us);
         rt->ticks = worker->base_ticks + (uint32_t)((elapsed_us / 1000000) * 60 +
                                                     (elapsed_us % 1000000) * 60 / 1000000);

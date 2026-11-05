@@ -296,6 +296,23 @@ perceptually correct. Comparison to the supplied YouTube reference remains
 unavailable because fetch is throttled. Ian's reported doubled opening notes
 still need his listening acceptance against this fresh run.
 
+Ian's latest live report: in the SCUMM Bar, the opening sounded as though each
+note played twice for about 20 seconds, then the background music became mostly
+acceptable, though imperfect. A subsequent fresh trace showed `clip-frames=0`
+and `peak-abs=28568` in the first ten-second intervals, with queue averages
+near 2,047/2,048 frames. That rules out clipping in those intervals only; it
+does not explain or reproduce the reported doubled notes. The first note events
+in that run began around guest time 2.7 seconds on three different channels;
+this is not evidence of duplicate commands or of correct audible music.
+
+The same capture's presented FPS returned to 60 after intentional long host
+pauses. A >250 ms worker-loop gap now rebases the guest clock and drops catch-up
+debt. Tests cover the threshold and ensure a paused interval does not trigger
+catch-up; this protects resumed sessions, but is unrelated to the SCUMM Bar
+audio symptom. Continue with a fresh, uninterrupted SCUMM Bar run and compare
+the user-reported segment while collecting note events and actual host queue
+health. The sound remains unaccepted.
+
 Validation after these instrumentation changes: `BUILDFLEET_LOCAL=1 make
 test` passed all listed C tests, `BUILDFLEET_LOCAL=1 make runtime` linked
 successfully, and `git diff --check` passed. macOS 26.6.2 arm64, Apple clang

@@ -23,7 +23,12 @@ typedef struct {
  MacSoundDouble double_buffer;
  MacSoundCommand queue[MAC_SOUND_QUEUE];
 } MacSoundChannel;
-struct MacSoundState { MacSoundChannel channels[MAC_SOUND_CHANNELS];int callback_active; };
+struct MacSoundState {
+ MacSoundChannel channels[MAC_SOUND_CHANNELS];
+ uint64_t rendered_frames,clipped_frames;
+ uint32_t peak_absolute;
+ int callback_active;
+};
 int mac_sound_fail(MacRuntime *rt,const char *reason);
 int mac_sound_range(MacRuntime *rt,uint32_t p,size_t n,int aligned);
 int mac_sound_command(MacRuntime *rt,MacSoundChannel *channel,MacSoundCommand command);
