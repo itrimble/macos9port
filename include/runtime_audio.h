@@ -7,7 +7,12 @@ typedef struct {
     uint64_t submitted_frames;
     uint64_t last_trace_ticks;
     uint64_t last_pump_us;
+    uint64_t last_pump_ticks;
     uint32_t last_pump_frames;
+    uint64_t trace_frames, trace_pump_ticks_total, trace_pump_ticks_max;
+    uint64_t trace_queue_frames_total, trace_queue_samples;
+    uint32_t trace_pumps, trace_empty_queue_checks;
+    uint32_t trace_queue_min, trace_queue_max;
 } RuntimeAudio;
 int runtime_audio_open(RuntimeAudio *audio);
 int runtime_audio_pump(RuntimeAudio *audio, MacRuntime *rt,

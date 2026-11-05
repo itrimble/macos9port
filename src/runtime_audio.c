@@ -29,6 +29,9 @@ int runtime_audio_open(RuntimeAudio *audio) {
         SDL_SetError("Audio device did not provide the requested PCM format");
         return -1;
     }
+    fprintf(stderr, "Audio output: driver=%s rate=%dHz channels=%u buffer=%u frames\n",
+            SDL_GetCurrentAudioDriver() ? SDL_GetCurrentAudioDriver() : "unknown",
+            obtained.freq, obtained.channels, obtained.samples);
     SDL_PauseAudioDevice(audio->device, 0);
     return 0;
 }
@@ -48,14 +51,38 @@ int runtime_audio_pump(RuntimeAudio *audio, MacRuntime *rt,
         return -1;
     }
     unsigned available = AUDIO_TARGET_FRAMES - bytes / 4;
-    if (getenv("OSPI_AUDIO_TRACE")) {
+    int trace = getenv("OSPI_AUDIO_TRACE") != NULL;
+    if (trace) {
         uint64_t now = SDL_GetTicks();
         if (!audio->last_trace_ticks || now - audio->last_trace_ticks >= 1000) {
+            uint64_t interval_ms = audio->last_trace_ticks ? now - audio->last_trace_ticks : 0;
             audio->last_trace_ticks = now;
-            fprintf(stderr, "audio-trace ms=%llu host-queued-frames=%u submitted=%llu callback-budget=%zu last-pump-us=%llu last-pump-frames=%u\n",
+            uint64_t frequency = SDL_GetPerformanceFrequency();
+            double avg_us = audio->trace_pumps && frequency ?
+                (double)audio->trace_pump_ticks_total * 1000000.0 /
+                    ((double)frequency * audio->trace_pumps) : 0.0;
+            double max_us = frequency ?
+                (double)audio->trace_pump_ticks_max * 1000000.0 / frequency : 0.0;
+            double mixed_fps = interval_ms ?
+                (double)audio->trace_frames * 1000.0 / interval_ms : 0.0;
+            double queue_avg = audio->trace_queue_samples ?
+                (double)audio->trace_queue_frames_total / audio->trace_queue_samples : 0.0;
+            fprintf(stderr, "audio-trace ms=%llu host-queued-frames=%u submitted=%llu callback-budget=%zu last-pump-ticks=%llu last-pump-frames=%u pump-count=%u pump-avg-us=%.3f pump-max-us=%.3f mixed-frames=%llu mixed-fps=%.1f queue-samples=%llu queue-avg-frames=%.1f queue-min-frames=%u queue-max-frames=%u empty-queue-checks=%u\n",
                     (unsigned long long)now, bytes / 4,
                     (unsigned long long)audio->submitted_frames, callback_budget,
-                    (unsigned long long)audio->last_pump_us, audio->last_pump_frames);
+                    (unsigned long long)audio->last_pump_ticks, audio->last_pump_frames,
+                    audio->trace_pumps, avg_us, max_us,
+                    (unsigned long long)audio->trace_frames,
+                    mixed_fps,
+                    (unsigned long long)audio->trace_queue_samples,
+                    queue_avg,
+                    audio->trace_queue_min,
+                    audio->trace_queue_max,
+                    audio->trace_empty_queue_checks);
+            audio->trace_frames = audio->trace_pump_ticks_total = audio->trace_pump_ticks_max = 0;
+            audio->trace_queue_frames_total = audio->trace_queue_samples = 0;
+            audio->trace_queue_min = audio->trace_queue_max = 0;
+            audio->trace_pumps = audio->trace_empty_queue_checks = 0;
             for (unsigned i = 0; i < MAC_SOUND_CHANNELS; i++) {
                 const MacSoundChannel *c = &rt->sound->channels[i];
                 if (!c->address) continue;
@@ -66,6 +93,14 @@ int runtime_audio_pump(RuntimeAudio *audio, MacRuntime *rt,
                         (unsigned long long)c->phase, (unsigned long long)c->rate);
             }
         }
+        audio->trace_pumps++;
+        uint32_t queued_frames = bytes / 4;
+        audio->trace_queue_frames_total += queued_frames;
+        audio->trace_queue_samples++;
+        if (audio->trace_queue_samples == 1 || queued_frames < audio->trace_queue_min)
+            audio->trace_queue_min = queued_frames;
+        if (queued_frames > audio->trace_queue_max) audio->trace_queue_max = queued_frames;
+        if (!queued_frames) audio->trace_empty_queue_checks++;
     }
     int16_t pcm[AUDIO_CHUNK_FRAMES * 2];
     for (unsigned work = 0; available && work < AUDIO_TARGET_FRAMES / AUDIO_CHUNK_FRAMES; work++) {
@@ -89,10 +124,17 @@ int runtime_audio_pump(RuntimeAudio *audio, MacRuntime *rt,
     }
     uint64_t elapsed = SDL_GetPerformanceCounter() - pump_started;
     uint64_t frequency = SDL_GetPerformanceFrequency();
+    audio->last_pump_ticks = elapsed;
     audio->last_pump_us = frequency ? elapsed / frequency * UINT64_C(1000000) +
         elapsed % frequency * UINT64_C(1000000) / frequency : 0;
+    if (trace) {
+        audio->trace_pump_ticks_total += elapsed;
+        if (elapsed > audio->trace_pump_ticks_max)
+            audio->trace_pump_ticks_max = elapsed;
+    }
     uint64_t submitted = audio->submitted_frames - submitted_before;
     audio->last_pump_frames = submitted > UINT32_MAX ? UINT32_MAX : (uint32_t)submitted;
+    if (trace) audio->trace_frames += submitted;
     return 0;
 }
 void runtime_audio_close(RuntimeAudio *audio) {

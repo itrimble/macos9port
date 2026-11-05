@@ -10,8 +10,9 @@ static void trace_note(MacRuntime *r, MacSoundChannel *c, MacSoundCommand cmd,
                        unsigned note, unsigned amplitude) {
  if (!getenv("OSPI_SOUND_NOTE_TRACE") || note_trace_count >= 4096) return;
  unsigned slot=(unsigned)(c-r->sound->channels);
- fprintf(stderr,"sound-note event=%llu channel=%u command=%u note=%u amplitude=%u playing=%d phase=%llu rate=%llu wait=%u queued=%u\n",
-         (unsigned long long)note_trace_count++,slot,cmd.command,note,amplitude,
+ fprintf(stderr,"sound-note guest-us=%llu event=%llu channel=%u command=%u duration-half-ms=%u note=%u amplitude=%u playing=%d phase=%llu rate=%llu wait=%u queued=%u\n",
+         (unsigned long long)r->clock_us,(unsigned long long)note_trace_count++,
+         slot,cmd.command,cmd.param1,note,amplitude,
          c->playing,(unsigned long long)c->phase,(unsigned long long)c->rate,
          c->wait_frames,c->count);
 }

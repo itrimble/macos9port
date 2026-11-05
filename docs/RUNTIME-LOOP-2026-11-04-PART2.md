@@ -271,3 +271,33 @@ listed C tests; `BUILDFLEET_LOCAL=1 make runtime` reported up to date;
 `8a22bba30fe1b47705c73d56ca177f71d44843cbe2bd1e665ab2a649c4f62d66`.
 At this record the source changes were still uncommitted; dirty-diff SHA-256:
 `51beae23bc82b70ffd7ee66bbed8059d44779455c37fa977042d2b235743c616`.
+
+## Audio trace with queue-depth sampling
+
+The previous per-call timer rounded each sub-microsecond pump down to zero.
+The trace now accumulates raw performance-counter ticks, reports fractional
+average/max pump duration, captures queue-depth extrema/average, and records
+the negotiated CoreAudio rate. Sound-note events now include guest time and
+the command's half-millisecond duration.
+
+Fresh `Monkey Island (Queue Trace)` process PID 22588, launched from the same
+MI1 resource with `OSPI_AUDIO_TRACE=1 OSPI_SOUND_NOTE_TRACE=1`. CoreAudio
+reported 48,000 Hz, stereo, 512-frame buffer. Once sound began, sampled
+intervals mixed 48,640–49,152 frames/sec; queue averages were 2,046.5–2,047.4
+of the 2,048-frame target. Each interval had 2–6 empty-queue observations
+among roughly 37,000–82,000 pump checks, indicating brief empty samples but no
+sustained queue starvation in this run. Guest intervals remained near 16 MHz
+and presentation near 60 FPS. The first 20 seconds of sound-note events had
+30 note starts; none matched the same pitch across separate channels within
+10 ms, and none repeated the same pitch on one channel within 10 ms. This
+rules out that narrow duplicate-command pattern in this capture; it does not
+prove the mixed waveform matches the original or that the opening music is
+perceptually correct. Comparison to the supplied YouTube reference remains
+unavailable because fetch is throttled. Ian's reported doubled opening notes
+still need his listening acceptance against this fresh run.
+
+Validation after these instrumentation changes: `BUILDFLEET_LOCAL=1 make
+test` passed all listed C tests, `BUILDFLEET_LOCAL=1 make runtime` linked
+successfully, and `git diff --check` passed. macOS 26.6.2 arm64, Apple clang
+21.0.0, SDL2 2.32.74. Runtime artifact SHA-256:
+`7f2df4fde98558d8e0df7b28fa9f629c90c0bba673babb76f820f2ffdfa52eed`.
