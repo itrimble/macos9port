@@ -465,12 +465,30 @@ sampling interval, but the measured underruns remained rare. The runtime
 artifact SHA-256 is
 `fc0a8e868c9c6a726781791245b618a3f012078bfc3a1809e6dcbae7faa01196`.
 
-Ian has not yet confirmed whether this build fixes the audible doubled notes,
-stutter, or pacing. The new buffer adds up to about 85 ms of audio latency, so
-sound-effect sync needs hands-on review as well.
+Ian's listening report: at the SCUMM Bar, notes in the opening music sounded
+doubled for about 20 seconds; the background music then sounded mostly alright
+and later returned to normal. This is a subjective report, not a loopback
+recording. The new buffer adds up to about 85 ms of audio latency, so
+sound-effect sync still needs hands-on review.
 
 Validation after these instrumentation changes: `BUILDFLEET_LOCAL=1 make
 test` passed all listed C tests, `BUILDFLEET_LOCAL=1 make runtime` linked
 successfully, and `git diff --check` passed. macOS 26.6.2 arm64, Apple clang
 21.0.0, SDL2 2.32.74. Runtime artifact SHA-256:
 `7f2df4fde98558d8e0df7b28fa9f629c90c0bba673babb76f820f2ffdfa52eed`.
+
+### Follow-up callback recovery and Castle loader trace
+
+After the MI1 process was resumed from a deliberate pause, one trace interval
+recorded 191,745 callback frames/sec, an empty ring and 102,400 underrun
+frames. Within the next five seconds, two intervals returned to 47,616 and
+48,016 callback frames/sec with zero underruns; presentation stayed at 60 FPS.
+This transient followed process resume and does not establish the cause of
+Ian's earlier doubled notes.
+
+Castle of Dr. Brain was launched from its installed OS Pi volume using the
+direct runtime. Its windowed startup reaches the game's own `Can't load !??`
+alert. The virtual volume includes `RESOURCE.MAP`, `RESOURCE.000` through
+`.003`, `INTERP.TXT`, and screen/texture data. Trace-mode guest file and
+resource-open names, results, and sizes were added in commit `73dff13` to
+identify the exact failed request. The Castle launch produced no audio frames.
