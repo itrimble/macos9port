@@ -404,6 +404,21 @@ successfully (the linker emitted its existing section-alignment warning).
 The full test suite passed before reverting; tests were not rerun because the
 final source matches the prior committed implementation.
 
+### Later live sample
+
+At host time 857–858 seconds, the same pre-revert process again reported only
+35.6–38.2k consumed frames/sec; one interval ended with zero queued frames and
+12–15 empty-queue observations. Guest execution remained 15.74–16.71 MHz and
+presentation 60 FPS. This disproves treating the earlier 300–400 second
+48k-rate period as a sustained recovery. A five-second macOS `sample` captured
+the main thread waiting in Metal `nextDrawable` for vsync, while the guest
+worker mostly slept at its 1 ms pacing point and spent a minority of samples
+in guest CPU execution; audio pumping and mixing were sparse. This does not
+show CPU saturation or identify why queue-balanced output rate varies. Sample:
+`/tmp/ospi-mi1-after-audio-scheduling.sample`; trace:
+`/tmp/ospi-mi1-audio-batch256.log`. The live PID remains on the experimental
+binary; it was not restarted or altered to preserve the running game state.
+
 Validation after these instrumentation changes: `BUILDFLEET_LOCAL=1 make
 test` passed all listed C tests, `BUILDFLEET_LOCAL=1 make runtime` linked
 successfully, and `git diff --check` passed. macOS 26.6.2 arm64, Apple clang
