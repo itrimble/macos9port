@@ -36,18 +36,22 @@ The C11/SDL2 desktop now routes extracted CODE-resource applications to our
 development runtime; unsupported archive formats retain the older Systemless
 fallback. Our runtime combines Musashi instruction execution with independently
 implemented loading and partial Macintosh API services. Original game startup
-code executes, but no target is playable. SDL presentation is distinct from
-guest graphics acceleration. Networking, media, sound, and saves remain absent.
+code executes, but no target has passed sustained play and save/reload. MI1 has
+responsive controls and audible music/effects, with an opening music duplication
+report still under investigation. SDL presentation is distinct from guest
+graphics acceleration. Networking and media remain unimplemented.
 See [the first implementation loop](RUNTIME-LOOP-2026-11-04.md) for evidence,
 limitations, exact artifacts, and the next reproducible steps.
 
-REA 6.8.0 was invoked through its CLI. Artifact inspection rejected the local
-`QuickTime.img_.sit_.bin` as `unsupported_target`; no executable analysis resulted.
-REA tools are absent from this agent session. Its current doctor reports stale
-Codex registration, a stale shared skill copy, and no configured native analysis
-provider; no setup or global configuration change was made. Earlier REA ZIP
-inventories succeeded for Monkey Island 2 and Castle of Dr. Brain; their
-Evidence IDs are retained in the loop record. CPU traces are separate evidence.
+On 4 November 2026, `BUILDFLEET_LOCAL=1 make test` passed the complete local C
+suite. `BUILDFLEET_LOCAL=1 make runtime` reported no work. REA CLI 6.8.0 matches
+the npm release checked that day; its Codex registration is aligned, while its
+shared skill copy is stale and the live MCP server is unknown. `rea analyze
+build/ospi-runtime` returned `provider_unavailable` because no native analysis
+provider is configured. No REA setup or global configuration change was made.
+Earlier REA ZIP inventories succeeded for Monkey Island 2 and Castle of Dr.
+Brain; their Evidence IDs are retained in the loop record. CPU traces are
+separate evidence.
 
 ## 0. Clean-room boundary and target identity
 
@@ -127,8 +131,8 @@ Evidence IDs are retained in the loop record. CPU traces are separate evidence.
 
 | Target | Page-level evidence | Required acceptance | Current result |
 | --- | --- | --- | --- |
-| Secret of Monkey Island | Macintosh minimum: 68020, 2 MB, System 6.0.7+, color display, hard disk | Original executable, scene/input/audio checks, save/reload | Desktop launch reaches gameplay; Ian confirmed mouse interaction, door animation, and its sound effect. On this callback-ring build he reports SCUMM Bar music initially sounded doubled for about 20 seconds, then mostly alright before returning to normal. Trace showed a 754 ms scheduling gap, 7 FPS, and 34,304 callback underrun frames near startup, but no duplicate same-pitch commands; this is correlation only. Across 245 later audio intervals, producer median was 48,091 frames/sec and callback median 48,063, with 4,096 underrun frames across six intervals (about 85 ms) and 131 clipped samples total. Guest clock median was 16.39 MHz (15.49–17.29); presenter median 60 FPS (minimum 52.5). Music fidelity, startup behavior, save/reload, and hands-on acceptance remain open. Metal accelerates presentation only; guest QuickDraw still runs on CPU |
-| Monkey Island 2 | Macintosh minimum: 16 MHz 68020, 2 MB, System 6.0.7+, 256-color display | Scene/music transitions, smoothing, save/reload | Fresh latest-runtime window reaches the original Press Return prompt, then the Voodoo recipe lookup. In a disposable copy, 50/38 was rejected for Warts and 27/12 was rejected for Worms; the public answer table is labeled for the classic floppy release and does not resolve this Mac copy's wheel. No gameplay yet. Previous run held 16.45 MHz median guest clock (15.98–17.1), 54–60.9 presenter FPS, and 46.2–49k queued audio frames/sec, with manual lookup, gameplay/audio acceptance, and save/reload open |
+| Secret of Monkey Island | Macintosh minimum: 68020, 2 MB, System 6.0.7+, color display, hard disk | Original executable, scene/input/audio checks, save/reload | Ian confirmed mouse interaction, door animation, and its sound effect. SCUMM Bar music initially sounded doubled for about 20 seconds, then mostly okay before returning to normal. The stale Finder bundle was rebuilt after closing a disposable game copy; its runtime hash now matches standalone (`3e1a78c0…224ff7c`) and its code signature verifies. A fresh trace on the rebuilt runtime measured about 15.9–16.2 MHz and 59–60 FPS, with zero underruns or clipped frames after ring priming. Ian has not listened to this build yet. Finder-based launch, audio fidelity, save/reload, and hands-on acceptance remain open. Metal accelerates presentation only; guest QuickDraw still runs on CPU |
+| Monkey Island 2 | Macintosh minimum: 16 MHz 68020, 2 MB, System 6.0.7+, 256-color display | Scene/music transitions, smoothing, save/reload | Fresh runtime reaches the Voodoo recipe lookup. Five disposable-copy entries failed: 50/38 Warts; 27/12 Worms; 26/17 Scurvy (Breath Mints + Boxes of Voodoo Helper); 38/17 Scurvy (Bloated Ticks + Servings of Fruit Cocktail); 56/16 Gout (Grave Digger's Socks + Servings of Fruit Cocktail). Generic wheel/index mapping does not verify this Mac floppy copy; Mac floppy/CD boot paths differ. One isolated run logged 324 ms and 442 ms host scheduling gaps. No gameplay yet. Previous lookup run: 16.45 MHz median guest clock (15.98–17.1), 54–60.9 presenter FPS, 46.2–49k queued audio frames/sec. Correct Mac wheel mapping, gameplay/audio acceptance, and save/reload remain open |
 | Castle of Dr. Brain | 68k; 256 colors; saves in game directory | Puzzles, palette/input/audio, local save/reload | Creates resource-defined windows and paints its 384 by 198 startup picture; then stops at Alert 143, “Can't load !??”; no gameplay |
 | Classic QuickTime | Multiple 68k/PPC installers in compressed image | Open the actual guest player and play a video with sound, seeking, and correct timing | Required; not run in our runtime |
 | MacSurf | Correct identity/link needed | Selected browser's rendering and network flows | Identity pending |
