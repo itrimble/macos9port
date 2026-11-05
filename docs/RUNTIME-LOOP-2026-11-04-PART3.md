@@ -94,6 +94,15 @@ says any four digits work specifically for PC users; that instruction does not
 explain this Mac floppy build's rejected entries. Its on-screen prompt confirms
 the protected floppy path, so use Mac-edition wheel evidence before trying
 another value.
+
+The [generic classic-floppy answer table](https://steamcommunity.com/sharedfiles/filedetails/?id=440904699)
+lists Warts as 50/38 (along with another variant, 19/12). The captured game
+prompt already supplies the first quantity, 50, and leaves the second quantity
+blank. A focused next trial is therefore to enter only 38 in that blank, once,
+on a fresh disposable copy. The earlier `50/38` rejection note does not record
+whether both values were entered, so it does not rule out this interpretation;
+the table is still not Mac-specific proof.
+
 An isolated test reached the copy-protection prompt and was closed without
 touching the installed game or saves. During that run the guest worker logged
 324 ms and 442 ms host scheduling gaps and dropped catch-up debt. The installed
