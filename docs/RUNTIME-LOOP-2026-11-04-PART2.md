@@ -450,8 +450,24 @@ Live trace: `/tmp/ospi-mi1-callback-ring-final.log`; screenshot:
 insufficient and recorded recurring underruns; the 4,096-frame target is the
 current experiment. Validation: `BUILDFLEET_LOCAL=1 make test runtime` passed
 all listed C tests and linked the runtime. The linker emitted its existing
-common-section alignment warning. Source and live MI1 evidence use the final
-callback-ring build; no source commit has been made yet.
+common-section alignment warning. This implementation and its first live trace
+were committed as `3c4888c`.
+
+### Four-minute callback-ring run
+
+The same final-binary MI1 process remained live through host time 252 seconds,
+with the docks scene still visible. Across 245 audio intervals after the first
+20 seconds, producer median was 48,091 frames/sec and callback median 48,063.
+There were 4,096 underrun frames total across six intervals (about 85 ms) and
+131 clipped samples. Guest clock median was 16.39 MHz (15.49–17.29); presenter
+median was 60 FPS (minimum 52.5). The ring was briefly empty in at least one
+sampling interval, but the measured underruns remained rare. The runtime
+artifact SHA-256 is
+`fc0a8e868c9c6a726781791245b618a3f012078bfc3a1809e6dcbae7faa01196`.
+
+Ian has not yet confirmed whether this build fixes the audible doubled notes,
+stutter, or pacing. The new buffer adds up to about 85 ms of audio latency, so
+sound-effect sync needs hands-on review as well.
 
 Validation after these instrumentation changes: `BUILDFLEET_LOCAL=1 make
 test` passed all listed C tests, `BUILDFLEET_LOCAL=1 make runtime` linked
