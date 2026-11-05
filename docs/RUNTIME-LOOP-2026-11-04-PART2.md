@@ -419,6 +419,40 @@ show CPU saturation or identify why queue-balanced output rate varies. Sample:
 `/tmp/ospi-mi1-audio-batch256.log`. The live PID remains on the experimental
 binary; it was not restarted or altered to preserve the running game state.
 
+## MI1 callback audio output
+
+The queue-balance trace suggested a host playback-rate problem rather than
+clipping alone. Two standalone probes used SDL2/CoreAudio at 48 kHz: a bounded
+`SDL_QueueAudio` silence queue drained at about 33.5–35.3k frames/sec, while an
+SDL callback probe counted 47,956 frames/sec over 10.2 seconds. This isolated
+the shortfall to the queued-audio path on this host and motivated callback
+output with a PCM ring. No guest code runs on the callback thread.
+
+The runtime now uses an 8,192-frame single-producer/single-consumer PCM ring,
+primes to 4,096 queued frames (about 85 ms at 48 kHz), and lets the SDL callback
+copy frames into CoreAudio. The guest worker remains the sole producer and
+continues to poll Sound Manager callbacks. The callback only copies ring data,
+updates atomic cursors, and counts underruns.
+
+On the final rebuilt runtime, a fresh MI1 window reached the docks/Goat-sign
+scene. From host time 20 seconds through about 105 seconds, 104 audio intervals
+measured producer median 48,031 frames/sec and callback median 48,069
+frames/sec. The callback recorded 1,536 underrun frames in total (32 ms), with
+no more than 1,024 in any one interval; the mixer recorded 75 clipped samples
+in total across those intervals. Guest clock median was 16.29 MHz, range
+15.49–17.0 MHz; presentation median was 60 FPS, minimum 52.5. These counters
+are runtime evidence, not a human listening verdict. Ian's check of doubled
+notes, stutter, sync, and the new audio latency is still pending. Save/reload
+and full GPU acceleration are also unverified.
+
+Live trace: `/tmp/ospi-mi1-callback-ring-final.log`; screenshot:
+`/tmp/ospi-mi1-callback-ring-final.png`. Earlier 2,048-frame callback ring was
+insufficient and recorded recurring underruns; the 4,096-frame target is the
+current experiment. Validation: `BUILDFLEET_LOCAL=1 make test runtime` passed
+all listed C tests and linked the runtime. The linker emitted its existing
+common-section alignment warning. Source and live MI1 evidence use the final
+callback-ring build; no source commit has been made yet.
+
 Validation after these instrumentation changes: `BUILDFLEET_LOCAL=1 make
 test` passed all listed C tests, `BUILDFLEET_LOCAL=1 make runtime` linked
 successfully, and `git diff --check` passed. macOS 26.6.2 arm64, Apple clang
