@@ -67,6 +67,20 @@ int runtime_audio_pump(RuntimeAudio *audio, MacRuntime *rt,
                 (double)audio->trace_frames * 1000.0 / interval_ms : 0.0;
             double queue_avg = audio->trace_queue_samples ?
                 (double)audio->trace_queue_frames_total / audio->trace_queue_samples : 0.0;
+            uint64_t queue_frames = bytes / 4;
+            uint64_t consumed_frames = 0, expected_frames = 0, estimated_deficit_frames = 0;
+            int queue_balance_valid = audio->trace_have_queue_baseline &&
+                audio->trace_start_queue_frames + audio->trace_frames >= queue_frames;
+            if (interval_ms) {
+                expected_frames = (uint64_t)((long double)interval_ms * MAC_SOUND_RATE / 1000.0L);
+            }
+            if (queue_balance_valid) {
+                consumed_frames = audio->trace_start_queue_frames + audio->trace_frames - queue_frames;
+                if (expected_frames > consumed_frames)
+                    estimated_deficit_frames = expected_frames - consumed_frames;
+            }
+            audio->trace_start_queue_frames = queue_frames;
+            audio->trace_have_queue_baseline = 1;
             uint64_t rendered = rt->sound->rendered_frames;
             uint64_t clipped = rt->sound->clipped_frames;
             uint64_t interval_rendered = rendered - audio->trace_rendered_frames;
@@ -75,9 +89,15 @@ int runtime_audio_pump(RuntimeAudio *audio, MacRuntime *rt,
                 (double)interval_clipped * 100.0 / interval_rendered : 0.0;
             audio->trace_rendered_frames = rendered;
             audio->trace_clipped_frames = clipped;
-            fprintf(stderr, "audio-trace ms=%llu host-queued-frames=%u submitted=%llu callback-budget=%zu last-pump-ticks=%llu last-pump-frames=%u pump-count=%u pump-avg-us=%.3f pump-max-us=%.3f mixed-frames=%llu mixed-fps=%.1f clip-frames=%llu clip-rate-pct=%.3f peak-abs=%u queue-samples=%llu queue-avg-frames=%.1f queue-min-frames=%u queue-max-frames=%u empty-queue-checks=%u\n",
+            fprintf(stderr, "audio-trace ms=%llu host-queued-frames=%u submitted=%llu queue-balance=%s consumed-est=%llu consumed-fps=%.1f nominal-rate=%u deficit-est=%llu callback-budget=%zu last-pump-ticks=%llu last-pump-frames=%u pump-count=%u pump-avg-us=%.3f pump-max-us=%.3f mixed-frames=%llu mixed-fps=%.1f clip-frames=%llu clip-rate-pct=%.3f peak-abs=%u queue-samples=%llu queue-avg-frames=%.1f queue-min-frames=%u queue-max-frames=%u empty-queue-checks=%u\n",
                     (unsigned long long)now, bytes / 4,
-                    (unsigned long long)audio->submitted_frames, callback_budget,
+                    (unsigned long long)audio->submitted_frames,
+                    queue_balance_valid ? "valid" : "invalid",
+                    (unsigned long long)consumed_frames,
+                    interval_ms ? (double)consumed_frames * 1000.0 / interval_ms : 0.0,
+                    (unsigned)MAC_SOUND_RATE,
+                    (unsigned long long)estimated_deficit_frames,
+                    callback_budget,
                     (unsigned long long)audio->last_pump_ticks, audio->last_pump_frames,
                     audio->trace_pumps, avg_us, max_us,
                     (unsigned long long)audio->trace_frames,

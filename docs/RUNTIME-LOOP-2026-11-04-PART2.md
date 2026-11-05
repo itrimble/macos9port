@@ -313,6 +313,34 @@ audio symptom. Continue with a fresh, uninterrupted SCUMM Bar run and compare
 the user-reported segment while collecting note events and actual host queue
 health. The sound remains unaccepted.
 
+## Latest live trace review
+
+The still-running `Monkey Island (Resume Check)` process (PID 38219) is using
+the latest committed runtime. Its log includes deliberate host pauses, so it is
+not an acceptance run. Across 423 one-second-ish intervals after the pause,
+submitted audio varied from 5.3k to 58.4k frames/sec (median 36.2k), despite
+CoreAudio and the default USB output both reporting 48 kHz. Average queued
+depth remained near 2,047/2,048 frames; clipping was usually zero but reached
+23 frames in an interval. Guest execution and presentation were generally near
+16 MHz and 60 FPS after resuming. This discrepancy makes the current audio
+rate counter and queue-depth samples inadequate to prove steady playback.
+
+The first 22 seconds of guest-time note events in that run contained 23 note
+starts and no same-pitch starts within 500 ms. Several different pitches began
+on separate channels together, so the trace alone cannot identify which notes
+should be audible. These guest-command observations do not prove that the
+mixer waveform or host playback matches the reference.
+
+The latest build now reports SDL queue-balanced consumption (`consumed-fps`)
+and an estimated shortfall against the nominal 48 kHz rate (`deficit-est`), in
+addition to submitted frames. The estimate is valid only in rows labeled
+`queue-balance=valid`; confirm it with a clean run before drawing conclusions. A silent
+`SDL_AUDIODRIVER=dummy` attempt could not reach runtime audio because SDL's dummy
+video backend fails OS Pi's accelerated-renderer/vsync requirement, so it
+yielded no audio measurement. The running PID 38219 predates these metrics.
+Next, capture a fresh uninterrupted SCUMM Bar run and compare the metrics while
+keeping Ian's audible comparison as a separate gate.
+
 Validation after these instrumentation changes: `BUILDFLEET_LOCAL=1 make
 test` passed all listed C tests, `BUILDFLEET_LOCAL=1 make runtime` linked
 successfully, and `git diff --check` passed. macOS 26.6.2 arm64, Apple clang
