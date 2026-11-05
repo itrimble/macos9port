@@ -345,6 +345,29 @@ The running PID 38219 predates the new queue-balance metrics. Next, capture a
 fresh uninterrupted SCUMM Bar run and compare those metrics while keeping Ian's
 audible comparison as a separate gate.
 
+## Monkey Island 2 VBL retest
+
+The current source includes the 120-tick-per-poll VBL work limit, which keeps
+overdue work queued instead of halting. I launched the installed local MI2
+resource with the latest `build/ospi-runtime` and `OSPI_AUDIO_TRACE=1`, while
+SIGSTOP-preserving the MI1 session (PID 38219). The fresh MI2 process (PID
+65811) reached the original copy-protection prompt, accepted Return, and
+advanced to its manual lookup screen. It remained live for 115 seconds with no
+VBL catch-up halt. This verifies prompt input and recovery past the earlier
+failure point, not gameplay; no manual answer or bypass was attempted.
+
+Across 112 guest intervals, guest execution measured 15.98–17.1 MHz (median
+16.45 MHz). Presentation ranged 54–60.9 FPS, with no interval below 45 FPS.
+Across 95 valid queue-balance intervals after startup, consumed rate measured
+46.2–49k frames/sec (median 48.0k) against the negotiated 48 kHz device. The
+nominal deficit estimate was zero in half of those intervals and peaked at
+1,792 frames in the rest; no clipping was recorded. This is stronger steady
+state audio-queue evidence than the older `mixed-fps` counter, but the manual
+lookup screen does not exercise the game's soundtrack or establish audible
+fidelity. The live state is preserved at that screen for Ian's manual input.
+Trace: `/tmp/ospi-mi2-vbl-retest.log`; screen capture:
+`/tmp/ospi-mi2-after-return.png`.
+
 Validation after these instrumentation changes: `BUILDFLEET_LOCAL=1 make
 test` passed all listed C tests, `BUILDFLEET_LOCAL=1 make runtime` linked
 successfully, and `git diff --check` passed. macOS 26.6.2 arm64, Apple clang
