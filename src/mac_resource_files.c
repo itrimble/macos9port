@@ -4,6 +4,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -55,6 +56,7 @@ static int resolve(int root,const char *name,char path[256]) {
 static int read_fork(MacRuntime *rt,const char *name,MacOpenResource *out) {
     int root=mac_files_directory_fd(rt);if(root<0)return -35;
     char path[256];int error=resolve(root,name,path);
+    if(error && rt->trace)fprintf(stderr,"resource-open name=%s error=%d\n",name,error);
     if(error==-1){mac_cpu_halt(rt->cpu,"Native resource fork opening is unsupported; an exported .rsrc fork is required.");return -1;}
     if(error)return error;
     int fd=openat(root,path,O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC);
@@ -75,7 +77,9 @@ static int read_fork(MacRuntime *rt,const char *name,MacOpenResource *out) {
     if(!error && (mac_resource_open_container(&out->fork,bytes,size,NULL,0)||
                   mac_resource_count(&out->fork)>RESOURCE_LIMIT))error=-199;
     if(error){free(bytes);return error;}
-    out->bytes=bytes;out->device=st.st_dev;out->inode=st.st_ino;return 0;
+    out->bytes=bytes;out->device=st.st_dev;out->inode=st.st_ino;
+    if(rt->trace)fprintf(stderr,"resource-open name=%s file=%s bytes=%zu resources=%zu\n",name,path,size,mac_resource_count(&out->fork));
+    return 0;
 }
 static struct MacResourceChain *ensure(MacRuntime *rt) {
     if(!rt->resource_chain) {

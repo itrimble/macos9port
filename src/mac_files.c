@@ -5,6 +5,7 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -194,6 +195,7 @@ static int open_file(MacRuntime *rt, uint32_t pb) {
     char name[256];
     memcpy(name, mac_cpu_ram(cpu) + p + 1, length);
     name[length] = 0;
+    if (rt->trace) fprintf(stderr, "file-open name=%s permission=%u\n", name, permission);
     for (unsigned i = 0; i < length; i++)
         if ((unsigned char)name[i] < 32 || (unsigned char)name[i] >= 127 ||
             name[i] == '/' || name[i] == ':' || name[i] == '\\') return -50;
@@ -204,13 +206,18 @@ static int open_file(MacRuntime *rt, uint32_t pb) {
     /* No symlink traversal, including within the root. The directory descriptor
      * pins the selected directory; pathname races cannot redirect this open. */
     int fd = openat(s->directory, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
-    if (fd < 0) return errno == ENOENT ? -43 : errno == ELOOP || errno == EACCES ? -54 : -36;
+    if (fd < 0) {
+        int error = errno == ENOENT ? -43 : errno == ELOOP || errno == EACCES ? -54 : -36;
+        if (rt->trace) fprintf(stderr, "file-open-result name=%s error=%d\n", name, error);
+        return error;
+    }
     struct stat st;
     if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_size < 0 || st.st_size > INT32_MAX) {
         close(fd); return -50;
     }
     s->files[index] = (GuestFile){fd, 0};
     mac_cpu_write(cpu, pb + 24, 2, REF_BASE + index);
+    if (rt->trace) fprintf(stderr, "file-open-result name=%s ref=%d bytes=%lld\n", name, REF_BASE + index, (long long)st.st_size);
     return 0;
 }
 
