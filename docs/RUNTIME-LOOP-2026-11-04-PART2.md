@@ -368,6 +368,42 @@ fidelity. The live state is preserved at that screen for Ian's manual input.
 Trace: `/tmp/ospi-mi2-vbl-retest.log`; screen capture:
 `/tmp/ospi-mi2-after-return.png`.
 
+## MI1 queue-balance follow-up
+
+Ian listened to MI1 in the SCUMM Bar and reported that the opening sounded as if
+each note played twice for about 20 seconds; afterward the background music was
+mostly acceptable, though imperfect. He then reported the scene had become slow
+and background music had stopped, while a door interaction sound still played.
+This separates intermittent/music sequencing from the one-shot effect but does
+not identify the cause.
+
+Two fresh current-binary runs were captured with note and queue tracing. The
+shorter run (PID 77102, 185 seconds) had queue-balance consumption mostly around
+35–37k frames/sec. In the longer run (PID 79395, 678 seconds), queue-balance
+consumption was mostly 35–36k frames/sec through host time 300 seconds, then
+mostly 46–48.4k frames/sec from 300–400 seconds. At the latest sample it was
+48.2k frames/sec; presenter reported 60 FPS and guest execution 16.32 MHz.
+Queue depth averaged 2,047/2,048 frames and clipping was zero in that sample.
+The transition's cause is unknown. A 256-frame batching experiment was made
+while retaining 64-frame chunks when callback-driven sound was pending; its
+trace did not show an early improvement, so the source change was reverted and
+the original 64-frame implementation rebuilt. Do not attribute the later rate
+change to that experiment.
+
+The note trace recorded guest commands, not the final waveform, and overlapping
+same-pitch events can arise across channels. It cannot confirm or refute the
+reported doubled sound perceptually. The active process (PID 79395) was started
+from the experimental binary before reversion; it was left running to preserve
+Ian's game state. A newly launched process is needed to exercise the rebuilt
+original batching implementation. No audio fix or full acceleration is
+accepted; GPU-backed guest QuickDraw, audio fidelity, save/reload, and Ian's
+hands-on acceptance remain open.
+
+Validation: `BUILDFLEET_LOCAL=1 make runtime` linked the reverted source
+successfully (the linker emitted its existing section-alignment warning).
+The full test suite passed before reverting; tests were not rerun because the
+final source matches the prior committed implementation.
+
 Validation after these instrumentation changes: `BUILDFLEET_LOCAL=1 make
 test` passed all listed C tests, `BUILDFLEET_LOCAL=1 make runtime` linked
 successfully, and `git diff --check` passed. macOS 26.6.2 arm64, Apple clang
