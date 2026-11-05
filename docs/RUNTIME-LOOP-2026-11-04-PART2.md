@@ -486,9 +486,12 @@ frames. Within the next five seconds, two intervals returned to 47,616 and
 This transient followed process resume and does not establish the cause of
 Ian's earlier doubled notes.
 
-Castle of Dr. Brain was launched from its installed OS Pi volume using the
-direct runtime. Its windowed startup reaches the game's own `Can't load !??`
-alert. The virtual volume includes `RESOURCE.MAP`, `RESOURCE.000` through
-`.003`, `INTERP.TXT`, and screen/texture data. Trace-mode guest file and
-resource-open names, results, and sizes were added in commit `73dff13` to
-identify the exact failed request. The Castle launch produced no audio frames.
+Castle's windowed run opens `INTERP.TXT` (2,372 bytes); its `CODE/1`,
+`cnfg/128`, `gama/128`, `PICT/200`, and `ftbl/128` lookups succeed. It never
+requests `RESOURCE.MAP` or `RESOURCE.000`–`.003` before Alert 143, `Can't load
+!??`; audio output is zero. The installed files are present. This narrows the
+failure to startup before the SCI resource-map load, but does not identify why.
+REA 6.8.0's artifact inspector rejects the Mac resource fork; for `RESOURCE.MAP`
+it returns root-only inventory with no format semantics. Native decompilers are
+not configured here. The traced runtime SHA-256 is
+`3e1a78c009cb4aae776484b6c9e48dffe7f7491e20996467cfc33d69a224ff7c`.

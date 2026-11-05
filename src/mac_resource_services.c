@@ -1,6 +1,7 @@
 #include "mac_runtime.h"
 #include "mac_resource_chain.h"
 
+#include <stdio.h>
 #include <string.h>
 
 /* Independent Pascal ABI implementation for read-only resource forks.
@@ -59,6 +60,7 @@ static int load(MacRuntime *rt, MacHandle *h, const MacResource *r) {
 static int get_resource(MacRuntime *rt, uint32_t sp, int indexed, int picture, int one) {
     unsigned args = picture ? 2 : 6;
     int16_t id = (int16_t)mac_cpu_read(rt->cpu, sp, 2);
+    int16_t requested_id = id;
     uint32_t type = picture ? MAC_RESOURCE_TYPE('P', 'I', 'C', 'T') :
                              mac_cpu_read(rt->cpu, sp + 2, 4);
     MacResource r;
@@ -66,6 +68,10 @@ static int get_resource(MacRuntime *rt, uint32_t sp, int indexed, int picture, i
     int found=indexed ? id>0 && !mac_resource_chain_at(rt,type,(unsigned)id,one,&r,&owner) :
                        !mac_resource_chain_find(rt,type,id,one,&r,&owner);
     if(found)id=r.id;
+    if (rt->trace)
+        fprintf(stderr, "resource-find type=%08x requested-id=%d found=%d actual-id=%d indexed=%d picture=%d one=%d owner=%d\n",
+                type, requested_id, found, found ? id : requested_id,
+                indexed, picture, one, owner);
     if (!found) {
         int error = indexed || mac_resource_chain_type_exists(rt, type, one) ? RES_NOT_FOUND : 0;
         return result(rt, sp, args, 4, 0, error);
