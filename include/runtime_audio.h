@@ -6,6 +6,8 @@ typedef struct {
     int owns_audio;
     uint64_t submitted_frames;
     uint64_t last_trace_ticks;
+    uint64_t last_pump_us;
+    uint32_t last_pump_frames;
 } RuntimeAudio;
 int runtime_audio_open(RuntimeAudio *audio);
 int runtime_audio_pump(RuntimeAudio *audio, MacRuntime *rt,

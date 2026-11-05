@@ -242,3 +242,32 @@ perceived doubled notes. Added bounded `OSPI_SOUND_NOTE_TRACE=1` diagnostics
 for the first 4,096 sampled note commands, including channel, command, note,
 phase and rate, to identify overlapping note starts on the next fresh run.
 This symptom has not yet been reproduced with the new note-event trace.
+
+## Decoupled pacing and opening-music follow-up
+
+The guest CPU/audio loop now runs on its own SDL thread; the main thread owns
+SDL events and frame presentation. Runtime access and framebuffer snapshots
+are mutex-protected. The isolated `Monkey Island (Decoupled Test)` process
+(PID 93927) measured a 20-second sample averaging 16.14 MHz guest execution
+and 59.9 FPS presentation, with no intervals below 14 MHz or 45 FPS. A
+five-second macOS `sample` found the presentation thread mostly waiting for a
+Metal drawable; guest execution remained independent. This is host presentation
+acceleration and pacing evidence only, not GPU-accelerated QuickDraw.
+
+Ian's latest listening report narrows the remaining audio issue: the opening
+SCUMM Bar music sounded doubled for about 20 seconds, then mostly acceptable,
+though imperfect. Per-pump duration and submitted-frame counters were added to
+audio telemetry. The existing live process predates those counters, so they
+have not yet been observed in a fresh run. Do not infer an audio cause from
+the old log, its 16 MHz rate, or the host queue alone. Next, retain the user's
+live session, start a fresh labeled run when available, collect the new pump
+counters and bounded note trace during the same opening, and correlate both
+with Ian's listening report.
+
+Validation after the telemetry edit: `BUILDFLEET_LOCAL=1 make test` passed all
+listed C tests; `BUILDFLEET_LOCAL=1 make runtime` reported up to date;
+`git diff --check` passed. macOS 26.6.2, arm64, Apple clang 21.0.0, SDL2
+2.32.74. Runtime artifact SHA-256:
+`8a22bba30fe1b47705c73d56ca177f71d44843cbe2bd1e665ab2a649c4f62d66`.
+At this record the source changes were still uncommitted; dirty-diff SHA-256:
+`51beae23bc82b70ffd7ee66bbed8059d44779455c37fa977042d2b235743c616`.

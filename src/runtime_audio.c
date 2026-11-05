@@ -34,6 +34,8 @@ int runtime_audio_open(RuntimeAudio *audio) {
 }
 int runtime_audio_pump(RuntimeAudio *audio, MacRuntime *rt,
                        size_t callback_budget, size_t *callback_instructions) {
+    uint64_t pump_started = SDL_GetPerformanceCounter();
+    uint64_t submitted_before = audio->submitted_frames;
     *callback_instructions = 0;
     if (!rt->sound || mac_cpu_halted(rt->cpu)) return 0;
     if (!audio->device && runtime_audio_open(audio)) {
@@ -50,9 +52,10 @@ int runtime_audio_pump(RuntimeAudio *audio, MacRuntime *rt,
         uint64_t now = SDL_GetTicks();
         if (!audio->last_trace_ticks || now - audio->last_trace_ticks >= 1000) {
             audio->last_trace_ticks = now;
-            fprintf(stderr, "audio-trace ms=%llu host-queued-frames=%u submitted=%llu callback-budget=%zu\n",
+            fprintf(stderr, "audio-trace ms=%llu host-queued-frames=%u submitted=%llu callback-budget=%zu last-pump-us=%llu last-pump-frames=%u\n",
                     (unsigned long long)now, bytes / 4,
-                    (unsigned long long)audio->submitted_frames, callback_budget);
+                    (unsigned long long)audio->submitted_frames, callback_budget,
+                    (unsigned long long)audio->last_pump_us, audio->last_pump_frames);
             for (unsigned i = 0; i < MAC_SOUND_CHANNELS; i++) {
                 const MacSoundChannel *c = &rt->sound->channels[i];
                 if (!c->address) continue;
@@ -84,6 +87,12 @@ int runtime_audio_pump(RuntimeAudio *audio, MacRuntime *rt,
         audio->submitted_frames += frames;
         available -= frames;
     }
+    uint64_t elapsed = SDL_GetPerformanceCounter() - pump_started;
+    uint64_t frequency = SDL_GetPerformanceFrequency();
+    audio->last_pump_us = frequency ? elapsed / frequency * UINT64_C(1000000) +
+        elapsed % frequency * UINT64_C(1000000) / frequency : 0;
+    uint64_t submitted = audio->submitted_frames - submitted_before;
+    audio->last_pump_frames = submitted > UINT32_MAX ? UINT32_MAX : (uint32_t)submitted;
     return 0;
 }
 void runtime_audio_close(RuntimeAudio *audio) {

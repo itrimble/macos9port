@@ -11,6 +11,19 @@
 #define GUEST_CPU_MAX_CATCHUP_US UINT64_C(33333)
 #define GUEST_CPU_INSTRUCTION_QUANTUM 10000u
 
+#ifndef OSPI_VIDEO_CONVERSION_TEST
+typedef struct {
+    MacRuntime *rt;
+    RuntimeAudio *audio;
+    SDL_mutex *lock;
+    size_t budget;
+    uint64_t began, frequency, base_clock, guest_elapsed_us;
+    uint32_t base_ticks;
+    int audio_setup_failed, result;
+    SDL_atomic_t stop, done;
+} GuestWorker;
+#endif
+
 static uint64_t guest_cycle_slice(uint64_t wall_elapsed_us,
                                   uint64_t *guest_elapsed_us) {
     if (!guest_elapsed_us || wall_elapsed_us <= *guest_elapsed_us) return 0;
@@ -31,6 +44,84 @@ static int elapsed_microseconds(uint64_t counter, uint64_t frequency, uint64_t b
     *out = base + whole + fraction;
     return 0;
 }
+
+#ifndef OSPI_VIDEO_CONVERSION_TEST
+static int run_guest_worker(void *context) {
+    GuestWorker *worker = context;
+    MacRuntime *rt = worker->rt;
+    uint64_t trace_ticks = SDL_GetTicks(), trace_instructions = rt->instructions;
+    uint64_t trace_cycles = mac_cpu_cycles(rt->cpu);
+    worker->result = 4;
+    while (!SDL_AtomicGet(&worker->stop)) {
+        SDL_LockMutex(worker->lock);
+        if (rt->instructions >= worker->budget || mac_cpu_halted(rt->cpu)) {
+            worker->result = mac_cpu_halted(rt->cpu) ? (rt->exited ? 0 : 3) : 4;
+            SDL_UnlockMutex(worker->lock);
+            break;
+        }
+        uint64_t now_us;
+        if (elapsed_microseconds(SDL_GetPerformanceCounter() - worker->began,
+                worker->frequency, worker->base_clock, &now_us) || mac_time_set(rt, now_us)) {
+            mac_cpu_halt(rt->cpu, "Host monotonic clock is unavailable or overflowed.");
+            worker->result = 3;
+            SDL_UnlockMutex(worker->lock);
+            break;
+        }
+        uint64_t elapsed_us = now_us - worker->base_clock;
+        uint64_t cycle_budget = guest_cycle_slice(elapsed_us, &worker->guest_elapsed_us);
+        rt->ticks = worker->base_ticks + (uint32_t)((elapsed_us / 1000000) * 60 +
+                                                    (elapsed_us % 1000000) * 60 / 1000000);
+        size_t ran = 0;
+        if (worker->budget == SIZE_MAX) {
+            if (cycle_budget) ran = mac_runtime_run_cycles(rt, cycle_budget);
+        } else {
+            size_t remain = (size_t)(worker->budget - rt->instructions);
+            size_t quantum = remain < GUEST_CPU_INSTRUCTION_QUANTUM ? remain :
+                             GUEST_CPU_INSTRUCTION_QUANTUM;
+            if (quantum) ran = mac_runtime_run(rt, quantum);
+        }
+        if (!ran && (cycle_budget || worker->budget != SIZE_MAX) && !mac_cpu_halted(rt->cpu)) {
+            fprintf(stderr, "Guest CPU made no progress.\n");
+            worker->result = 3;
+            SDL_UnlockMutex(worker->lock);
+            break;
+        }
+        size_t audio_instructions = 0;
+        size_t audio_budget = rt->instructions < worker->budget ?
+            (size_t)(worker->budget - rt->instructions) : 0;
+        int audio_error = rt->sound && worker->audio_setup_failed ? -1 :
+            runtime_audio_pump(worker->audio, rt, audio_budget, &audio_instructions);
+        rt->instructions += audio_instructions;
+        if (audio_error) {
+            if (!mac_cpu_halted(rt->cpu)) mac_cpu_halt(rt->cpu, "Audio output could not process or submit PCM.");
+            fprintf(stderr, "%s\n", mac_cpu_error(rt->cpu));
+            worker->result = 3;
+            SDL_UnlockMutex(worker->lock);
+            break;
+        }
+        if (getenv("OSPI_AUDIO_TRACE")) {
+            uint64_t now = SDL_GetTicks();
+            if (now - trace_ticks >= 1000) {
+                uint64_t interval_ms = now - trace_ticks;
+                uint64_t cycle_delta = mac_cpu_cycles(rt->cpu) - trace_cycles;
+                fprintf(stderr, "guest-trace ms=%llu interval-ms=%llu instructions=%llu guest-cycles=%llu guest-MHz=%.2f guest-ticks=%u\n",
+                        (unsigned long long)now, (unsigned long long)interval_ms,
+                        (unsigned long long)(rt->instructions - trace_instructions),
+                        (unsigned long long)cycle_delta,
+                        (double)cycle_delta * 1000.0 / ((double)interval_ms * 1000000.0),
+                        rt->ticks);
+                trace_ticks = now;
+                trace_instructions = rt->instructions;
+                trace_cycles = mac_cpu_cycles(rt->cpu);
+            }
+        }
+        SDL_UnlockMutex(worker->lock);
+        if (!cycle_budget) SDL_Delay(1);
+    }
+    SDL_AtomicSet(&worker->done, 1);
+    return 0;
+}
+#endif
 
 static int frame_dimensions(const MacRuntime *rt, size_t *pixels) {
     size_t w = rt->screen_width, h = rt->screen_height;
@@ -242,6 +333,10 @@ int mac_runtime_window(MacRuntime *rt, const char *title, size_t budget) {
     uint32_t *pixels = NULL;
     int result = 5;
     RuntimeAudio audio = {0};
+    SDL_mutex *runtime_lock = NULL;
+    SDL_Thread *guest_thread = NULL;
+    GuestWorker worker = {0};
+    int worker_started = 0;
     if (!window || !renderer) {
         fprintf(stderr, "Accelerated guest presentation unavailable: %s\n", SDL_GetError());
         goto done;
@@ -258,27 +353,22 @@ int mac_runtime_window(MacRuntime *rt, const char *title, size_t budget) {
      * Apps without sound may still run if the host has no usable device. */
     int audio_setup_failed = runtime_audio_open(&audio) != 0;
     if (audio_setup_failed) fprintf(stderr, "Audio setup unavailable: %s\n", SDL_GetError());
-    uint64_t began = SDL_GetPerformanceCounter(), frequency = SDL_GetPerformanceFrequency();
-    uint64_t trace_ticks = SDL_GetTicks(), trace_instructions = rt->instructions;
-    uint64_t trace_cycles = mac_cpu_cycles(rt->cpu);
-    uint64_t trace_frames = 0;
-    uint64_t base_clock = rt->clock_us;
-    uint64_t guest_cycle_elapsed_us = 0;
-    uint32_t base_ticks = rt->ticks;
+    runtime_lock = SDL_CreateMutex();
+    if (!runtime_lock) {
+        fprintf(stderr, "Cannot create runtime lock: %s\n", SDL_GetError()); goto done;
+    }
     rt->modifiers = key_modifiers(SDL_GetModState(), mouse_down);
-    while (rt->instructions < budget && !mac_cpu_halted(rt->cpu)) {
-        uint64_t now_us;
-        if (elapsed_microseconds(SDL_GetPerformanceCounter() - began, frequency, base_clock, &now_us) ||
-            mac_time_set(rt, now_us)) {
-            mac_cpu_halt(rt->cpu, "Host monotonic clock is unavailable or overflowed.");
-            result = 3; goto done;
-        }
-        uint64_t elapsed_us = now_us - base_clock;
-        /* Preserve excess time as debt; a catch-up cap bounds one batch,
-         * not the guest's long-term CPU frequency. */
-        uint64_t cycle_budget = guest_cycle_slice(elapsed_us, &guest_cycle_elapsed_us);
-        rt->ticks = base_ticks + (uint32_t)((elapsed_us / 1000000) * 60 +
-                                           (elapsed_us % 1000000) * 60 / 1000000);
+    uint64_t present_trace_ticks = SDL_GetTicks(), presented_frames = 0;
+    worker = (GuestWorker){.rt = rt, .audio = &audio, .lock = runtime_lock, .budget = budget,
+        .began = SDL_GetPerformanceCounter(), .frequency = SDL_GetPerformanceFrequency(),
+        .base_clock = rt->clock_us, .base_ticks = rt->ticks,
+        .audio_setup_failed = audio_setup_failed};
+    guest_thread = SDL_CreateThread(run_guest_worker, "OS Pi guest CPU", &worker);
+    if (!guest_thread) {
+        fprintf(stderr, "Cannot start guest CPU worker: %s\n", SDL_GetError()); goto done;
+    }
+    worker_started = 1;
+    while (!SDL_AtomicGet(&worker.done)) {
         SDL_Event event;
         for (unsigned pending = 0; pending < 256 && SDL_PollEvent(&event); pending++) {
             if (event.type == SDL_QUIT || (event.type == SDL_WINDOWEVENT &&
@@ -286,6 +376,7 @@ int mac_runtime_window(MacRuntime *rt, const char *title, size_t budget) {
                 fprintf(stderr, "Guest window closed by user; gameplay acceptance not established.\n");
                 result = 6; goto done;
             }
+            SDL_LockMutex(runtime_lock);
             if (event.type == SDL_MOUSEMOTION) {
                 if (event.motion.xrel || event.motion.yrel) rt->cursor_obscured = 0;
                 mouse_point(rt, window, event.motion.x, event.motion.y);
@@ -307,82 +398,63 @@ int mac_runtime_window(MacRuntime *rt, const char *title, size_t budget) {
                 if (mouse_down) mac_runtime_post_event(rt, 2, 0, rt->modifiers, rt->mouse_x, rt->mouse_y);
                 mouse_down = 0;
             }
+            SDL_UnlockMutex(runtime_lock);
         }
-        if (budget == SIZE_MAX) {
-            if (cycle_budget && !mac_runtime_run_cycles(rt, cycle_budget) &&
-                !mac_cpu_halted(rt->cpu)) {
-                fprintf(stderr, "Guest CPU made no progress.\n"); result = 3; goto done;
-            }
-        } else {
-            size_t remain = (size_t)(budget - rt->instructions);
-            size_t quantum = remain < GUEST_CPU_INSTRUCTION_QUANTUM ? remain :
-                             GUEST_CPU_INSTRUCTION_QUANTUM;
-            if (quantum && !mac_runtime_run(rt, quantum) && !mac_cpu_halted(rt->cpu)) {
-                fprintf(stderr, "Guest CPU made no progress.\n"); result = 3; goto done;
-            }
+        SDL_LockMutex(runtime_lock);
+        if (sync_cursor(rt, &cursor)) {
+            SDL_UnlockMutex(runtime_lock); goto done;
         }
-        size_t audio_instructions = 0;
-        size_t audio_budget = rt->instructions < budget ? (size_t)(budget - rt->instructions) : 0;
-        int audio_error = rt->sound && audio_setup_failed ? -1 :
-            runtime_audio_pump(&audio, rt, audio_budget, &audio_instructions);
-        rt->instructions += audio_instructions;
-        if (audio_error) {
-            if (!mac_cpu_halted(rt->cpu)) mac_cpu_halt(rt->cpu, "Audio output could not process or submit PCM.");
-            fprintf(stderr, "%s\n", mac_cpu_error(rt->cpu));
-            result = 3;
-            goto done;
-        }
-        if (sync_cursor(rt, &cursor)) goto done;
         if (frame_dimensions(rt, &capacity)) {
+            SDL_UnlockMutex(runtime_lock);
             fprintf(stderr, "Guest changed to unsupported framebuffer geometry/depth.\n"); goto done;
         }
-        if (texture_width != rt->screen_width || texture_height != rt->screen_height) {
+        int frame_width = rt->screen_width, frame_height = rt->screen_height;
+        if (texture_width != frame_width || texture_height != frame_height) {
             uint32_t *replacement = malloc(capacity * sizeof *replacement);
             SDL_Texture *replacement_texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
-                SDL_TEXTUREACCESS_STREAMING, rt->screen_width, rt->screen_height);
+                SDL_TEXTUREACCESS_STREAMING, frame_width, frame_height);
             if (!replacement || !replacement_texture) {
-                free(replacement); SDL_DestroyTexture(replacement_texture);
+                free(replacement); SDL_DestroyTexture(replacement_texture); SDL_UnlockMutex(runtime_lock);
                 fprintf(stderr, "Guest framebuffer allocation failed: %s\n", SDL_GetError()); goto done;
             }
             free(pixels); SDL_DestroyTexture(texture);
             pixels = replacement; texture = replacement_texture;
-            texture_width = rt->screen_width; texture_height = rt->screen_height;
+            texture_width = frame_width; texture_height = frame_height;
         }
         if (copy_frame(rt, pixels, capacity)) {
+            SDL_UnlockMutex(runtime_lock);
             fprintf(stderr, "Guest framebuffer is outside emulated memory.\n"); goto done;
         }
+        SDL_UnlockMutex(runtime_lock);
         int width, height;
         if (SDL_GetRendererOutputSize(renderer, &width, &height)) {
             fprintf(stderr, "Cannot measure guest drawable: %s\n", SDL_GetError()); goto done;
         }
-        SDL_Rect dst = viewport(width, height, rt->screen_width, rt->screen_height);
-        if (SDL_UpdateTexture(texture, NULL, pixels, rt->screen_width * (int)sizeof *pixels) ||
+        SDL_Rect dst = viewport(width, height, frame_width, frame_height);
+        if (SDL_UpdateTexture(texture, NULL, pixels, frame_width * (int)sizeof *pixels) ||
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255) || SDL_RenderClear(renderer) ||
             SDL_RenderCopy(renderer, texture, NULL, &dst)) {
             fprintf(stderr, "Guest presentation failed: %s\n", SDL_GetError()); goto done;
         }
         SDL_RenderPresent(renderer);
         if (getenv("OSPI_AUDIO_TRACE")) {
-            trace_frames++;
+            presented_frames++;
             uint64_t now = SDL_GetTicks();
-            if (now - trace_ticks >= 1000) {
-                uint64_t interval_ms = now - trace_ticks;
-                uint64_t cycle_delta = mac_cpu_cycles(rt->cpu) - trace_cycles;
-                fprintf(stderr, "frame-trace ms=%llu interval-ms=%llu frames=%llu fps=%.1f guest-instructions=%llu guest-cycles=%llu guest-MHz=%.2f guest-ticks=%u\n",
+            if (now - present_trace_ticks >= 1000) {
+                uint64_t interval_ms = now - present_trace_ticks;
+                fprintf(stderr, "present-trace ms=%llu interval-ms=%llu frames=%llu fps=%.1f\n",
                         (unsigned long long)now, (unsigned long long)interval_ms,
-                        (unsigned long long)trace_frames,
-                        (double)trace_frames * 1000.0 / (double)interval_ms,
-                        (unsigned long long)(rt->instructions - trace_instructions),
-                        (unsigned long long)cycle_delta,
-                        (double)cycle_delta * 1000.0 / ((double)interval_ms * 1000000.0),
-                        rt->ticks);
-                trace_ticks = now;
-                trace_instructions = rt->instructions;
-                trace_cycles = mac_cpu_cycles(rt->cpu);
-                trace_frames = 0;
+                        (unsigned long long)presented_frames,
+                        (double)presented_frames * 1000.0 / (double)interval_ms);
+                present_trace_ticks = now;
+                presented_frames = 0;
             }
         }
     }
+    SDL_AtomicSet(&worker.stop, 1);
+    SDL_WaitThread(guest_thread, NULL);
+    worker_started = 0;
+    result = worker.result;
     if (mac_cpu_halted(rt->cpu)) {
         fprintf(stderr, "%s\n", mac_cpu_error(rt->cpu));
         result = rt->exited ? 0 : 3;
@@ -390,6 +462,11 @@ int mac_runtime_window(MacRuntime *rt, const char *title, size_t budget) {
         fprintf(stderr, "Instruction budget exhausted; gameplay unverified.\n"); result = 4;
     }
 done:
+    if (worker_started) {
+        SDL_AtomicSet(&worker.stop, 1);
+        SDL_WaitThread(guest_thread, NULL);
+    }
+    SDL_DestroyMutex(runtime_lock);
     if (audio.device) fprintf(stderr, "Audio submitted %llu stereo frames; audible playback unverified.\n",
                               (unsigned long long)audio.submitted_frames);
     runtime_audio_close(&audio);
