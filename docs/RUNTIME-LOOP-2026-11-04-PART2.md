@@ -465,11 +465,13 @@ sampling interval, but the measured underruns remained rare. The runtime
 artifact SHA-256 is
 `fc0a8e868c9c6a726781791245b618a3f012078bfc3a1809e6dcbae7faa01196`.
 
-Ian reports SCUMM Bar notes sounded doubled for about 20 seconds, then mostly
-alright and normal; this is subjective, not a loopback recording. The trace
-found no duplicate same-pitch commands, but captured a 754 ms gap, 7 FPS, and
-34,304 underrun frames near startup. That is a lead, not proof; later intervals
-recovered. The ring's 85 ms latency still needs hands-on effect-sync review.
+Ian reports SCUMM Bar music was audible and sounded doubled for about 20
+seconds, then mostly alright before returning to normal. This is subjective,
+not a loopback recording. The trace found no duplicate same-pitch commands,
+but captured a 754 ms gap, 7 FPS, and 34,304 underrun frames near startup.
+That is a lead, not proof; later intervals recovered. Startup scheduling,
+perceived doubling, and 85 ms ring latency need investigation; no audio fix is
+accepted.
 
 Validation after these instrumentation changes: `BUILDFLEET_LOCAL=1 make
 test` passed all listed C tests, `BUILDFLEET_LOCAL=1 make runtime` linked
