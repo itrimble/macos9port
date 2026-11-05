@@ -5,6 +5,7 @@
  * dev.os9.ca/techpubs/mac/Processes/Processes-78.html and Processes-95.html.
  * Poll only between CPU batches, never from within a CPU trap callback. */
 #define VBL_RETURN 0x1ff0u
+#define VBL_TICKS_PER_POLL 120u
 static int fail(MacRuntime*r,const char*s){mac_cpu_halt(r->cpu,s);return -1;}
 static int valid(MacRuntime*r,uint32_t p,size_t n){
     if((p&1)||p>mac_cpu_ram_size(r->cpu)||n>mac_cpu_ram_size(r->cpu)-p)
@@ -67,14 +68,19 @@ static int callback(MacRuntime*r,uint32_t task,size_t *ran,size_t limit){
 }
 size_t mac_vbl_poll(MacRuntime*r,size_t budget){
     size_t ran=0;
+    unsigned ticks_processed=0;
     if(mac_cpu_halted(r->cpu))return 0;
     if(r->vbl_active){fail(r,"Recursive VBL polling is unsupported.");return 0;}
     if(budget<10000)return 0;
     if(!r->vbl_count && r->vbl_due_cursor==r->vbl_due_count){r->vbl_last_tick=r->ticks;return 0;}
-    if(r->ticks-r->vbl_last_tick>120){fail(r,"VBL catch-up exceeds 120-tick work budget.");return 0;}
     for(;;){
         if(r->vbl_due_cursor==r->vbl_due_count){
-            if(r->vbl_last_tick==r->ticks)return ran;
+            /* last_tick advances only when its countdowns are processed. The
+             * due cursor independently retains any unfinished callback list.
+             * Equality and unsigned increment remain valid across TickCount
+             * wrap; never discard overdue ticks after a host scheduling pause. */
+            if(r->vbl_last_tick==r->ticks || ticks_processed==VBL_TICKS_PER_POLL)return ran;
+            ticks_processed++;
             for(unsigned i=0;i<r->vbl_count;i++){
                 uint32_t p=r->vbl_tasks[i];
                 if(valid(r,p,14)<0)return ran;

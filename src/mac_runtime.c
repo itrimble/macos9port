@@ -176,3 +176,17 @@ size_t mac_runtime_run(MacRuntime *rt, size_t instructions) {
     rt->instructions += ran;
     return ran;
 }
+
+size_t mac_runtime_run_cycles(MacRuntime *rt, uint64_t cycles) {
+    if (!rt || !rt->cpu || !cycles || mac_cpu_halted(rt->cpu)) return 0;
+    uint64_t cycle_start = mac_cpu_cycles(rt->cpu);
+    size_t service_budget = cycles / 4 > 10000 ? 10000 : (size_t)(cycles / 4);
+    size_t ran = mac_time_poll(rt, service_budget);
+    if (!mac_cpu_halted(rt->cpu) && ran < service_budget)
+        ran += mac_vbl_poll(rt, service_budget - ran);
+    uint64_t used = mac_cpu_cycles(rt->cpu) - cycle_start;
+    if (!mac_cpu_halted(rt->cpu) && used < cycles)
+        ran += mac_cpu_run_cycles(rt->cpu, cycles - used);
+    rt->instructions += ran;
+    return ran;
+}

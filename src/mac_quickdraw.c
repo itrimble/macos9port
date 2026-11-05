@@ -108,6 +108,7 @@ int mac_quickdraw_service(MacRuntime *rt, uint16_t opcode) {
     uint32_t sp = mac_cpu_get(cpu, MAC_A7);
     unsigned args = 0;
     switch (opcode) {
+        case 0xa870: case 0xa871: args = 4; break;
         case 0xa86e: case 0xa86d: case 0xa86f: case 0xa873: case 0xa874: case 0xa87d: args = 4; break;
         case 0xa8a7: args = 12; break;
         case 0xa850: args = 0; break;
@@ -117,6 +118,22 @@ int mac_quickdraw_service(MacRuntime *rt, uint16_t opcode) {
     uint32_t p = args == 4 ? rd(rt, sp, 4) : 0;
     int rc = 1;
     switch (opcode) {
+        case 0xa870: case 0xa871: {
+            uint32_t port = rt->qd_globals ? rd(rt, rt->qd_globals, 4) : 0;
+            if (!port || !range(rt, port, 108)) return -1;
+            uint32_t bits = port + 2;
+            int16_t bounds_top = (int16_t)rd(rt, bits + 10, 2);
+            int16_t bounds_left = (int16_t)rd(rt, bits + 12, 2);
+            uint32_t point = p;
+            if (!point || !range(rt, point, 4)) return -1;
+            int16_t v = (int16_t)rd(rt, point, 2);
+            int16_t h = (int16_t)rd(rt, point + 2, 2);
+            int delta_v = opcode == 0xa870 ? bounds_top : -bounds_top;
+            int delta_h = opcode == 0xa870 ? bounds_left : -bounds_left;
+            wr(rt, point, 2, (uint16_t)(int16_t)(v + delta_v));
+            wr(rt, point + 2, 2, (uint16_t)(int16_t)(h + delta_h));
+            break;
+        }
         case 0xa86e: rc = init_graf(rt, p); break;
         case 0xa86f: case 0xa86d: rc = init_port(rt, p, opcode == 0xa86f); break;
         case 0xa873: rc = set_port(rt, p); break;

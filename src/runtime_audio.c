@@ -1,7 +1,9 @@
 #include "runtime_audio.h"
+#include "mac_sound_int.h"
 #include "mac_sound_double.h"
 #include <SDL.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 /* SDL owns a copy of submitted PCM. Guest execution and mixing stay on the
  * caller's thread; there is no guest CPU access from an audio callback. */
@@ -44,6 +46,24 @@ int runtime_audio_pump(RuntimeAudio *audio, MacRuntime *rt,
         return -1;
     }
     unsigned available = AUDIO_TARGET_FRAMES - bytes / 4;
+    if (getenv("OSPI_AUDIO_TRACE")) {
+        uint64_t now = SDL_GetTicks();
+        if (!audio->last_trace_ticks || now - audio->last_trace_ticks >= 1000) {
+            audio->last_trace_ticks = now;
+            fprintf(stderr, "audio-trace ms=%llu host-queued-frames=%u submitted=%llu callback-budget=%zu\n",
+                    (unsigned long long)now, bytes / 4,
+                    (unsigned long long)audio->submitted_frames, callback_budget);
+            for (unsigned i = 0; i < MAC_SOUND_CHANNELS; i++) {
+                const MacSoundChannel *c = &rt->sound->channels[i];
+                if (!c->address) continue;
+                fprintf(stderr, "  ch%u playing=%d paused=%d count=%u callback=%d wait=%u buffer=%d double=%d/%u voice=%d phase=%llu rate=%llu\n",
+                        i, c->playing, c->paused, c->count, c->callback_pending,
+                        c->wait_frames, c->buffer_block, c->double_buffer.active,
+                        c->double_buffer.pending, c->voice,
+                        (unsigned long long)c->phase, (unsigned long long)c->rate);
+            }
+        }
+    }
     int16_t pcm[AUDIO_CHUNK_FRAMES * 2];
     for (unsigned work = 0; available && work < AUDIO_TARGET_FRAMES / AUDIO_CHUNK_FRAMES; work++) {
         size_t ran = mac_sound_poll(rt, callback_budget);

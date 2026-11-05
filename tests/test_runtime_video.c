@@ -73,6 +73,16 @@ int main(void) {
     key.sym = SDLK_1; key.mod = KMOD_SHIFT;
     CHECK(key_message(&key, &message) && message == ((18u << 8) | '!'));
     key.sym = SDLK_F1;
+    CHECK(key_message(&key, &message) && message == 0x7a10);
+    key.sym = SDLK_F5; key.mod = KMOD_CTRL | KMOD_SHIFT;
+    CHECK(key_message(&key, &message) && message == 0x6010);
+    key.sym = SDLK_F12;
+    CHECK(key_message(&key, &message) && message == 0x6f10);
+    key.sym = SDLK_F13;
+    CHECK(key_message(&key, &message) && message == 0x6910);
+    key.sym = SDLK_F15;
+    CHECK(key_message(&key, &message) && message == 0x7110);
+    key.sym = SDLK_F16;
     CHECK(!key_message(&key, &message));
     CHECK(key_modifiers(KMOD_NONE, 0) == 0x80);
     CHECK(key_modifiers(KMOD_GUI | KMOD_SHIFT, 1) == 0x300);

@@ -24,4 +24,23 @@ fi
 if [ ! -f "$source/m68kops.c" ] || [ ! -f "$source/m68kops.h" ]; then
     (cd "$source" && "${CC:-cc}" -O2 m68kmake.c -o m68kmake && ./m68kmake)
 fi
+python3 - "$source/m68kops.c" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text()
+upstream = """static void m68k_op_1010(void)
+{
+\tm68ki_exception_1010();
+}"""
+patched = """static void m68k_op_1010(void)
+{
+\tif (!m68ki_illg_callback(REG_IR)) m68ki_exception_1010();
+}"""
+if patched not in text:
+    if upstream not in text:
+        raise SystemExit("Could not locate Musashi 1010 handler for safe patch.")
+    path.write_text(text.replace(upstream, patched, 1))
+PY
 printf 'Musashi source: %s\n' "$source"

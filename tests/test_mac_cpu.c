@@ -6,6 +6,7 @@ static int fails;
 #define CHECK(x) do { if (!(x)) { fprintf(stderr, "FAIL %d: %s\n", __LINE__, #x); fails++; } } while (0)
 
 static int trap_calls;
+static int cycle_trap_calls;
 static int trap(MacCpu *cpu, uint16_t opcode, uint32_t pc, void *user) {
     CHECK(opcode == 0xa123);
     CHECK(pc == 0x108);
@@ -16,6 +17,33 @@ static int trap(MacCpu *cpu, uint16_t opcode, uint32_t pc, void *user) {
     mac_cpu_write(cpu, 0x200, 4, 0x12345678);
     trap_calls++;
     return 0;
+}
+
+static int cycle_trap(MacCpu *cpu, uint16_t opcode, uint32_t pc, void *user) {
+    (void)user;
+    CHECK(opcode == 0xa123);
+    CHECK(pc == 0x102);
+    CHECK(mac_cpu_get(cpu, MAC_PC) == 0x104);
+    cycle_trap_calls++;
+    return 0;
+}
+
+static void cycle_batch(void) {
+    MacCpu *cpu = mac_cpu_create_model(4096, MAC_CPU_68020);
+    CHECK(cpu != NULL);
+    if (!cpu) return;
+    const unsigned char code[] = {0x70,3, 0xa1,0x23, 0x60,0xfe};
+    memcpy(mac_cpu_ram(cpu) + 0x100, code, sizeof code);
+    mac_cpu_set(cpu, MAC_PC, 0x100);
+    mac_cpu_set_trap(cpu, cycle_trap, NULL);
+    uint64_t before = mac_cpu_cycles(cpu);
+    size_t ran = mac_cpu_run_cycles(cpu, 1000);
+    CHECK(ran > 0);
+    CHECK(mac_cpu_cycles(cpu) - before >= 1000);
+    CHECK(mac_cpu_get(cpu, MAC_D0) == 3);
+    CHECK(cycle_trap_calls == 1);
+    CHECK(!mac_cpu_halted(cpu));
+    mac_cpu_destroy(cpu);
 }
 
 static void model_68020(void) {
@@ -181,6 +209,7 @@ int main(void) {
     CHECK(strstr(mac_cpu_error(cpu), "illegal instruction") != NULL);
     mac_cpu_destroy(cpu);
     model_68020();
+    cycle_batch();
     bus_wrap(MAC_CPU_68000);
     bus_wrap(MAC_CPU_68020);
     printf("CPU checks: %s\n", fails ? "FAILED" : "ok");

@@ -122,14 +122,21 @@ Evidence IDs are retained in the loop record. CPU traces are separate evidence.
 
 | Target | Page-level evidence | Required acceptance | Current result |
 | --- | --- | --- | --- |
-| Secret of Monkey Island | 68k; System 6.0.7; 2 MB RAM; color | Original executable, scene/input/audio checks, save/reload | Desktop icon launches our runtime; original logo captured; hardware-window run reaches original island/title sequence, high-rate conversion and deferred callback disposal pass an offline 100M-instruction check. Updated bundle opened for live audio/input retry; no gameplay acceptance |
-| Monkey Island 2 | 68k; iMUSE; smoothing toggle | Scene/music transitions, smoothing, save/reload | Opens iMuse Setups, executes SANE conversions and creates a sound channel; passes double-buffer and Time Manager startup; live window reaches original Press Return prompt, then later hits VBL catch-up limit; no gameplay |
+| Secret of Monkey Island | Macintosh minimum: 68020, 2 MB, System 6.0.7+, color display, hard disk | Original executable, scene/input/audio checks, save/reload | Desktop icon launches our runtime; reaches docks/SCUMM Bar gameplay. Ian confirms mouse controls work: opening a door triggered its animation and correct sound effect. Background music later stopped as gameplay slowed; music continuity, audio quality, sustained play and save/reload remain open. Full guest GPU acceleration is not implemented |
+| Monkey Island 2 | Macintosh minimum: 16 MHz 68020, 2 MB, System 6.0.7+, 256-color display | Scene/music transitions, smoothing, save/reload | Opens iMuse Setups, executes SANE conversions and creates a sound channel; passes double-buffer and Time Manager startup; live window reaches original Press Return prompt, then later hits VBL catch-up limit; no gameplay |
 | Castle of Dr. Brain | 68k; 256 colors; saves in game directory | Puzzles, palette/input/audio, local save/reload | Creates resource-defined windows and paints its 384 by 198 startup picture; then stops at Alert 143, “Can't load !??”; no gameplay |
 | Classic QuickTime | Multiple 68k/PPC installers in compressed image | Open the actual guest player and play a video with sound, seeking, and correct timing | Required; not run in our runtime |
 | MacSurf | Correct identity/link needed | Selected browser's rendering and network flows | Identity pending |
 | Chromium | Modern host-native browser track | Sandboxed browsing, GPU, updates, network/security tests | Not built or integrated |
 | Thurrott.com | User-selected live website | Browse articles, navigate, scroll, and display media correctly in the integrated browser | Not tested |
 | YouTube.com | User-selected live website | Sustained video/audio playback with proven hardware decode and GPU composition | Not tested |
+
+The Macintosh minimums above are documented by [PixelatedArcade's MI1
+specifications](https://www.pixelatedarcade.com/games/the-secret-of-monkey-island/techspecs)
+and [MI2 specifications](https://www.pixelatedarcade.com/games/monkey-island-2-lechuck-s-revenge/techspecs).
+[Just Adventure's MI2 requirements](https://www.justadventure.com/2005/01/01/monkey-island-2-lechucks-revenge/)
+also lists a 16 MHz 68020 and 256-color display. These are compatibility
+minimums, not an FPS benchmark; acceptance needs measured playback targets.
 
 The game pages support a 68k-first plan. They do not establish a 3D requirement.
 Add QuickDraw 3D/RAVE/OpenGL gates when an identified target requires them.

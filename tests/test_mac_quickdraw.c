@@ -99,6 +99,23 @@ int main(void) {
     CHECK(call(&rt, 0xa874, 0x600000) == 1);
     CHECK(mac_cpu_read(rt.cpu, 0x600000, 4) == port);
 
+    /* GlobalToLocal subtracts the bitmap bounds origin of the current port. */
+    mac_cpu_write(rt.cpu, port + 12, 2, (uint16_t)-20);
+    mac_cpu_write(rt.cpu, port + 14, 2, 30);
+    mac_cpu_set(rt.cpu, MAC_A7, 0xf00000);
+    mac_cpu_write(rt.cpu, 0xf00000, 4, 0x600020);
+    mac_cpu_write(rt.cpu, 0x600020, 2, 5);
+    mac_cpu_write(rt.cpu, 0x600022, 2, 7);
+    CHECK(mac_quickdraw_service(&rt, 0xa871) == 1);
+    CHECK(mac_cpu_read(rt.cpu, 0x600020, 2) == 25);
+    CHECK(mac_cpu_read(rt.cpu, 0x600022, 2) == (uint16_t)-23);
+    CHECK(mac_cpu_get(rt.cpu, MAC_A7) == 0xf00004);
+    mac_cpu_set(rt.cpu, MAC_A7, 0xf00000);
+    mac_cpu_write(rt.cpu, 0xf00000, 4, 0x600020);
+    CHECK(mac_quickdraw_service(&rt, 0xa870) == 1);
+    CHECK(mac_cpu_read(rt.cpu, 0x600020, 2) == 5);
+    CHECK(mac_cpu_read(rt.cpu, 0x600022, 2) == 7);
+
     mac_cpu_set(rt.cpu, MAC_A7, 0xf00000);
     mac_cpu_write(rt.cpu, 0xf00000, 2, 50); /* bottom */
     mac_cpu_write(rt.cpu, 0xf00002, 2, 60); /* right */

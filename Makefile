@@ -28,7 +28,7 @@ build/test_ospi: $(CORE) tests/test_ospi.c $(HDRS)
 # Independent classic runtime. Musashi supplies only CPU instruction execution.
 # Its pinned source and generated tables remain in ignored build/deps/.
 MUSASHI := build/deps/Musashi-313ebf1bd9f4d0d93341eb5ce21fd8a119e9dbdd
-CPUFLAGS := -DM68K_ILLG_HAS_CALLBACK=1 -I$(MUSASHI)
+CPUFLAGS := -DM68K_ILLG_HAS_CALLBACK=1 -DM68K_INSTRUCTION_HOOK=1 -I$(MUSASHI)
 CPUOBJ := build/m68kcpu.o build/m68kops.o build/softfloat.o
 RUNTIME := src/mac_resource.c src/mac_cpu.c src/mac_runtime.c src/mac_services.c src/mac_memory.c src/mac_resource_services.c src/mac_events.c src/mac_quickdraw.c src/mac_toolbox.c src/mac_raster.c src/mac_system.c src/mac_geometry.c src/mac_files.c src/mac_cursor.c src/mac_color.c src/mac_dialog.c src/mac_color_port.c src/mac_copybits.c src/mac_palette.c src/mac_color_raster.c
 RUNTIME += src/mac_video_config.c src/mac_vbl.c src/mac_pixmap.c src/mac_pixels.c src/mac_volume.c src/mac_window.c src/mac_window_draw.c src/mac_regions.c src/mac_system_volume.c src/mac_color_pen.c src/mac_drive_queue.c src/mac_menu.c src/mac_menu_records.c src/mac_palette_manager.c src/mac_window_resource.c src/mac_window_registry.c src/font.c
@@ -99,13 +99,13 @@ test: build/test_mac_time
 $(MUSASHI)/m68kops.c: scripts/prepare-musashi.sh
 	sh scripts/prepare-musashi.sh
 
-build/m68kcpu.o: $(MUSASHI)/m68kops.c
+build/m68kcpu.o: $(MUSASHI)/m68kops.c Makefile
 	$(CC) -O2 $(CPUFLAGS) -c $(MUSASHI)/m68kcpu.c -o $@
 
-build/m68kops.o: $(MUSASHI)/m68kops.c
+build/m68kops.o: $(MUSASHI)/m68kops.c Makefile
 	$(CC) -O2 $(CPUFLAGS) -c $(MUSASHI)/m68kops.c -o $@
 
-build/softfloat.o: $(MUSASHI)/m68kops.c
+build/softfloat.o: $(MUSASHI)/m68kops.c Makefile
 	$(CC) -O2 $(CPUFLAGS) -c $(MUSASHI)/softfloat/softfloat.c -o $@
 
 build/ospi-runtime: $(RUNTIME_OBJ) src/runtime_main.c src/runtime_video.c src/runtime_audio.c $(RUNTIME_HDRS) $(CPUOBJ)

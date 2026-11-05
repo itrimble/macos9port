@@ -49,4 +49,42 @@ static void faults(void){
  r=fresh();task(&r,0x3000,0x2000,1);wr(&r,0x2000,2,0x60fe);install(&r,0x3000);r.ticks=1;
  CHECK(mac_vbl_poll(&r,10000)==10000&&mac_cpu_halted(r.cpu));CHECK(mac_cpu_get(r.cpu,MAC_PC)==0x2000);mac_cpu_destroy(r.cpu);
 }
-int main(void){countdown();queue_and_reentrant();faults();puts("mac VBL callback tests passed");return 0;}
+static void paused_host(void){
+ MacRuntime r=fresh();
+ const uint16_t words[]={0x5268,14,0x317c,1,10,0x4e75};
+ for(unsigned i=0;i<6;i++)wr(&r,0x2000+i*2,2,words[i]);
+ task(&r,0x3000,0x2000,1);install(&r,0x3000);r.ticks=305;
+ CHECK(mac_vbl_poll(&r,10000)==360 && !mac_cpu_halted(r.cpu));
+ CHECK(r.vbl_last_tick==120 && rd(&r,0x300e,2)==120);
+ CHECK(mac_vbl_poll(&r,10000)==360 && r.vbl_last_tick==240);
+ CHECK(mac_vbl_poll(&r,10000)==195 && r.vbl_last_tick==305 && rd(&r,0x300e,2)==305);
+ CHECK(!mac_vbl_poll(&r,10000));mac_cpu_destroy(r.cpu);
+ /* A dormant task also bounds host work although it executes no instructions. */
+ r=fresh();wr(&r,0x2000,2,0x4e75);task(&r,0x3000,0x2000,0);install(&r,0x3000);r.ticks=UINT32_MAX;
+ CHECK(!mac_vbl_poll(&r,10000) && !mac_cpu_halted(r.cpu) && r.vbl_last_tick==120);
+ mac_cpu_destroy(r.cpu);
+ /* A pause crossing unsigned TickCount wrap retains every tick. */
+ r=fresh();for(unsigned i=0;i<6;i++)wr(&r,0x2000+i*2,2,words[i]);
+ r.ticks=UINT32_MAX-99;task(&r,0x3000,0x2000,1);install(&r,0x3000);r.ticks=205;
+ CHECK(mac_vbl_poll(&r,10000)==360 && r.vbl_last_tick==20);
+ CHECK(mac_vbl_poll(&r,10000)==360 && r.vbl_last_tick==140);
+ CHECK(mac_vbl_poll(&r,10000)==195 && r.vbl_last_tick==205 && rd(&r,0x300e,2)==305);
+ mac_cpu_destroy(r.cpu);
+}
+static void budget_continuation(void){
+ MacRuntime r=fresh();
+ /* Exactly5000 instructions per authored callback. Three due tasks require
+  * two polls; the second must resume the current tick before advancing it. */
+ for(unsigned i=0;i<4998;i++)wr(&r,0x9000+i*2,2,0x4e71);
+ wr(&r,0x9000+4998*2,2,0x5268);wr(&r,0x9000+4998*2+2,2,14);
+ wr(&r,0x9000+4998*2+4,2,0x4e75);
+ for(unsigned i=0;i<3;i++){task(&r,0x4000+i*32,0x9000,1);install(&r,0x4000+i*32);}
+ r.ticks=305;CHECK(mac_vbl_poll(&r,10000)==10000 && !mac_cpu_halted(r.cpu));
+ CHECK(r.vbl_last_tick==1 && r.vbl_due_cursor==2 && r.vbl_due_count==3);
+ CHECK(rd(&r,0x400e,2)==1 && rd(&r,0x402e,2)==1 && rd(&r,0x404e,2)==0);
+ CHECK(mac_vbl_poll(&r,10000)==5000 && !mac_cpu_halted(r.cpu));
+ CHECK(rd(&r,0x404e,2)==1 && !r.vbl_count);
+ CHECK(!mac_vbl_poll(&r,10000) && r.vbl_last_tick==305);
+ mac_cpu_destroy(r.cpu);
+}
+int main(void){countdown();queue_and_reentrant();faults();paused_host();budget_continuation();puts("mac VBL callback tests passed");return 0;}

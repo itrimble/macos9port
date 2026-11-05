@@ -7,6 +7,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define GUEST_CPU_CLOCK_HZ UINT64_C(16000000)
+#define GUEST_CPU_MAX_CATCHUP_US UINT64_C(33333)
+#define GUEST_CPU_INSTRUCTION_QUANTUM 10000u
+
 /* This backend accelerates presentation only. Guest QuickDraw and framebuffer
  * conversion still run on the CPU; it is not full guest graphics acceleration. */
 static int elapsed_microseconds(uint64_t counter, uint64_t frequency, uint64_t base, uint64_t *out) {
@@ -168,6 +172,14 @@ static int key_message(const SDL_Keysym *key, uint32_t *message) {
     } else if (k >= SDLK_0 && k <= SDLK_9) {
         code = digits[k - SDLK_0];
         character = key->mod & KMOD_SHIFT ? (unsigned char)")!@#$%^&*("[k - SDLK_0] : (unsigned)k;
+    } else if (k >= SDLK_F1 && k <= SDLK_F12) {
+        static const uint8_t function_codes[] = {122,120,99,118,96,97,98,100,101,109,103,111};
+        code = function_codes[k - SDLK_F1];
+        character = 16; /* Event Manager's function-key character, independent of modifiers. */
+    } else if (k >= SDLK_F13 && k <= SDLK_F15) {
+        static const uint8_t function_codes[] = {105,107,113};
+        code = function_codes[k - SDLK_F13];
+        character = 16;
     } else {
         switch (k) {
         case SDLK_LEFT: code = 123; character = 28; break;
@@ -238,7 +250,11 @@ int mac_runtime_window(MacRuntime *rt, const char *title, size_t budget) {
     int audio_setup_failed = runtime_audio_open(&audio) != 0;
     if (audio_setup_failed) fprintf(stderr, "Audio setup unavailable: %s\n", SDL_GetError());
     uint64_t began = SDL_GetPerformanceCounter(), frequency = SDL_GetPerformanceFrequency();
+    uint64_t trace_ticks = SDL_GetTicks(), trace_instructions = rt->instructions;
+    uint64_t trace_cycles = mac_cpu_cycles(rt->cpu);
+    uint64_t trace_frames = 0;
     uint64_t base_clock = rt->clock_us;
+    uint64_t guest_cycle_elapsed_us = 0;
     uint32_t base_ticks = rt->ticks;
     rt->modifiers = key_modifiers(SDL_GetModState(), mouse_down);
     while (rt->instructions < budget && !mac_cpu_halted(rt->cpu)) {
@@ -249,6 +265,11 @@ int mac_runtime_window(MacRuntime *rt, const char *title, size_t budget) {
             result = 3; goto done;
         }
         uint64_t elapsed_us = now_us - base_clock;
+        uint64_t cycle_elapsed_us = elapsed_us - guest_cycle_elapsed_us;
+        guest_cycle_elapsed_us = elapsed_us;
+        if (cycle_elapsed_us > GUEST_CPU_MAX_CATCHUP_US)
+            cycle_elapsed_us = GUEST_CPU_MAX_CATCHUP_US;
+        uint64_t cycle_budget = cycle_elapsed_us * GUEST_CPU_CLOCK_HZ / 1000000;
         rt->ticks = base_ticks + (uint32_t)((elapsed_us / 1000000) * 60 +
                                            (elapsed_us % 1000000) * 60 / 1000000);
         SDL_Event event;
@@ -280,9 +301,18 @@ int mac_runtime_window(MacRuntime *rt, const char *title, size_t budget) {
                 mouse_down = 0;
             }
         }
-        size_t remain = (size_t)(budget - rt->instructions);
-        if (!mac_runtime_run(rt, remain < 10000 ? remain : 10000) && !mac_cpu_halted(rt->cpu)) {
-            fprintf(stderr, "Guest CPU made no progress.\n"); result = 3; goto done;
+        if (budget == SIZE_MAX) {
+            if (cycle_budget && !mac_runtime_run_cycles(rt, cycle_budget) &&
+                !mac_cpu_halted(rt->cpu)) {
+                fprintf(stderr, "Guest CPU made no progress.\n"); result = 3; goto done;
+            }
+        } else {
+            size_t remain = (size_t)(budget - rt->instructions);
+            size_t quantum = remain < GUEST_CPU_INSTRUCTION_QUANTUM ? remain :
+                             GUEST_CPU_INSTRUCTION_QUANTUM;
+            if (quantum && !mac_runtime_run(rt, quantum) && !mac_cpu_halted(rt->cpu)) {
+                fprintf(stderr, "Guest CPU made no progress.\n"); result = 3; goto done;
+            }
         }
         size_t audio_instructions = 0;
         size_t audio_budget = rt->instructions < budget ? (size_t)(budget - rt->instructions) : 0;
@@ -325,6 +355,26 @@ int mac_runtime_window(MacRuntime *rt, const char *title, size_t budget) {
             fprintf(stderr, "Guest presentation failed: %s\n", SDL_GetError()); goto done;
         }
         SDL_RenderPresent(renderer);
+        if (getenv("OSPI_AUDIO_TRACE")) {
+            trace_frames++;
+            uint64_t now = SDL_GetTicks();
+            if (now - trace_ticks >= 1000) {
+                uint64_t interval_ms = now - trace_ticks;
+                uint64_t cycle_delta = mac_cpu_cycles(rt->cpu) - trace_cycles;
+                fprintf(stderr, "frame-trace ms=%llu interval-ms=%llu frames=%llu fps=%.1f guest-instructions=%llu guest-cycles=%llu guest-MHz=%.2f guest-ticks=%u\n",
+                        (unsigned long long)now, (unsigned long long)interval_ms,
+                        (unsigned long long)trace_frames,
+                        (double)trace_frames * 1000.0 / (double)interval_ms,
+                        (unsigned long long)(rt->instructions - trace_instructions),
+                        (unsigned long long)cycle_delta,
+                        (double)cycle_delta * 1000.0 / ((double)interval_ms * 1000000.0),
+                        rt->ticks);
+                trace_ticks = now;
+                trace_instructions = rt->instructions;
+                trace_cycles = mac_cpu_cycles(rt->cpu);
+                trace_frames = 0;
+            }
+        }
     }
     if (mac_cpu_halted(rt->cpu)) {
         fprintf(stderr, "%s\n", mac_cpu_error(rt->cpu));

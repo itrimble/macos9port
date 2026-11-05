@@ -82,6 +82,7 @@ typedef struct {
 int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, size_t n);
 void mac_runtime_destroy(MacRuntime *rt);
 size_t mac_runtime_run(MacRuntime *rt, size_t instructions);
+size_t mac_runtime_run_cycles(MacRuntime *rt, uint64_t cycles);
 uint32_t mac_runtime_alloc(MacRuntime *rt, uint32_t size);
 uint32_t mac_runtime_resource(MacRuntime *rt, uint32_t type, int16_t id);
 int mac_runtime_trap(MacCpu *cpu, uint16_t opcode, uint32_t pc, void *user);

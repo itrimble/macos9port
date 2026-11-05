@@ -33,6 +33,8 @@ void mac_cpu_set_trap(MacCpu *cpu, MacCpuTrap trap, void *user);
  * A budget is a host work bound, not an emulated frame or wall-clock guarantee.
  */
 size_t mac_cpu_run(MacCpu *cpu, size_t instruction_budget);
+/* Batch execution for the interactive cycle-paced runtime. */
+size_t mac_cpu_run_cycles(MacCpu *cpu, uint64_t cycle_budget);
 void mac_cpu_halt(MacCpu *cpu, const char *reason);
 int mac_cpu_halted(const MacCpu *cpu);
 const char *mac_cpu_error(const MacCpu *cpu);

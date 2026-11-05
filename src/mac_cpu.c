@@ -1,6 +1,7 @@
 #include "mac_cpu.h"
 #include "m68k.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,12 +13,30 @@ struct MacCpu {
     MacCpuTrap trap;
     void *trap_user;
     uint64_t cycles;
+    size_t instructions_in_slice;
+    int count_instructions;
     int halted;
     MacCpuModel model;
     char error[192];
 };
 
 static MacCpu *active;
+
+static void instruction_hook(unsigned int pc) {
+    if (!active) return;
+    if (active->count_instructions) active->instructions_in_slice++;
+    uint32_t address = pc & 0xffffff;
+    if (address + 2 > active->ram_size) {
+        mac_cpu_halt(active, "Instruction fetch exceeds guest RAM.");
+        return;
+    }
+    uint16_t opcode = (uint16_t)((active->ram[address] << 8) | active->ram[address + 1]);
+    if ((opcode & 0xf000) == 0xf000 || opcode == 0x4e72) {
+        char error[128];
+        snprintf(error, sizeof error, "unsupported instruction %04x at %08x", opcode, address);
+        mac_cpu_halt(active, error);
+    }
+}
 
 void mac_cpu_halt(MacCpu *cpu, const char *reason) {
     if (!cpu || cpu->halted) {
@@ -107,8 +126,22 @@ void m68k_write_memory_32(unsigned int address, unsigned int value) {
 
 static int illegal_instruction(int opcode) {
     char error[128];
+    uint32_t pc = m68k_get_reg(NULL, M68K_REG_PPC) & 0xffffff;
+    if ((opcode & 0xf000) == 0xa000) {
+        if (active && active->trap && active->trap(active, (uint16_t)opcode, pc,
+                                                   active->trap_user) == 0)
+            return 1;
+        snprintf(error, sizeof error, "unhandled A-line trap %04x at %08x", opcode & 0xffff, pc);
+        mac_cpu_halt(active, error);
+        return 1;
+    }
+    if ((opcode & 0xf000) == 0xf000) {
+        snprintf(error, sizeof error, "unsupported instruction %04x at %08x", opcode & 0xffff, pc);
+        mac_cpu_halt(active, error);
+        return 1;
+    }
     snprintf(error, sizeof error, "illegal instruction %04x at %08x", opcode & 0xffff,
-             m68k_get_reg(NULL, M68K_REG_PPC));
+             pc);
     mac_cpu_halt(active, error);
     return 1;
 }
@@ -137,6 +170,7 @@ MacCpu *mac_cpu_create_model(size_t ram_size, MacCpuModel model) {
     active = cpu;
     m68k_init();
     m68k_set_cpu_type(model == MAC_CPU_68020 ? M68K_CPU_TYPE_68020 : M68K_CPU_TYPE_68000);
+    m68k_set_instr_hook_callback(instruction_hook);
     m68k_pulse_reset();
     /* Consume reset latency without executing an instruction. */
     m68k_execute(1);
@@ -228,6 +262,26 @@ size_t mac_cpu_run(MacCpu *cpu, size_t instruction_budget) {
     m68k_get_context(cpu->context);
     active = NULL;
     return attempted;
+}
+
+size_t mac_cpu_run_cycles(MacCpu *cpu, uint64_t cycle_budget) {
+    if (!cpu || cpu->halted || active || !cycle_budget) return 0;
+    active = cpu;
+    m68k_set_context(cpu->context);
+    cpu->instructions_in_slice = 0;
+    cpu->count_instructions = 1;
+    while (cycle_budget && !cpu->halted) {
+        int request = cycle_budget > INT_MAX ? INT_MAX : (int)cycle_budget;
+        int used = m68k_execute(request);
+        if (used <= 0) break;
+        cpu->cycles += (unsigned)used;
+        if ((uint64_t)used >= cycle_budget) break;
+        cycle_budget -= (unsigned)used;
+    }
+    cpu->count_instructions = 0;
+    m68k_get_context(cpu->context);
+    active = NULL;
+    return cpu->instructions_in_slice;
 }
 
 int mac_cpu_halted(const MacCpu *cpu) { return !cpu || cpu->halted; }
