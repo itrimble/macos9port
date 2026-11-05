@@ -11,6 +11,15 @@
 #define GUEST_CPU_MAX_CATCHUP_US UINT64_C(33333)
 #define GUEST_CPU_INSTRUCTION_QUANTUM 10000u
 
+static uint64_t guest_cycle_slice(uint64_t wall_elapsed_us,
+                                  uint64_t *guest_elapsed_us) {
+    if (!guest_elapsed_us || wall_elapsed_us <= *guest_elapsed_us) return 0;
+    uint64_t slice_us = wall_elapsed_us - *guest_elapsed_us;
+    if (slice_us > GUEST_CPU_MAX_CATCHUP_US) slice_us = GUEST_CPU_MAX_CATCHUP_US;
+    *guest_elapsed_us += slice_us;
+    return slice_us * GUEST_CPU_CLOCK_HZ / 1000000;
+}
+
 /* This backend accelerates presentation only. Guest QuickDraw and framebuffer
  * conversion still run on the CPU; it is not full guest graphics acceleration. */
 static int elapsed_microseconds(uint64_t counter, uint64_t frequency, uint64_t base, uint64_t *out) {
@@ -265,11 +274,9 @@ int mac_runtime_window(MacRuntime *rt, const char *title, size_t budget) {
             result = 3; goto done;
         }
         uint64_t elapsed_us = now_us - base_clock;
-        uint64_t cycle_elapsed_us = elapsed_us - guest_cycle_elapsed_us;
-        guest_cycle_elapsed_us = elapsed_us;
-        if (cycle_elapsed_us > GUEST_CPU_MAX_CATCHUP_US)
-            cycle_elapsed_us = GUEST_CPU_MAX_CATCHUP_US;
-        uint64_t cycle_budget = cycle_elapsed_us * GUEST_CPU_CLOCK_HZ / 1000000;
+        /* Preserve excess time as debt; a catch-up cap bounds one batch,
+         * not the guest's long-term CPU frequency. */
+        uint64_t cycle_budget = guest_cycle_slice(elapsed_us, &guest_cycle_elapsed_us);
         rt->ticks = base_ticks + (uint32_t)((elapsed_us / 1000000) * 60 +
                                            (elapsed_us % 1000000) * 60 / 1000000);
         SDL_Event event;

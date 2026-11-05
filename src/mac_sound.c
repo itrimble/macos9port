@@ -3,6 +3,18 @@
 #include <stdio.h>
 #include <math.h>
 #include <string.h>
+
+static uint64_t note_trace_count;
+
+static void trace_note(MacRuntime *r, MacSoundChannel *c, MacSoundCommand cmd,
+                       unsigned note, unsigned amplitude) {
+ if (!getenv("OSPI_SOUND_NOTE_TRACE") || note_trace_count >= 4096) return;
+ unsigned slot=(unsigned)(c-r->sound->channels);
+ fprintf(stderr,"sound-note event=%llu channel=%u command=%u note=%u amplitude=%u playing=%d phase=%llu rate=%llu wait=%u queued=%u\n",
+         (unsigned long long)note_trace_count++,slot,cmd.command,note,amplitude,
+         c->playing,(unsigned long long)c->phase,(unsigned long long)c->rate,
+         c->wait_frames,c->count);
+}
 /* Independent sampled Sound Manager ABI: public Inside Macintosh Sound
  * Sound-73.html, Sound-74.html, Sound-97.html, Sound-100.html, Sound-131.html
  * at leopard-adc.pepas.com/documentation/mac/Sound/. No Apple implementation. */
@@ -97,6 +109,7 @@ int mac_sound_command(MacRuntime*r,MacSoundChannel*c,MacSoundCommand cmd){
     c->phase=0;c->looping=0;
    }
    c->rate=(uint64_t)llround(rate);c->playing=1;c->buffer_block=0;c->note_playback=1;
+   trace_note(r,c,cmd,note,amplitude?amplitude:c->amp);
   }
   if(amplitude)c->amp=amplitude;
   if(cmd.command==40)c->wait_frames=(uint32_t)cmd.param1*24;

@@ -233,3 +233,12 @@ remain open.
 Continue by comparing the same soundtrack segment when the video can be
 accessed, and repeat measured FPS, guest MHz, queue-starvation, manual input,
 and save/reload checks during a longer play session.
+
+Ian later listened to the live SCUMM Bar run. The opening sounded as if every
+note doubled for roughly 20 seconds; afterward the background music sounded
+mostly acceptable, though not perfect. The supplied screenshot shows the
+SCUMM Bar scene and verb panel. Host queue telemetry alone cannot explain the
+perceived doubled notes. Added bounded `OSPI_SOUND_NOTE_TRACE=1` diagnostics
+for the first 4,096 sampled note commands, including channel, command, note,
+phase and rate, to identify overlapping note starts on the next fresh run.
+This symptom has not yet been reproduced with the new note-event trace.

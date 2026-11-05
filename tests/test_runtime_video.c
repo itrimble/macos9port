@@ -24,6 +24,11 @@ int main(void) {
     CHECK(elapsed_microseconds(UINT64_C(18000000000000), 1000000000, 0, &us) == 0 && us == UINT64_C(18000000000));
     CHECK(elapsed_microseconds(1, 0, 0, &us) == -1);
     CHECK(elapsed_microseconds(1000, 1000, UINT64_MAX, &us) == -1);
+    uint64_t guest_elapsed_us = 0;
+    CHECK(guest_cycle_slice(100000, &guest_elapsed_us) == 533328 && guest_elapsed_us == 33333);
+    CHECK(guest_cycle_slice(100000, &guest_elapsed_us) == 533328 && guest_elapsed_us == 66666);
+    CHECK(guest_cycle_slice(100000, &guest_elapsed_us) == 533328 && guest_elapsed_us == 99999);
+    CHECK(guest_cycle_slice(100000, &guest_elapsed_us) == 16 && guest_elapsed_us == 100000);
     MacCpu cpu = {{0}};
     MacRuntime rt = {0};
     uint32_t pixels[16];
