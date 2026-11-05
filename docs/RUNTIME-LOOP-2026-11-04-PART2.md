@@ -334,12 +334,16 @@ mixer waveform or host playback matches the reference.
 The latest build now reports SDL queue-balanced consumption (`consumed-fps`)
 and an estimated shortfall against the nominal 48 kHz rate (`deficit-est`), in
 addition to submitted frames. The estimate is valid only in rows labeled
-`queue-balance=valid`; confirm it with a clean run before drawing conclusions. A silent
-`SDL_AUDIODRIVER=dummy` attempt could not reach runtime audio because SDL's dummy
-video backend fails OS Pi's accelerated-renderer/vsync requirement, so it
-yielded no audio measurement. The running PID 38219 predates these metrics.
-Next, capture a fresh uninterrupted SCUMM Bar run and compare the metrics while
-keeping Ian's audible comparison as a separate gate.
+`queue-balance=valid`; confirm it with a clean run before drawing conclusions.
+A silent SDL callback-mode probe on the default CoreAudio device measured
+47,896 callback frames/sec over 8.135 seconds at 48 kHz. This checks the host
+callback clock, not the queued-audio path used by OS Pi. Separate SDL queue
+probes with delayed polling underfed, so they cannot isolate device consumption
+from probe-thread scheduling. A dummy-video attempt also could not reach runtime
+audio because its renderer failed OS Pi's accelerated-renderer/vsync check.
+The running PID 38219 predates the new queue-balance metrics. Next, capture a
+fresh uninterrupted SCUMM Bar run and compare those metrics while keeping Ian's
+audible comparison as a separate gate.
 
 Validation after these instrumentation changes: `BUILDFLEET_LOCAL=1 make
 test` passed all listed C tests, `BUILDFLEET_LOCAL=1 make runtime` linked
