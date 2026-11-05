@@ -43,10 +43,10 @@ limitations, exact artifacts, and the next reproducible steps.
 
 REA 6.8.0 was invoked through its CLI. Artifact inspection rejected the local
 `QuickTime.img_.sit_.bin` as `unsupported_target`; no executable analysis resulted.
-REA tools are absent from this agent session. The installed 6.0.0 CLI's doctor
-reported aligned Codex registration but no configured native analysis provider.
-No global registration or analysis-engine installation was changed. Later REA
-ZIP inventories succeeded for Monkey Island 2 and Castle of Dr. Brain; their
+REA tools are absent from this agent session. Its current doctor reports stale
+Codex registration, a stale shared skill copy, and no configured native analysis
+provider; no setup or global configuration change was made. Earlier REA ZIP
+inventories succeeded for Monkey Island 2 and Castle of Dr. Brain; their
 Evidence IDs are retained in the loop record. CPU traces are separate evidence.
 
 ## 0. Clean-room boundary and target identity
