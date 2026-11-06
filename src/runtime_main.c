@@ -44,12 +44,14 @@ int main(int argc, char **argv) {
     const char *path = NULL;
     size_t budget = 100000;
     int inspect = 0, trace = 0, window = 0, indexed = 0, interactive = 0, steps_given = 0;
+    const char *bridge_name = NULL;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--inspect")) inspect = 1;
         else if (!strcmp(argv[i], "--window")) window = 1;
         else if (!strcmp(argv[i], "--interactive")) interactive = 1;
         else if (!strcmp(argv[i], "--indexed")) indexed = 1;
         else if (!strcmp(argv[i], "--trace")) trace = 1;
+        else if (!strcmp(argv[i], "--bridge") && i + 1 < argc) bridge_name = argv[++i];
         else if (!strcmp(argv[i], "--steps") && i + 1 < argc) {
             char *end;
             errno = 0;
@@ -119,7 +121,16 @@ int main(int argc, char **argv) {
         snprintf(title, sizeof title, "%s", name ? name + 1 : path);
         size_t length = strlen(title);
         if (length > 5 && !strcmp(title + length - 5, ".rsrc")) title[length - 5] = 0;
-        result = mac_runtime_window(&rt, title, budget);
+        if (bridge_name) {
+            RuntimeBridge *bridge = runtime_bridge_open(bridge_name);
+            if (!bridge) {
+                fprintf(stderr, "Could not attach to the OS999 guest display surface.\n");
+                result = 5;
+            } else {
+                result = mac_runtime_bridge_window(&rt, budget, bridge);
+                runtime_bridge_close(bridge);
+            }
+        } else result = mac_runtime_window(&rt, title, budget);
     } else {
         /* Deterministic headless clock, not a real-time performance model. */
         while (rt.instructions < budget && !mac_cpu_halted(rt.cpu)) {

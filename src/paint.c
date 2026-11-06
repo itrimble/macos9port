@@ -1,4 +1,7 @@
 #include "draw.h"
+#include "desktop_assets.h"
+#include "mac_icon.h"
+#include "os999_startup.h"
 #include "ospi.h"
 
 #include <stdio.h>
@@ -20,48 +23,100 @@ static void format_space(char *out, size_t n, uint64_t b) {
 }
 
 static void icon_folder(Fb *fb, int x, int y, int system) {
-    fb_fill(fb, x + 2, y + 7, 14, 6, C_FOLDER_TAB);
-    fb_frame(fb, x + 2, y + 7, 14, 6, C_FOLDER_EDGE);
-    fb_fill(fb, x + 1, y + 12, 30, 17, C_FOLDER);
-    fb_frame(fb, x + 1, y + 12, 30, 17, C_FOLDER_EDGE);
-    fb_hline(fb, x + 2, y + 13, 28, C_FOLDER_TAB);
+    if (desktop_asset_draw(fb, x, y, system ? "system_folder" : "folder")) return;
+    const uint32_t shadow = 0xFF252746u, light = 0xFFD8D5FFu;
+    fb_fill(fb, x + 4, y + 27, 25, 3, shadow);
+    fb_fill(fb, x + 3, y + 7, 16, 7, C_FOLDER_EDGE);
+    fb_fill(fb, x + 4, y + 8, 13, 4, light);
+    fb_fill(fb, x + 2, y + 12, 29, 16, C_FOLDER_EDGE);
+    fb_fill(fb, x + 3, y + 13, 27, 13, C_FOLDER);
+    fb_hline(fb, x + 4, y + 13, 25, light);
+    fb_hline(fb, x + 3, y + 15, 27, 0xFFB8B5FFu);
+    fb_fill(fb, x + 3, y + 26, 26, 1, 0xFF7776C4u);
     if (system) {
-        fb_text(fb, x + 12, y + 16, C_FOLDER_EDGE, "π");
+        fb_fill(fb, x + 10, y + 17, 12, 7, 0xFF49477Au);
+        fb_text(fb, x + 12, y + 17, C_WHITE, "9");
     }
 }
 
 static void icon_doc(Fb *fb, int x, int y) {
-    fb_fill(fb, x + 8, y + 3, 16, 24, C_WHITE);
-    fb_fill(fb, x + 18, y + 3, 7, 7, 0xFFD0D0D0u);
-    fb_frame(fb, x + 8, y + 3, 17, 24, C_BLACK);
-    fb_hline(fb, x + 11, y + 14, 10, 0xFF9A9A9Au);
-    fb_hline(fb, x + 11, y + 18, 10, 0xFF9A9A9Au);
-    fb_hline(fb, x + 11, y + 22, 7, 0xFF9A9A9Au);
+    if (desktop_asset_draw(fb, x, y, "document")) return;
+    fb_fill(fb, x + 10, y + 5, 16, 24, 0xFF777777u);
+    fb_fill(fb, x + 8, y + 3, 16, 24, 0xFF353535u);
+    fb_fill(fb, x + 9, y + 4, 14, 22, C_WHITE);
+    fb_fill(fb, x + 18, y + 4, 5, 5, 0xFFD0D0D0u);
+    fb_hline(fb, x + 18, y + 8, 5, 0xFF858585u);
+    fb_fill(fb, x + 11, y + 12, 9, 2, 0xFF6589B9u);
+    fb_hline(fb, x + 11, y + 17, 9, 0xFF9A9A9Au);
+    fb_hline(fb, x + 11, y + 20, 9, 0xFF9A9A9Au);
+    fb_hline(fb, x + 11, y + 23, 6, 0xFF9A9A9Au);
 }
 
 static void icon_disk(Fb *fb, int x, int y) {
-    fb_fill(fb, x + 4, y + 8, 24, 16, 0xFFE6E6E6u);
-    fb_frame(fb, x + 4, y + 8, 24, 16, C_BLACK);
-    fb_fill(fb, x + 7, y + 18, 18, 2, 0xFF8E8E8Eu);
-    fb_fill(fb, x + 8, y + 11, 5, 3, 0xFF3CAA55u);
+    if (desktop_asset_draw(fb, x, y, "hard_disk")) return;
+    fb_fill(fb, x + 4, y + 26, 25, 3, 0xFF272727u);
+    fb_fill(fb, x + 3, y + 7, 26, 20, 0xFF33383Fu);
+    fb_fill(fb, x + 4, y + 8, 24, 16, 0xFFD5DCE3u);
+    fb_hline(fb, x + 5, y + 9, 22, C_WHITE);
+    fb_fill(fb, x + 6, y + 12, 20, 7, 0xFFBAC5CEu);
+    fb_fill(fb, x + 7, y + 20, 17, 2, 0xFF59636Du);
+    fb_fill(fb, x + 8, y + 23, 4, 2, 0xFF777F87u);
+    fb_fill(fb, x + 21, y + 23, 4, 2, 0xFF777F87u);
+    fb_fill(fb, x + 23, y + 14, 2, 2, 0xFF5CCB78u);
 }
 
 static void icon_trash(Fb *fb, int x, int y) {
-    fb_frame(fb, x + 11, y + 4, 10, 4, C_BLACK);
-    fb_fill(fb, x + 6, y + 8, 20, 3, 0xFFF2F2F2u);
-    fb_frame(fb, x + 6, y + 8, 20, 3, C_BLACK);
-    fb_fill(fb, x + 8, y + 12, 16, 15, 0xFFF7F7F7u);
-    fb_frame(fb, x + 8, y + 12, 16, 15, C_BLACK);
-    for (int i = 0; i < 3; i++) {
-        fb_fill(fb, x + 12 + i * 4, y + 15, 1, 9, 0xFF8A8A8Au);
+    if (desktop_asset_draw(fb, x, y, "trash_empty")) return;
+    fb_fill(fb, x + 8, y + 27, 17, 2, 0xFF555555u);
+    fb_fill(fb, x + 12, y + 4, 9, 3, 0xFFB7C1C9u);
+    fb_frame(fb, x + 11, y + 3, 11, 5, 0xFF30343Au);
+    fb_fill(fb, x + 6, y + 8, 21, 4, 0xFFE3E9EDu);
+    fb_frame(fb, x + 5, y + 8, 22, 4, 0xFF30343Au);
+    for (int row = 0; row < 14; row++) {
+        int inset = row / 7;
+        fb_fill(fb, x + 7 + inset, y + 12 + row, 18 - inset * 2, 1,
+                (row & 1) ? 0xFFE6EBEFu : 0xFFF8FAFBu);
+    }
+    fb_fill(fb, x + 7, y + 12, 1, 14, 0xFF30343Au);
+    fb_fill(fb, x + 24, y + 12, 1, 14, 0xFF30343Au);
+    fb_fill(fb, x + 11, y + 15, 1, 9, 0xFF88949Du);
+    fb_fill(fb, x + 15, y + 15, 1, 9, 0xFF88949Du);
+    fb_fill(fb, x + 19, y + 15, 1, 9, 0xFF88949Du);
+}
+
+static void icon_application(Fb *fb, int x, int y) {
+    if (desktop_asset_draw(fb, x, y, "application")) return;
+    fb_fill(fb, x + 4, y + 27, 26, 3, 0xFF272746u);
+    fb_fill(fb, x + 3, y + 3, 26, 21, 0xFF343343u);
+    fb_fill(fb, x + 5, y + 5, 22, 17, 0xFFD4D7E2u);
+    fb_fill(fb, x + 7, y + 7, 18, 12, 0xFF253D72u);
+    fb_hline(fb, x + 8, y + 8, 16, 0xFF607FC2u);
+    fb_fill(fb, x + 10, y + 11, 3, 3, 0xFFFFD45Du);
+    fb_fill(fb, x + 17, y + 10, 5, 2, 0xFF8BE0D6u);
+    fb_fill(fb, x + 15, y + 14, 7, 3, 0xFF8C91D9u);
+    fb_fill(fb, x + 13, y + 24, 7, 3, 0xFF8E94A3u);
+    fb_fill(fb, x + 10, y + 27, 13, 2, 0xFFC4CAD3u);
+}
+
+static void guest_icon(Fb *fb, int x, int y, const Item *item) {
+    for (int row = 0; row < 32; row++) {
+        for (int col = 0; col < 32; col++) {
+            int mask_bit = row * 32 + col;
+            if (!(item->guest_icon_mask[mask_bit >> 3] & (0x80u >> (mask_bit & 7)))) continue;
+            fb_fill(fb, x + col, y + row, 1, 1,
+                    mac_icon_color(item->guest_icon[mask_bit]));
+        }
     }
 }
 
-static void draw_kind(Fb *fb, int x, int y, int kind) {
-    if (kind == ITEM_SYSTEM) {
+static void draw_kind(Fb *fb, int x, int y, const Item *item) {
+    if (item->kind == ITEM_SYSTEM) {
         icon_folder(fb, x, y, 1);
-    } else if (kind == ITEM_FOLDER) {
+    } else if (item->kind == ITEM_FOLDER) {
         icon_folder(fb, x, y, 0);
+    } else if (item->kind == ITEM_APPLICATION) {
+        if (item->has_guest_icon) guest_icon(fb, x, y, item);
+        else icon_application(fb, x, y);
     } else {
         icon_doc(fb, x, y);
     }
@@ -89,7 +144,7 @@ static void draw_label(Fb *fb, int cx, int y, const char *name, int selected, in
 }
 
 static void paint_desktop_icons(Fb *fb, const Session *s) {
-    const char *names[2] = {"OS π HD", "Trash"};
+    const char *names[2] = {"OS999 HD", "Trash"};
     for (int which = 0; which < 2; which++) {
         Rect icon, hit;
         desktop_icon_rect(s->sw, s->sh, which, &icon, &hit);
@@ -182,7 +237,7 @@ static void paint_items(Fb *fb, const Window *w, const Layout *lay) {
         int row = i / cols;
         int x = lay->content.x + col * CELL_W + (CELL_W - 32) / 2;
         int y = lay->content.y + row * CELL_H + 4 - w->scroll;
-        draw_kind(fb, x, y, w->items[i].kind);
+        draw_kind(fb, x, y, &w->items[i]);
         if (w->items[i].selected) {
             fb_frame(fb, x - 2, y - 2, 36, 36, C_BLACK);
         }
@@ -251,7 +306,8 @@ static void paint_menus(Fb *fb, Session *s) {
         if (open) {
             fb_fill(fb, r.x, 1, r.w, 18, C_BLACK);
         }
-        fb_text(fb, r.x + 8, text_y(0, 19), open ? C_WHITE : C_BLACK, menu_title(i));
+        if (i == 0) os999_draw_menu_apple(fb, r.x + 5, 0);
+        else fb_text(fb, r.x + 8, text_y(0, 19), open ? C_WHITE : C_BLACK, menu_title(i));
     }
     time_t now = time(NULL);
     struct tm tm;

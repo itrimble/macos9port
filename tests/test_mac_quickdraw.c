@@ -49,6 +49,7 @@ int main(void) {
     CHECK(rt.cpu != NULL);
     if (!rt.cpu) return 1;
     rt.heap_next = 0x900000; rt.heap_limit = 0xd00000;
+    mac_traps_init(&rt);
     const uint32_t a5 = 0x800000, globals = a5 - 4, port = 0x700000;
     mac_cpu_set(rt.cpu, MAC_A5, a5);
     CHECK(call(&rt, 0xa86e, globals) == 1);
@@ -128,6 +129,39 @@ int main(void) {
     CHECK(mac_cpu_read(rt.cpu, 0x600012, 2) == 20);
     CHECK(mac_cpu_read(rt.cpu, 0x600014, 2) == 50);
     CHECK(mac_cpu_read(rt.cpu, 0x600016, 2) == 60);
+
+    /* InsetRect(Rect*, dh, dv): the trap stack starts with dv, then dh,
+     * followed by the rectangle pointer. */
+    mac_cpu_write(rt.cpu, 0x600010, 2, 10);
+    mac_cpu_write(rt.cpu, 0x600012, 2, 20);
+    mac_cpu_write(rt.cpu, 0x600014, 2, 80);
+    mac_cpu_write(rt.cpu, 0x600016, 2, 120);
+    mac_cpu_set(rt.cpu, MAC_A7, 0xf00000);
+    mac_cpu_write(rt.cpu, 0xf00000, 2, 5); /* dv */
+    mac_cpu_write(rt.cpu, 0xf00002, 2, 7); /* dh */
+    mac_cpu_write(rt.cpu, 0xf00004, 4, 0x600010);
+    CHECK(mac_runtime_trap(rt.cpu, 0xa8a9, 0x102, &rt) == 0);
+    CHECK(mac_cpu_get(rt.cpu, MAC_A7) == 0xf00008);
+    CHECK(mac_cpu_read(rt.cpu, 0x600010, 2) == 15);
+    CHECK(mac_cpu_read(rt.cpu, 0x600012, 2) == 27);
+    CHECK(mac_cpu_read(rt.cpu, 0x600014, 2) == 75);
+    CHECK(mac_cpu_read(rt.cpu, 0x600016, 2) == 113);
+    /* Negative deltas expand; an inset leaving less than one pixel empties. */
+    mac_cpu_set(rt.cpu, MAC_A7, 0xf00000);
+    mac_cpu_write(rt.cpu, 0xf00000, 2, (uint16_t)-2);
+    mac_cpu_write(rt.cpu, 0xf00002, 2, (uint16_t)-3);
+    mac_cpu_write(rt.cpu, 0xf00004, 4, 0x600010);
+    CHECK(mac_quickdraw_service(&rt, 0xa8a9) == 1);
+    CHECK(mac_cpu_read(rt.cpu, 0x600010, 2) == 13);
+    CHECK(mac_cpu_read(rt.cpu, 0x600012, 2) == 24);
+    CHECK(mac_cpu_read(rt.cpu, 0x600014, 2) == 77);
+    CHECK(mac_cpu_read(rt.cpu, 0x600016, 2) == 116);
+    mac_cpu_set(rt.cpu, MAC_A7, 0xf00000);
+    mac_cpu_write(rt.cpu, 0xf00000, 2, 40);
+    mac_cpu_write(rt.cpu, 0xf00002, 2, 60);
+    mac_cpu_write(rt.cpu, 0xf00004, 4, 0x600010);
+    CHECK(mac_quickdraw_service(&rt, 0xa8a9) == 1);
+    for (unsigned i = 0; i < 8; i += 2) CHECK(mac_cpu_read(rt.cpu, 0x600010 + i, 2) == 0);
     CHECK(call(&rt, 0xa850, 0) == 1);
     CHECK(mac_cpu_get(rt.cpu, MAC_A7) == 0xf00000);
     CHECK(mac_cpu_read(rt.cpu, 0x8d0, 2) == 0);

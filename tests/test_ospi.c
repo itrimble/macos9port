@@ -151,6 +151,17 @@ int main(void) {
         return 1;
     }
     CHECK(volume_seed(dir) == 0);
+    {
+        char readme[OSPI_TEXT];
+        char installed[OSPI_TEXT];
+        CHECK(volume_read(dir, "Read Me", readme, sizeof readme) == 0);
+        CHECK(strstr(readme, "OS999's own") != NULL);
+        CHECK(strstr(readme, "Systemless") == NULL);
+        CHECK(volume_read(dir, "Applications/Nothing Installed Yet",
+                          installed, sizeof installed) == 0);
+        CHECK(strstr(installed, "supported 68k app") != NULL);
+        CHECK(strstr(installed, "legacy launcher") != NULL);
+    }
     test_repeat_clicks(dir);
     Session *s = session_create(dir);
     CHECK(s != NULL);
@@ -158,7 +169,7 @@ int main(void) {
         return 1;
     }
     CHECK(s->nwin == 1);
-    CHECK(strcmp(s->win[0].title, "OS π HD") == 0);
+    CHECK(strcmp(s->win[0].title, "OS999 HD") == 0);
     CHECK(s->win[0].nitems == 4);
     CHECK(strcmp(s->win[0].items[0].name, "Applications") == 0);
     CHECK(strcmp(s->win[0].items[1].name, "Documents") == 0);
@@ -254,29 +265,31 @@ int main(void) {
     CHECK(ospi_menu_center(5, 0, &mx, &my) == 0);
     click(s, mx, my, 1);
     CHECK(s->nwin == 2);
-    CHECK(strcmp(s->win[1].title, "How to Use OS Pi") == 0);
+    CHECK(strcmp(s->win[1].title, "How to Use OS999 Stylized") == 0);
     CHECK(strstr(s->win[1].text, "Cmd-Q") != NULL);
     CHECK(strstr(s->win[1].text, dir) != NULL);
+    CHECK(strstr(s->win[1].text, "OS999's own runtime") != NULL);
+    CHECK(strstr(s->win[1].text, "Systemless") == NULL);
 
-    int root = find_win(s, "OS π HD");
+    int root = find_win(s, "OS999 HD");
     CHECK(root >= 0);
     CHECK(ospi_control_center(&s->win[root], 2, &cx, &cy) == 0);
     click(s, cx, cy, 1);
-    root = find_win(s, "OS π HD");
+    root = find_win(s, "OS999 HD");
     CHECK(root >= 0 && s->win[root].zoomed == 1);
     CHECK(ospi_control_center(&s->win[root], 2, &cx, &cy) == 0);
     click(s, cx, cy, 1);
-    root = find_win(s, "OS π HD");
+    root = find_win(s, "OS999 HD");
     CHECK(root >= 0 && s->win[root].zoomed == 0);
 
     CHECK(ospi_control_center(&s->win[root], 3, &cx, &cy) == 0);
     session_down(s, cx, cy, 2);
     session_up(s, cx, cy);
-    root = find_win(s, "OS π HD");
+    root = find_win(s, "OS999 HD");
     CHECK(root >= 0 && s->win[root].collapsed == 1);
     CHECK(ospi_control_center(&s->win[root], 3, &cx, &cy) == 0);
     session_down(s, cx, cy, 2);
-    root = find_win(s, "OS π HD");
+    root = find_win(s, "OS999 HD");
     CHECK(root >= 0 && s->win[root].collapsed == 0);
 
     session_key(s, 'w', MOD_CMD);
@@ -285,7 +298,7 @@ int main(void) {
     CHECK(ospi_desktop_center(s, 0, &tx, &ty) == 0);
     click(s, tx, ty, 2);
     CHECK(s->nwin == 1);
-    CHECK(strcmp(s->win[0].title, "OS π HD") == 0);
+    CHECK(strcmp(s->win[0].title, "OS999 HD") == 0);
 
     session_paint(s, px, OSPI_W, OSPI_H);
     write_ppm(px, "/tmp/ospi-after.ppm");

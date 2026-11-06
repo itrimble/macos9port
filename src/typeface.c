@@ -42,6 +42,8 @@ static FT_Library g_lib;
 #endif
 static FaceSlot g_ui;
 static FaceSlot g_body;
+static FaceSlot g_startup;
+static FaceSlot g_startup_small;
 static char g_label[64] = "font8x8";
 static int g_ready;
 
@@ -370,6 +372,15 @@ int typeface_init(const char *root) {
         snprintf(both, sizeof both, "%s, %s", g_label, g_body.face->family_name);
         snprintf(g_label, sizeof g_label, "%s", both);
     }
+    /* Startup branding uses only the bundled public-domain font, never a
+     * system-provided proprietary face. Separate sizes keep desktop metrics. */
+    const char *startup_dirs[] = {bundled, "fonts"};
+    char startup_path[PATH_MAX] = {0};
+    if (find_named("ChicagoFLF", startup_path, sizeof startup_path,
+                   startup_dirs, 2)) {
+        load_face(&g_startup, startup_path, 38, 0);
+        load_face(&g_startup_small, startup_path, 18, 0);
+    }
     g_ready = 1;
 #else
     (void)root;
@@ -378,9 +389,20 @@ int typeface_init(const char *root) {
 }
 
 int typeface_ready(void) { return g_ready; }
+int typeface_startup_ready(void) {
+#ifdef OSPI_FREETYPE
+    return g_ready && g_startup.face && g_startup_small.face;
+#else
+    return 0;
+#endif
+}
 const char *typeface_label(void) { return g_label; }
 
 static FaceSlot *slot_for(int body) {
+#ifdef OSPI_FREETYPE
+    if (body == 2 && g_startup.face) return &g_startup;
+    if (body == 3 && g_startup_small.face) return &g_startup_small;
+#endif
     if (body && !g_body.shared && g_body.path[0]) {
         return &g_body;
     }
@@ -423,28 +445,6 @@ int typeface_next(int body, const char *s, int *byte_adv, int *px) {
     }
     *px = 8;
     return 1;
-}
-
-int typeface_width(int body, const char *s, int nbytes) {
-    if (!s) {
-        return 0;
-    }
-    int used = 0;
-    int px = 0;
-    while (*s && (nbytes < 0 || used < nbytes)) {
-        int b = 0;
-        int w = 0;
-        if (!typeface_next(body, s, &b, &w) || b <= 0) {
-            break;
-        }
-        if (nbytes >= 0 && used + b > nbytes) {
-            break;
-        }
-        used += b;
-        s += b;
-        px += w;
-    }
-    return px;
 }
 
 void typeface_draw(void *fb_ptr, int body, int x, int y, uint32_t color, const char *s, int nbytes) {

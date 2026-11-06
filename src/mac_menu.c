@@ -8,7 +8,7 @@ extern const uint8_t font8x8_pi[8];
  * https://dev.os9.ca/techpubs/mac/Toolbox/Toolbox-130.html
  * The private two-byte list representation is ours, not an Apple structure.
  * Native title glyphs use our existing font; system-menu byte0x14 uses the
- * authored OS Pi mark. Selection, custom definitions/colors are unsupported. */
+ * authored OS999 mark. Selection, custom definitions/colors are unsupported. */
 static int fail(MacRuntime *r,const char *why){mac_cpu_halt(r->cpu,why);return -1;}
 static int valid(MacRuntime *r,uint32_t p,size_t n,int align){
     size_t size=mac_cpu_ram_size(r->cpu);

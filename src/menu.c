@@ -2,7 +2,7 @@
 #include "ospi.h"
 
 static const MenuItem k_pi[] = {
-    {"About OS Pi", CMD_ABOUT, 0, NULL, 0},
+    {"About This Mac", CMD_ABOUT, 0, NULL, 0},
     {NULL, 0, 0, NULL, 0},
     {"Shut Down", CMD_SHUTDOWN, 0, NULL, 0},
 };
@@ -29,13 +29,20 @@ static const MenuItem k_view[] = {
     {"Clean Up", CMD_CLEANUP, 0, NULL, 0},
 };
 
-static const MenuItem k_special[] = {
+static MenuItem k_special[] = {
     {"Empty Trash", CMD_EMPTY_ASK, 0, NULL, 0},
     {"Clean Up", CMD_CLEANUP, 0, NULL, 0},
+    {"Startup Animation: Toggle", CMD_STARTUP_TOGGLE, 0, "F9", 0},
+    {"Preview Startup", CMD_STARTUP_PREVIEW, 0, "F10", 0},
+    {"Interface Sounds", CMD_SOUND_TOGGLE, MI_CHECKED, NULL, 0},
 };
 
+void menu_set_sound_enabled(int enabled) {
+    k_special[4].flags = enabled ? MI_CHECKED : 0;
+}
+
 static const MenuItem k_help[] = {
-    {"How to Use OS Pi", CMD_HELP, 0, NULL, 0},
+    {"How to Use OS999 Stylized", CMD_HELP, 0, NULL, 0},
 };
 
 static const struct {
@@ -43,11 +50,11 @@ static const struct {
     const MenuItem *items;
     int n;
 } k_menus[] = {
-    {"π", k_pi, 3},
+    {"999", k_pi, 3},
     {"File", k_file, 6},
     {"Edit", k_edit, 5},
     {"View", k_view, 2},
-    {"Special", k_special, 2},
+    {"Special", k_special, 5},
     {"Help", k_help, 1},
 };
 
@@ -107,7 +114,7 @@ void menu_title_rect(int index, Rect *r) {
     int x = 6;
     for (int i = 0; i < menu_count(); i++) {
         int tw = fb_text_width(menu_title(i));
-        int w = tw + 18;
+        int w = i == 0 ? 34 : tw + 18;
         if (i == index) {
             *r = (Rect){x, 0, w, 20};
             return;

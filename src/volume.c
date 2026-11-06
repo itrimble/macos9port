@@ -1,4 +1,5 @@
 #include "ospi.h"
+#include "mac_icon.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -16,16 +17,15 @@ static const struct {
 } k_seed[] = {
     {"Applications/Nothing Installed Yet",
      "No classic applications are installed.\n\n"
-     "File, Install from Garden, copies a\n"
-     "Macintosh Garden page here. Double-click\n"
-     "a StuffIt archive, or a program beside\n"
-     "it, to open it in Systemless.\n"
-     "Many programs still fail.\n"},
+     "Copy a supported 68k app here and\n"
+     "double-click it to try OS999's own\n"
+     "runtime. Support is incomplete. Some\n"
+     "archive formats use a legacy launcher.\n"},
     {"Documents/Notes",
      "Notes live here as plain text.\n\n"
      "Double-click a document to read it.\n"},
     {"Read Me",
-     "OS Pi 0.1\n\n"
+     "OS999 Stylized 0.1\n\n"
      "This desktop is a clean-room program.\n"
      "It is not Apple's Mac OS 9. There is\n"
      "no Apple ROM and no Apple Toolbox.\n\n"
@@ -36,9 +36,12 @@ static const struct {
      "Cmd-O  Open\n"
      "Cmd-W  Close\n"
      "Cmd-Q  Quit\n\n"
+     "Supported 68k apps run in OS999's own\n"
+     "runtime. Other apps may fail or use a\n"
+     "legacy archive launcher.\n\n"
      "Double-click the disk if you close\n"
      "this window. Shut Down is under the\n"
-     "pi mark at the left of the menu bar.\n"},
+     "Granny Smith icon at the left of the menu bar.\n"},
     {"System Folder/About This Folder",
      "On a classic Mac this folder held the\n"
      "system. Here it is an ordinary folder,\n"
@@ -50,7 +53,7 @@ static const struct {
      "Drop TrueType, OpenType, or PostScript\n"
      "Type 1 fonts in this folder.\n"
      "Extensions: .ttf .otf .ttc .pfa .pfb\n\n"
-     "OS Pi ships ChicagoFLF, which Robin\n"
+     "OS999 Stylized ships ChicagoFLF, which Robin\n"
      "Casady placed in the public domain.\n"
      "It is not Apple's Chicago. Geneva,\n"
      "Charcoal, and Monaco are used only\n"
@@ -231,7 +234,8 @@ int volume_list(const char *root, const char *rel, Item *items, int max) {
         if (S_ISDIR(st.st_mode)) {
             items[n].kind = strcmp(de->d_name, "System Folder") == 0 ? ITEM_SYSTEM : ITEM_FOLDER;
         } else {
-            items[n].kind = ITEM_FILE;
+            items[n].kind = mac_icon_application(root, child_rel, &items[n]) ?
+                            ITEM_APPLICATION : ITEM_FILE;
         }
         n++;
     }
@@ -256,7 +260,7 @@ int volume_read(const char *root, const char *rel, char *buf, size_t n) {
         unsigned char c = (unsigned char)buf[i];
         if (c != '\n' && c != '\r' && c != '\t' && c < 32) {
             snprintf(buf, n,
-                     "OS Pi cannot show this file as text.\n\n"
+                     "OS999 Stylized cannot show this file as text.\n\n"
                      "Double-click a StuffIt, MacBinary,\n"
                      "or disk image to open it in\n"
                      "Systemless. Other files stay put.\n");

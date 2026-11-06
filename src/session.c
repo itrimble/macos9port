@@ -1,5 +1,6 @@
 #include "ospi.h"
 #include "draw.h"
+#include "native_launch.h"
 #include "session_int.h"
 
 #include <stdio.h>
@@ -50,7 +51,7 @@ void reload_folders(Session *s) {
 
 static const char *base_name(const char *rel) {
     if (!rel || !rel[0]) {
-        return "OS π HD";
+        return "OS999 HD";
     }
     const char *sl = strrchr(rel, '/');
     return sl ? sl + 1 : rel;
@@ -119,6 +120,13 @@ static int open_text(Session *s, const char *title, const char *rel, const char 
     snprintf(w->rel, sizeof w->rel, "%s", rel ? rel : "");
     snprintf(w->text, sizeof w->text, "%s", body ? body : "");
     place_new(s, w, 1);
+    if (strcmp(title, "About This Mac") == 0) {
+        w->w = 460;
+        w->h = 350;
+        w->x = (s->sw - w->w) / 2;
+        w->y = (s->sh - w->h) / 2;
+        w->shade_h = w->h;
+    }
     s->nwin++;
     return 0;
 }
@@ -166,6 +174,16 @@ void open_item(Session *s, Window *w, int index) {
     if (join_rel(rel, sizeof rel, w->rel, w->items[index].name) != 0) {
         return;
     }
+    if (session_is_sit(w->items[index].name)) {
+        session_open_sit(s, rel);
+        return;
+    }
+    if (w->items[index].kind == ITEM_APPLICATION) {
+        char full[OSPI_PATH], err[240] = {0};
+        int opened = volume_join(full, sizeof full, s->root, rel) == 0 ? native_open(s->root, full, err, sizeof err) : -1;
+        if (opened != 0) dialog_info(s, "Open", opened < 0 && err[0] ? err : "This application has no supported CODE resource.");
+        return;
+    }
     if (w->items[index].kind == ITEM_FILE) {
         char full[OSPI_PATH];
         char err[240];
@@ -194,13 +212,11 @@ void open_item(Session *s, Window *w, int index) {
         dialog_info(s, "Open", "Close a window first.");
     }
 }
-
 void select_only(Window *w, int index) {
     for (int i = 0; i < w->nitems; i++) {
         w->items[i].selected = i == index;
     }
 }
-
 void toggle_shade(Window *w) {
     if (!w->collapsed) {
         w->shade_h = w->h;
@@ -211,7 +227,6 @@ void toggle_shade(Window *w) {
         w->collapsed = 0;
     }
 }
-
 void toggle_zoom(Session *s, Window *w) {
     if (w->collapsed) {
         toggle_shade(w);
@@ -234,7 +249,6 @@ void toggle_zoom(Session *s, Window *w) {
         w->zoomed = 0;
     }
 }
-
 static void format_ram(char *out, size_t n, uint64_t b) {
     uint64_t g = 1024ull * 1024ull * 1024ull;
     if (g != 0 && b >= g && b % g == 0) {
@@ -243,13 +257,21 @@ static void format_ram(char *out, size_t n, uint64_t b) {
         snprintf(out, n, "%.1f GB", (double)b / (double)g);
     }
 }
-
 void session_command(Session *s, int cmd) {
     s->menu = -1;
     switch (cmd) {
     case CMD_QUIT:
     case CMD_SHUTDOWN:
         s->quit = 1;
+        break;
+    case CMD_SOUND_TOGGLE:
+        s->sound_toggle_request = 1;
+        break;
+    case CMD_STARTUP_TOGGLE:
+        s->startup_toggle_request = 1;
+        break;
+    case CMD_STARTUP_PREVIEW:
+        s->startup_preview_request = 1;
         break;
     case CMD_CLOSE:
         if (s->nwin > 0) {
@@ -319,18 +341,20 @@ void session_command(Session *s, int cmd) {
         char body[OSPI_TEXT];
         format_ram(ram, sizeof ram, s->ram);
         snprintf(body, sizeof body,
-                 "OS Pi 0.1\n%s, %s memory\n"
+                 "OS999 Stylized 0.1\n%s, %s memory\n"
                  "Letters: %s\n\n"
-                 "A clean-room desktop in the style\n"
-                 "of the classic Mac. This is not\n"
-                 "Mac OS 9. There is no Apple ROM\n"
-                 "and no Apple Toolbox here.\n\n"
-                 "Classic programs open in Systemless,\n"
-                 "a separate program, in their own window.\n\n"
-                 "Your files are here:\n%s\n",
-                 s->arch, ram, typeface_label(), s->root);
-        if (open_text(s, "About OS Pi", ":about", body) != 0) {
-            dialog_info(s, "About OS Pi", "Close a window first.");
+                 "Created by Ian Trimble\n"
+                 "Independent software creator\n"
+                 "Games, tools, and classic computing\n\n"
+                 "remnantsecurity.com\n"
+                 "Ian's home for the things he creates\n"
+                 "and shares publicly.\n\n"
+                 "OS999 is a clean-room desktop inspired\n"
+                 "by classic Macintosh computing.\n"
+                 "Compatibility is a work in progress.\n",
+                 s->arch, ram, typeface_label());
+        if (open_text(s, "About This Mac", ":about", body) != 0) {
+            dialog_info(s, "About This Mac", "Close a window first.");
         }
         break;
     }
@@ -347,14 +371,15 @@ void session_command(Session *s, int cmd) {
                  "Cmd-Q  Quit\n\n"
                  "File, Install from Garden, copies\n"
                  "an app or game you copied from\n"
-                 "macintoshgarden.org. Double-click\n"
-                 "the archive. Systemless opens it.\n"
-                 "Many classic programs still fail.\n\n"
+                 "macintoshgarden.org. Supported 68k\n"
+                 "apps open in OS999's own runtime.\n"
+                 "Some archives use a legacy launcher;\n"
+                 "many classic programs still fail.\n\n"
                  "The volume on disk:\n%s\n\n"
                  "Quit, then delete that folder,\n"
                  "to get the original files back.\n",
                  s->root);
-        if (open_text(s, "How to Use OS Pi", ":help", body) != 0) {
+        if (open_text(s, "How to Use OS999 Stylized", ":help", body) != 0) {
             dialog_info(s, "Help", "Close a window first.");
         }
         break;
@@ -382,115 +407,15 @@ void session_command(Session *s, int cmd) {
         char rel[OSPI_PATH];
         err[0] = 0;
         if (install_garden(s->root, s->install_url, rel, sizeof rel, err, sizeof err) != 0) {
+            if (rel[0]) open_folder(s, rel);
             dialog_info(s, "Install", err[0] ? err : "Could not install that page.");
             break;
         }
         open_folder(s, rel);
-        dialog_info(s, "Install",
-                    "Saved in Applications.\n\n"
-                    "Double-click the archive.\n"
-                    "It opens in its own window.");
+        dialog_info(s, "Install", "Archive downloaded and expanded.\n\nOpen the app inside its folder.");
         break;
     }
     default:
         break;
     }
 }
-
-void session_set_clip(Session *s, const char *text) {
-    if (!s) {
-        return;
-    }
-    s->clip[0] = 0;
-    if (!text) {
-        return;
-    }
-    snprintf(s->clip, sizeof s->clip, "%s", text);
-}
-
-void session_clamp(Session *s) {
-    if (s->sw < 200) {
-        s->sw = OSPI_W;
-    }
-    if (s->sh < 200) {
-        s->sh = OSPI_H;
-    }
-    for (int i = 0; i < s->nwin; i++) {
-        Window *w = &s->win[i];
-        int maxs = window_max_scroll(w);
-        if (w->scroll < 0) {
-            w->scroll = 0;
-        }
-        if (w->scroll > maxs) {
-            w->scroll = maxs;
-        }
-        if (w->w < 260) {
-            w->w = 260;
-        }
-        if (w->collapsed) {
-            w->h = TITLE_H;
-        } else if (w->h < 140) {
-            w->h = 140;
-        }
-        if (w->x < 0) {
-            w->x = 0;
-        }
-        if (w->y < 20) {
-            w->y = 20;
-        }
-        if (w->x > s->sw - 48) {
-            w->x = s->sw - 48;
-        }
-        if (w->y > s->sh - TITLE_H) {
-            w->y = s->sh - TITLE_H;
-        }
-        if (w->x + w->w > s->sw) {
-            w->w = s->sw - w->x;
-        }
-        if (!w->collapsed && w->y + w->h > s->sh) {
-            w->h = s->sh - w->y;
-        }
-    }
-}
-
-Session *session_create(const char *root) {
-    struct stat st;
-    if (!root || strlen(root) >= OSPI_PATH || stat(root, &st) != 0 || !S_ISDIR(st.st_mode)) {
-        return NULL;
-    }
-    Session *s = calloc(1, sizeof *s);
-    if (!s) {
-        return NULL;
-    }
-    memcpy(s->root, root, strlen(root) + 1);
-    s->menu = -1;
-    s->menu_hot = -1;
-    s->desk_sel = -1;
-    s->press_win = -1;
-    s->sw = OSPI_W;
-    s->sh = OSPI_H;
-    typeface_init(s->root);
-    s->ram = host_ram();
-    snprintf(s->arch, sizeof s->arch, "%s", host_arch());
-    volume_free_bytes(s->root, &s->free_bytes);
-    s->last_stat = 1;
-    open_folder(s, "");
-    return s;
-}
-
-void session_destroy(Session *s) { free(s); }
-
-int session_quit(const Session *s) { return s && s->quit; }
-
-void session_tick(Session *s, uint32_t now_ms) {
-    s->input_now_ms = now_ms;
-    if (s->last_stat != 0 && now_ms - s->last_stat < 1000) {
-        return;
-    }
-    uint64_t b = 0;
-    if (volume_free_bytes(s->root, &b) == 0) {
-        s->free_bytes = b;
-    }
-    s->last_stat = now_ms;
-}
-

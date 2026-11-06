@@ -1,5 +1,6 @@
 #include "native_launch.h"
 #include "mac_resource.h"
+#include "runtime_bridge.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -15,6 +16,41 @@
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
 #endif
+
+static RuntimeBridge *active_surface;
+static char active_surface_name[64];
+static char active_surface_title[256];
+
+int native_surface_active(void) { return active_surface != NULL; }
+
+int native_surface_read(uint32_t *pixels, size_t capacity, int *width, int *height,
+                        uint64_t *sequence) {
+    return active_surface ? runtime_bridge_read(active_surface, pixels, capacity,
+                                                 width, height, sequence) : 0;
+}
+
+int native_surface_push(RuntimeBridgeInput input) {
+    return active_surface ? runtime_bridge_push(active_surface, input) : 0;
+}
+
+int native_surface_state(uint32_t *state, char *message, size_t message_size) {
+    return active_surface ? runtime_bridge_get_state(active_surface, state, message,
+                                                       message_size) : -1;
+}
+
+const char *native_surface_title(void) {
+    return active_surface_title[0] ? active_surface_title : "Classic Macintosh Application";
+}
+
+void native_surface_close(void) {
+    if (!active_surface) return;
+    runtime_bridge_set_state(active_surface, RUNTIME_BRIDGE_CLOSED, "");
+    runtime_bridge_close(active_surface);
+    runtime_bridge_unlink(active_surface_name);
+    active_surface = NULL;
+    active_surface_name[0] = 0;
+    active_surface_title[0] = 0;
+}
 
 static int problem(char *err, size_t n, const char *message) {
     if (err && n) snprintf(err, n, "%s", message);
@@ -55,7 +91,7 @@ static int resolve_fork(const char *root, const char *full, char *out, size_t n,
                         char *err, size_t err_n) {
     char canonical_root[PATH_MAX], candidate[PATH_MAX], resolved[PATH_MAX];
     if (!root || !full || !realpath(root, canonical_root))
-        return problem(err, err_n, "Could not resolve the OS Pi volume.");
+        return problem(err, err_n, "Could not resolve the OS999 volume.");
     size_t length = strlen(full);
     int explicit_fork = length > 5 && !strcasecmp(full + length - 5, ".rsrc");
     const char *suffixes[] = {".rsrc", "/..namedfork/rsrc"};
@@ -73,13 +109,13 @@ static int resolve_fork(const char *root, const char *full, char *out, size_t n,
             /* macOS treats ..namedfork as a virtual suffix: realpath rejects
              * it even when open succeeds. Resolve/check the base file first. */
             if (!realpath(full, resolved) || !contained(canonical_root, resolved))
-                return problem(err, err_n, "Application resource fork is outside the OS Pi volume.");
+                return problem(err, err_n, "Application resource fork is outside the OS999 volume.");
             k = snprintf(candidate, sizeof candidate, "%s/..namedfork/rsrc", resolved);
             if (k < 0 || (size_t)k >= sizeof candidate)
                 return problem(err, err_n, "Application path is too long.");
             memcpy(resolved, candidate, (size_t)k + 1);
         } else if (!realpath(candidate, resolved) || !contained(canonical_root, resolved)) {
-            return problem(err, err_n, "Application resource fork is outside the OS Pi volume.");
+            return problem(err, err_n, "Application resource fork is outside the OS999 volume.");
         }
         int result = application_fork(resolved, err, err_n);
         if (result < 0) return -1;
@@ -170,11 +206,23 @@ int native_open(const char *root, const char *full, char *err, size_t n) {
     char fork_path[PATH_MAX], runtime[PATH_MAX];
     int applicable = resolve_fork(root, full, fork_path, sizeof fork_path, err, n);
     if (applicable != 0) return applicable;
+    if (active_surface) {
+        uint32_t state = RUNTIME_BRIDGE_STARTING;
+        if (native_surface_state(&state, NULL, 0) == 0 && state == RUNTIME_BRIDGE_CLOSED)
+            native_surface_close();
+        else return problem(err, n, "Close the currently open classic application first.");
+    }
     if (runtime_path(runtime, sizeof runtime))
-        return problem(err, n, "OS Pi's independent runtime is missing. Build and install ospi-runtime beside OS Pi.");
+        return problem(err, n, "OS999's independent runtime is missing. Build and install ospi-runtime beside OS999 Stylized.");
+    char bridge_name[64];
+    RuntimeBridge *bridge = runtime_bridge_create(bridge_name, sizeof bridge_name);
+    if (!bridge) return problem(err, n, "Could not create a private guest display surface.");
     char log_path[] = "/tmp/ospi-runtime-XXXXXX";
     int log = mkstemp(log_path);
-    if (log < 0) return problem(err, n, "Could not create the private runtime log.");
+    if (log < 0) {
+        runtime_bridge_close(bridge); runtime_bridge_unlink(bridge_name);
+        return problem(err, n, "Could not create the private runtime log.");
+    }
     pid_t mid = fork();
     if (mid == 0) {
         if (setsid() < 0) _exit(125);
@@ -185,9 +233,11 @@ int native_open(const char *root, const char *full, char *err, size_t n) {
                 dup2(log, STDOUT_FILENO) < 0 || dup2(log, STDERR_FILENO) < 0) _exit(125);
             if (input > STDERR_FILENO) close(input);
             if (log > STDERR_FILENO) close(log);
-            char *argv[] = {runtime, "--window", "--indexed", "--interactive", fork_path, NULL};
+            if (!getenv("OSPI_PERF_TRACE")) setenv("OSPI_PERF_TRACE", "1", 1);
+            char *argv[] = {runtime, "--window", "--indexed", "--interactive",
+                            "--bridge", bridge_name, fork_path, NULL};
             execv(runtime, argv);
-            dprintf(STDERR_FILENO, "Could not execute OS Pi runtime: %s\n", strerror(errno));
+            dprintf(STDERR_FILENO, "Could not execute OS999 runtime: %s\n", strerror(errno));
             _exit(127);
         }
         close(log);
@@ -201,10 +251,21 @@ int native_open(const char *root, const char *full, char *err, size_t n) {
         char detail[112];
         summarize_log(log_path, detail, sizeof detail);
         int code = got == mid && WIFEXITED(status) ? WEXITSTATUS(status) : 125;
-        if (err && n) snprintf(err, n, "OS Pi runtime stopped (%d).\n%s\nLog: %s",
+        if (err && n) snprintf(err, n, "OS999 runtime stopped (%d).\n%s\nLog: %s",
                                code, detail[0] ? detail : "Startup failed.", log_path);
+        runtime_bridge_close(bridge); runtime_bridge_unlink(bridge_name);
         return -1;
     }
+    active_surface = bridge;
+    snprintf(active_surface_name, sizeof active_surface_name, "%s", bridge_name);
+    const char *title = strrchr(full, '/');
+    title = title ? title + 1 : full;
+    size_t title_length = strlen(title);
+    if (title_length > 5 && !strcasecmp(title + title_length - 5, ".rsrc"))
+        title_length -= 5;
+    if (title_length >= sizeof active_surface_title) title_length = sizeof active_surface_title - 1;
+    memcpy(active_surface_title, title, title_length);
+    active_surface_title[title_length] = 0;
     if (err && n) snprintf(err, n, "Runtime started. Log: %s", log_path);
     return 0;
 }

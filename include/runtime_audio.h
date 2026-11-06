@@ -2,6 +2,7 @@
 #define RUNTIME_AUDIO_H
 #include "mac_sound.h"
 #include <stdatomic.h>
+#include <stddef.h>
 
 #define RUNTIME_AUDIO_RING_FRAMES 8192u
 
@@ -23,6 +24,11 @@ typedef struct {
     uint64_t trace_callback_frames, trace_underrun_frames;
     uint64_t trace_rendered_frames, trace_clipped_frames;
     uint32_t trace_pumps, trace_ring_min;
+    /* Optional, bounded PCM capture for diagnosing guest audio. Samples are
+     * retained in memory during playback and written as WAV only at shutdown. */
+    int16_t *capture_pcm;
+    uint64_t capture_frames, capture_capacity_frames;
+    char capture_path[1024];
 } RuntimeAudio;
 int runtime_audio_open(RuntimeAudio *audio);
 int runtime_audio_pump(RuntimeAudio *audio, MacRuntime *rt,

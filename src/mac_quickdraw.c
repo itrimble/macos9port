@@ -109,6 +109,7 @@ int mac_quickdraw_service(MacRuntime *rt, uint16_t opcode) {
     unsigned args = 0;
     switch (opcode) {
         case 0xa870: case 0xa871: args = 4; break;
+        case 0xa8a9: args = 8; break;
         case 0xa86e: case 0xa86d: case 0xa86f: case 0xa873: case 0xa874: case 0xa87d: args = 4; break;
         case 0xa8a7: args = 12; break;
         case 0xa850: args = 0; break;
@@ -159,6 +160,27 @@ int mac_quickdraw_service(MacRuntime *rt, uint16_t opcode) {
             if (!p || !range(rt, p, 8)) return -1;
             rect(rt, p, (int16_t)rd(rt, sp + 4, 2), (int16_t)rd(rt, sp + 6, 2),
                  (int16_t)rd(rt, sp, 2), (int16_t)rd(rt, sp + 2, 2)); break;
+        case 0xa8a9: {
+            p = rd(rt, sp + 4, 4);
+            if (!p || !range(rt, p, 8)) return -1;
+            int16_t dv = (int16_t)rd(rt, sp, 2);
+            int16_t dh = (int16_t)rd(rt, sp + 2, 2);
+            int16_t top = (int16_t)rd(rt, p, 2);
+            int16_t left = (int16_t)rd(rt, p + 2, 2);
+            int16_t bottom = (int16_t)rd(rt, p + 4, 2);
+            int16_t right = (int16_t)rd(rt, p + 6, 2);
+            int32_t new_top = (int32_t)top + dv;
+            int32_t new_left = (int32_t)left + dh;
+            int32_t new_bottom = (int32_t)bottom - dv;
+            int32_t new_right = (int32_t)right - dh;
+            if (new_bottom - new_top < 1 || new_right - new_left < 1) {
+                rect(rt, p, 0, 0, 0, 0);
+            } else {
+                rect(rt, p, (int16_t)new_top, (int16_t)new_left,
+                     (int16_t)new_bottom, (int16_t)new_right);
+            }
+            break;
+        }
         case 0xa850:
             if (rt->qd_globals >= 108 && range(rt, rt->qd_globals - 108, 68)) {
                 memcpy(rt->cursor, mac_cpu_ram(cpu) + rt->qd_globals - 108, 68);

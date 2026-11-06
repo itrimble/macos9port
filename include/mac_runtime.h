@@ -3,6 +3,7 @@
 
 #include "mac_cpu.h"
 #include "mac_resource.h"
+#include "runtime_bridge.h"
 
 #define MAC_CODE_TYPE UINT32_C(0x434f4445)
 #define MAC_RUNTIME_RAM (16u * 1024u * 1024u)
@@ -20,6 +21,7 @@ typedef struct {
     int resource;
     uint8_t state;
     uint8_t loaded_code; /* Execution addresses are published; never relocate/dispose. */
+    uint8_t resource_changed;
 } MacHandle;
 
 typedef struct {
@@ -95,6 +97,7 @@ int mac_event_service(MacRuntime *rt, uint16_t opcode);
 void mac_runtime_post_event(MacRuntime *rt, uint16_t what, uint32_t message,
                             uint16_t modifiers, int16_t x, int16_t y);
 int mac_runtime_window(MacRuntime *rt, const char *title, size_t budget);
+int mac_runtime_bridge_window(MacRuntime *rt, size_t budget, RuntimeBridge *bridge);
 int mac_palette_manager_service(MacRuntime *rt, uint16_t opcode);
 int mac_picture_service(MacRuntime *rt, uint16_t opcode);
 int mac_sane_service(MacRuntime *rt, uint16_t opcode);

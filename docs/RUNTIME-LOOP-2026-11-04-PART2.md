@@ -467,8 +467,10 @@ artifact SHA-256 is
 
 Ian reports SCUMM Bar music was audible and sounded doubled for about 20
 seconds, then mostly alright before returning to normal. This is subjective,
-not a loopback recording. The trace found no duplicate same-pitch commands,
-but captured a 754 ms gap, 7 FPS, and 34,304 underrun frames near startup.
+not a loopback recording. The prior note-command trace logged 26 events during
+its first 20 guest seconds and no same-pitch reissue within 250 ms; this does
+not measure the rendered PCM or cover the latest listening session. The same
+run captured a 754 ms gap, 7 FPS, and 34,304 underrun frames near startup.
 That is a lead, not proof; later intervals recovered. Startup scheduling,
 perceived doubling, and 85 ms ring latency need investigation; no audio fix is
 accepted.

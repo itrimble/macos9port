@@ -1,4 +1,5 @@
 #include "mac_time.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <limits.h>
@@ -7,6 +8,7 @@
 #define TIME_TASKS 32
 #define TIME_RETURN 0x1fc0u
 #define MAX_DELAY_US UINT64_C(3600000000)
+#define MAX_TIMER_CALLBACK_INSTRUCTIONS 100000u
 typedef struct {uint32_t p,token;uint64_t due,remaining;int extended,installed,active,resume;} TimeTask;
 struct MacTimeState {TimeTask tasks[TIME_TASKS];int callback;};
 static int fail(MacRuntime*r,const char*s){mac_cpu_halt(r->cpu,s);return -1;}
@@ -64,7 +66,8 @@ size_t mac_time_poll(MacRuntime*r,size_t budget){
  if(mac_cpu_get(r->cpu,MAC_SR)&0x0700)return 0;
  struct MacTimeState*s=r->time_manager;if(s->callback){fail(r,"Recursive timer polling is prohibited.");return 0;}
  size_t ran=0;unsigned work=0;
- while(ran<10000 && work++<128){
+ if(budget>MAX_TIMER_CALLBACK_INSTRUCTIONS)budget=MAX_TIMER_CALLBACK_INSTRUCTIONS;
+ while(ran<budget && work++<128){
   TimeTask*t=NULL;for(unsigned i=0;i<TIME_TASKS;i++){TimeTask*v=&s->tasks[i];if(v->installed && v->active && v->due<=r->clock_us && (!t || v->due<t->due))t=v;}
   if(!t)break;uint32_t p=t->p,code=rd(r,p+6,4);
   if(!span(r,p,t->extended?22:14) || (code && !span(r,code,2))){fail(r,"Timer callback or record exceeds RAM.");return ran;}
@@ -73,9 +76,15 @@ size_t mac_time_poll(MacRuntime*r,size_t budget){
   t->active=0;wr(r,p+4,2,0);wr(r,p+10,4,0);if(!code)continue;
   uint8_t stack[4];memcpy(stack,mac_cpu_ram(r->cpu)+sp-4,4);wr(r,sp-4,4,TIME_RETURN);
   mac_cpu_set(r->cpu,MAC_A7,sp-4);mac_cpu_set(r->cpu,MAC_A1,p);mac_cpu_set(r->cpu,MAC_PC,code);s->callback=1;
-  while(ran<10000 && !mac_cpu_halted(r->cpu) && mac_cpu_get(r->cpu,MAC_PC)!=TIME_RETURN){size_t n=mac_cpu_run(r->cpu,1);ran+=n;if(!n)break;}
+  size_t callback_start=ran;
+  while(ran<budget && !mac_cpu_halted(r->cpu) && mac_cpu_get(r->cpu,MAC_PC)!=TIME_RETURN){size_t n=mac_cpu_run(r->cpu,1);ran+=n;if(!n)break;}
   s->callback=0;if(mac_cpu_halted(r->cpu))return ran;
-  if(mac_cpu_get(r->cpu,MAC_PC)!=TIME_RETURN || mac_cpu_get(r->cpu,MAC_A7)!=sp){fail(r,"Timer callback did not return within instruction budget.");return ran;}
+  if(mac_cpu_get(r->cpu,MAC_PC)!=TIME_RETURN || mac_cpu_get(r->cpu,MAC_A7)!=sp){
+   char error[160];
+   snprintf(error,sizeof error,"Timer return mismatch: PC=%08x A7=%08x expected=%08x after %zu instructions.",
+            mac_cpu_get(r->cpu,MAC_PC),mac_cpu_get(r->cpu,MAC_A7),sp,ran-callback_start);
+   fail(r,error);return ran;
+  }
   memcpy(mac_cpu_ram(r->cpu)+sp-4,stack,4);mac_cpu_set(r->cpu,MAC_SR,saved[MAC_SR]);for(unsigned i=0;i<17;i++)mac_cpu_set(r->cpu,(MacCpuReg)i,saved[i]);
  }
  return ran; /* Remaining due work retained, including callback re-primes. */

@@ -246,13 +246,13 @@ int classic_launch(const char *path, const char *hint, char *err, size_t err_n) 
         snprintf(err, err_n,
                  "Systemless is not installed.\n\n"
                  "brew install benletchford/tap/systemless\n\n"
-                 "OS Pi does not include a Toolbox.\n"
+                 "OS999 Stylized does not include a Toolbox.\n"
                  "Systemless is a separate program.");
         return -1;
     }
     struct stat st;
     if (!path || stat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
-        snprintf(err, err_n, "That file is not a program OS Pi can open.");
+        snprintf(err, err_n, "That file is not a program OS999 Stylized can open.");
         return -1;
     }
     pid_t mid = fork();

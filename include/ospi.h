@@ -15,7 +15,7 @@ enum {
 };
 enum { MOD_CMD = 1 };
 enum { WIN_FOLDER = 1, WIN_TEXT = 2 };
-enum { ITEM_FILE = 1, ITEM_FOLDER = 2, ITEM_SYSTEM = 3 };
+enum { ITEM_FILE = 1, ITEM_FOLDER = 2, ITEM_SYSTEM = 3, ITEM_APPLICATION = 4 };
 enum {
     CMD_NONE = 0,
     CMD_ABOUT,
@@ -29,7 +29,10 @@ enum {
     CMD_CLEANUP,
     CMD_HELP,
     CMD_INSTALL,
-    CMD_INSTALL_DO
+    CMD_INSTALL_DO,
+    CMD_STARTUP_TOGGLE,
+    CMD_STARTUP_PREVIEW,
+    CMD_SOUND_TOGGLE
 };
 enum { MI_DISABLED = 1, MI_CHECKED = 2 };
 
@@ -49,6 +52,9 @@ typedef struct {
     char name[OSPI_NAME];
     int kind;
     int selected;
+    uint8_t guest_icon[1024];
+    uint8_t guest_icon_mask[128];
+    int has_guest_icon;
 } Item;
 
 typedef struct {
@@ -103,6 +109,10 @@ struct Session {
     char dialog_body[384];
     char clip[512];
     char install_url[512];
+    int startup_toggle_request;
+    int startup_preview_request;
+    int sound_toggle_request;
+    int host_sound_enabled;
 };
 
 enum {
@@ -125,6 +135,7 @@ void desktop_icon_rect(int sw, int sh, int which, Rect *icon, Rect *hit);
 int desktop_which(int sw, int sh, int x, int y);
 void dialog_layout(const Session *s, Rect *box, Rect *cancel, Rect *ok);
 
+void menu_set_sound_enabled(int enabled);
 int menu_count(void);
 const char *menu_title(int index);
 int menu_nitems(int menu);
@@ -164,6 +175,8 @@ void session_key(Session *s, int key, int mods);
 void session_tick(Session *s, uint32_t now_ms);
 int session_quit(const Session *s);
 void session_command(Session *s, int cmd);
+int session_take_startup_toggle(Session *s);
+int session_take_startup_preview(Session *s);
 void session_clamp(Session *s);
 void session_set_clip(Session *s, const char *text);
 
@@ -172,6 +185,8 @@ int garden_pick_url(const char *html, char *out, size_t n);
 int garden_alt_url(const char *url, int which, char *out, size_t n);
 int install_garden(const char *root, const char *page_url, char *created_rel, size_t created_n,
                    char *err, size_t err_n);
+int install_sit(const char *root, const char *archive_rel, char *created_rel, size_t created_n,
+                char *err, size_t err_n);
 int classic_is_program(const char *name);
 int classic_bundle(const char *root, const char *full, const char *name, char *launch, size_t launch_n,
                    char *hint, size_t hint_n);

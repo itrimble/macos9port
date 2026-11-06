@@ -1,4 +1,4 @@
-# OS Pi
+# OS999 Stylized
 
 Clean-room desktop that looks like a classic Mac, for arm64 and x86_64.
 It is a userspace program, not an OS kernel. Extracted CODE-resource apps now
@@ -31,10 +31,13 @@ not current acceptance or prohibitions on the newly requested capabilities.
 - Apple's Chicago, Charcoal, Geneva, Monaco, or the Apple logo
 - SheepShaver, Basilisk II, Mini vMac, or any wrapper that needs a ROM
 - Copied text from Inside Macintosh
-- The Systemless source tree. It is GPL-3. OS Pi starts the installed
-  `systemless` binary. It does not vendor or link that code.
+- The Systemless source tree. It is GPL-3. Some legacy archive launches may
+  call an installed `systemless` binary, but that fallback is not accepted as
+  OS999 runtime compatibility. Do not vendor or link its code.
 
-The on-screen name is OS Pi. The menu mark is the Greek letter pi.
+The on-screen product name is OS999 Stylized. The menu bar uses OS999's
+original Granny Smith fruit mark. Keep Apple-owned logos, source code, and
+system assets out of the project.
 
 ## Try it on this Mac
 
@@ -43,7 +46,8 @@ make test
 make run
 ```
 
-`make run` builds `build/OS Pi.app` and opens it. The volume is
+`make run` builds `build/OS999 Stylized.app` and opens it. The existing data
+volume remains at
 `~/Library/Application Support/OS Pi/Volume`. On Linux the same sources
 build with SDL2; `make run` starts `./build/ospi --volume ./volume`.
 That Linux path has not been executed on a Raspberry Pi from this tree yet.

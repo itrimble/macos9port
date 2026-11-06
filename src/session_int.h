@@ -7,6 +7,8 @@ void bring_front(Session *s, int idx);
 void close_index(Session *s, int idx);
 void reload_folders(Session *s);
 int open_folder(Session *s, const char *rel);
+int session_is_sit(const char *name);
+void session_open_sit(Session *s, const char *rel);
 void dialog_info(Session *s, const char *title, const char *body);
 void dialog_accept(Session *s);
 void open_item(Session *s, Window *w, int index);

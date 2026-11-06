@@ -1,0 +1,48 @@
+/* Private framebuffer conversion helpers, shared with headless tests. */
+static int frame_dimensions(const MacRuntime *rt, size_t *pixels) {
+    size_t w = rt->screen_width, h = rt->screen_height;
+    if (!w || !h || w > 4096 || h > 4096 ||
+        (rt->screen_depth != 1 && rt->screen_depth != 8)) return -1;
+    *pixels = w * h;
+    return 0;
+}
+
+static int copy_frame(MacRuntime *rt, uint32_t *out, size_t capacity) {
+    size_t count;
+    if (!rt || !rt->cpu || !out || frame_dimensions(rt, &count) || count > capacity) return -1;
+    size_t width = rt->screen_width, height = rt->screen_height;
+    size_t required_row = rt->screen_depth == 1 ? (width + 7) / 8 : width;
+    size_t stride = rt->screen_row_bytes;
+    size_t ram_size = mac_cpu_ram_size(rt->cpu);
+    size_t base = rt->screen_base;
+    if (stride < required_row || base > ram_size ||
+        (height - 1) * stride + required_row > ram_size - base) return -1;
+    const uint8_t *ram = mac_cpu_ram(rt->cpu);
+    for (size_t y = 0; y < height; y++) {
+        const uint8_t *row = ram + base + y * stride;
+        for (size_t x = 0; x < width; x++) {
+            uint32_t rgb;
+            if (rt->screen_depth == 1) rgb = row[x / 8] & (0x80u >> (x % 8)) ? 0 : 0xffffff;
+            else rgb = rt->palette[row[x]] & 0xffffffu;
+            out[y * width + x] = 0xff000000u | rgb;
+        }
+    }
+    return 0;
+}
+
+static SDL_Rect viewport(int width, int height, int guest_width, int guest_height) {
+    SDL_Rect r = {0, 0, 1, 1};
+    if (width < 1 || height < 1 || guest_width < 1 || guest_height < 1) return r;
+    if ((int64_t)width * guest_height < (int64_t)height * guest_width) {
+        r.w = width;
+        r.h = (int)((int64_t)width * guest_height / guest_width);
+    } else {
+        r.h = height;
+        r.w = (int)((int64_t)height * guest_width / guest_height);
+    }
+    if (r.w < 1) r.w = 1;
+    if (r.h < 1) r.h = 1;
+    r.x = (width - r.w) / 2;
+    r.y = (height - r.h) / 2;
+    return r;
+}

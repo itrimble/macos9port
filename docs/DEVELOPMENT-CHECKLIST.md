@@ -1,18 +1,20 @@
-# OS Pi Development Checklist
+# OS999 Stylized Development Checklist
 
 ## Success means working software
 
 Build our own clean-room classic Macintosh runtime. Run the original target
 applications and games with correct graphics, sound, input, persistence, and
-measured hardware acceleration. Add modern browsing and secure networking,
-with explicitly isolated legacy protocol compatibility. A desktop, splash
-screen, successful build, or external Systemless launch does not pass this goal.
+measured hardware acceleration. The product-facing name is OS999 Stylized; the
+classic desktop remains recognizable while branding and startup evolve. Add
+modern browsing and secure networking, with explicitly isolated legacy protocol
+compatibility. A desktop, splash screen, successful build, or external
+Systemless launch does not pass this goal.
 
 Required end-to-end demonstrations: browse `https://thurrott.com`, play YouTube
 video with verified hardware acceleration, and open classic QuickTime inside
 our runtime to play a video. These are required outcomes, not optional demos.
 
-This is the development contract requested by Ian on 4 November 2026.
+This checklist records Ian’s requirements through 5 November 2026.
 Unchecked items are requirements, not claims of existing functionality.
 
 ## How we use this checklist
@@ -32,26 +34,51 @@ Unchecked items are requirements, not claims of existing functionality.
 
 ## Current baseline
 
-The C11/SDL2 desktop now routes extracted CODE-resource applications to our
+The C11/SDL2 desktop routes extracted CODE-resource applications to our
 development runtime; unsupported archive formats retain the older Systemless
 fallback. Our runtime combines Musashi instruction execution with independently
-implemented loading and partial Macintosh API services. Original game startup
-code executes, but no target has passed sustained play and save/reload. MI1 has
-responsive controls and audible music/effects, with an opening music duplication
-report still under investigation. SDL presentation is distinct from guest
-graphics acceleration. Networking and media remain unimplemented.
+implemented loading and partial Macintosh API services. User screenshots now
+show original MI1 running in a guest window inside the desktop and progressing
+through scenes; mouse controls and effects respond. Ian reports intermittent
+ticking and missing or delayed music in the SCUMM Bar and Sword Master scenes.
+The current live session has no audio capture, trace, or FPS measurement. Guest
+window drag containment, sustained play, saves, and full acceleration remain
+unverified. Networking and classic QuickTime playback remain unimplemented.
 See [the first implementation loop](RUNTIME-LOOP-2026-11-04.md) for evidence,
 limitations, exact artifacts, and the next reproducible steps.
 
+The first OS999 intro preview looked low quality to Ian: one quick rotation
+followed by the desktop. A subsequent frame still showed faceting and a detached
+leaf. Ian said the software-rendered Granny Smith mesh looked much better, then
+requested 25% of its previous size. The fruit is now scaled to one quarter,
+rebuilt, and visible in a disposable-volume preview; final user acceptance is
+pending. Ian supplied a boot-screen mockup with a framed display, pixel-art
+apple, OS999 wordmark, and “Starting Up…” treatment. Use it as a visual target
+while preserving truthful readiness and the previously requested short startup.
+The small fruit mark is visible in the menu bar, but its click/menu behavior
+has not yet been checked.
+
+Ian also supplied `build resources from ian/Desktop1.png` through `Desktop4.png`
+as OS999 desktop references. `Desktop1` and `Desktop2` show the blue desktop,
+disk and Finder windows, Granny Smith menu mark, and About panel; `Desktop3` and
+`Desktop4` show a future app menu and Chromium window. The `.png` files are
+actually JPEG mockups. `apple_logo.png` is a pixel-art Granny Smith reference,
+not an Apple logo asset to ship. Treat all of these as visual references until
+asset ownership/provenance is recorded; mockups do not prove app functionality.
+The menu item and About This Mac text identify Ian Trimble and show
+`remnantsecurity.com`. Ian clarified that the site is where he houses all
+the things he creates publicly. His screenshot showed the About window too
+large and exposing the temporary volume path. Current source describes the
+site's role, removes that host path, and centers a smaller About window; a fresh
+packaged visual review remains due.
+
 On 4 November 2026, `BUILDFLEET_LOCAL=1 make test` passed the complete local C
 suite. `BUILDFLEET_LOCAL=1 make runtime` reported no work. REA CLI 6.8.0 matches
-the npm release checked that day; its Codex registration is aligned, while its
-shared skill copy is stale and the live MCP server is unknown. `rea analyze
-build/ospi-runtime` returned `provider_unavailable` because no native analysis
-provider is configured. No REA setup or global configuration change was made.
-Earlier REA ZIP inventories succeeded for Monkey Island 2 and Castle of Dr.
-Brain; their Evidence IDs are retained in the loop record. CPU traces are
-separate evidence.
+the checked npm release; its Codex registration is aligned, but no analysis
+provider is configured and REA tools are not connected in this agent session.
+On 5 November the shared REA skill was refreshed to version 49. Earlier REA
+ZIP inventories succeeded for Monkey Island 2 and Castle of Dr. Brain; their
+Evidence IDs are retained in the loop record. CPU traces are separate evidence.
 
 ## 0. Clean-room boundary and target identity
 
@@ -72,6 +99,45 @@ separate evidence.
   and distribution; do not derive runtime code from Apple's implementation.
   This records a scope decision only; playback remains unimplemented/unverified.
 
+## 0.5 OS999 Stylized branding and startup
+
+- [ ] S01 Use “OS999 Stylized” as the display/app name, “OS999” in startup,
+  “OS999 HD” for the default disk, and the original Granny Smith fruit mark
+  in the menu bar.
+  Remove visible OS Pi labels while preserving internal symbols, bundle/data
+  compatibility, and the existing support-volume path. Verify the packaged app.
+- [ ] S02 Ship the optional startup introduction enabled by default, with a
+  persistent end-user on/off setting and a visible preview/replay action.
+- [ ] S03 Use a replaceable, original OS999 emblem; do not copy Apple logos,
+  recordings, or other proprietary assets. The supplied startup prompt describes
+  a spinning Apple-shaped icon; adapt that concept to an original silhouette.
+- [ ] S04 Drive the initialize → settle → reveal → desktop/failure state machine
+  from actual startup work. Keep status truthful, prevent duplicate reveals,
+  provide recovery on failure, and do not invent progress or spin indefinitely.
+- [ ] S05 Keep the wordmark and “Made for the fun of it.” readable and still;
+  keep any supporting tagline (“For enthusiasts. By enthusiasts.”) secondary.
+  Spin only while work is pending, land upright smoothly, and avoid long waits.
+  Provide a development preview/replay control for repeatable review.
+- [ ] S06 Respect reduced motion with a static mark and short dissolve. Any
+  startup sound is one optional original sound, respects sound preferences, and
+  never uses a copied Apple chime or delays startup.
+- [ ] S07 Reveal the existing functional desktop, menus, windows, icons, and
+  application launching without resizing or animating the host window. Pause
+  hidden-view animation and release startup resources after completion.
+- [ ] S08 Render a small, crisp Granny Smith fruit icon at the left edge of the
+  simulated menu bar. Keep the OS999 menu hit area and dropdown behavior intact;
+  use original generated artwork rather than Apple-owned logo assets.
+- [ ] S09 Make the Granny Smith menu open the OS999 menu with “About This Mac”
+  first. Credit author Ian Trimble, include remnantsecurity.com as the public
+  home for his creations, plus accurate version/runtime details.
+- [ ] S10 Use supplied desktop and boot mockups as layout references. Preserve
+  the existing functional desktop; treat the Chromium image as a future target,
+  not implemented browser evidence. Verify wallpaper, windows, menu, About, and
+  app launching separately before marking visual acceptance complete.
+- [ ] S11 Keep About This Mac compact and centered, fit the author/site/system
+  information without an oversized window, and never show temporary host paths
+  or the private volume location.
+
 ## 1. Containers, resources, and guest storage
 
 - [x] L01 Implement bounds-checked resource-fork enumeration and type/ID lookup;
@@ -86,6 +152,17 @@ separate evidence.
   symlink/traversal defense, quotas, atomic save updates, and restart recovery.
 - [ ] L05 Select the exact application deterministically. Report unsupported
   formats and missing resources instead of launching a neighboring executable.
+- [ ] L06 Support both a user double-click on a local `.sit` archive and the
+  normal download/install route. Preserve the archive, extracted data/resource
+  forks and `.rsrc` sidecars, names, and metadata; launch installed apps through
+  our runtime. Show extraction/copy failures instead of reporting false success.
+  Test traversal/symlink rejection, quotas, partial extraction cleanup, and
+  restart behavior with legally obtained user-supplied archives outside Git.
+  The current working tree now has an isolated implementation that expands a
+  local `.sit` beside its archive and reports Garden extraction/copy failures;
+  its synthetic fixture checks passed in the agent worktree. The shared source
+  has not yet been rebuilt. `unar` remains required, and temporary expanded
+  files are not quota-limited before safe-copy checks.
 
 ## 2. Our execution and Macintosh API runtime
 
@@ -102,13 +179,84 @@ separate evidence.
   independent media decoding. Test synchronization and resource cleanup.
   For the MI1 SCUMM Bar opening, record a fresh note trace and correlate it
   with listening: Ian reports audible music that sounded doubled for about 20
-  seconds, then mostly alright before returning to normal. A startup gap and
-  callback underruns correlate but do not prove cause. Zero clipped samples or
-  a healthy host queue alone do not pass.
+  seconds, then mostly alright before returning to normal. An older trace
+  logged 26 note events over its first 20 guest seconds and no same-pitch
+  reissue within 250 ms, but it did not capture PCM or the latest session. A
+  startup gap and callback underruns correlate but do not prove cause. Zero
+  clipped samples or a healthy host queue alone do not pass.
+  Finder-launched games now set `OSPI_PERF_TRACE=1` automatically and log
+  presentation FPS plus p50/p95/p99 and maximum frame intervals once per
+  second. Set the flag for standalone runtime launches too;
+  `OSPI_AUDIO_TRACE=1` additionally enables audio telemetry. These are
+  presenter timings, not GPU execution, input latency, or
+  proof of hardware rendering. The live Finder-launched session has no FPS
+  trace, so its current frame rate is unknown. `build/ospi-runtime-capture` can
+  make an opt-in, up-to-120-second WAV via
+  `OSPI_AUDIO_WAV=/tmp/mi1.wav`; capture the same opening with audio and note
+  traces after the live run is closed. This records producer PCM before host
+  callback underruns, so retain callback telemetry and listening as separate
+  evidence. Ian's later live MI1 report: in SCUMM Bar and Sword Master scenes,
+  he heard persistent ticking instead of music. It took about a minute for
+  normal music to resume; another scene sounded good for about 20 seconds
+  before ticking returned, then grew louder. The game continued advancing.
+  This session has no WAV, note trace, or callback trace, so the cause is
+  unknown. Ian supplied a [YouTube comparison reference](https://www.youtube.com/watch?v=DoVi1__jNsI&t=2242s)
+  whose Mac-version segment starts at 37:23. It is a
+  listening reference only; no synchronized sample comparison has been captured.
 - [ ] R06 Add PowerPC/PEF/CFM and Mixed Mode only against selected targets and
   separate tests; a 68k pass does not establish PPC compatibility.
 - [ ] R07 Make the independent runtime the application launch path. Remove
   Systemless from required execution and packaging after replacement is proven.
+- [ ] R08 Present guest application windows as OS999 desktop content. Clip
+  them to the desktop, route input through the desktop, and prevent guest windows
+  from escaping the OS999 frame. The source has a shared-memory guest
+  framebuffer/input bridge and draws a bounded, draggable guest window. An
+  isolated MI1 probe published a READY 640x480 frame through that bridge
+  (sequence 398); bridge and launcher tests pass. Finder dispatch routes
+  ITEM_APPLICATION to native_open and reports missing CODE resources. Ian's
+  later user-driven launch succeeded: screenshots show MI1 composed inside the
+  desktop and advancing through story scenes; he says gameplay otherwise works.
+  An earlier report showed the game window could be dragged beyond the desktop;
+  newer screenshots establish in-desktop composition but do not verify bounds.
+  Earlier GUI automation failed to click Applications (both attempted clicks
+  landed at 0,0); that was an automation-only failure. Manually verify that
+  guest dragging stays clipped to desktop bounds.
+- [ ] R09 Match the supplied Mac OS 9 references with original clean-room folder,
+  disk, document, application, and trash artwork. Do not copy Apple artwork.
+  Guest application icons may be read at runtime from the installed,
+  user-supplied application's resource fork; never bundle that data. The 8-bit
+  icon renderer now maps the Macintosh system color cube and four color ramps;
+  its table is covered by focused regression tests. A fresh desktop capture
+  shows the current built-in icon set; its folder, disk, document, and Trash
+  drawings still need comparison and refinement against Ian's Mac OS 9
+  references. The installed MI1 application icon was verified in an off-screen
+  render, but was not opened in this fresh GUI check. Keep this item open.
+
+## 2.5 Delivered appearance assets and integration loop
+
+- [x] V01 Inventory the local delivery without overwriting existing work.
+  On 5 November, all 1,499 local asset files matched bundle tip `1c1b1b9`
+  byte-for-byte: 59 wallpapers in five sizes, 82 icons, seven cursors,
+  HiDPI variants, and 64 original synthesized sounds. This is file evidence,
+  not rendering or listening acceptance. The default merge script refused
+  because assets were already copied but untracked; nothing was overwritten.
+- [ ] V02 Integrate the supplied sixteen-theme engine, Appearance menu,
+  checked selection, Cmd-T, volume themes and persisted selection. The local
+  handoff describes commit `f876cdb`, but the delivered bundle ends at
+  `1c1b1b9`. Theme code, integration patch and theme-aware script are missing.
+  Do not report themes as integrated from the handoff alone.
+- [ ] V03 Use the delivered icon pack in the desktop and package required
+  resources. Preserve guest-provided icons. Distinguish logical 32px rendering
+  from the still-required native HiDPI backing-store path and cursor scaling.
+- [ ] V04 Connect wallpaper selection and persistence to the actual desktop;
+  validate aspect ratios and any macOS bitmap conversion on a disposable volume.
+- [ ] V05 Connect original host startup/interface sounds, mute preference and
+  bounded nonblocking playback. Judge them by listening; synthesized waveforms
+  and a successful audio-device open do not establish sound quality.
+- [ ] V06 At major validated checkpoints, commit scoped source/assets locally
+  and launch a separate test bundle for Ian. Preserve existing runs, saves,
+  and unrelated dirty work. Never replace the bundle of a live app in place.
+  Record the exact artifact, tests, live observations, failures and feedback.
 
 ## 3. Gameplay and acceleration
 
@@ -131,11 +279,11 @@ separate evidence.
 
 | Target | Page-level evidence | Required acceptance | Current result |
 | --- | --- | --- | --- |
-| Secret of Monkey Island | Macintosh minimum: 68020, 2 MB, System 6.0.7+, color display, hard disk | Original executable, scene/input/audio checks, save/reload | Ian confirmed mouse interaction, door animation, and its sound effect. SCUMM Bar music initially sounded doubled for about 20 seconds, then mostly okay before returning to normal. The stale Finder bundle was rebuilt after closing a disposable game copy; its runtime hash now matches standalone (`3e1a78c0…224ff7c`) and its code signature verifies. A fresh trace on the rebuilt runtime measured about 15.9–16.2 MHz and 59–60 FPS, with zero underruns or clipped frames after ring priming. Ian has not listened to this build yet. Finder-based launch, audio fidelity, save/reload, and hands-on acceptance remain open. Metal accelerates presentation only; guest QuickDraw still runs on CPU |
-| Monkey Island 2 | Macintosh minimum: 16 MHz 68020, 2 MB, System 6.0.7+, 256-color display | Scene/music transitions, smoothing, save/reload | Fresh runtime reaches the Voodoo recipe lookup. Five disposable-copy entries failed: 50/38 Warts; 27/12 Worms; 26/17 Scurvy (Breath Mints + Boxes of Voodoo Helper); 38/17 Scurvy (Bloated Ticks + Servings of Fruit Cocktail); 56/16 Gout (Grave Digger's Socks + Servings of Fruit Cocktail). Generic wheel/index mapping does not verify this Mac floppy copy; Mac floppy/CD boot paths differ. One isolated run logged 324 ms and 442 ms host scheduling gaps. No gameplay yet. Previous lookup run: 16.45 MHz median guest clock (15.98–17.1), 54–60.9 presenter FPS, 46.2–49k queued audio frames/sec. Correct Mac wheel mapping, gameplay/audio acceptance, and save/reload remain open |
+| Secret of Monkey Island | Macintosh minimum: 68020, 2 MB, System 6.0.7+, color display, hard disk | Original executable, scene/input/audio checks, save/reload | User screenshots show Finder-launched MI1 running and progressing inside the OS999 desktop; Ian reports working mouse controls and effects and says gameplay otherwise works. Audio has intermittent ticking, delayed music, and an initial doubled-note report. Current live session has no FPS or audio trace. Guest-window containment, guest QuickDraw acceleration, sustained play, save/reload, and final acceptance remain open |
+| Monkey Island 2 | Macintosh minimum: 16 MHz 68020, 2 MB, System 6.0.7+, 256-color display | Scene/music transitions, smoothing, save/reload | Disposable runs accepted the observed 54/54 Trench Mouth and 56/47 Gout entries, but later generic-table answers were rejected. A Mac player reports the Mac wheel differs subtly from the PC wheel, so the table is not validated as a complete Mac answer key ([report](https://www.reddit.com/r/MonkeyIsland/comments/1ojz11v/is_the_mac_code_wheel_different/)). Full mode passed copy protection, title, and multiple opening story scenes. After raising Doubleback and timer callback budgets from 10,000 to 100,000 (each with a >10k regression), the runtime remained live through 4+ minutes of scripted opening. Space paused/resumed and Escape advanced the intro. Audio used a dummy device. Free-play, sustained sound/music, frame pacing, and save/reload remain unverified. Earlier lookup-screen trace is not gameplay evidence. See [Part 3](RUNTIME-LOOP-2026-11-04-PART3.md) |
 | Castle of Dr. Brain | 68k; 256 colors; saves in game directory | Puzzles, palette/input/audio, local save/reload | Creates resource-defined windows and paints its 384 by 198 startup picture; then stops at Alert 143, “Can't load !??”; no gameplay |
 | Classic QuickTime | Multiple 68k/PPC installers in compressed image | Open the actual guest player and play a video with sound, seeking, and correct timing | Required; not run in our runtime |
-| MacSurf | Correct identity/link needed | Selected browser's rendering and network flows | Identity pending |
+| MacSurf | Correct identity/link needed; supplied Garden link repeats Castle of Dr. Brain | Selected browser's rendering and network flows | Identity pending; do not silently substitute another app |
 | Chromium | Modern host-native browser track | Sandboxed browsing, GPU, updates, network/security tests | Not built or integrated |
 | Thurrott.com | User-selected live website | Browse articles, navigate, scroll, and display media correctly in the integrated browser | Not tested |
 | YouTube.com | User-selected live website | Sustained video/audio playback with proven hardware decode and GPU composition | Not tested |
@@ -152,9 +300,11 @@ Add QuickDraw 3D/RAVE/OpenGL gates when an identified target requires them.
 
 ## 4. Modern browser integration
 
-- [ ] B01 Define Chromium as a host-native, isolated companion integrated with
-  OS Pi's desktop. Building current Chromium as a classic 68k application is a
-  separate port, not an ordinary compilation option.
+- [ ] B01 Evaluate Chromium as the host-native, isolated browser integrated
+  with the OS999 desktop. Building current Chromium as a classic 68k application
+  is a separate port, not an ordinary compilation option. A macOS WKWebView
+  feasibility prototype compiles, but is a separate, unlaunched Cocoa window;
+  it is not desktop integration, a cross-platform path, or acceptance evidence.
 - [ ] B02 Select supported Chromium revisions, host architectures, reproducible
   build configuration, dependency licenses, storage budget, and update ownership.
   Compile a dedicated build if integration requires it; keep it outside this
@@ -237,8 +387,10 @@ Add QuickDraw 3D/RAVE/OpenGL gates when an identified target requires them.
   components. Verify installation, upgrade, rollback, and save preservation.
 - [ ] A05 Capture real single-window evidence with dated italic captions when
   publishing. Keep third-party program screenshots out of Git per project rules.
-- [ ] A06 Require all selected target, acceleration, browser, QuickTime, networking, and
-  security gates plus Ian's acceptance before declaring project success.
+- [ ] A06 Require all selected target, acceleration, browser, QuickTime,
+  networking, security, OS999 branding/startup, and Ian's acceptance gates
+  before declaring
+  project success.
   Publishing, deployment, deletion, and spending retain separate approval rules.
 
 ## Sources and evidence boundaries

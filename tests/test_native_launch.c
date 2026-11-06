@@ -1,4 +1,5 @@
 #include "native_launch.h"
+#include "runtime_bridge.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -41,9 +42,16 @@ static void check_log(const char *message) {
 }
 
 static int helper(int argc, char **argv) {
-    if (argc != 5 || strcmp(argv[1], "--window") || strcmp(argv[2], "--indexed") || strcmp(argv[3], "--interactive")) return 30;
+    if (argc != 7 || strcmp(argv[1], "--window") || strcmp(argv[2], "--indexed") ||
+        strcmp(argv[3], "--interactive") || strcmp(argv[4], "--bridge")) return 30;
+    const char *perf = getenv("OSPI_PERF_TRACE");
+    if (!perf || strcmp(perf, "1")) return 32;
     const char *expected = getenv("TEST_FORK");
-    if (!expected || strcmp(argv[4], expected)) return 31;
+    if (!expected || strcmp(argv[6], expected)) return 31;
+    RuntimeBridge *bridge = runtime_bridge_open(argv[5]);
+    if (!bridge) return 33;
+    runtime_bridge_set_state(bridge, RUNTIME_BRIDGE_CLOSED, "test child finished");
+    runtime_bridge_close(bridge);
     const char *mode = getenv("TEST_MODE");
     if (mode && !strcmp(mode, "fail")) {
         fputs("Unsupported synthetic trap abcd\n", stderr);
@@ -67,6 +75,7 @@ int main(int argc, char **argv) {
     char self[PATH_MAX], app[PATH_MAX], fork[PATH_MAX], canonical[PATH_MAX], err[384];
     CHECK(realpath(argv[0], self) != NULL);
     CHECK(setenv("OSPI_RUNTIME_PATH", self, 1) == 0);
+    unsetenv("OSPI_PERF_TRACE");
     snprintf(app, sizeof app, "%s/Odd ' ; $(touch should-not-exist)", root);
     snprintf(fork, sizeof fork, "%s.rsrc", app);
     CHECK(native_open(root, app, err, sizeof err) == 1);
@@ -80,6 +89,7 @@ int main(int argc, char **argv) {
     setenv("TEST_MODE", "quote", 1);
     CHECK(native_open(root, fork, err, sizeof err) == 0);
     check_log(err);
+    native_surface_close();
     CHECK(access("should-not-exist", F_OK) != 0);
     CHECK(write_fork(fork, "STR ") == 0);
     CHECK(native_open(root, app, err, sizeof err) == 1);
@@ -119,6 +129,7 @@ int main(int argc, char **argv) {
     struct timespec delay = {1, 300000000};
     nanosleep(&delay, NULL);
     check_log(err);
+    native_surface_close();
     int status;
     errno = 0;
     CHECK(waitpid(-1, &status, WNOHANG) == -1 && errno == ECHILD);

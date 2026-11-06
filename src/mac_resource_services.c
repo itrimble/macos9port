@@ -91,9 +91,11 @@ static int resource_info(MacRuntime *rt, uint32_t sp) {
     uint32_t id = mac_cpu_read(rt->cpu, sp + 8, 4);
     uint32_t value = mac_cpu_read(rt->cpu, sp + 12, 4);
     MacResource r;
-    if (!handle(rt, value, &r)) return result(rt, sp, 16, 0, 0, RES_NOT_FOUND);
+    MacHandle *h = handle(rt, value, &r);
+    if (!h) return result(rt, sp, 16, 0, 0, RES_NOT_FOUND);
     if (!valid(rt->cpu, name, (uint32_t)r.name_size + 1, 0) ||
         !valid(rt->cpu, type, 4, 1) || !valid(rt->cpu, id, 2, 1)) return -1;
+    if (h->resource_changed) r.attributes |= 0x80;
     mac_cpu_write(rt->cpu, id, 2, (uint16_t)r.id);
     mac_cpu_write(rt->cpu, type, 4, r.type);
     mac_cpu_write(rt->cpu, name, 1, (uint32_t)r.name_size);
@@ -113,6 +115,7 @@ int mac_resource_service(MacRuntime *rt, uint16_t opcode) {
     case 0xa9a6: case 0xa99c: args = 4; width = 2; break;
     case 0xa9a2: case 0xa9a3: case 0xa992: args = 4; break;
     case 0xa9a8: args = 16; break;
+    case 0xa9aa: args = 4; break;
     case 0xa9af: width = 2; break;
     default: return 0;
     }
@@ -121,6 +124,15 @@ int mac_resource_service(MacRuntime *rt, uint16_t opcode) {
     if (opcode == 0xa9a0 || opcode == 0xa81f || opcode == 0xa99d || opcode == 0xa9bc)
         return get_resource(rt, sp, opcode == 0xa99d, opcode == 0xa9bc, opcode == 0xa81f);
     if (opcode == 0xa9a8) return resource_info(rt, sp);
+    if (opcode == 0xa9aa) {
+        uint32_t value = mac_cpu_read(rt->cpu, sp, 4);
+        MacResource r;
+        MacHandle *h = handle(rt, value, &r);
+        int error = h ? 0 : RES_NOT_FOUND;
+        if (h && (r.attributes & 0x08)) error = -198;
+        else if (h) h->resource_changed = 1;
+        return result(rt, sp, 4, 0, 0, error);
+    }
     if (opcode == 0xa9af) {
         uint32_t error = mac_cpu_read(rt->cpu, RES_ERROR, 2);
         return result(rt, sp, 0, 2, error, (int16_t)error);
@@ -134,7 +146,8 @@ int mac_resource_service(MacRuntime *rt, uint16_t opcode) {
     MacHandle *h = handle(rt, value, &r);
     if (!h) return result(rt, sp, args, width, UINT32_MAX, RES_NOT_FOUND);
     if (opcode == 0xa9a5) return result(rt, sp, 4, 4, (uint32_t)r.size, 0);
-    if (opcode == 0xa9a6) return result(rt, sp, 4, 2, r.attributes, 0);
+    if (opcode == 0xa9a6) return result(rt, sp, 4, 2,
+        r.attributes | (h->resource_changed ? 0x80 : 0), 0);
     if (opcode == 0xa9a2) {
         int error = load(rt, h, &r);
         if (error == -1) return -1;
@@ -151,7 +164,7 @@ int mac_resource_service(MacRuntime *rt, uint16_t opcode) {
     /* ReleaseResource must not discard a resource marked changed. The current
      * bump allocator cannot reclaim released storage yet; invalidate the handle
      * rather than expose it as a live resource. Exhaustion remains an error. */
-    if (!(r.attributes & 2)) {
+    if (!(r.attributes & 2) && !h->resource_changed) {
         if (!valid(rt->cpu, h->handle, 4, 1)) return -1;
         mac_cpu_write(rt->cpu, h->handle, 4, 0);
         h->resource = 0;

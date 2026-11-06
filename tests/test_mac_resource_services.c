@@ -120,6 +120,9 @@ static void normal(void) {
     mac_cpu_write(rt.cpu, h, 4, 0);
     one(&rt, 0xa9a2, h, 0); CHECK(error(&rt) == 0);
     CHECK(mac_cpu_read(rt.cpu, mac_cpu_read(rt.cpu, h, 4), 4) == 0x54657374);
+    one(&rt, 0xa9aa, h, 0); CHECK(error(&rt) == 0);
+    CHECK(rt.handles[0].resource_changed == 1);
+    CHECK((one(&rt, 0xa9a6, h, 2) & 0x80) != 0);
     mac_cpu_write(rt.cpu, h, 4, 0);
     CHECK(get(&rt, 0xa9a0, TEXT, 128) == h); /* default automatic loading */
     CHECK(mac_cpu_read(rt.cpu, mac_cpu_read(rt.cpu, h, 4), 4) == 0x54657374);

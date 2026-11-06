@@ -1,10 +1,30 @@
 #include "ospi.h"
+#include "draw.h"
+#include "native_launch.h"
+#include "os999_startup.h"
+#include "desktop_guest.h"
+#include "desktop_host.h"
 
 #include <SDL.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
+#include <stdatomic.h>
+
+typedef struct SessionInitTask {
+    const char *volume;
+    Session *session;
+    atomic_int done;
+} SessionInitTask;
+
+static void *create_session_worker(void *context) {
+    SessionInitTask *task = context;
+    task->session = session_create(task->volume);
+    atomic_store_explicit(&task->done, 1, memory_order_release);
+    return NULL;
+}
 
 static const char *flag_arg(int argc, char **argv, const char *flag) {
     for (int i = 1; i < argc; i++) {
@@ -34,7 +54,7 @@ static int resolve_volume(int argc, char **argv, char *out, size_t n) {
     } else {
         const char *home = getenv("HOME");
         if (!home) {
-            fprintf(stderr, "OS Pi: HOME is not set\n");
+            fprintf(stderr, "OS999 Stylized: HOME is not set\n");
             return -1;
         }
 #if defined(__APPLE__)
@@ -44,12 +64,12 @@ static int resolve_volume(int argc, char **argv, char *out, size_t n) {
 #endif
     }
     if (volume_mkdir_p(path) != 0 || volume_seed(path) != 0) {
-        fprintf(stderr, "OS Pi: could not create the volume at %s\n", path);
+        fprintf(stderr, "OS999 Stylized: could not create the volume at %s\n", path);
         return -1;
     }
     char resolved[PATH_MAX];
     if (!realpath(path, resolved) || strlen(resolved) >= n) {
-        fprintf(stderr, "OS Pi: could not resolve %s\n", path);
+        fprintf(stderr, "OS999 Stylized: could not resolve %s\n", path);
         return -1;
     }
     memcpy(out, resolved, strlen(resolved) + 1);
@@ -70,6 +90,32 @@ static void logical_point(SDL_Window *win, int x, int y, int *ox, int *oy) {
     *oy = y * OSPI_H / wh;
 }
 
+static void trace_input(Session *s, SDL_Window *win, SDL_Renderer *ren,
+                        int raw_x, int raw_y, int x, int y, int clicks) {
+    if (!getenv("OSPI_INPUT_TRACE")) return;
+    int ww = 0, wh = 0, rw = 0, rh = 0;
+    SDL_GetWindowSize(win, &ww, &wh);
+    SDL_GetRendererOutputSize(ren, &rw, &rh);
+    const Window *active = s->nwin > 0 ? &s->win[s->nwin - 1] : NULL;
+    const char *selected = "-";
+    if (active) {
+        for (int i = 0; i < active->nitems; i++) {
+            if (active->items[i].selected) {
+                selected = active->items[i].name;
+                break;
+            }
+        }
+    }
+    fprintf(stderr, "input-trace raw=%d,%d mapped=%d,%d clicks=%d window=%dx%d drawable=%dx%d front=%s selected=%s\n",
+            raw_x, raw_y, x, y, clicks, ww, wh, rw, rh,
+            active ? active->rel : "-", selected);
+}
+
+static int inside(int x, int y, int left, int top, int width, int height) {
+    return x >= left && y >= top && x < left + width && y < top + height;
+}
+
+
 int main(int argc, char **argv) {
     if (argc == 3 && strcmp(argv[1], "--seed") == 0) {
         return volume_seed(argv[2]) == 0 ? 0 : 1;
@@ -78,29 +124,29 @@ int main(int argc, char **argv) {
     if (resolve_volume(argc, argv, volume, sizeof volume) != 0) {
         return 1;
     }
-    fprintf(stderr, "OS Pi 0.1  %s\n", volume);
+    fprintf(stderr, "OS999 Stylized 0.1  %s\n", volume);
     const char *install_url = flag_arg(argc, argv, "--install");
     if (install_url) {
         char rel[OSPI_PATH];
         char err[240];
         err[0] = 0;
         if (install_garden(volume, install_url, rel, sizeof rel, err, sizeof err) != 0) {
-            fprintf(stderr, "OS Pi: %s\n", err[0] ? err : "install failed");
+            fprintf(stderr, "OS999 Stylized: %s\n", err[0] ? err : "install failed");
             return 1;
         }
-        fprintf(stderr, "OS Pi installed %s\n", rel);
+        fprintf(stderr, "OS999 Stylized installed %s\n", rel);
         return 0;
     }
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        fprintf(stderr, "OS Pi: SDL_Init failed: %s\nInstall SDL2 (brew install sdl2, or apt install libsdl2-dev).\n",
+        fprintf(stderr, "OS999 Stylized: SDL_Init failed: %s\nInstall SDL2 (brew install sdl2, or apt install libsdl2-dev).\n",
                 SDL_GetError());
         return 1;
     }
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
-    SDL_Window *win = SDL_CreateWindow("OS Pi", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, OSPI_W, OSPI_H,
+    SDL_Window *win = SDL_CreateWindow("OS999 Stylized", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, OSPI_W, OSPI_H,
                                        SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_SHOWN);
     if (!win) {
-        fprintf(stderr, "OS Pi: could not open a window: %s\n", SDL_GetError());
+        fprintf(stderr, "OS999 Stylized: could not open a window: %s\n", SDL_GetError());
         SDL_Quit();
         return 1;
     }
@@ -110,7 +156,7 @@ int main(int argc, char **argv) {
     }
     SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, OSPI_W, OSPI_H);
     if (!ren || !tex) {
-        fprintf(stderr, "OS Pi: could not create the screen: %s\n", SDL_GetError());
+        fprintf(stderr, "OS999 Stylized: could not create the screen: %s\n", SDL_GetError());
         SDL_DestroyWindow(win);
         SDL_Quit();
         return 1;
@@ -121,56 +167,294 @@ int main(int argc, char **argv) {
     int rh = 0;
     SDL_GetWindowSize(win, &ww, &wh);
     SDL_GetRendererOutputSize(ren, &rw, &rh);
-    fprintf(stderr, "OS Pi window %dx%d  drawable %dx%d\n", ww, wh, rw, rh);
-    Session *s = session_create(volume);
-    if (!s) {
-        fprintf(stderr, "OS Pi: could not open %s\n", volume);
-        SDL_DestroyTexture(tex);
-        SDL_DestroyRenderer(ren);
-        SDL_DestroyWindow(win);
-        SDL_Quit();
-        return 1;
-    }
+    fprintf(stderr, "OS999 Stylized window %dx%d  drawable %dx%d\n", ww, wh, rw, rh);
+    Session *s = NULL;
     uint32_t *frame = calloc((size_t)OSPI_W * OSPI_H, sizeof *frame);
     if (!frame) {
-        session_destroy(s);
+        SDL_DestroyTexture(tex); SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
         return 1;
     }
     int dumped = 0;
     const char *dump = getenv("OSPI_DUMP");
+    uint32_t *guest_pixels = calloc((size_t)RUNTIME_BRIDGE_MAX_WIDTH *
+                                    RUNTIME_BRIDGE_MAX_HEIGHT, sizeof *guest_pixels);
+    uint32_t *startup_desktop = malloc((size_t)OSPI_W * OSPI_H * sizeof *startup_desktop);
+    Os999Startup startup = {0};
+    const char *boot_animation = getenv("OSPI_BOOT_ANIMATION");
+    const char *preview_mode = getenv("OSPI_BOOT_PREVIEW");
+    const char *reduce_motion = getenv("OSPI_REDUCE_MOTION");
+    int boot_preview = preview_mode && strcmp(preview_mode, "1") == 0;
+    int boot_enabled = os999_startup_pref_read(volume);
+    if (boot_animation && strcmp(boot_animation, "0") == 0) boot_enabled = 0;
+    else if (boot_animation && strcmp(boot_animation, "1") == 0) boot_enabled = 1;
+    if (!guest_pixels || !startup_desktop) {
+        free(startup_desktop); free(guest_pixels); free(frame); SDL_DestroyTexture(tex);
+        SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit(); return 1;
+    }
+    desktop_host_init(volume);
+    boot_enabled = startup_desktop && boot_enabled;
+    if (boot_enabled)
+        os999_startup_begin(&startup, SDL_GetTicks(), reduce_motion && strcmp(reduce_motion, "1") == 0);
+    else
+        startup.phase = OS999_STARTUP_INACTIVE;
+
+    SessionInitTask init = {.volume = volume, .session = NULL};
+    atomic_init(&init.done, 0);
+    pthread_t init_thread;
+    if (pthread_create(&init_thread, NULL, create_session_worker, &init) != 0) {
+        desktop_host_shutdown();
+        fprintf(stderr, "OS999 Stylized: could not start desktop initialization\n");
+        free(startup_desktop); free(guest_pixels); free(frame);
+        SDL_DestroyTexture(tex); SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
+        return 1;
+    }
+    for (size_t i = 0; i < (size_t)OSPI_W * OSPI_H; i++) startup_desktop[i] = 0xFF3C4F70u;
+    int startup_quit = 0, startup_failed = 0, session_ready = 0;
+    while (!session_ready || os999_startup_active(&startup)) {
+        int retry_requested = 0;
+        SDL_Event boot_event;
+        while (SDL_PollEvent(&boot_event)) {
+            if (boot_event.type == SDL_QUIT) { startup_quit = 1; continue; }
+            if (startup_failed && startup.phase == OS999_STARTUP_ERROR) {
+                if (boot_event.type == SDL_MOUSEBUTTONDOWN && boot_event.button.button == SDL_BUTTON_LEFT) {
+                    int x, y; logical_point(win, boot_event.button.x, boot_event.button.y, &x, &y);
+                    int left = OSPI_W / 2 - 275, top = OSPI_H / 2 - 104;
+                    if (inside(x, y, left + 82, top + 142, 150, 40)) retry_requested = 1;
+                    else if (inside(x, y, left + 318, top + 142, 150, 40)) startup_quit = 1;
+                } else if (boot_event.type == SDL_KEYDOWN) {
+                    if (boot_event.key.keysym.sym == SDLK_r || boot_event.key.keysym.sym == SDLK_RETURN)
+                        retry_requested = 1;
+                    else if (boot_event.key.keysym.sym == SDLK_ESCAPE) startup_quit = 1;
+                }
+            }
+        }
+        if (retry_requested && startup_failed) {
+            startup_failed = 0; session_ready = 0; s = NULL; init.session = NULL;
+            atomic_store_explicit(&init.done, 0, memory_order_release);
+            if (boot_enabled) os999_startup_begin(&startup, SDL_GetTicks(), reduce_motion && strcmp(reduce_motion, "1") == 0);
+            else startup.phase = OS999_STARTUP_INACTIVE;
+            if (pthread_create(&init_thread, NULL, create_session_worker, &init) != 0) {
+                session_ready = startup_failed = 1;
+                os999_startup_fail(&startup, SDL_GetTicks());
+            }
+        }
+        if (atomic_load_explicit(&init.done, memory_order_acquire) && !session_ready) {
+            pthread_join(init_thread, NULL);
+            session_ready = 1;
+            s = init.session;
+            if (!s) {
+                fprintf(stderr, "OS999 Stylized: could not open %s\n", volume);
+                startup_failed = 1;
+                os999_startup_fail(&startup, SDL_GetTicks());
+            } else {
+                desktop_host_tick(s, 0);
+                session_paint(s, startup_desktop, OSPI_W, OSPI_H);
+                startup.ready = 1;
+            }
+        }
+        if (startup_quit) break;
+        if (startup_failed && !os999_startup_active(&startup)) break;
+        if (session_ready && !os999_startup_active(&startup)) break;
+        if (os999_startup_active(&startup))
+            os999_startup_frame(&startup, SDL_GetTicks(), session_ready && !startup_failed,
+                                frame, startup_desktop, OSPI_W, OSPI_H);
+        else memcpy(frame, startup_desktop, (size_t)OSPI_W * OSPI_H * sizeof *frame);
+        SDL_UpdateTexture(tex, NULL, frame, OSPI_W * (int)sizeof *frame);
+        SDL_RenderClear(ren);
+        SDL_GetRendererOutputSize(ren, &rw, &rh);
+        SDL_Rect boot_dst = {0, 0, rw, rh};
+        SDL_RenderCopy(ren, tex, NULL, &boot_dst);
+        SDL_RenderPresent(ren);
+        SDL_Delay(12);
+    }
+    if (!session_ready) {
+        while (!atomic_load_explicit(&init.done, memory_order_acquire)) SDL_Delay(1);
+        pthread_join(init_thread, NULL);
+        s = init.session;
+    }
+    if (startup_quit || startup_failed || !s) {
+        desktop_host_shutdown();
+        os999_startup_release();
+        if (s) session_destroy(s);
+        free(startup_desktop); free(guest_pixels); free(frame);
+        SDL_DestroyTexture(tex); SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
+        return startup_failed || !s ? 1 : 0;
+    }
+    GuestWindow guest_window = {0};
+    uint64_t guest_sequence = 0;
+    int guest_width = 0, guest_height = 0, guest_placed = 0;
+    int guest_drag = 0, guest_mouse_capture = 0, guest_focus = 0;
     while (!session_quit(s)) {
+        uint32_t surface_state = RUNTIME_BRIDGE_STARTING;
+        char surface_message[256] = {0};
+        if (native_surface_active()) {
+            int old_guest_width = guest_width, old_guest_height = guest_height;
+            int read = native_surface_read(guest_pixels,
+                (size_t)RUNTIME_BRIDGE_MAX_WIDTH * RUNTIME_BRIDGE_MAX_HEIGHT,
+                &guest_width, &guest_height, &guest_sequence);
+            if (read > 0 && (!guest_placed || guest_width != old_guest_width ||
+                             guest_height != old_guest_height)) {
+                int initial = !guest_placed;
+                guest_window_layout(&guest_window, guest_width, guest_height,
+                                    initial, old_guest_width, old_guest_height);
+                guest_placed = 1;
+            }
+            native_surface_state(&surface_state, surface_message, sizeof surface_message);
+            if (surface_state == RUNTIME_BRIDGE_CLOSED) {
+                native_surface_close();
+                guest_placed = guest_drag = guest_mouse_capture = guest_focus = 0;
+                guest_sequence = 0; guest_width = guest_height = 0;
+            }
+        } else guest_placed = guest_drag = guest_mouse_capture = guest_focus = 0;
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
+            if (os999_startup_active(&startup)) {
+                if (ev.type == SDL_QUIT) s->quit = 1;
+                continue;
+            }
+            if (!guest_focus && ev.type == SDL_KEYDOWN && !ev.key.repeat &&
+                (ev.key.keysym.sym == SDLK_F9 || ev.key.keysym.sym == SDLK_F10)) {
+                session_command(s, ev.key.keysym.sym == SDLK_F9 ?
+                                CMD_STARTUP_TOGGLE : CMD_STARTUP_PREVIEW);
+                continue;
+            }
+            if (boot_preview && ev.type == SDL_KEYDOWN &&
+                (ev.key.keysym.mod & (KMOD_CTRL | KMOD_ALT)) == (KMOD_CTRL | KMOD_ALT) &&
+                ev.key.keysym.sym == SDLK_9) {
+                os999_startup_begin(&startup, SDL_GetTicks(), reduce_motion && strcmp(reduce_motion, "1") == 0);
+                continue;
+            }
             int x = 0;
             int y = 0;
             if (ev.type == SDL_QUIT) {
                 s->quit = 1;
             } else if (ev.type == SDL_MOUSEBUTTONDOWN && ev.button.button == SDL_BUTTON_LEFT) {
-                take_clip(s);
                 logical_point(win, ev.button.x, ev.button.y, &x, &y);
+                int active = native_surface_active() && guest_placed;
+                if (active && inside(x, y, guest_window.x, guest_window.y,
+                                     guest_window.w, guest_window.h)) {
+                    int close_hit = inside(x, y, guest_window.x + 10,
+                                           guest_window.y + 7, 13, 13);
+                    if (close_hit) {
+                        native_surface_close();
+                        guest_placed = guest_drag = guest_mouse_capture = guest_focus = 0;
+                        continue;
+                    }
+                    if (inside(x, y, guest_window.x, guest_window.y,
+                               guest_window.w, 27)) {
+                        guest_drag = 1;
+                        guest_focus = 1;
+                        s->press_x = x - guest_window.x;
+                        s->press_y = y - guest_window.y;
+                        continue;
+                    }
+                    if (inside(x, y, guest_window.image_x, guest_window.image_y,
+                               guest_window.image_w, guest_window.image_h)) {
+                        int gx, gy;
+                        guest_pixel_point(&guest_window, guest_width, guest_height,
+                                          x, y, &gx, &gy);
+                        guest_focus = guest_mouse_capture = 1;
+                        native_surface_push((RuntimeBridgeInput){RUNTIME_BRIDGE_BUTTON_DOWN,
+                            gx, gy, 0, (uint32_t)SDL_GetModState()});
+                        continue;
+                    }
+                    guest_focus = 0;
+                    continue;
+                }
+                if (guest_focus) {
+                    native_surface_push((RuntimeBridgeInput){.kind=RUNTIME_BRIDGE_FOCUS_LOST});
+                    guest_focus = guest_mouse_capture = 0;
+                }
+                take_clip(s);
                 /* Several queued clicks can be drained in one frame. Use each
                  * event's time so the fallback can distinguish those clicks. */
                 s->input_now_ms = ev.button.timestamp ? ev.button.timestamp : SDL_GetTicks();
                 session_down(s, x, y, ev.button.clicks);
+                trace_input(s, win, ren, ev.button.x, ev.button.y,
+                            x, y, ev.button.clicks);
             } else if (ev.type == SDL_MOUSEBUTTONUP && ev.button.button == SDL_BUTTON_LEFT) {
                 logical_point(win, ev.button.x, ev.button.y, &x, &y);
+                if (guest_drag) { guest_drag = 0; continue; }
+                if (guest_mouse_capture && native_surface_active()) {
+                    int gx, gy;
+                    guest_pixel_point(&guest_window, guest_width, guest_height,
+                                      x, y, &gx, &gy);
+                    native_surface_push((RuntimeBridgeInput){RUNTIME_BRIDGE_BUTTON_UP,
+                        gx, gy, 0, (uint32_t)SDL_GetModState()});
+                    guest_mouse_capture = 0;
+                    continue;
+                }
                 session_up(s, x, y);
             } else if (ev.type == SDL_MOUSEMOTION) {
                 logical_point(win, ev.motion.x, ev.motion.y, &x, &y);
+                if (guest_drag) {
+                    guest_window.x = x - s->press_x;
+                    guest_window.y = y - s->press_y;
+                    if (guest_window.x < 0) guest_window.x = 0;
+                    if (guest_window.y < TITLE_H) guest_window.y = TITLE_H;
+                    if (guest_window.x + guest_window.w > OSPI_W)
+                        guest_window.x = OSPI_W - guest_window.w;
+                    if (guest_window.y + guest_window.h > OSPI_H)
+                        guest_window.y = OSPI_H - guest_window.h;
+                    guest_window.image_x = guest_window.x + 8;
+                    guest_window.image_y = guest_window.y + 36;
+                    continue;
+                }
+                if (native_surface_active() && guest_placed &&
+                    (guest_mouse_capture || inside(x, y, guest_window.image_x,
+                     guest_window.image_y, guest_window.image_w, guest_window.image_h))) {
+                    int gx, gy;
+                    guest_pixel_point(&guest_window, guest_width, guest_height,
+                                      x, y, &gx, &gy);
+                    native_surface_push((RuntimeBridgeInput){RUNTIME_BRIDGE_MOTION,
+                        gx, gy, 0, (uint32_t)SDL_GetModState()});
+                    continue;
+                }
                 session_move(s, x, y);
             } else if (ev.type == SDL_MOUSEWHEEL) {
                 session_wheel(s, ev.wheel.y);
             } else if (ev.type == SDL_KEYDOWN) {
+                if (guest_focus && native_surface_active()) {
+                    native_surface_push((RuntimeBridgeInput){RUNTIME_BRIDGE_KEY_DOWN,
+                        0, 0, (uint32_t)ev.key.keysym.sym,
+                        (uint32_t)ev.key.keysym.mod});
+                    continue;
+                }
                 int key = ev.key.keysym.sym;
                 if (key == SDLK_KP_ENTER) {
                     key = '\r';
                 }
                 int mods = (ev.key.keysym.mod & KMOD_GUI) ? MOD_CMD : 0;
                 session_key(s, key, mods);
+            } else if (ev.type == SDL_KEYUP && guest_focus && native_surface_active()) {
+                native_surface_push((RuntimeBridgeInput){RUNTIME_BRIDGE_KEY_UP,
+                    0, 0, (uint32_t)ev.key.keysym.sym,
+                    (uint32_t)ev.key.keysym.mod});
+            } else if (ev.type == SDL_WINDOWEVENT &&
+                       ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST && guest_focus) {
+                native_surface_push((RuntimeBridgeInput){.kind=RUNTIME_BRIDGE_FOCUS_LOST});
+                guest_focus = guest_mouse_capture = 0;
             }
         }
+        if (session_take_startup_toggle(s)) {
+            boot_enabled = !boot_enabled;
+            if (os999_startup_pref_write(volume, boot_enabled) != 0)
+                fprintf(stderr, "OS999 Stylized: could not save startup preference\n");
+        }
+        if (session_take_startup_preview(s) && startup_desktop)
+            os999_startup_begin(&startup, SDL_GetTicks(), reduce_motion && strcmp(reduce_motion, "1") == 0);
+        desktop_host_tick(s, native_surface_active());
         session_tick(s, SDL_GetTicks());
         session_paint(s, frame, OSPI_W, OSPI_H);
+        if (native_surface_active() && guest_placed)
+            draw_guest_window(frame, &guest_window, guest_pixels, guest_width,
+                              guest_height, surface_state, native_surface_title(),
+                              surface_message);
+        if (startup_desktop) memcpy(startup_desktop, frame,
+                                    (size_t)OSPI_W * OSPI_H * sizeof *frame);
+        if (os999_startup_active(&startup))
+            os999_startup_frame(&startup, SDL_GetTicks(), 1, frame, startup_desktop,
+                                OSPI_W, OSPI_H);
         if (dump && !dumped) {
             FILE *f = fopen(dump, "wb");
             if (f) {
@@ -193,6 +477,11 @@ int main(int argc, char **argv) {
         SDL_RenderCopy(ren, tex, NULL, &dst);
         SDL_RenderPresent(ren);
     }
+    native_surface_close();
+    desktop_host_shutdown();
+    os999_startup_release();
+    free(startup_desktop);
+    free(guest_pixels);
     free(frame);
     session_destroy(s);
     SDL_DestroyTexture(tex);

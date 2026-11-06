@@ -43,6 +43,7 @@ void fb_desktop(Fb *fb);
 
 int typeface_init(const char *root);
 int typeface_ready(void);
+int typeface_startup_ready(void);
 const char *typeface_label(void);
 int typeface_line_height(int body);
 int typeface_next(int body, const char *s, int *byte_adv, int *px);

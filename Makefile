@@ -1,5 +1,6 @@
+APP_BUNDLE ?= build/OS999 Stylized.app
 CC ?= cc
-CFLAGS ?= -std=c11 -Wall -Wextra -O2 -Iinclude -D_DEFAULT_SOURCE
+CFLAGS ?= -std=c11 -Wall -Wextra -O2 -Iinclude -Iassets/icons/c -D_DEFAULT_SOURCE
 SDL_CFLAGS := $(shell pkg-config --cflags sdl2 2>/dev/null)
 SDL_LIBS := $(shell pkg-config --libs sdl2 2>/dev/null)
 FT_CFLAGS := $(shell pkg-config --cflags freetype2 2>/dev/null)
@@ -8,22 +9,30 @@ ifneq ($(FT_LIBS),)
 CFLAGS += $(FT_CFLAGS) -DOSPI_FREETYPE
 endif
 
-CORE := src/font.c src/draw.c src/geom.c src/menu.c src/volume.c \
+CORE := src/session_state.c src/typeface_metrics.c src/desktop_assets.c assets/icons/c/ospi_icon_set.c src/font.c src/draw.c src/geom.c src/menu.c src/volume.c src/archive_fs.c src/session_sit.c src/mac_icon.c src/mac_icon_palette.c src/runtime_bridge.c \
 	src/hostinfo.c src/text.c src/paint.c src/session.c src/input.c \
 	src/install.c src/classic.c src/typeface.c src/native_launch.c src/mac_resource.c
-HDRS := include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h
+HDRS := include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h
 
 .PHONY: all test app run clean runtime
 
 all: build/ospi build/ospi-runtime
 
-build/ospi: $(CORE) src/main.c $(HDRS)
+build/ospi: $(CORE) src/os999_startup.c src/main.c src/desktop_guest.c src/desktop_host.c src/desktop_sound.c $(HDRS) include/os999_startup.h include/desktop_guest.h include/desktop_host.h include/desktop_sound.h
 	mkdir -p build
-	$(CC) $(CFLAGS) $(SDL_CFLAGS) -o $@ $(CORE) src/main.c $(SDL_LIBS) $(FT_LIBS)
+	$(CC) $(CFLAGS) $(SDL_CFLAGS) -o $@ $(CORE) src/os999_startup.c src/main.c src/desktop_guest.c src/desktop_host.c src/desktop_sound.c $(SDL_LIBS) $(FT_LIBS) -pthread -lm
 
-build/test_ospi: $(CORE) tests/test_ospi.c $(HDRS)
+build/test_os999_startup: src/os999_startup.c src/font.c tests/test_os999_startup.c include/os999_startup.h include/draw.h
 	mkdir -p build
-	$(CC) $(CFLAGS) -o $@ $(CORE) tests/test_ospi.c $(FT_LIBS)
+	$(CC) $(CFLAGS) -o $@ src/os999_startup.c src/font.c tests/test_os999_startup.c -lm
+
+build/test_ospi: $(CORE) src/os999_startup.c tests/test_ospi.c $(HDRS) include/os999_startup.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $(CORE) src/os999_startup.c tests/test_ospi.c $(FT_LIBS) -lm
+
+build/test_archive_install: $(CORE) src/os999_startup.c tests/test_archive_install.c $(HDRS) include/os999_startup.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $(CORE) src/os999_startup.c tests/test_archive_install.c $(FT_LIBS) -lm
 
 # Independent classic runtime. Musashi supplies only CPU instruction execution.
 # Its pinned source and generated tables remain in ignored build/deps/.
@@ -32,7 +41,7 @@ CPUFLAGS := -DM68K_ILLG_HAS_CALLBACK=1 -DM68K_INSTRUCTION_HOOK=1 -I$(MUSASHI)
 CPUOBJ := build/m68kcpu.o build/m68kops.o build/softfloat.o
 RUNTIME := src/mac_resource.c src/mac_cpu.c src/mac_runtime.c src/mac_services.c src/mac_memory.c src/mac_resource_services.c src/mac_events.c src/mac_quickdraw.c src/mac_toolbox.c src/mac_raster.c src/mac_system.c src/mac_geometry.c src/mac_files.c src/mac_cursor.c src/mac_color.c src/mac_dialog.c src/mac_color_port.c src/mac_copybits.c src/mac_palette.c src/mac_color_raster.c
 RUNTIME += src/mac_video_config.c src/mac_vbl.c src/mac_pixmap.c src/mac_pixels.c src/mac_volume.c src/mac_window.c src/mac_window_draw.c src/mac_regions.c src/mac_system_volume.c src/mac_color_pen.c src/mac_drive_queue.c src/mac_menu.c src/mac_menu_records.c src/mac_palette_manager.c src/mac_window_resource.c src/mac_window_registry.c src/font.c
-RUNTIME_HDRS := include/mac_resource.h include/mac_cpu.h include/mac_runtime.h include/mac_window_int.h include/mac_system_volume.h include/mac_drive_queue.h include/mac_menu_int.h
+RUNTIME_HDRS := src/runtime_video_pixels.h include/mac_resource.h include/mac_cpu.h include/mac_runtime.h include/mac_window_int.h include/mac_system_volume.h include/mac_drive_queue.h include/mac_menu_int.h include/runtime_bridge.h
 RUNTIME += src/mac_resource_catalog.c src/mac_resource_files.c
 RUNTIME += src/mac_pict_decode.c src/mac_picture.c
 RUNTIME += src/mac_sane.c
@@ -42,7 +51,7 @@ RUNTIME += src/mac_sound_resample.c
 RUNTIME += src/mac_time.c
 RUNTIME_HDRS += include/mac_time.h
 RUNTIME_HDRS += include/mac_sound_double.h
-RUNTIME_HDRS += include/mac_sound.h include/mac_sound_int.h include/runtime_audio.h
+RUNTIME_HDRS += include/mac_sound.h include/mac_sound_int.h include/runtime_audio.h include/runtime_perf.h include/runtime_keys.h
 RUNTIME_HDRS += include/mac_pict.h
 RUNTIME_HDRS += include/mac_resource_chain.h include/mac_resource_chain_int.h
 
@@ -108,8 +117,13 @@ build/m68kops.o: $(MUSASHI)/m68kops.c Makefile
 build/softfloat.o: $(MUSASHI)/m68kops.c Makefile
 	$(CC) -O2 $(CPUFLAGS) -c $(MUSASHI)/softfloat/softfloat.c -o $@
 
-build/ospi-runtime: $(RUNTIME_OBJ) src/runtime_main.c src/runtime_video.c src/runtime_audio.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(SDL_CFLAGS) $(RUNTIME_OBJ) src/runtime_main.c src/runtime_video.c src/runtime_audio.c $(CPUOBJ) $(SDL_LIBS) -lm -o $@
+build/ospi-runtime: $(RUNTIME_OBJ) src/runtime_main.c src/runtime_video.c src/runtime_audio.c src/runtime_perf.c src/runtime_keys.c src/runtime_bridge.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(SDL_CFLAGS) $(RUNTIME_OBJ) src/runtime_main.c src/runtime_video.c src/runtime_audio.c src/runtime_perf.c src/runtime_keys.c src/runtime_bridge.c $(CPUOBJ) $(SDL_LIBS) -pthread -lm -o $@
+
+# Diagnostic runtime with the same code path; OSPI_AUDIO_WAV opts into a
+# bounded producer-PCM capture without replacing the app's live executable.
+build/ospi-runtime-capture: $(RUNTIME_OBJ) src/runtime_main.c src/runtime_video.c src/runtime_audio.c src/runtime_perf.c src/runtime_keys.c src/runtime_bridge.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(SDL_CFLAGS) $(RUNTIME_OBJ) src/runtime_main.c src/runtime_video.c src/runtime_audio.c src/runtime_perf.c src/runtime_keys.c src/runtime_bridge.c $(CPUOBJ) $(SDL_LIBS) -pthread -lm -o $@
 
 build/test_mac_resource: src/mac_resource.c tests/test_mac_resource.c include/mac_resource.h
 	mkdir -p build
@@ -130,8 +144,8 @@ build/test_mac_memory: $(RUNTIME_OBJ) tests/test_mac_memory.c $(RUNTIME_HDRS) $(
 build/test_mac_traps: $(RUNTIME_OBJ) tests/test_mac_traps.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_traps.c $(CPUOBJ) -lm -o $@
 
-build/test_native_launch: src/native_launch.c src/mac_resource.c tests/test_native_launch.c include/native_launch.h include/mac_resource.h
-	$(CC) $(CFLAGS) src/native_launch.c src/mac_resource.c tests/test_native_launch.c -o $@
+build/test_native_launch: src/native_launch.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c include/native_launch.h include/mac_resource.h include/runtime_bridge.h
+	$(CC) $(CFLAGS) -pthread src/native_launch.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c -o $@
 
 build/test_mac_events: $(RUNTIME_OBJ) tests/test_mac_events.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_events.c $(CPUOBJ) -lm -o $@
@@ -139,8 +153,21 @@ build/test_mac_events: $(RUNTIME_OBJ) tests/test_mac_events.c $(RUNTIME_HDRS) $(
 build/test_mac_quickdraw: $(RUNTIME_OBJ) tests/test_mac_quickdraw.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_quickdraw.c $(CPUOBJ) -lm -o $@
 
-build/test_runtime_video: tests/test_runtime_video.c src/runtime_video.c $(RUNTIME_HDRS)
-	$(CC) $(CFLAGS) $(SDL_CFLAGS) tests/test_runtime_video.c -o $@
+build/test_runtime_video: tests/test_runtime_video.c src/runtime_video.c src/runtime_keys.c $(RUNTIME_HDRS)
+	$(CC) $(CFLAGS) $(SDL_CFLAGS) tests/test_runtime_video.c src/runtime_keys.c -o $@
+
+build/test_runtime_perf: tests/test_runtime_perf.c src/runtime_perf.c include/runtime_perf.h
+	$(CC) $(CFLAGS) tests/test_runtime_perf.c src/runtime_perf.c -o $@
+
+build/test_runtime_keys: tests/test_runtime_keys.c src/runtime_keys.c include/runtime_keys.h
+	$(CC) $(CFLAGS) $(SDL_CFLAGS) tests/test_runtime_keys.c src/runtime_keys.c -o $@
+
+build/test_mac_icon: tests/test_mac_icon.c src/mac_icon_palette.c include/mac_icon.h
+	$(CC) $(CFLAGS) -o $@ tests/test_mac_icon.c src/mac_icon_palette.c
+
+build/test_runtime_bridge: tests/test_runtime_bridge.c src/runtime_bridge.c include/runtime_bridge.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -pthread -o $@ tests/test_runtime_bridge.c src/runtime_bridge.c
 
 runtime: build/ospi-runtime
 
@@ -229,8 +256,13 @@ build/test_mac_system: $(RUNTIME_OBJ) tests/test_mac_system.c $(RUNTIME_HDRS) $(
 build/test_mac_raster: $(RUNTIME_OBJ) tests/test_mac_raster.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_raster.c $(CPUOBJ) -lm -o $@
 
-test: build/test_ospi build/test_mac_resource build/test_mac_cpu build/test_mac_runtime build/test_mac_resource_services build/test_mac_memory build/test_mac_traps build/test_native_launch build/test_mac_events build/test_mac_quickdraw build/test_runtime_video build/test_mac_raster build/test_mac_system build/test_mac_geometry build/test_mac_files build/test_mac_cursor build/test_mac_color build/test_mac_dialog build/test_runtime_cursor build/test_mac_color_port build/test_mac_copybits build/test_mac_palette build/test_mac_color_raster
+test: build/test_os999_startup build/test_ospi build/test_archive_install build/test_mac_icon build/test_runtime_bridge build/test_mac_resource build/test_mac_cpu build/test_mac_runtime build/test_mac_resource_services build/test_mac_memory build/test_mac_traps build/test_native_launch build/test_mac_events build/test_mac_quickdraw build/test_runtime_video build/test_runtime_perf build/test_runtime_keys build/test_mac_raster build/test_mac_system build/test_mac_geometry build/test_mac_files build/test_mac_cursor build/test_mac_color build/test_mac_dialog build/test_runtime_cursor build/test_mac_color_port build/test_mac_copybits build/test_mac_palette build/test_mac_color_raster
+	./build/test_desktop_assets assets/icons/ospi-icons.icl8
+	./build/test_os999_startup
 	./build/test_ospi
+	./build/test_archive_install
+	./build/test_mac_icon
+	./build/test_runtime_bridge
 	./build/test_mac_resource
 	./build/test_mac_cpu
 	./build/test_mac_runtime
@@ -249,6 +281,8 @@ test: build/test_ospi build/test_mac_resource build/test_mac_cpu build/test_mac_
 	./build/test_mac_events
 	./build/test_mac_quickdraw
 	./build/test_runtime_video
+	./build/test_runtime_perf
+	./build/test_runtime_keys
 	./build/test_mac_raster
 	./build/test_mac_system
 	./build/test_mac_geometry
@@ -281,20 +315,23 @@ test: build/test_ospi build/test_mac_resource build/test_mac_cpu build/test_mac_
 	./build/test_mac_menu_records
 
 app: build/ospi build/ospi-runtime macos/Info.plist
-	rm -rf "build/OS Pi.app"
-	mkdir -p "build/OS Pi.app/Contents/MacOS" "build/OS Pi.app/Contents/Resources/Fonts"
-	cp build/ospi "build/OS Pi.app/Contents/MacOS/ospi"
-	cp build/ospi-runtime "build/OS Pi.app/Contents/MacOS/ospi-runtime"
-	cp $(MUSASHI)/readme.txt "build/OS Pi.app/Contents/Resources/Musashi-license.txt"
-	sed -n '1,32p' $(MUSASHI)/softfloat/softfloat.c > "build/OS Pi.app/Contents/Resources/SoftFloat-notice.txt"
-	cp fonts/ChicagoFLF.ttf fonts/LICENSE.txt "build/OS Pi.app/Contents/Resources/Fonts/"
-	cp macos/Info.plist "build/OS Pi.app/Contents/Info.plist"
-	printf 'APPL????' > "build/OS Pi.app/Contents/PkgInfo"
-	codesign --force --sign - "build/OS Pi.app"
+	rm -rf "$(APP_BUNDLE)"
+	mkdir -p "$(APP_BUNDLE)/Contents/MacOS" "$(APP_BUNDLE)/Contents/Resources/Fonts"
+	cp build/ospi "$(APP_BUNDLE)/Contents/MacOS/ospi"
+	cp build/ospi-runtime "$(APP_BUNDLE)/Contents/MacOS/ospi-runtime"
+	cp $(MUSASHI)/readme.txt "$(APP_BUNDLE)/Contents/Resources/Musashi-license.txt"
+	sed -n '1,32p' $(MUSASHI)/softfloat/softfloat.c > "$(APP_BUNDLE)/Contents/Resources/SoftFloat-notice.txt"
+	cp fonts/ChicagoFLF.ttf fonts/LICENSE.txt "$(APP_BUNDLE)/Contents/Resources/Fonts/"
+	mkdir -p "$(APP_BUNDLE)/Contents/Resources/sounds/classic9"
+	cp assets/sounds/classic9/01-startup_chord.wav assets/sounds/classic9/03-plain_beep.wav assets/sounds/classic9/16-menu_open.wav assets/sounds/classic9/17-menu_select.wav "$(APP_BUNDLE)/Contents/Resources/sounds/classic9/"
+	cp assets/icons/ospi-icons.icl8 "$(APP_BUNDLE)/Contents/Resources/"
+	cp macos/Info.plist "$(APP_BUNDLE)/Contents/Info.plist"
+	printf 'APPL????' > "$(APP_BUNDLE)/Contents/PkgInfo"
+	codesign --force --sign - "$(APP_BUNDLE)"
 
 ifeq ($(shell uname -s),Darwin)
 run: app
-	open "build/OS Pi.app"
+	open "$(APP_BUNDLE)"
 else
 run: build/ospi
 	./build/ospi --volume "$(CURDIR)/volume"
@@ -315,3 +352,15 @@ build/test_mac_dialog_frame: $(RUNTIME_OBJ) tests/test_mac_dialog_frame.c $(RUNT
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_dialog_frame.c $(CPUOBJ) -lm -o $@
 
 test: build/test_mac_dialog_frame
+
+build/test_desktop_assets: tests/test_desktop_assets.c src/desktop_assets.c src/mac_icon_palette.c assets/icons/c/ospi_icon_set.c include/desktop_assets.h
+	$(CC) $(CFLAGS) tests/test_desktop_assets.c src/desktop_assets.c src/mac_icon_palette.c assets/icons/c/ospi_icon_set.c -o $@
+
+test: build/test_desktop_assets
+
+build/test_desktop_sound: tests/test_desktop_sound.c src/desktop_sound.c include/desktop_sound.h
+	$(CC) $(CFLAGS) $(SDL_CFLAGS) tests/test_desktop_sound.c src/desktop_sound.c $(SDL_LIBS) -o $@
+
+.PHONY: test-desktop-sound
+test-desktop-sound: build/test_desktop_sound
+	./build/test_desktop_sound assets/sounds/classic9

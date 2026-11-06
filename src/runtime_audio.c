@@ -10,6 +10,62 @@
  * this bounded single-producer/single-consumer ring. It never runs guest code. */
 #define AUDIO_TARGET_FRAMES 4096u
 #define AUDIO_CHUNK_FRAMES 64u
+#define AUDIO_CAPTURE_SECONDS 120u
+
+static void store_le16(uint8_t *p, uint16_t value) {
+    p[0] = (uint8_t)value;
+    p[1] = (uint8_t)(value >> 8);
+}
+
+static void store_le32(uint8_t *p, uint32_t value) {
+    p[0] = (uint8_t)value;
+    p[1] = (uint8_t)(value >> 8);
+    p[2] = (uint8_t)(value >> 16);
+    p[3] = (uint8_t)(value >> 24);
+}
+
+static void write_capture(RuntimeAudio *audio) {
+    if (!audio->capture_pcm || !audio->capture_path[0]) return;
+    uint64_t data_size64 = audio->capture_frames * 4;
+    if (data_size64 > UINT32_MAX - 36) {
+        fprintf(stderr, "PCM capture is too large for a WAV file.\n");
+        return;
+    }
+    FILE *file = fopen(audio->capture_path, "wb");
+    if (!file) {
+        fprintf(stderr, "Cannot write PCM capture %s.\n", audio->capture_path);
+        return;
+    }
+    uint8_t header[44] = {0};
+    memcpy(header, "RIFF", 4);
+    store_le32(header + 4, 36 + (uint32_t)data_size64);
+    memcpy(header + 8, "WAVEfmt ", 8);
+    store_le32(header + 16, 16);
+    store_le16(header + 20, 1);
+    store_le16(header + 22, 2);
+    store_le32(header + 24, MAC_SOUND_RATE);
+    store_le32(header + 28, MAC_SOUND_RATE * 4);
+    store_le16(header + 32, 4);
+    store_le16(header + 34, 16);
+    memcpy(header + 36, "data", 4);
+    store_le32(header + 40, (uint32_t)data_size64);
+    int ok = fwrite(header, sizeof header, 1, file) == 1;
+    uint8_t samples[8192];
+    uint64_t offset = 0;
+    while (ok && offset < audio->capture_frames * 2) {
+        size_t count = (size_t)(audio->capture_frames * 2 - offset);
+        if (count > sizeof samples / 2) count = sizeof samples / 2;
+        for (size_t i = 0; i < count; i++)
+            store_le16(samples + i * 2, (uint16_t)audio->capture_pcm[offset + i]);
+        ok = fwrite(samples, 2, count, file) == count;
+        offset += count;
+    }
+    if (fclose(file)) ok = 0;
+    if (!ok) fprintf(stderr, "PCM capture write failed: %s\n", audio->capture_path);
+    else fprintf(stderr, "PCM producer capture: %s (%llu frames, %llu seconds max)\n",
+                 audio->capture_path, (unsigned long long)audio->capture_frames,
+                 (unsigned long long)AUDIO_CAPTURE_SECONDS);
+}
 
 static void audio_callback(void *context, Uint8 *stream, int length) {
     RuntimeAudio *audio = context;
@@ -66,6 +122,25 @@ int runtime_audio_open(RuntimeAudio *audio) {
     atomic_init(&audio->ring_write_frames, 0);
     atomic_init(&audio->callback_frames, 0);
     atomic_init(&audio->callback_underrun_frames, 0);
+    const char *capture_path = getenv("OSPI_AUDIO_WAV");
+    if (capture_path && *capture_path) {
+        size_t path_size = strlen(capture_path);
+        audio->capture_capacity_frames = (uint64_t)MAC_SOUND_RATE * AUDIO_CAPTURE_SECONDS;
+        if (path_size >= sizeof audio->capture_path) {
+            fprintf(stderr, "PCM capture path is too long; capture disabled.\n");
+            audio->capture_capacity_frames = 0;
+        } else {
+            audio->capture_pcm = malloc((size_t)audio->capture_capacity_frames * 2 * sizeof(int16_t));
+            if (!audio->capture_pcm) {
+                fprintf(stderr, "PCM capture allocation failed; capture disabled.\n");
+                audio->capture_capacity_frames = 0;
+            } else {
+                memcpy(audio->capture_path, capture_path, path_size + 1);
+                fprintf(stderr, "PCM producer capture enabled (up to %u seconds): %s\n",
+                        AUDIO_CAPTURE_SECONDS, audio->capture_path);
+            }
+        }
+    }
     fprintf(stderr, "Audio output: driver=%s rate=%dHz channels=%u buffer=%u frames callback=ring\n",
             SDL_GetCurrentAudioDriver() ? SDL_GetCurrentAudioDriver() : "unknown",
             obtained.freq, obtained.channels, obtained.samples);
@@ -173,6 +248,13 @@ int runtime_audio_pump(RuntimeAudio *audio, MacRuntime *rt,
         }
         atomic_store_explicit(&audio->ring_write_frames, write_at + frames,
                               memory_order_release);
+        if (audio->capture_pcm && audio->capture_frames < audio->capture_capacity_frames) {
+            uint64_t captured = audio->capture_capacity_frames - audio->capture_frames;
+            if (captured > frames) captured = frames;
+            memcpy(audio->capture_pcm + audio->capture_frames * 2, pcm,
+                   (size_t)captured * 2 * sizeof(int16_t));
+            audio->capture_frames += captured;
+        }
         audio->submitted_frames += frames;
         available -= frames;
     }
@@ -202,5 +284,7 @@ void runtime_audio_close(RuntimeAudio *audio) {
         SDL_CloseAudioDevice(audio->device);
     }
     if (audio->owns_audio) SDL_QuitSubSystem(SDL_INIT_AUDIO);
+    write_capture(audio);
+    free(audio->capture_pcm);
     memset(audio, 0, sizeof *audio);
 }

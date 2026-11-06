@@ -1,11 +1,13 @@
 #include "mac_sound_int.h"
 #include "mac_sound_double.h"
+#include <stdio.h>
 #include <string.h>
 /* Independent implementation of public Inside Macintosh Sound ABI:
  * Sound-122.html, Sound-133.html, Sound-77.html at leopard-adc.pepas.com.
  * Supports uncompressed mono unsigned8 PCM, at rates <=48kHz. */
 #define DOUBLE_RETURN 0x1fd0u
 #define MAX_FRAMES (4u * 1024u * 1024u)
+#define MAX_DOUBLEBACK_INSTRUCTIONS 100000u
 static uint32_t rd(MacRuntime*r,uint32_t p,unsigned n){return mac_cpu_read(r->cpu,p,n);}
 static void wr(MacRuntime*r,uint32_t p,unsigned n,uint32_t v){mac_cpu_write(r->cpu,p,n,v);}
 static int buffer(MacRuntime*r,uint32_t p,uint32_t *frames){
@@ -72,17 +74,26 @@ size_t mac_sound_double_poll(MacRuntime*r,size_t budget){
     for(unsigned i=0;i<MAC_SOUND_CHANNELS;i++)for(unsigned b=0;b<2;b++){
         MacSoundChannel*c=&r->sound->channels[i];MacSoundDouble*d=&c->double_buffer;
         if(!(d->pending&(1u<<b)))continue;
-        if(ran>=10000)return ran;
+        if(ran>=budget || ran>=MAX_DOUBLEBACK_INSTRUCTIONS)return ran;
         if(!mac_sound_range(r,d->callback,2,1)){mac_sound_fail(r,"Doubleback code exceeds RAM.");return ran;}
         uint32_t saved[18];for(unsigned j=0;j<18;j++)saved[j]=mac_cpu_get(r->cpu,(MacCpuReg)j);
         uint32_t sp=saved[MAC_A7];if(sp<12 || !mac_sound_range(r,sp-12,12,1)){mac_sound_fail(r,"Doubleback stack exceeds RAM.");return ran;}
         uint8_t stack[12];memcpy(stack,mac_cpu_ram(r->cpu)+sp-12,12);
         wr(r,sp-12,4,DOUBLE_RETURN);wr(r,sp-8,4,d->buffers[b]);wr(r,sp-4,4,c->address);
         mac_cpu_set(r->cpu,MAC_A7,sp-12);mac_cpu_set(r->cpu,MAC_PC,d->callback);d->pending&=~(1u<<b);r->sound->callback_active=1;
-        while(ran<10000 && !mac_cpu_halted(r->cpu) && mac_cpu_get(r->cpu,MAC_PC)!=DOUBLE_RETURN){size_t n=mac_cpu_run(r->cpu,1);ran+=n;if(!n)break;}
+        size_t callback_start=ran;
+        size_t callback_budget=budget-ran;
+        if(callback_budget>MAX_DOUBLEBACK_INSTRUCTIONS-ran)
+            callback_budget=MAX_DOUBLEBACK_INSTRUCTIONS-ran;
+        while(ran-callback_start<callback_budget && !mac_cpu_halted(r->cpu) && mac_cpu_get(r->cpu,MAC_PC)!=DOUBLE_RETURN){size_t n=mac_cpu_run(r->cpu,1);ran+=n;if(!n)break;}
         r->sound->callback_active=0;
         if(mac_cpu_halted(r->cpu))return ran;
-        if(mac_cpu_get(r->cpu,MAC_PC)!=DOUBLE_RETURN || mac_cpu_get(r->cpu,MAC_A7)!=sp){mac_sound_fail(r,"Doubleback did not restore Pascal stack within instruction budget.");return ran;}
+        if(mac_cpu_get(r->cpu,MAC_PC)!=DOUBLE_RETURN || mac_cpu_get(r->cpu,MAC_A7)!=sp){
+            char error[160];
+            snprintf(error,sizeof error,"Doubleback return mismatch: PC=%08x A7=%08x expected=%08x after %zu instructions.",
+                     mac_cpu_get(r->cpu,MAC_PC),mac_cpu_get(r->cpu,MAC_A7),sp,ran-callback_start);
+            mac_sound_fail(r,error);return ran;
+        }
         memcpy(mac_cpu_ram(r->cpu)+sp-12,stack,12);mac_cpu_set(r->cpu,MAC_SR,saved[MAC_SR]);for(unsigned j=0;j<17;j++)mac_cpu_set(r->cpu,(MacCpuReg)j,saved[j]);
         mac_sound_reap(r);
     }

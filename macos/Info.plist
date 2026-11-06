@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>OS Pi</string>
+	<string>OS999 Stylized</string>
 	<key>CFBundleDisplayName</key>
-	<string>OS Pi</string>
+	<string>OS999 Stylized</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.iantrimble.ospi</string>
+	<string>com.iantrimble.os999.stylized</string>
 	<key>CFBundleVersion</key>
 	<string>0.1.0</string>
 	<key>CFBundleShortVersionString</key>

@@ -1,7 +1,9 @@
 #include "ospi.h"
+#include "archive_fs.h"
 
 #include <ctype.h>
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -223,84 +225,6 @@ static void safe_name(const char *url, char *out, size_t n) {
     }
 }
 
-static int copy_file(const char *src, const char *dst) {
-    FILE *in = fopen(src, "rb");
-    if (!in) {
-        return -1;
-    }
-    FILE *out = fopen(dst, "wb");
-    if (!out) {
-        fclose(in);
-        return -1;
-    }
-    char buf[8192];
-    size_t n;
-    int rc = 0;
-    while ((n = fread(buf, 1, sizeof buf, in)) > 0) {
-        if (fwrite(buf, 1, n, out) != n) {
-            rc = -1;
-            break;
-        }
-    }
-    if (ferror(in)) {
-        rc = -1;
-    }
-    fclose(in);
-    if (fclose(out) != 0) {
-        rc = -1;
-    }
-    return rc;
-}
-
-static int copy_tree(const char *src, const char *dst, int depth) {
-    if (depth > 8) {
-        return -1;
-    }
-    struct stat st;
-    if (lstat(src, &st) != 0) {
-        return -1;
-    }
-    if (S_ISLNK(st.st_mode)) {
-        return 0;
-    }
-    if (S_ISREG(st.st_mode)) {
-        return copy_file(src, dst);
-    }
-    if (!S_ISDIR(st.st_mode)) {
-        return 0;
-    }
-    if (mkdir(dst, 0755) != 0 && errno != EEXIST) {
-        return -1;
-    }
-    DIR *d = opendir(src);
-    if (!d) {
-        return -1;
-    }
-    int rc = 0;
-    struct dirent *de;
-    while ((de = readdir(d)) != NULL) {
-        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) {
-            continue;
-        }
-        if (strchr(de->d_name, '/')) {
-            continue;
-        }
-        char from[OSPI_PATH];
-        char to[OSPI_PATH];
-        if (snprintf(from, sizeof from, "%s/%s", src, de->d_name) >= (int)sizeof from ||
-            snprintf(to, sizeof to, "%s/%s", dst, de->d_name) >= (int)sizeof to) {
-            rc = -1;
-            break;
-        }
-        if (copy_tree(from, to, depth + 1) != 0) {
-            rc = -1;
-            break;
-        }
-    }
-    closedir(d);
-    return rc;
-}
-
 static void archive_leaf(const char *url, char *out, size_t n) {
     const char *q = strchr(url, '?');
     const char *end = q ? q : url + strlen(url);
@@ -322,37 +246,6 @@ static void archive_leaf(const char *url, char *out, size_t n) {
     if (!out[0] || strcmp(out, ".") == 0 || strcmp(out, "..") == 0) {
         snprintf(out, n, "download.sit");
     }
-}
-
-static int rm_rf(const char *path, int depth) {
-    struct stat st;
-    if (!path || depth > 8 || lstat(path, &st) != 0) {
-        return -1;
-    }
-    if (S_ISLNK(st.st_mode) || !S_ISDIR(st.st_mode)) {
-        return unlink(path);
-    }
-    DIR *d = opendir(path);
-    if (!d) {
-        return -1;
-    }
-    int rc = 0;
-    struct dirent *de;
-    while ((de = readdir(d)) != NULL) {
-        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0 || strchr(de->d_name, '/')) {
-            continue;
-        }
-        char child[OSPI_PATH];
-        if (snprintf(child, sizeof child, "%s/%s", path, de->d_name) >= (int)sizeof child ||
-            rm_rf(child, depth + 1) != 0) {
-            rc = -1;
-        }
-    }
-    closedir(d);
-    if (rmdir(path) != 0) {
-        rc = -1;
-    }
-    return rc;
 }
 
 static int read_file_cap(const char *path, char **out) {
@@ -405,6 +298,98 @@ static int fetch_archive(const char *page, const char *file_url, const char *des
         }
     }
     return -1;
+}
+
+static int sit_name(const char *name) {
+    size_t n = name ? strlen(name) : 0;
+    return n > 4 && strcasecmp(name + n - 4, ".sit") == 0;
+}
+
+static int path_within(const char *root, const char *path) {
+    size_t n = strlen(root);
+    return strncmp(root, path, n) == 0 && (path[n] == 0 || path[n] == '/');
+}
+
+static int expand_archive(const char *archive, const char *destination, char *err, size_t err_n) {
+    char tmp[] = "/tmp/ospi-ex-XXXXXX";
+    char *ex = mkdtemp(tmp);
+    if (!ex) {
+        set_err(err, err_n, "Could not create a temporary extraction directory.");
+        return -1;
+    }
+    char *argv[] = {"unar", "-q", "-k", "visible", "-D", "-o", ex, (char *)archive, NULL};
+    if (run_argv(argv) != 0) {
+        archive_remove_tree(ex);
+        set_err(err, err_n, "Could not expand this archive. The unar tool may be missing or the archive unsupported.");
+        return -1;
+    }
+    ArchiveCopyStats stats;
+    if (archive_copy_tree(ex, destination, &stats) != 0) {
+        archive_remove_tree(ex);
+        set_err(err, err_n, "Extracted files could not be copied completely; partial files remain.");
+        return -2;
+    }
+    archive_remove_tree(ex);
+    set_err(err, err_n, "");
+    return 0;
+}
+
+int install_sit(const char *root, const char *archive_rel, char *created_rel, size_t created_n,
+                char *err, size_t err_n) {
+    if (created_rel && created_n) created_rel[0] = 0;
+    if (err && err_n) err[0] = 0;
+    if (!root || !archive_rel || !sit_name(archive_rel)) {
+        set_err(err, err_n, "This is not a supported .sit archive.");
+        return -1;
+    }
+    char full[OSPI_PATH], root_real[PATH_MAX], archive_real[PATH_MAX];
+    struct stat st;
+    if (volume_join(full, sizeof full, root, archive_rel) != 0 || lstat(full, &st) != 0 ||
+        !S_ISREG(st.st_mode) || st.st_size < 0 || st.st_size > 200000000 ||
+        !realpath(root, root_real) || !realpath(full, archive_real) || !path_within(root_real, archive_real)) {
+        set_err(err, err_n, "This .sit file is not a regular archive inside the OS999 volume.");
+        return -1;
+    }
+    char parent[OSPI_PATH] = "", base[OSPI_NAME], folder[OSPI_NAME], destination_rel[OSPI_PATH];
+    const char *slash = strrchr(archive_rel, '/');
+    const char *leaf = slash ? slash + 1 : archive_rel;
+    if (slash) {
+        size_t n = (size_t)(slash - archive_rel);
+        if (!n || n >= sizeof parent) {
+            set_err(err, err_n, "The archive folder path is invalid.");
+            return -1;
+        }
+        memcpy(parent, archive_rel, n);
+        parent[n] = 0;
+    }
+    size_t base_n = strlen(leaf) - 4;
+    if (base_n >= sizeof base) base_n = sizeof base - 1;
+    memcpy(base, leaf, base_n);
+    base[base_n] = 0;
+    while (base_n && (base[base_n - 1] == '.' || base[base_n - 1] == ' ')) base[--base_n] = 0;
+    if (!base[0] || !strcmp(base, ".") || !strcmp(base, "..")) snprintf(base, sizeof base, "Expanded");
+    if (volume_mkdir_unique(root, parent, base, folder, sizeof folder) != 0) {
+        set_err(err, err_n, "Could not create a new folder beside the archive.");
+        return -1;
+    }
+    int k = parent[0] ? snprintf(destination_rel, sizeof destination_rel, "%s/%s", parent, folder) :
+                        snprintf(destination_rel, sizeof destination_rel, "%s", folder);
+    char destination[OSPI_PATH];
+    if (k < 0 || (size_t)k >= sizeof destination_rel ||
+        volume_join(destination, sizeof destination, root, destination_rel) != 0) {
+        set_err(err, err_n, "The extracted folder path is too long.");
+        return -1;
+    }
+    if (created_rel && created_n) snprintf(created_rel, created_n, "%s", destination_rel);
+    int expanded = expand_archive(archive_real, destination, err, err_n);
+    if (expanded != 0) {
+        if (expanded != -2) {
+            rmdir(destination);
+            if (created_rel && created_n) created_rel[0] = 0;
+        }
+        return -1;
+    }
+    return 0;
 }
 
 int install_garden(const char *root, const char *page_url, char *created_rel, size_t created_n, char *err,
@@ -471,27 +456,26 @@ int install_garden(const char *root, const char *page_url, char *created_rel, si
         set_err(err, err_n, "Could not download the archive. It may be over 200 MB.");
         return -1;
     }
-    char ex_tmpl[] = "/tmp/ospi-ex-XXXXXX";
-    char *ex = mkdtemp(ex_tmpl);
-    if (ex) {
-        char *unar_argv[] = {"unar", "-q", "-k", "visible", "-D", "-o", ex, arch_tmp, NULL};
-        if (run_argv(unar_argv) == 0) {
-            copy_tree(ex, dest, 0);
-        }
-        rm_rf(ex, 0);
-    }
     char leaf[96];
     char kept[OSPI_PATH];
     archive_leaf(file_url, leaf, sizeof leaf);
     if (snprintf(kept, sizeof kept, "%s/%s", dest, leaf) >= (int)sizeof kept ||
-        copy_file(arch_tmp, kept) != 0) {
+        archive_copy_file(arch_tmp, kept) != 0) {
         unlink(arch_tmp);
+        rmdir(dest);
         set_err(err, err_n, "Downloaded the archive, but could not copy it in.");
         return -1;
     }
     unlink(arch_tmp);
     if (created_rel && created_n) {
         snprintf(created_rel, created_n, "%s", rel);
+    }
+    int expanded = expand_archive(kept, dest, err, err_n);
+    if (expanded != 0) {
+        set_err(err, err_n, expanded == -2 ?
+                "Archive saved in Applications, but extracted-file copying failed; partial files remain." :
+                "Archive saved in Applications, but extraction failed. Install unar or check the archive.");
+        return -1;
     }
     set_err(err, err_n, "");
     return 0;
