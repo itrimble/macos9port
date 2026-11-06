@@ -2,6 +2,8 @@
 #include "desktop_sound.h"
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <limits.h>
 #include <string.h>
 #include <sys/stat.h>
 #if defined(__APPLE__)
@@ -81,4 +83,39 @@ void desktop_host_shutdown(void) {
     desktop_sound_shutdown();
     previous_menu = -1;
     previous_dialog = 0;
+}
+
+int desktop_host_resolve_volume(int argc, char **argv, char *out, size_t n) {
+    const char *chosen = NULL;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--volume") == 0 && i + 1 < argc) {
+            chosen = argv[++i];
+        }
+    }
+    char path[OSPI_PATH];
+    if (chosen) {
+        snprintf(path, sizeof path, "%s", chosen);
+    } else {
+        const char *home = getenv("HOME");
+        if (!home) {
+            fprintf(stderr, "OS999 Stylized: HOME is not set\n");
+            return -1;
+        }
+#if defined(__APPLE__)
+        snprintf(path, sizeof path, "%s/Library/Application Support/OS Pi/Volume", home);
+#else
+        snprintf(path, sizeof path, "%s/.local/share/ospi/Volume", home);
+#endif
+    }
+    if (volume_mkdir_p(path) != 0 || volume_seed(path) != 0) {
+        fprintf(stderr, "OS999 Stylized: could not create the volume at %s\n", path);
+        return -1;
+    }
+    char resolved[PATH_MAX];
+    if (!realpath(path, resolved) || strlen(resolved) >= n) {
+        fprintf(stderr, "OS999 Stylized: could not resolve %s\n", path);
+        return -1;
+    }
+    memcpy(out, resolved, strlen(resolved) + 1);
+    return 0;
 }

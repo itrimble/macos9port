@@ -62,6 +62,11 @@ Appearance lists 59 original wallpapers, ten per page, and remembers the choice
 per volume. Plain Desktop keeps the original gradient. The macOS app packages
 1024×768 bitmaps converted with `sips`; HD masters remain under `assets/`.
 The separate sixteen-theme engine has not arrived; Cmd-T remains unbound.
+Use OS999 → Control Panels → Appearance for Desktop and Themes tabs.
+Desktop offers the same saved picture selection; Themes reports that no theme
+pack is installed. Right-click or Control-click desktop space, disks, folders
+or files for contextual actions. Escape dismisses a popup; Escape or Cmd-W
+closes the control panel. Guest application clicks keep their existing routing.
 
 For a parallel test build, use `make app APP_BUNDLE="build/OS999 Test.app"`
 and launch it against a copied volume. Never rebuild a live bundle in place.

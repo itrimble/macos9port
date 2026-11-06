@@ -1,3 +1,5 @@
+#include "appearance_panel.h"
+#include "desktop_context.h"
 #include "desktop_wallpaper.h"
 #include "ospi.h"
 #include "draw.h"
@@ -279,6 +281,11 @@ void session_command(Session *s, int cmd) {
         return;
     }
     switch (cmd) {
+    case CMD_CONTROL_PANELS:
+        context_close(); appearance_panel_open_controls(s); break;
+    case CMD_APPEARANCE_DESKTOP:
+    case CMD_APPEARANCE_THEMES:
+        context_close(); appearance_panel_open(s, cmd == CMD_APPEARANCE_THEMES); break;
     case CMD_QUIT:
     case CMD_SHUTDOWN:
         s->quit = 1;

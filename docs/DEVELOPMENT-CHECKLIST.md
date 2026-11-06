@@ -257,6 +257,17 @@ Evidence IDs are retained in the loop record. CPU traces are separate evidence.
   the Appearance menu title and readable icon labels. Menu clicking and Ian’s
   acceptance remain open;
   this does not implement the separately missing 16-theme engine.
+  Ian approved the wallpaper appearance and supplied screenshots showing
+  Spiral Galaxy selected in the open menu on 5 November 2026.
+- [ ] V07 Provide OS999 → Control Panels → Appearance navigation with Desktop
+  and Themes tabs, plus Control-click/right-click contextual menus for desktop
+  and folder items. Preserve guest input and separate absent themes from working
+  desktop pictures. Implemented in the Controls Preview: isolated full tests,
+  38 panel checks and real-session navigation/persistence checks pass. A live
+  right-click opened the desktop menu on 5 November; automated left-click
+  activation was blocked by the GUI tool, so panel interaction and Control-click
+  still need Ian’s check. Shared tests fail in the other session’s new HD-icon
+  pack test; this is separate from the passing isolated source suite.
 - [ ] V05 Connect original host startup/interface sounds, mute preference and
   bounded nonblocking playback. Judge them by listening; synthesized waveforms
   and a successful audio-device open do not establish sound quality.

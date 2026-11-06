@@ -1,3 +1,5 @@
+#include "appearance_panel.h"
+#include "desktop_context.h"
 #include "desktop_wallpaper.h"
 #include "draw.h"
 #include "desktop_assets.h"
@@ -413,6 +415,14 @@ void session_paint(Session *s, uint32_t *px, int w, int h) {
             fb_invert(&fb, icon.x, icon.y, icon.w, icon.h);
         }
     }
+    session_overlay_paint(s, px, w, h);
+}
+
+void session_overlay_paint(Session *s, uint32_t *px, int w, int h) {
+    Fb fb;
+    fb_init(&fb, px, w, h);
+    appearance_panel_draw(s, &fb);
     paint_menus(&fb, s);
+    context_draw(s, &fb);
     paint_dialog(&fb, s);
 }

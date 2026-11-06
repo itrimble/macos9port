@@ -1,3 +1,5 @@
+#include "appearance_panel.h"
+#include "desktop_context.h"
 #include "ospi.h"
 #include "session_int.h"
 
@@ -6,7 +8,7 @@
 
 void session_wheel(Session *s, int dy) {
     s->click_valid = 0;
-    if (s->dialog || s->nwin <= 0) {
+    if (session_overlay_active(s) || s->nwin <= 0) {
         return;
     }
     Window *w = &s->win[s->nwin - 1];
@@ -68,6 +70,9 @@ void session_down(Session *s, int x, int y, int clicks) {
         }
         return;
     }
+
+    if (context_down(s, x, y)) return;
+    if (s->menu < 0 && appearance_panel_down(s, x, y)) return;
 
     if (s->menu >= 0) {
         int item = menu_item_at(s->menu, x, y);
@@ -192,6 +197,7 @@ void session_down(Session *s, int x, int y, int clicks) {
 
 void session_move(Session *s, int x, int y) {
     note_mouse(s, x, y);
+    if (context_active()) { context_move(s, x, y); return; }
     if (s->menu >= 0) {
         s->menu_hot = menu_item_at(s->menu, x, y);
     }
@@ -303,6 +309,8 @@ void session_key(Session *s, int key, int mods) {
         }
         return;
     }
+    if (context_key(s, key, mods)) return;
+    if (s->menu < 0 && appearance_panel_key(s, key, mods)) return;
     if (key == 27) {
         s->menu = -1;
         return;
@@ -317,4 +325,15 @@ void session_key(Session *s, int key, int mods) {
     if (key == '\r') {
         session_command(s, CMD_OPEN);
     }
+}
+
+int session_overlay_active(const Session *s) {
+    return s->dialog || s->menu >= 0 || context_active() || appearance_panel_active();
+}
+
+void session_context(Session *s, int x, int y) {
+    s->click_valid = s->down = s->drag = 0;
+    if (s->dialog || appearance_panel_active()) return;
+    s->menu = -1;
+    context_open(s, x, y);
 }

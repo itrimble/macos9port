@@ -1,3 +1,5 @@
+#include "appearance_panel.h"
+#include "desktop_context.h"
 #include "ospi.h"
 #include "desktop_wallpaper.h"
 #include "draw.h"
@@ -93,7 +95,10 @@ Session *session_create(const char *root) {
     return s;
 }
 
-void session_destroy(Session *s) { desktop_wallpaper_shutdown(); free(s); }
+void session_destroy(Session *s) {
+    context_close(); appearance_panel_close();
+    desktop_wallpaper_shutdown(); free(s);
+}
 
 int session_take_startup_toggle(Session *s) {
     if (!s) return 0;

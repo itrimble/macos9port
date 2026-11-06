@@ -9,10 +9,10 @@ ifneq ($(FT_LIBS),)
 CFLAGS += $(FT_CFLAGS) -DOSPI_FREETYPE
 endif
 
-CORE := src/desktop_wallpaper.c src/session_state.c src/typeface_metrics.c src/desktop_assets.c assets/icons/c/ospi_icon_set.c src/font.c src/draw.c src/geom.c src/menu.c src/volume.c src/archive_fs.c src/session_sit.c src/mac_icon.c src/mac_icon_palette.c src/runtime_bridge.c \
+CORE := src/appearance_panel.c src/desktop_context.c src/desktop_wallpaper.c src/session_state.c src/typeface_metrics.c src/desktop_assets.c assets/icons/c/ospi_icon_set.c src/font.c src/draw.c src/geom.c src/menu.c src/volume.c src/archive_fs.c src/session_sit.c src/mac_icon.c src/mac_icon_palette.c src/runtime_bridge.c \
 	src/hostinfo.c src/text.c src/paint.c src/session.c src/input.c \
 	src/install.c src/classic.c src/typeface.c src/native_launch.c src/mac_resource.c
-HDRS := include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h
+HDRS := include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h
 
 .PHONY: all test app run clean runtime
 
@@ -259,6 +259,9 @@ build/test_mac_raster: $(RUNTIME_OBJ) tests/test_mac_raster.c $(RUNTIME_HDRS) $(
 test: build/test_os999_startup build/test_ospi build/test_archive_install build/test_mac_icon build/test_runtime_bridge build/test_mac_resource build/test_mac_cpu build/test_mac_runtime build/test_mac_resource_services build/test_mac_memory build/test_mac_traps build/test_native_launch build/test_mac_events build/test_mac_quickdraw build/test_runtime_video build/test_runtime_perf build/test_runtime_keys build/test_mac_raster build/test_mac_system build/test_mac_geometry build/test_mac_files build/test_mac_cursor build/test_mac_color build/test_mac_dialog build/test_runtime_cursor build/test_mac_color_port build/test_mac_copybits build/test_mac_palette build/test_mac_color_raster
 	./build/test_desktop_assets assets/icons/ospi-icons.icl8
 	./build/test_appearance
+	./build/test_appearance_panel
+	./build/test_desktop_context
+	./build/test_desktop_controls
 	./build/test_os999_startup
 	./build/test_ospi
 	./build/test_archive_install
@@ -383,3 +386,19 @@ build/test_appearance: $(CORE) src/os999_startup.c tests/test_appearance.c $(HDR
 	$(CC) $(CFLAGS) -o $@ $(filter-out src/desktop_wallpaper.c,$(CORE)) src/os999_startup.c tests/test_appearance.c $(FT_LIBS) -lm
 
 test: build/test_appearance
+
+
+build/test_appearance_panel: src/appearance_panel.c tests/test_appearance_panel.c $(HDRS)
+	$(CC) $(CFLAGS) -o $@ src/appearance_panel.c src/draw.c src/font.c src/geom.c src/menu.c src/text.c src/typeface.c src/typeface_metrics.c tests/test_appearance_panel.c $(FT_LIBS) -lm
+
+test: build/test_appearance_panel
+
+build/test_desktop_context: src/desktop_context.c src/geom.c tests/test_desktop_context.c $(HDRS)
+	$(CC) $(CFLAGS) -Isrc -o $@ src/desktop_context.c src/geom.c tests/test_desktop_context.c
+
+test: build/test_desktop_context
+
+build/test_desktop_controls: $(CORE) src/os999_startup.c tests/test_desktop_controls.c $(HDRS)
+	$(CC) $(CFLAGS) -o $@ $(CORE) src/os999_startup.c tests/test_desktop_controls.c $(FT_LIBS) -lm
+
+test: build/test_desktop_controls

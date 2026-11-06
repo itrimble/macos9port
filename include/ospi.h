@@ -37,7 +37,8 @@ enum {
 /* 200..231 remains reserved for future themes. Wallpapers are separate. */
 enum { CMD_WALLPAPER_BASE = 300, CMD_WALLPAPER_LAST = 359,
        CMD_WALLPAPER_PREVIOUS = 400, CMD_WALLPAPER_NEXT = 401,
-       MENU_APPEARANCE = 6, WALLPAPERS_PER_PAGE = 10 };
+       CMD_APPEARANCE_DESKTOP = 410, CMD_CONTROL_PANELS = 411,
+       CMD_APPEARANCE_THEMES = 412, MENU_APPEARANCE = 6, WALLPAPERS_PER_PAGE = 10 };
 enum { MI_DISABLED = 1, MI_CHECKED = 2 };
 
 typedef struct {
@@ -173,6 +174,9 @@ const char *host_arch(void);
 Session *session_create(const char *root);
 void session_destroy(Session *s);
 void session_paint(Session *s, uint32_t *px, int w, int h);
+int session_overlay_active(const Session *s);
+void session_overlay_paint(Session *s, uint32_t *px, int w, int h);
+void session_context(Session *s, int x, int y);
 void session_down(Session *s, int x, int y, int clicks);
 void session_up(Session *s, int x, int y);
 void session_move(Session *s, int x, int y);

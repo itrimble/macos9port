@@ -41,41 +41,6 @@ static void take_clip(Session *s) {
     SDL_free(text);
 }
 
-static int resolve_volume(int argc, char **argv, char *out, size_t n) {
-    const char *chosen = NULL;
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--volume") == 0 && i + 1 < argc) {
-            chosen = argv[++i];
-        }
-    }
-    char path[OSPI_PATH];
-    if (chosen) {
-        snprintf(path, sizeof path, "%s", chosen);
-    } else {
-        const char *home = getenv("HOME");
-        if (!home) {
-            fprintf(stderr, "OS999 Stylized: HOME is not set\n");
-            return -1;
-        }
-#if defined(__APPLE__)
-        snprintf(path, sizeof path, "%s/Library/Application Support/OS Pi/Volume", home);
-#else
-        snprintf(path, sizeof path, "%s/.local/share/ospi/Volume", home);
-#endif
-    }
-    if (volume_mkdir_p(path) != 0 || volume_seed(path) != 0) {
-        fprintf(stderr, "OS999 Stylized: could not create the volume at %s\n", path);
-        return -1;
-    }
-    char resolved[PATH_MAX];
-    if (!realpath(path, resolved) || strlen(resolved) >= n) {
-        fprintf(stderr, "OS999 Stylized: could not resolve %s\n", path);
-        return -1;
-    }
-    memcpy(out, resolved, strlen(resolved) + 1);
-    return 0;
-}
-
 static void logical_point(SDL_Window *win, int x, int y, int *ox, int *oy) {
     int ww = 1;
     int wh = 1;
@@ -121,7 +86,7 @@ int main(int argc, char **argv) {
         return volume_seed(argv[2]) == 0 ? 0 : 1;
     }
     char volume[OSPI_PATH];
-    if (resolve_volume(argc, argv, volume, sizeof volume) != 0) {
+    if (desktop_host_resolve_volume(argc, argv, volume, sizeof volume) != 0) {
         return 1;
     }
     fprintf(stderr, "OS999 Stylized 0.1  %s\n", volume);
@@ -328,11 +293,20 @@ int main(int argc, char **argv) {
             int y = 0;
             if (ev.type == SDL_QUIT) {
                 s->quit = 1;
-            } else if (ev.type == SDL_MOUSEBUTTONDOWN && ev.button.button == SDL_BUTTON_LEFT) {
+            } else if (ev.type == SDL_MOUSEBUTTONDOWN &&
+                       (ev.button.button == SDL_BUTTON_LEFT || ev.button.button == SDL_BUTTON_RIGHT)) {
                 logical_point(win, ev.button.x, ev.button.y, &x, &y);
+                if (session_overlay_active(s)) {
+                    if (ev.button.button != SDL_BUTTON_LEFT) continue;
+                    if (guest_focus) native_surface_push((RuntimeBridgeInput){.kind=RUNTIME_BRIDGE_FOCUS_LOST});
+                    guest_focus = guest_mouse_capture = 0;
+                    session_down(s, x, y, 1);
+                    continue;
+                }
                 int active = native_surface_active() && guest_placed;
                 if (active && inside(x, y, guest_window.x, guest_window.y,
                                      guest_window.w, guest_window.h)) {
+                    if (ev.button.button == SDL_BUTTON_RIGHT) continue;
                     int close_hit = inside(x, y, guest_window.x + 10,
                                            guest_window.y + 7, 13, 13);
                     if (close_hit) {
@@ -365,6 +339,10 @@ int main(int argc, char **argv) {
                     native_surface_push((RuntimeBridgeInput){.kind=RUNTIME_BRIDGE_FOCUS_LOST});
                     guest_focus = guest_mouse_capture = 0;
                 }
+                if (ev.button.button == SDL_BUTTON_RIGHT || (SDL_GetModState() & KMOD_CTRL)) {
+                    session_context(s, x, y);
+                    continue;
+                }
                 take_clip(s);
                 /* Several queued clicks can be drained in one frame. Use each
                  * event's time so the fallback can distinguish those clicks. */
@@ -387,6 +365,7 @@ int main(int argc, char **argv) {
                 session_up(s, x, y);
             } else if (ev.type == SDL_MOUSEMOTION) {
                 logical_point(win, ev.motion.x, ev.motion.y, &x, &y);
+                if (session_overlay_active(s)) { session_move(s, x, y); continue; }
                 if (guest_drag) {
                     guest_window.x = x - s->press_x;
                     guest_window.y = y - s->press_y;
@@ -414,7 +393,7 @@ int main(int argc, char **argv) {
             } else if (ev.type == SDL_MOUSEWHEEL) {
                 session_wheel(s, ev.wheel.y);
             } else if (ev.type == SDL_KEYDOWN) {
-                if (guest_focus && native_surface_active()) {
+                if (guest_focus && native_surface_active() && !session_overlay_active(s)) {
                     native_surface_push((RuntimeBridgeInput){RUNTIME_BRIDGE_KEY_DOWN,
                         0, 0, (uint32_t)ev.key.keysym.sym,
                         (uint32_t)ev.key.keysym.mod});
@@ -426,7 +405,7 @@ int main(int argc, char **argv) {
                 }
                 int mods = (ev.key.keysym.mod & KMOD_GUI) ? MOD_CMD : 0;
                 session_key(s, key, mods);
-            } else if (ev.type == SDL_KEYUP && guest_focus && native_surface_active()) {
+            } else if (ev.type == SDL_KEYUP && guest_focus && native_surface_active() && !session_overlay_active(s)) {
                 native_surface_push((RuntimeBridgeInput){RUNTIME_BRIDGE_KEY_UP,
                     0, 0, (uint32_t)ev.key.keysym.sym,
                     (uint32_t)ev.key.keysym.mod});
@@ -450,6 +429,8 @@ int main(int argc, char **argv) {
             draw_guest_window(frame, &guest_window, guest_pixels, guest_width,
                               guest_height, surface_state, native_surface_title(),
                               surface_message);
+        if (native_surface_active() && guest_placed)
+            session_overlay_paint(s, frame, OSPI_W, OSPI_H);
         if (startup_desktop) memcpy(startup_desktop, frame,
                                     (size_t)OSPI_W * OSPI_H * sizeof *frame);
         if (os999_startup_active(&startup))

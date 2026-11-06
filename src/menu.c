@@ -5,6 +5,7 @@
 
 static const MenuItem k_pi[] = {
     {"About This Mac", CMD_ABOUT, 0, NULL, 0},
+    {"Control Panels", CMD_CONTROL_PANELS, 0, NULL, 0},
     {NULL, 0, 0, NULL, 0},
     {"Shut Down", CMD_SHUTDOWN, 0, NULL, 0},
 };
@@ -83,7 +84,7 @@ static const struct {
     const MenuItem *items;
     int n;
 } k_menus[] = {
-    {"999", k_pi, 3},
+    {"999", k_pi, 4},
     {"File", k_file, 6},
     {"Edit", k_edit, 5},
     {"View", k_view, 2},
