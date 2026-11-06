@@ -160,7 +160,16 @@ int context_key(Session *s, int key, int mods) {
     if (!popup.owner) return 0;
     if (popup.owner != s || s->dialog) { context_close(); return 1; }
     if (key == 27) { context_close(); return 1; }
-    if ((mods & MOD_CMD) && (key == 'q' || key == 'Q')) { context_close(); return 0; }
+    if (mods & MOD_CMD) {
+        int command = key == 'n' ? CMD_NEW_FOLDER : key == 'o' ? CMD_OPEN :
+                      key == 'i' ? CMD_GET_INFO : key == 'c' ? CMD_COPY : CMD_NONE;
+        for (int i = 0; command && i < popup.count; i++) {
+            if (popup.rows[i].command == command && enabled(i)) {
+                dispatch(s, command); return 1;
+            }
+        }
+        context_close(); return 0;
+    }
     if (key == 13 && enabled(popup.hot)) { dispatch(s, popup.rows[popup.hot].command); return 1; }
     if (key == CONTEXT_KEY_UP || key == CONTEXT_KEY_DOWN) {
         int step = key == CONTEXT_KEY_UP ? -1 : 1;

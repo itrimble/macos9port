@@ -52,6 +52,18 @@ int folder_view_command(Session *s, int command) {
     return 1;
 }
 
+int folder_view_header_click(Session *s, int x, int y) {
+    if (!s || s->nwin <= 0 || s->nwin > OSPI_MAX_WIN) return 0;
+    Window *w = &s->win[s->nwin - 1];
+    if (w->kind != WIN_FOLDER || w->collapsed || w->view_mode != VIEW_LIST) return 0;
+    Layout lay;
+    window_layout(w, &lay);
+    if (!rect_has(lay.content, x, y) || y >= lay.content.y + FOLDER_LIST_HEADER) return 0;
+    int split = lay.content.x + lay.content.w * 2 / 3;
+    folder_view_command(s, x < split ? CMD_SORT_NAME : CMD_SORT_KIND);
+    return 1;
+}
+
 static const char *kind_name(int kind) {
     switch (kind) {
     case ITEM_SYSTEM: return "System Folder";
@@ -109,8 +121,10 @@ void folder_view_draw_list(Fb *fb, const Window *w, const Layout *lay,
     fb_fill(fb, body.x, body.y, body.w, FOLDER_LIST_HEADER, desktop_theme_color(THEME_MENU));
     fb_hline(fb, body.x, rows_y - 1, body.w, foreground);
     fb_fill(fb, split, body.y, 1, FOLDER_LIST_HEADER, foreground);
+    int marker = w->sort_mode == SORT_KIND ? split + 3 : body.x + 3;
+    fb_text(fb, marker, body.y + 5, foreground, ">");
     fb_text(fb, body.x + 26, body.y + 5, foreground, "Name");
-    fb_text(fb, split + 6, body.y + 5, foreground, "Kind");
+    fb_text(fb, split + 18, body.y + 5, foreground, "Kind");
     if (w->nitems == 0)
         fb_text(fb, body.x + 12, rows_y + 8, desktop_theme_color(THEME_DISABLED), "This folder is empty.");
     /* Restore the caller's content clip for its subsequent window drawing. */

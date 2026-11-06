@@ -290,6 +290,15 @@ Evidence IDs are retained in the loop record. CPU traces are separate evidence.
   signature verification and launched on a copied volume. Runtime clipboard
   acceptance, list interactions and menu keyboard behavior need Ian’s hands-on
   review: automated foreground input could not verify its exact target.
+  The next pass adds folder keyboard navigation with selection scrolling,
+  clickable list headings, row-sized list scroll buttons, context shortcuts and
+  correct New Folder targeting for selected desktop volumes. Startup preview
+  shortcuts respect overlays. Blank-desktop focus still needs an explicit model
+  so clicking the background cannot leave old folder commands as the target.
+  On 6 November, isolated and combined build/test suites passed, including 91
+  focused navigation checks. The signed Navigation Preview launched on a copied
+  volume; a fresh window capture confirms rendering. Automated keyboard input
+  was blocked by exact-window focus, so hands-on navigation acceptance is pending.
 - [ ] V05 Connect original host startup/interface sounds, mute preference and
   bounded nonblocking playback. Judge them by listening; synthesized waveforms
   and a successful audio-device open do not establish sound quality.

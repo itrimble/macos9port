@@ -9,10 +9,10 @@ ifneq ($(FT_LIBS),)
 CFLAGS += $(FT_CFLAGS) -DOSPI_FREETYPE
 endif
 
-CORE := src/desktop_commands.c src/desktop_help.c src/menu_navigation.c src/folder_view.c src/desktop_theme.c src/desktop_icon_map.c src/appearance_panel.c src/desktop_context.c src/desktop_wallpaper.c src/session_state.c src/typeface_metrics.c src/desktop_assets.c assets/icons/c/ospi_icon_set.c src/font.c src/draw.c src/geom.c src/menu.c src/volume.c src/archive_fs.c src/session_sit.c src/mac_icon.c src/mac_icon_palette.c src/runtime_bridge.c \
+CORE := src/folder_navigation.c src/desktop_commands.c src/desktop_help.c src/menu_navigation.c src/folder_view.c src/desktop_theme.c src/desktop_icon_map.c src/appearance_panel.c src/desktop_context.c src/desktop_wallpaper.c src/session_state.c src/typeface_metrics.c src/desktop_assets.c assets/icons/c/ospi_icon_set.c src/font.c src/draw.c src/geom.c src/menu.c src/volume.c src/archive_fs.c src/session_sit.c src/mac_icon.c src/mac_icon_palette.c src/runtime_bridge.c \
 	src/hostinfo.c src/text.c src/paint.c src/session.c src/input.c \
 	src/install.c src/classic.c src/typeface.c src/native_launch.c src/mac_resource.c
-HDRS := include/desktop_commands.h include/desktop_help.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h
+HDRS := include/folder_navigation.h include/desktop_commands.h include/desktop_help.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h
 
 .PHONY: all test app run clean runtime
 
@@ -41,7 +41,7 @@ CPUFLAGS := -DM68K_ILLG_HAS_CALLBACK=1 -DM68K_INSTRUCTION_HOOK=1 -I$(MUSASHI)
 CPUOBJ := build/m68kcpu.o build/m68kops.o build/softfloat.o
 RUNTIME := src/mac_resource.c src/mac_cpu.c src/mac_runtime.c src/mac_services.c src/mac_memory.c src/mac_resource_services.c src/mac_events.c src/mac_quickdraw.c src/mac_toolbox.c src/mac_raster.c src/mac_system.c src/mac_geometry.c src/mac_files.c src/mac_cursor.c src/mac_color.c src/mac_dialog.c src/mac_color_port.c src/mac_copybits.c src/mac_palette.c src/mac_color_raster.c
 RUNTIME += src/mac_video_config.c src/mac_vbl.c src/mac_pixmap.c src/mac_pixels.c src/mac_volume.c src/mac_window.c src/mac_window_draw.c src/mac_regions.c src/mac_system_volume.c src/mac_color_pen.c src/mac_drive_queue.c src/mac_menu.c src/mac_menu_records.c src/mac_palette_manager.c src/mac_window_resource.c src/mac_window_registry.c src/font.c
-RUNTIME_HDRS := src/runtime_video_pixels.h include/mac_resource.h include/mac_cpu.h include/mac_runtime.h include/mac_window_int.h include/mac_system_volume.h include/mac_drive_queue.h include/mac_menu_int.h include/runtime_bridge.h
+RUNTIME_HDRS := include/folder_navigation.h src/runtime_video_pixels.h include/mac_resource.h include/mac_cpu.h include/mac_runtime.h include/mac_window_int.h include/mac_system_volume.h include/mac_drive_queue.h include/mac_menu_int.h include/runtime_bridge.h
 RUNTIME += src/mac_resource_catalog.c src/mac_resource_files.c
 RUNTIME += src/mac_pict_decode.c src/mac_picture.c
 RUNTIME += src/mac_sane.c
@@ -266,6 +266,7 @@ test: build/test_os999_startup build/test_ospi build/test_archive_install build/
 	./build/test_desktop_theme
 	./build/test_theme_integration
 	./build/test_desktop_commands
+	./build/test_folder_navigation
 	./build/test_menu_navigation
 	./build/test_folder_view
 	./build/test_menu_integration
@@ -440,3 +441,9 @@ build/test_menu_integration: $(CORE) src/os999_startup.c tests/test_menu_integra
 	$(CC) $(CFLAGS) -o $@ $(CORE) src/os999_startup.c tests/test_menu_integration.c $(FT_LIBS) -lm
 
 test: build/test_menu_integration
+
+
+build/test_folder_navigation: src/folder_navigation.c src/geom.c src/font.c src/draw.c src/text.c src/typeface.c src/typeface_metrics.c src/menu.c src/desktop_theme.c src/desktop_wallpaper.c tests/test_folder_navigation.c $(HDRS)
+	$(CC) $(CFLAGS) -o $@ src/folder_navigation.c src/geom.c src/font.c src/draw.c src/text.c src/typeface.c src/typeface_metrics.c src/menu.c src/desktop_theme.c src/desktop_wallpaper.c tests/test_folder_navigation.c $(FT_LIBS) -lm
+
+test: build/test_folder_navigation

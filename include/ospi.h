@@ -13,7 +13,7 @@ enum {
     OSPI_PATH = 640,
     OSPI_TEXT = 4096
 };
-enum { MOD_CMD = 1 };
+enum { MOD_CMD = 1, MOD_OTHER = 2 };
 enum { WIN_FOLDER = 1, WIN_TEXT = 2 };
 enum { ITEM_FILE = 1, ITEM_FOLDER = 2, ITEM_SYSTEM = 3, ITEM_APPLICATION = 4 };
 enum {

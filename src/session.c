@@ -329,6 +329,9 @@ void session_command(Session *s, int cmd) {
         }
         break;
     case CMD_NEW_FOLDER: {
+        if (s->desk_sel >= 0 && open_folder(s, s->desk_sel == 0 ? "" : "Trash")) {
+            dialog_info(s, "New Folder", "Close a window first."); break;
+        }
         if (s->nwin == 0 || s->win[s->nwin - 1].kind != WIN_FOLDER) {
             if (open_folder(s, "")) { dialog_info(s, "New Folder", "Close a window first."); break; }
         }

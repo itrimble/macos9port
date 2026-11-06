@@ -52,7 +52,9 @@ Shortcuts: Cmd-N new folder, Cmd-O open, Cmd-W close, Cmd-Q quit.
 File also offers Get Info (Cmd-I) and Close All desktop windows. Edit offers
 Select All (Cmd-A), Copy Names for folder selections and Copy Text for text
 windows (Cmd-C), using the Mac clipboard. These copy text, not files; Cut,
-Paste and Undo remain unavailable. View switches folders between Icon/List
+Paste and Undo remain unavailable. Arrow keys navigate folder items; Home/End
+select the first/last item, and typing a letter cycles matching initials.
+List headings sort by Name or Kind when clicked. View switches folders between Icon/List
 and sorts by Name/Kind; view settings last while that window remains open.
 Use arrow keys and Return in open menus, or Escape to dismiss them.
 Help includes Keyboard Shortcuts and What Works Today.

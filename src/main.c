@@ -277,13 +277,13 @@ int main(int argc, char **argv) {
                 if (ev.type == SDL_QUIT) s->quit = 1;
                 continue;
             }
-            if (!guest_focus && ev.type == SDL_KEYDOWN && !ev.key.repeat &&
+            if (!guest_focus && !session_overlay_active(s) && ev.type == SDL_KEYDOWN && !ev.key.repeat &&
                 (ev.key.keysym.sym == SDLK_F9 || ev.key.keysym.sym == SDLK_F10)) {
                 session_command(s, ev.key.keysym.sym == SDLK_F9 ?
                                 CMD_STARTUP_TOGGLE : CMD_STARTUP_PREVIEW);
                 continue;
             }
-            if (boot_preview && ev.type == SDL_KEYDOWN &&
+            if (boot_preview && !session_overlay_active(s) && ev.type == SDL_KEYDOWN &&
                 (ev.key.keysym.mod & (KMOD_CTRL | KMOD_ALT)) == (KMOD_CTRL | KMOD_ALT) &&
                 ev.key.keysym.sym == SDLK_9) {
                 os999_startup_begin(&startup, SDL_GetTicks(), reduce_motion && strcmp(reduce_motion, "1") == 0);
@@ -405,6 +405,7 @@ int main(int argc, char **argv) {
                     key = '\r';
                 }
                 int mods = (ev.key.keysym.mod & KMOD_GUI) ? MOD_CMD : 0;
+                if (ev.key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_SHIFT)) mods |= MOD_OTHER;
                 session_key(s, key, mods);
             } else if (ev.type == SDL_KEYUP && guest_focus && native_surface_active() && !session_overlay_active(s)) {
                 native_surface_push((RuntimeBridgeInput){RUNTIME_BRIDGE_KEY_UP,

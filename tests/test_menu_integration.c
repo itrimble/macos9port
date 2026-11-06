@@ -1,6 +1,8 @@
 #include "ospi.h"
 #include "appearance_panel.h"
+#include "desktop_context.h"
 #include "folder_view.h"
+#include "folder_navigation.h"
 #include "menu_navigation.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -37,6 +39,37 @@ int main(void) {
     CHECK(s->dialog && !strcmp(s->dialog_title,"Get Info"));
     CHECK(strstr(s->dialog_body,root)==NULL);
     session_key(s,27,0);
+    Layout layout; window_layout(w,&layout);
+    char selected[OSPI_NAME]; strcpy(selected,w->items[0].name);
+    session_down(s,layout.content.x+30,layout.content.y+5,1);
+    session_up(s,layout.content.x+30,layout.content.y+5);
+    CHECK(w->sort_mode==SORT_NAME && !s->down);
+    int selected_count=0;
+    for(int i=0;i<w->nitems;i++) if(w->items[i].selected) {
+        selected_count++; CHECK(!strcmp(w->items[i].name,selected));
+    }
+    CHECK(selected_count==1);
+    session_key(s,FOLDER_KEY_END,0); CHECK(w->items[w->nitems-1].selected);
+    session_key(s,FOLDER_KEY_HOME,0); CHECK(w->items[0].selected);
+    session_key(s,MENU_KEY_DOWN,MOD_OTHER); CHECK(w->items[0].selected);
+    session_key(s,MENU_KEY_DOWN,0); CHECK(w->items[1].selected);
+    session_key(s,'a',0); CHECK(!strcmp(w->items[0].name,"Applications") && w->items[0].selected);
+    session_down(s,layout.content.x+layout.content.w-12,layout.content.y+5,1);
+    session_up(s,layout.content.x+layout.content.w-12,layout.content.y+5);
+    CHECK(w->sort_mode==SORT_KIND && !s->dialog);
+    CHECK(ospi_item_center(s,s->nwin-1,0,&x,&y)==0);
+    session_context(s,x,y); CHECK(context_active());
+    session_key(s,'c',MOD_CMD); CHECK(!context_active());
+    CHECK(!strcmp(s->clipboard_out,w->items[0].name));
+    session_context(s,x,y); session_key(s,'i',MOD_CMD);
+    CHECK(!context_active() && s->dialog);
+    session_key(s,27,0);
+    int count=w->nitems;
+    w->nitems=20; w->scroll=0; window_layout(w,&layout);
+    session_down(s,layout.vbar.x+5,layout.vbar.y+layout.vbar.h-5,1);
+    session_up(s,layout.vbar.x+5,layout.vbar.y+layout.vbar.h-5);
+    CHECK(w->scroll==FOLDER_LIST_ROW);
+    w->nitems=count; w->scroll=0;
     int nwin=s->nwin;
     session_command(s,CMD_CONTROL_PANELS);
     menu_update(s);CHECK(!(action(1,CMD_OPEN)->flags&MI_DISABLED));
@@ -53,6 +86,14 @@ int main(void) {
     session_command(s,CMD_CLOSE_ALL);menu_update(s);
     CHECK(s->nwin==0 && (action(1,CMD_CLOSE)->flags&MI_DISABLED));
     s->clipboard_write_request=0;session_key(s,'c',MOD_CMD);CHECK(!s->clipboard_write_request);
+    session_command(s,CMD_OPEN); /* No selection: no new window. */
+    s->desk_sel=1; session_command(s,CMD_NEW_FOLDER);
+    CHECK(s->nwin==1 && !strcmp(s->win[0].rel,"Trash"));
+    s->desk_sel=0; session_command(s,CMD_NEW_FOLDER);
+    CHECK(!strcmp(s->win[s->nwin-1].rel,""));
+    session_context(s,10,s->sh-100); CHECK(context_active());
+    session_key(s,'n',MOD_CMD); CHECK(!context_active());
+    CHECK(!strcmp(s->win[s->nwin-1].rel,""));
     session_destroy(s);
     printf("menu integration: %s\n",failures?"FAILED":"ok");return !!failures;
 }

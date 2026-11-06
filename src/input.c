@@ -1,4 +1,6 @@
 #include "menu_navigation.h"
+#include "folder_view.h"
+#include "folder_navigation.h"
 #include "appearance_panel.h"
 #include "desktop_context.h"
 #include "ospi.h"
@@ -155,16 +157,18 @@ void session_down(Session *s, int x, int y, int clicks) {
             return;
         }
         if (!w->collapsed && rect_has(lay.vbar, x, y)) {
+            int step = w->kind == WIN_FOLDER && w->view_mode == VIEW_LIST ? FOLDER_LIST_ROW : CELL_H;
             if (y < lay.vbar.y + 16) {
-                w->scroll -= CELL_H;
+                w->scroll -= step;
             } else if (y >= lay.vbar.y + lay.vbar.h - 16) {
-                w->scroll += CELL_H;
+                w->scroll += step;
             }
             session_clamp(s);
             s->down = 0;
             return;
         }
         if (!w->collapsed && w->kind == WIN_FOLDER && rect_has(lay.content, x, y)) {
+            if (folder_view_header_click(s, x, y)) return;
             int idx = item_index_at(w, x, y);
             s->desk_sel = -1;
             if (idx >= 0) {
@@ -326,6 +330,7 @@ void session_key(Session *s, int key, int mods) {
         }
         return;
     }
+    if (folder_navigation_key(s, key, mods)) return;
     if (key == '\r') {
         session_command(s, CMD_OPEN);
     }

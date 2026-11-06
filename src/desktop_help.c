@@ -11,7 +11,7 @@ int desktop_help_command(Session *s, int command) {
         body = "Open folders and files with a double-click or File, Open. Cmd-Q quits the desktop.\n\n"
                "Right-click or Control-click an item for its contextual menu. "
                "Click outside a menu or press Escape to dismiss it.\n\n"
-               "View switches folders between icons and a list, and sorts by name or kind.\n\n"
+               "View switches folders between icons and a list, and sorts by name or kind. Click a list heading to sort by that column.\n\n"
                "Edit, Select All selects folder items. Copy Names copies their names; "
                "Copy Text copies the contents of a text window. It does not copy files.\n\n"
                "OS999, Control Panels, Appearance changes desktop pictures and color themes.\n\n"
@@ -23,6 +23,8 @@ int desktop_help_command(Session *s, int command) {
         title = "Keyboard Shortcuts"; key = ":help-keys";
         body = "Cmd-N  New Folder\nCmd-O or Return  Open\nCmd-W  Close\nCmd-I  Get Info\n"
                "Cmd-A  Select All folder items\nCmd-C  Copy names or text\nCmd-T  Next color theme\nCmd-Q  Quit\n\n"
+               "In folders: arrow keys select items, Home/End select first/last, and a letter "
+               "cycles through names with that initial. Selection scrolls into view.\n\n"
                "With a menu open: Up/Down choose an available action, Left/Right switch menus, "
                "Return runs the action, and Escape closes the menu.\n\n"
                "F9  Toggle startup introduction\nF10  Preview startup\n\n"
