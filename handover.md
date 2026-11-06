@@ -141,3 +141,17 @@ known local suite passed before this handover; no tests were run in this session
 SHA-256 hashes. Do not rebuild an app bundle in place while an instance from
 that bundle is running. The root `handover.md` is new and was explicitly
 requested by Ian.
+
+## Runtime probe session — 6 November 2026, afternoon
+
+Local commits 408ec70, 751d7b7, 2ef0ef9 (no push). Read
+[docs/RUNTIME-LOOP-2026-11-06.md](docs/RUNTIME-LOOP-2026-11-06.md) and
+`.ralph/state.md` first. The real-time runtime starved VBL/Time Manager tasks
+(cutscenes at half speed); fixed and regression-tested. New tools:
+`make probe` builds `ospi-runtime-probe` (deterministic headless, scripted
+input, WAV, frames, `--trace`, `--dump-ram`), `ospi-bridge-probe` (real-time
+bridge driver) and `ospi-dasm`. MI1 reaches the SCUMM Bar and MI2 reaches
+free play headlessly; bridge runs show 0 underruns and 60 fps presentation.
+`build/ospi --open REL` opens a volume item at launch for test bundles.
+Ian still has to listen to the fixed build; the 5 November ticking was not
+reproduced on this build. release/1.1 has the same `mac_runtime.c` bug.

@@ -147,6 +147,18 @@ before any file name was appended. Returning fnfErr instead of paramErr for
 the empty name changes nothing. The path assembly follows GetWDInfo,
 GetCatInfo (root) and PBHGetVInfo calls; those answers are the next suspects.
 
+## Desktop path, real window
+
+`build/ospi --open REL` (new) opens a volume item at launch through the same
+`classic_open` path as a double-click. A separate bundle
+`build/OS999 Probe.app` on a disposable volume holding only MI1 was launched
+with `--open "Applications/Monkey Island/Monkey Island"`; the desktop spawned
+`ospi-runtime --bridge` and composed the game in a guest window.
+`.ralph/evidence/os999-probe-window.png` is that real window, captured with
+peekaboo at 14:38 on 6 November 2026, showing the credits over the lookout
+inside the OS999 Stylized desktop. Dragging and audio in this bundle were not
+exercised by hand.
+
 ## Limitations
 
 - No human has listened to these captures yet. The ticking Ian reported on

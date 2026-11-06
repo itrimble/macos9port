@@ -245,6 +245,17 @@ int main(int argc, char **argv) {
         SDL_DestroyTexture(tex); SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
         return startup_failed || !s ? 1 : 0;
     }
+    /* --open REL opens one volume item at launch (test and demo runs), using
+     * the same path a desktop double-click takes. A failure is reported on
+     * stderr and the desktop stays usable. */
+    const char *open_rel = flag_arg(argc, argv, "--open");
+    if (open_rel && open_rel[0] && !strstr(open_rel, "..")) {
+        char full[OSPI_PATH], err[240] = "";
+        const char *slash = strrchr(open_rel, '/');
+        if (snprintf(full, sizeof full, "%s/%s", volume, open_rel) < (int)sizeof full &&
+            classic_open(volume, full, slash ? slash + 1 : open_rel, err, sizeof err) != 0)
+            fprintf(stderr, "OS999 Stylized: --open %s: %s\n", open_rel, err[0] ? err : "could not open");
+    }
     GuestWindow guest_window = {0};
     uint64_t guest_sequence = 0;
     int guest_width = 0, guest_height = 0, guest_placed = 0;

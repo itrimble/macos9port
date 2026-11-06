@@ -173,6 +173,10 @@ Evidence IDs are retained in the loop record. CPU traces are separate evidence.
   trap dispatch, and report unsupported instructions/traps with guest addresses.
 - [ ] R03 Implement the needed Memory, Resource, File, Event, Window, Menu,
   Dialog, Control, TextEdit, and timing behavior with focused regression probes.
+  6 Nov: real-time runs starved VBL/Time Manager tasks (service budget below
+  the pollers' minimum); fixed in `mac_runtime_run_cycles`, regression in
+  `test_mac_vbl`. MI1 cutscene pace now matches the deterministic probe. See
+  [the 6 November loop record](RUNTIME-LOOP-2026-11-06.md).
 - [ ] R04 Implement color QuickDraw, palettes, clipping, regions, CopyBits,
   offscreen buffers, fonts, and direct framebuffer writes used by target games.
 - [ ] R05 Implement Sound Manager behavior, mixing, timing, callbacks, and
@@ -430,6 +434,8 @@ Add QuickDraw 3D/RAVE/OpenGL gates when an identified target requires them.
   retain deterministic synthetic fixtures without proprietary contents.
 - [ ] A02 Separately validate Apple Silicon macOS, Raspberry Pi Linux arm64, and
   Linux x86_64. Record actual hardware, display, audio, and input evidence.
+  6 Nov: Debian 12 arm64 and x86_64 containers pass `make test all probe`
+  (loop record); no Raspberry Pi or windowed Linux run.
 - [ ] A03 Audit host filesystem/network containment and guest isolation. CPU
   emulation itself is not a security sandbox.
 - [ ] A04 Produce dependency/provenance manifests and package only permitted
