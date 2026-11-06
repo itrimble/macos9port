@@ -56,7 +56,9 @@ The Special menu toggles the startup intro and previews it (F9/F10 when
 no guest has keyboard focus). Interface Sounds has a checkmark when enabled;
 its setting is saved per volume. Four original Classic 9 sounds cover startup,
 alerts and menu transitions. Host effects are suppressed while a guest runs.
-The desktop now uses the delivered original icon pack, retaining guest app icons.
+The desktop uses the delivered icon pack for recognized applications, folder
+roles and document types, retaining app-provided guest icons. Unknown names
+keep a generic icon; icon selection does not change how an item opens.
 These remain logical 32px icons; native HiDPI icon rendering is not implemented.
 Appearance lists 59 original wallpapers, ten per page, and remembers the choice
 per volume. Plain Desktop keeps the original gradient. The macOS app packages
@@ -66,7 +68,8 @@ Use OS999 → Control Panels → Appearance for Desktop and Themes tabs.
 Desktop offers the same saved picture selection; Themes reports that no theme
 pack is installed. Right-click or Control-click desktop space, disks, folders
 or files for contextual actions. Escape dismisses a popup; Escape or Cmd-W
-closes the control panel. Guest application clicks keep their existing routing.
+closes the control panel. Control Panels shows an Appearance icon with its own
+Open contextual action. Guest application clicks keep their existing routing.
 
 For a parallel test build, use `make app APP_BUNDLE="build/OS999 Test.app"`
 and launch it against a copied volume. Never rebuild a live bundle in place.

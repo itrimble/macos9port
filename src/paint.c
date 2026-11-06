@@ -112,14 +112,18 @@ static void guest_icon(Fb *fb, int x, int y, const Item *item) {
     }
 }
 
-static void draw_kind(Fb *fb, int x, int y, const Item *item) {
+static void draw_kind(Fb *fb, int x, int y, const Item *item, const char *parent) {
+    if (item->kind == ITEM_APPLICATION && item->has_guest_icon) {
+        guest_icon(fb, x, y, item);
+        return;
+    }
+    if (desktop_asset_draw(fb, x, y, desktop_asset_name(item, parent))) return;
     if (item->kind == ITEM_SYSTEM) {
         icon_folder(fb, x, y, 1);
     } else if (item->kind == ITEM_FOLDER) {
         icon_folder(fb, x, y, 0);
     } else if (item->kind == ITEM_APPLICATION) {
-        if (item->has_guest_icon) guest_icon(fb, x, y, item);
-        else icon_application(fb, x, y);
+        icon_application(fb, x, y);
     } else {
         icon_doc(fb, x, y);
     }
@@ -242,7 +246,7 @@ static void paint_items(Fb *fb, const Window *w, const Layout *lay) {
         int row = i / cols;
         int x = lay->content.x + col * CELL_W + (CELL_W - 32) / 2;
         int y = lay->content.y + row * CELL_H + 4 - w->scroll;
-        draw_kind(fb, x, y, &w->items[i]);
+        draw_kind(fb, x, y, &w->items[i], w->rel);
         if (w->items[i].selected) {
             fb_frame(fb, x - 2, y - 2, 36, 36, C_BLACK);
         }

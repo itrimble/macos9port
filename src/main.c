@@ -297,10 +297,11 @@ int main(int argc, char **argv) {
                        (ev.button.button == SDL_BUTTON_LEFT || ev.button.button == SDL_BUTTON_RIGHT)) {
                 logical_point(win, ev.button.x, ev.button.y, &x, &y);
                 if (session_overlay_active(s)) {
-                    if (ev.button.button != SDL_BUTTON_LEFT) continue;
                     if (guest_focus) native_surface_push((RuntimeBridgeInput){.kind=RUNTIME_BRIDGE_FOCUS_LOST});
                     guest_focus = guest_mouse_capture = 0;
-                    session_down(s, x, y, 1);
+                    if (ev.button.button == SDL_BUTTON_RIGHT || (SDL_GetModState() & KMOD_CTRL))
+                        session_context(s, x, y);
+                    else session_down(s, x, y, 1);
                     continue;
                 }
                 int active = native_surface_active() && guest_placed;

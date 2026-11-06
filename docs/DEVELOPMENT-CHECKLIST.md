@@ -248,6 +248,12 @@ Evidence IDs are retained in the loop record. CPU traces are separate evidence.
 - [ ] V03 Use the delivered icon pack in the desktop and package required
   resources. Preserve guest-provided icons. Distinguish logical 32px rendering
   from the still-required native HiDPI backing-store path and cursor scaling.
+  The icon pass maps recognized application names, folder roles and document
+  types to the existing pack while keeping guest-provided app icons. Control
+  Panels now has an Appearance icon and contextual actions. The isolated full
+  suite, 62 panel checks and shared focused integration checks pass. A fresh
+  5 November window capture confirms the Applications/Documents folder icons;
+  the panel fix and app-specific artwork still await Ian’s visual review.
 - [ ] V04 Connect wallpaper selection and persistence to the actual desktop;
   validate aspect ratios and any macOS bitmap conversion on a disposable volume.
   The wallpaper integration adds all 59 delivered pictures to a paged Appearance

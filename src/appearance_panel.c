@@ -1,11 +1,14 @@
 #include "appearance_panel.h"
 #include "desktop_wallpaper.h"
+#include "desktop_assets.h"
 
 #include <stdio.h>
 
 enum { PANEL_CLOSED, PANEL_CONTROLS, PANEL_APPEARANCE, ROW_HEIGHT = 21 };
 static Session *owner;
 static int mode, tab, page;
+static int context_kind;
+static Rect context_box;
 
 static int picture_count(void) {
     int count = desktop_wallpaper_count();
@@ -34,7 +37,7 @@ static Rect tab_rect(Rect r, int index) {
     return (Rect){r.x + 18 + index * 116, r.y + 35, 112, 27};
 }
 static Rect controls_appearance(Rect r) {
-    return (Rect){r.x + 24, r.y + 47, r.w - 48, 66};
+    return (Rect){r.x + (r.w - 120) / 2, r.y + 47, 120, 66};
 }
 static Rect list_rect(Rect r) { return (Rect){r.x + 18, r.y + 96, r.w - 36, 233}; }
 static Rect previous_rect(Rect r) { return (Rect){r.x + 18, r.y + 345, 105, 27}; }
@@ -44,7 +47,7 @@ void appearance_panel_close(void) {
     if (owner) owner->down = owner->drag = 0;
     owner = NULL;
     mode = PANEL_CLOSED;
-    tab = page = 0;
+    tab = page = context_kind = 0;
 }
 
 int appearance_panel_active(void) { return mode != PANEL_CLOSED; }
@@ -52,6 +55,7 @@ int appearance_panel_active(void) { return mode != PANEL_CLOSED; }
 void appearance_panel_open_controls(Session *s) {
     if (!s) return;
     owner = s;
+    context_kind = 0;
     s->down = s->drag = 0;
     mode = PANEL_CONTROLS;
     s->menu = s->menu_hot = -1;
@@ -60,6 +64,7 @@ void appearance_panel_open_controls(Session *s) {
 void appearance_panel_open(Session *s, int selected_tab) {
     if (!s) return;
     owner = s;
+    context_kind = 0;
     s->down = s->drag = 0;
     mode = PANEL_APPEARANCE;
     tab = selected_tab == APPEARANCE_THEMES_TAB ? APPEARANCE_THEMES_TAB : APPEARANCE_DESKTOP_TAB;
@@ -122,13 +127,66 @@ static void desktop_tab(Fb *fb, Rect r) {
     fb_text(fb, r.x + 20, r.y + 389, 0xFF444444u, "Changes apply immediately.");
 }
 
+static void context_action(Session *s, int row) {
+    int kind = context_kind;
+    context_kind = 0;
+    if (kind == 1 && row == 0) appearance_panel_open(s, APPEARANCE_DESKTOP_TAB);
+    else if (kind == 2 && row >= 0 && row < 2) appearance_panel_open(s, row);
+}
+
+static void context_draw(Session *s, Fb *fb) {
+    if (!context_kind) return;
+    Rect r = context_box;
+    fb_fill(fb, r.x + 3, r.y + 3, r.w, r.h, 0xFF26304Au);
+    fb_fill(fb, r.x, r.y, r.w, r.h, C_WHITE);
+    fb_frame(fb, r.x, r.y, r.w, r.h, C_BLACK);
+    int count = context_kind == 1 ? 1 : 2;
+    for (int i = 0; i < count; i++) {
+        Rect row = {r.x + 1, r.y + 1 + i * 24, r.w - 2, 24};
+        int hot = rect_has(row, s->mx, s->my);
+        if (hot) fb_fill(fb, row.x, row.y, row.w, row.h, C_BLACK);
+        const char *label = context_kind == 1 ? "Open Appearance" : i ? "Themes" : "Desktop Pictures";
+        fb_text(fb, row.x + 12, row.y + 4, hot ? C_WHITE : C_BLACK, label);
+    }
+}
+
+int appearance_panel_context(Session *s, int x, int y) {
+    if (!s || owner != s || mode == PANEL_CLOSED) return 0;
+    s->down = s->drag = 0;
+    s->menu = s->menu_hot = -1;
+    context_kind = 0;
+    Rect r = panel_rect(s);
+    if (!rect_has(r, x, y) || y <= r.y + TITLE_H) return 1;
+    context_kind = mode == PANEL_CONTROLS && rect_has(controls_appearance(r), x, y) ? 1 : 2;
+    int count = context_kind == 1 ? 1 : 2;
+    context_box = (Rect){x, y, 200, count * 24 + 2};
+    int sw = s->sw > 0 ? s->sw : OSPI_W, sh = s->sh > 0 ? s->sh : OSPI_H;
+    if (context_box.x + context_box.w > sw) context_box.x = sw - context_box.w;
+    if (context_box.y + context_box.h > sh) context_box.y = sh - context_box.h;
+    if (context_box.x < 0) context_box.x = 0;
+    if (context_box.y < TITLE_H) context_box.y = TITLE_H;
+    return 1;
+}
+
 void appearance_panel_draw(Session *s, Fb *fb) {
     if (!s || owner != s || mode == PANEL_CLOSED || !fb) return;
     Rect r = panel_rect(s);
     frame(fb, r, mode == PANEL_CONTROLS ? "Control Panels" : "Appearance");
     if (mode == PANEL_CONTROLS) {
-        button(fb, controls_appearance(r), "Appearance", 0, 1);
+        Rect icon = controls_appearance(r);
+        int ix = icon.x + (icon.w - 32) / 2;
+        if (!desktop_asset_draw(fb, ix, icon.y, "control_panel")) {
+            fb_fill(fb, ix, icon.y, 32, 32, C_WHITE);
+            fb_frame(fb, ix, icon.y, 32, 32, C_BLACK);
+            for (int i = 0; i < 3; i++) {
+                fb_fill(fb, ix + 6 + i * 9, icon.y + 5, 1, 22, C_BLACK);
+                fb_fill(fb, ix + 3 + i * 9, icon.y + 9 + i * 4, 7, 5, C_BLACK);
+            }
+        }
+        fb_text(fb, icon.x + (icon.w - fb_text_width("Appearance")) / 2,
+                icon.y + 38, C_BLACK, "Appearance");
         fb_text(fb, r.x + 24, r.y + 131, C_BLACK, "Desktop pictures and visual settings");
+        context_draw(s, fb);
         return;
     }
     button(fb, tab_rect(r, 0), "Desktop", tab == 0, 1);
@@ -140,10 +198,20 @@ void appearance_panel_draw(Session *s, Fb *fb) {
         fb_text(fb, r.x + 24, r.y + 158, C_BLACK, "Your current window style is unchanged.");
         fb_text(fb, r.x + 24, r.y + 198, C_BLACK, "Use Desktop to choose from the installed pictures.");
     }
+    context_draw(s, fb);
 }
 
 int appearance_panel_down(Session *s, int x, int y) {
-    if (!s || owner != s || mode == PANEL_CLOSED || y < TITLE_H) return 0;
+    if (!s || owner != s || mode == PANEL_CLOSED) return 0;
+    if (context_kind) {
+        s->down = s->drag = 0;
+        if (x > context_box.x && x < context_box.x + context_box.w - 1 &&
+            y > context_box.y && y < context_box.y + context_box.h - 1)
+            context_action(s, (y - context_box.y - 1) / 24);
+        else context_kind = 0;
+        return 1;
+    }
+    if (y < TITLE_H) return 0;
     s->down = s->drag = 0;
     Rect r = panel_rect(s);
     if (rect_has(close_rect(r), x, y)) { appearance_panel_close(); return 1; }
@@ -171,6 +239,8 @@ int appearance_panel_down(Session *s, int x, int y) {
 int appearance_panel_key(Session *s, int key, int mods) {
     if (!s || owner != s || mode == PANEL_CLOSED) return 0;
     if ((mods & MOD_CMD) && (key == 'q' || key == 'Q')) return 0;
+    if (context_kind && key == 27) { context_kind = 0; return 1; }
+    if (context_kind && (key == '\r' || key == '\n')) { context_action(s, 0); return 1; }
     if (key == 27 || ((mods & MOD_CMD) && (key == 'w' || key == 'W')))
         appearance_panel_close();
     else if (mode == PANEL_CONTROLS && (key == '\r' || key == '\n'))

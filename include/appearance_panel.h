@@ -12,6 +12,7 @@ void appearance_panel_close(void);
 void appearance_panel_draw(Session *session, Fb *fb);
 /* Consume content clicks/keys, but leave the menu bar to normal input. */
 int appearance_panel_down(Session *session, int x, int y);
+int appearance_panel_context(Session *session, int x, int y);
 int appearance_panel_key(Session *session, int key, int mods);
 
 #endif

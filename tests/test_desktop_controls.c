@@ -29,7 +29,12 @@ int main(void) {
     CHECK(controls >= 0);
     menu_item_rect(0, controls, &r); click(s, r.x + 5, r.y + 5);
     CHECK(appearance_panel_active() && s->menu == -1 && !s->down);
-    session_key(s, '\r', 0); /* Control Panels -> Appearance */
+    session_context(s, 512, 380); /* Right-click the Appearance icon. */
+    CHECK(!s->down && !context_active());
+    session_key(s, 27, 0); /* Dismiss only its contextual menu. */
+    CHECK(appearance_panel_active());
+    session_context(s, 512, 380);
+    click(s, 530, 390); /* Open Appearance from the contextual menu. */
     CHECK(appearance_panel_active());
     int old_windows = s->nwin;
     click(s, 1000, 700); /* No click-through outside the panel. */

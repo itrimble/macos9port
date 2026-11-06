@@ -3,8 +3,16 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include "desktop_assets.h"
 
-static int current = -1, commands, last_command;
+static int current = -1, commands, last_command, icon_draws;
+int desktop_asset_draw(Fb *fb, int x, int y, const char *name) {
+    if (strcmp(name, "control_panel")) return 0;
+    icon_draws++;
+    fb_fill(fb, x, y, 32, 32, 0xFF123456u);
+    return 1;
+}
 int desktop_wallpaper_count(void) { return 59; }
 int desktop_wallpaper_current(void) { return current; }
 const char *desktop_wallpaper_name(int index) { (void)index; return "Fixture Picture"; }
@@ -67,6 +75,40 @@ int main(void) {
     CHECK(appearance_panel_key(&s, '\r', 0));
     CHECK(appearance_panel_down(&s, 225, 184)); /* Close box. */
     CHECK(!appearance_panel_active());
+    appearance_panel_open_controls(&s);
+    CHECK(appearance_panel_context(&s, 512, 360));
+    CHECK(s.menu == -1);
+    pixels = calloc((size_t)OSPI_W * OSPI_H, sizeof *pixels);
+    CHECK(pixels != NULL);
+    if (pixels) {
+        Fb fb;
+        fb_init(&fb, pixels, OSPI_W, OSPI_H);
+        appearance_panel_draw(&s, &fb);
+        CHECK(icon_draws == 1);
+        CHECK(pixels[(size_t)346 * OSPI_W + 496] == 0xFF123456u);
+        CHECK(pixels[(size_t)360 * OSPI_W + 512] == C_BLACK); /* Popup on top. */
+        free(pixels);
+    }
+    CHECK(appearance_panel_down(&s, 520, 372)); /* Open Appearance. */
+    CHECK(appearance_panel_context(&s, 800, 550));
+    CHECK(appearance_panel_down(&s, 810, 583)); /* Themes context action. */
+    before = commands;
+    CHECK(appearance_panel_down(&s, 250, 302));
+    CHECK(commands == before);
+    CHECK(appearance_panel_context(&s, 300, 300));
+    CHECK(appearance_panel_key(&s, 27, 0)); /* Dismiss only the popup. */
+    CHECK(appearance_panel_active());
+    CHECK(appearance_panel_key(&s, '\t', 0)); /* Desktop. */
+    CHECK(appearance_panel_context(&s, 300, 300));
+    CHECK(appearance_panel_down(&s, 250, 302)); /* Dismiss, do not select underneath. */
+    CHECK(commands == before);
+    CHECK(appearance_panel_down(&s, 250, 302));
+    CHECK(commands == before + 1);
+    CHECK(appearance_panel_context(&s, 20, 40)); /* Outside panel: consume without menu. */
+    CHECK(appearance_panel_down(&s, 250, 302));
+    CHECK(commands == before + 2);
+    appearance_panel_close();
+    CHECK(!appearance_panel_context(&s, 512, 360));
     printf("appearance panel: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

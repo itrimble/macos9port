@@ -333,7 +333,8 @@ int session_overlay_active(const Session *s) {
 
 void session_context(Session *s, int x, int y) {
     s->click_valid = s->down = s->drag = 0;
-    if (s->dialog || appearance_panel_active()) return;
+    if (s->dialog) return;
+    if (appearance_panel_context(s, x, y)) return;
     s->menu = -1;
     context_open(s, x, y);
 }
