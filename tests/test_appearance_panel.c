@@ -159,3 +159,5 @@ int main(void) {
     printf("appearance panel: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }
+
+int desktop_command_enabled(Session *s, int cmd) { (void)s; (void)cmd; return 0; }

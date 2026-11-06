@@ -49,6 +49,13 @@ the memory the process can see. Dates are 64-bit host time, so this
 program does not inherit the old HFS overflow on 6 February 2040.
 
 Shortcuts: Cmd-N new folder, Cmd-O open, Cmd-W close, Cmd-Q quit.
+File also offers Get Info (Cmd-I) and Close All desktop windows. Edit offers
+Select All (Cmd-A), Copy Names for folder selections and Copy Text for text
+windows (Cmd-C), using the Mac clipboard. These copy text, not files; Cut,
+Paste and Undo remain unavailable. View switches folders between Icon/List
+and sorts by Name/Kind; view settings last while that window remains open.
+Use arrow keys and Return in open menus, or Escape to dismiss them.
+Help includes Keyboard Shortcuts and What Works Today.
 Double-click a title bar to windowshade it. The `999` menu has About and
 Shut Down.
 

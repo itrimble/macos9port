@@ -1,4 +1,5 @@
 #include "ospi.h"
+#include "folder_view.h"
 
 #include <string.h>
 
@@ -46,6 +47,8 @@ int window_max_scroll(const Window *w) {
     if (w->kind == WIN_TEXT) {
         int mw = lay.content.w > 16 ? lay.content.w - 12 : 8;
         doc = text_height(w->text, mw) + 8;
+    } else if (w->kind == WIN_FOLDER && w->view_mode == VIEW_LIST) {
+        doc = FOLDER_LIST_HEADER + w->nitems * FOLDER_LIST_ROW;
     } else if (w->kind == WIN_FOLDER) {
         int cols = lay.content.w / CELL_W;
         if (cols < 1) {
@@ -67,6 +70,12 @@ int item_index_at(const Window *w, int x, int y) {
     if (!rect_has(lay.content, x, y)) {
         return -1;
     }
+    if (w->view_mode == VIEW_LIST) {
+        int top = lay.content.y + FOLDER_LIST_HEADER;
+        if (y < top) return -1;
+        int index = (y - top + w->scroll) / FOLDER_LIST_ROW;
+        return index >= 0 && index < w->nitems ? index : -1;
+    }
     int cols = lay.content.w / CELL_W;
     if (cols < 1) {
         cols = 1;
@@ -86,6 +95,9 @@ int item_index_at(const Window *w, int x, int y) {
 static Rect item_cell(const Window *w, int index) {
     Layout lay;
     window_layout(w, &lay);
+    if (w->view_mode == VIEW_LIST)
+        return (Rect){lay.content.x, lay.content.y + FOLDER_LIST_HEADER +
+                      index * FOLDER_LIST_ROW - w->scroll, lay.content.w, FOLDER_LIST_ROW};
     int cols = lay.content.w / CELL_W;
     if (cols < 1) {
         cols = 1;
@@ -155,7 +167,7 @@ int ospi_item_center(const Session *s, int win, int index, int *x, int *y) {
     }
     Rect cell = item_cell(&s->win[win], index);
     *x = cell.x + cell.w / 2;
-    *y = cell.y + 24;
+    *y = cell.y + (s->win[win].view_mode == VIEW_LIST ? cell.h / 2 : 24);
     return 0;
 }
 

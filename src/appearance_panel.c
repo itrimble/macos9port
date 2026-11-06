@@ -73,6 +73,7 @@ void appearance_panel_close(void) {
 }
 
 int appearance_panel_active(void) { return mode != PANEL_CLOSED; }
+int appearance_panel_can_open(void) { return mode == PANEL_CONTROLS; }
 
 void appearance_panel_open_controls(Session *s) {
     if (!s) return;
@@ -295,6 +296,7 @@ int appearance_panel_down(Session *s, int x, int y) {
 
 int appearance_panel_key(Session *s, int key, int mods) {
     if (!s || owner != s || mode == PANEL_CLOSED) return 0;
+    if ((mods & MOD_CMD) && (key == 'o' || key == 'O') && mode == PANEL_CONTROLS) return 0;
     if ((mods & MOD_CMD) && (key == 'q' || key == 'Q' || key == 't' || key == 'T')) return 0;
     if (context_kind && key == 27) { context_kind = 0; return 1; }
     if (context_kind && (key == '\r' || key == '\n')) { context_action(s, 0); return 1; }

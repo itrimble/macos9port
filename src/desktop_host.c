@@ -1,3 +1,5 @@
+#include <SDL.h>
+#include "session_int.h"
 #include "desktop_host.h"
 #include "desktop_sound.h"
 
@@ -61,6 +63,11 @@ void desktop_host_init(const char *volume) {
 
 void desktop_host_tick(Session *s, int guest_active) {
     if (!s) return;
+    if (s->clipboard_write_request) {
+        s->clipboard_write_request = 0;
+        if (SDL_SetClipboardText(s->clipboard_out) != 0)
+            dialog_info(s, "Copy", "Could not copy to the clipboard.");
+    }
     desktop_sound_guest_active(guest_active);
     if (s->sound_toggle_request) {
         s->sound_toggle_request = 0;

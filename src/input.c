@@ -1,3 +1,4 @@
+#include "menu_navigation.h"
 #include "appearance_panel.h"
 #include "desktop_context.h"
 #include "ospi.h"
@@ -47,6 +48,7 @@ void session_down(Session *s, int x, int y, int clicks) {
     int prior_click = s->click_valid;
     s->click_valid = 0;
     session_clamp(s);
+    menu_update(s);
     note_mouse(s, x, y);
     s->down = 1;
     s->press_x = x;
@@ -290,6 +292,7 @@ void session_up(Session *s, int x, int y) {
 }
 
 void session_key(Session *s, int key, int mods) {
+    menu_update(s);
     s->click_valid = 0;
     if (key >= 'A' && key <= 'Z') {
         key = key - 'A' + 'a';
@@ -310,6 +313,7 @@ void session_key(Session *s, int key, int mods) {
         return;
     }
     if (context_key(s, key, mods)) return;
+    if (menu_navigation_key(s, key, mods)) return;
     if (s->menu < 0 && appearance_panel_key(s, key, mods)) return;
     if (key == 27) {
         s->menu = -1;

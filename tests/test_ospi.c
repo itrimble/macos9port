@@ -267,7 +267,7 @@ int main(void) {
     CHECK(s->nwin == 2);
     CHECK(strcmp(s->win[1].title, "How to Use OS999 Stylized") == 0);
     CHECK(strstr(s->win[1].text, "Cmd-Q") != NULL);
-    CHECK(strstr(s->win[1].text, dir) != NULL);
+    CHECK(strstr(s->win[1].text, dir) == NULL); /* Help does not expose the host volume path. */
     CHECK(strstr(s->win[1].text, "OS999's own runtime") != NULL);
     CHECK(strstr(s->win[1].text, "Systemless") == NULL);
 

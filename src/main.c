@@ -423,6 +423,7 @@ int main(int argc, char **argv) {
         }
         if (session_take_startup_preview(s) && startup_desktop)
             os999_startup_begin(&startup, SDL_GetTicks(), reduce_motion && strcmp(reduce_motion, "1") == 0);
+        s->host_startup_enabled = boot_enabled;
         desktop_host_tick(s, native_surface_active());
         session_tick(s, SDL_GetTicks());
         session_paint(s, frame, OSPI_W, OSPI_H);

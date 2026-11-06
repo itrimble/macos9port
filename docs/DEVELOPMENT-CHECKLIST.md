@@ -267,8 +267,8 @@ Evidence IDs are retained in the loop record. CPU traces are separate evidence.
   menu, persists the choice per volume, and preserves the plain default. Bitmap
   decoding, aspect-preserving cover fit, missing-file fallback and menu behavior
   pass automated checks. A 5 November macOS window capture shows Aqua Bokeh,
-  the Appearance menu title and readable icon labels. Menu clicking and Ian’s
-  restart persistence remains separately checked by automated tests;
+  the Appearance menu title and readable icon labels. Restart persistence
+  remains separately checked by automated tests;
   this does not implement the separately missing 16-theme engine.
   Ian approved the wallpaper appearance and supplied screenshots showing
   Spiral Galaxy selected in the open menu on 5 November 2026.
@@ -282,6 +282,14 @@ Evidence IDs are retained in the loop record. CPU traces are separate evidence.
   were initially unverified. Ian subsequently confirmed the panel contextual
   interaction works. The other session’s HD-icon test now passes 639 checks;
   its private theme fixtures do not exercise production theme implementation.
+- [ ] V08 Complete useful File/Edit/View/Special/Help menu actions. Current
+  menu pass adds Get Info, Close All, Select All, Copy Names/Text, per-window
+  Icon/List and Name/Kind sorting, keyboard menu navigation and Help topics.
+  Cut/Paste/Undo remain disabled. On 5 November, isolated and combined
+  `make -j2 test all` passed; the separate Menus Preview bundle passed strict
+  signature verification and launched on a copied volume. Runtime clipboard
+  acceptance, list interactions and menu keyboard behavior need Ian’s hands-on
+  review: automated foreground input could not verify its exact target.
 - [ ] V05 Connect original host startup/interface sounds, mute preference and
   bounded nonblocking playback. Judge them by listening; synthesized waveforms
   and a successful audio-device open do not establish sound quality.

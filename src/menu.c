@@ -1,3 +1,5 @@
+#include "desktop_commands.h"
+#include "appearance_panel.h"
 #include "draw.h"
 #include "ospi.h"
 #include "desktop_wallpaper.h"
@@ -10,32 +12,40 @@ static const MenuItem k_pi[] = {
     {"Shut Down", CMD_SHUTDOWN, 0, NULL, 0},
 };
 
-static const MenuItem k_file[] = {
+static MenuItem k_file[] = {
     {"New Folder", CMD_NEW_FOLDER, 0, "Cmd-N", 'n'},
     {"Open", CMD_OPEN, 0, "Cmd-O", 'o'},
     {"Close", CMD_CLOSE, 0, "Cmd-W", 'w'},
+    {"Close All", CMD_CLOSE_ALL, 0, NULL, 0},
+    {"Get Info", CMD_GET_INFO, 0, "Cmd-I", 'i'},
     {"Install from Garden", CMD_INSTALL, 0, NULL, 0},
     {NULL, 0, 0, NULL, 0},
     {"Quit", CMD_QUIT, 0, "Cmd-Q", 'q'},
 };
 
-static const MenuItem k_edit[] = {
+static MenuItem k_edit[] = {
     {"Undo", CMD_NONE, MI_DISABLED, "Cmd-Z", 0},
     {NULL, 0, 0, NULL, 0},
     {"Cut", CMD_NONE, MI_DISABLED, "Cmd-X", 0},
-    {"Copy", CMD_NONE, MI_DISABLED, "Cmd-C", 0},
+    {"Copy Names", CMD_COPY, MI_DISABLED, "Cmd-C", 'c'},
     {"Paste", CMD_NONE, MI_DISABLED, "Cmd-V", 0},
+    {NULL, 0, 0, NULL, 0},
+    {"Select All", CMD_SELECT_ALL, 0, "Cmd-A", 'a'},
 };
 
-static const MenuItem k_view[] = {
-    {"by Icon", CMD_NONE, MI_CHECKED, NULL, 0},
+static MenuItem k_view[] = {
+    {"by Icon", CMD_VIEW_ICONS, MI_CHECKED, NULL, 0},
+    {"by List", CMD_VIEW_LIST, 0, NULL, 0},
+    {NULL, 0, 0, NULL, 0},
+    {"Sort by Name", CMD_SORT_NAME, MI_CHECKED, NULL, 0},
+    {"Sort by Kind", CMD_SORT_KIND, 0, NULL, 0},
     {"Clean Up", CMD_CLEANUP, 0, NULL, 0},
 };
 
 static MenuItem k_special[] = {
     {"Empty Trash", CMD_EMPTY_ASK, 0, NULL, 0},
     {"Clean Up", CMD_CLEANUP, 0, NULL, 0},
-    {"Startup Animation: Toggle", CMD_STARTUP_TOGGLE, 0, "F9", 0},
+    {"Startup Animation", CMD_STARTUP_TOGGLE, 0, "F9", 0},
     {"Preview Startup", CMD_STARTUP_PREVIEW, 0, "F10", 0},
     {"Interface Sounds", CMD_SOUND_TOGGLE, MI_CHECKED, NULL, 0},
 };
@@ -46,7 +56,38 @@ void menu_set_sound_enabled(int enabled) {
 
 static const MenuItem k_help[] = {
     {"How to Use OS999 Stylized", CMD_HELP, 0, NULL, 0},
+    {"Keyboard Shortcuts", CMD_HELP_KEYS, 0, NULL, 0},
+    {"What Works Today", CMD_HELP_STATUS, 0, NULL, 0},
 };
+
+static void enabled(MenuItem *item, int yes) {
+    if (yes) item->flags &= ~MI_DISABLED;
+    else item->flags |= MI_DISABLED;
+}
+
+void menu_update(Session *s) {
+    if (!s) return;
+    int panel = appearance_panel_active();
+    const Window *w = s->nwin ? &s->win[s->nwin - 1] : NULL;
+    int folder = w && w->kind == WIN_FOLDER && !panel && !s->dialog;
+    int selected = 0;
+    if (folder) for (int i = 0; i < w->nitems; i++) selected |= w->items[i].selected;
+    enabled(&k_file[0], !panel && !s->dialog);
+    enabled(&k_file[1], !s->dialog && (appearance_panel_can_open() || (!panel && (selected || s->desk_sel >= 0))));
+    enabled(&k_file[2], !s->dialog && (panel || w));
+    enabled(&k_file[3], !s->dialog && (panel || w));
+    enabled(&k_file[4], !panel && desktop_command_enabled(s, CMD_GET_INFO));
+    enabled(&k_edit[3], !panel && desktop_command_enabled(s, CMD_COPY));
+    k_edit[3].label = w && w->kind == WIN_TEXT ? "Copy Text" : "Copy Names";
+    enabled(&k_edit[6], !panel && desktop_command_enabled(s, CMD_SELECT_ALL));
+    for (int i = 0; i < 6; i++) if (k_view[i].label) enabled(&k_view[i], folder);
+    k_view[0].flags = (folder ? 0 : MI_DISABLED) | (folder && w->view_mode == VIEW_ICONS ? MI_CHECKED : 0);
+    k_view[1].flags = (folder ? 0 : MI_DISABLED) | (folder && w->view_mode == VIEW_LIST ? MI_CHECKED : 0);
+    k_view[3].flags = (folder ? 0 : MI_DISABLED) | (folder && w->sort_mode == SORT_NAME ? MI_CHECKED : 0);
+    k_view[4].flags = (folder ? 0 : MI_DISABLED) | (folder && w->sort_mode == SORT_KIND ? MI_CHECKED : 0);
+    enabled(&k_special[1], folder);
+    k_special[2].flags = s->host_startup_enabled ? MI_CHECKED : 0;
+}
 
 static MenuItem appearance[WALLPAPERS_PER_PAGE + 8];
 static char wallpaper_labels[WALLPAPERS_PER_PAGE][OSPI_NAME];
@@ -88,11 +129,11 @@ static const struct {
     int n;
 } k_menus[] = {
     {"999", k_pi, 4},
-    {"File", k_file, 6},
-    {"Edit", k_edit, 5},
-    {"View", k_view, 2},
+    {"File", k_file, 8},
+    {"Edit", k_edit, 7},
+    {"View", k_view, 6},
     {"Special", k_special, 5},
-    {"Help", k_help, 1},
+    {"Help", k_help, 3},
     {"Appearance", NULL, 0},
 };
 

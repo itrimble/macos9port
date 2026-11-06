@@ -9,10 +9,10 @@ ifneq ($(FT_LIBS),)
 CFLAGS += $(FT_CFLAGS) -DOSPI_FREETYPE
 endif
 
-CORE := src/desktop_theme.c src/desktop_icon_map.c src/appearance_panel.c src/desktop_context.c src/desktop_wallpaper.c src/session_state.c src/typeface_metrics.c src/desktop_assets.c assets/icons/c/ospi_icon_set.c src/font.c src/draw.c src/geom.c src/menu.c src/volume.c src/archive_fs.c src/session_sit.c src/mac_icon.c src/mac_icon_palette.c src/runtime_bridge.c \
+CORE := src/desktop_commands.c src/desktop_help.c src/menu_navigation.c src/folder_view.c src/desktop_theme.c src/desktop_icon_map.c src/appearance_panel.c src/desktop_context.c src/desktop_wallpaper.c src/session_state.c src/typeface_metrics.c src/desktop_assets.c assets/icons/c/ospi_icon_set.c src/font.c src/draw.c src/geom.c src/menu.c src/volume.c src/archive_fs.c src/session_sit.c src/mac_icon.c src/mac_icon_palette.c src/runtime_bridge.c \
 	src/hostinfo.c src/text.c src/paint.c src/session.c src/input.c \
 	src/install.c src/classic.c src/typeface.c src/native_launch.c src/mac_resource.c
-HDRS := include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h
+HDRS := include/desktop_commands.h include/desktop_help.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h
 
 .PHONY: all test app run clean runtime
 
@@ -265,6 +265,10 @@ test: build/test_os999_startup build/test_ospi build/test_archive_install build/
 	./build/test_desktop_icon_map
 	./build/test_desktop_theme
 	./build/test_theme_integration
+	./build/test_desktop_commands
+	./build/test_menu_navigation
+	./build/test_folder_view
+	./build/test_menu_integration
 	./build/test_os999_startup
 	./build/test_ospi
 	./build/test_archive_install
@@ -418,3 +422,21 @@ build/test_theme_integration: $(CORE) src/os999_startup.c tests/test_theme_integ
 	$(CC) $(CFLAGS) -o $@ $(CORE) src/os999_startup.c tests/test_theme_integration.c $(FT_LIBS) -lm
 
 test: build/test_desktop_theme build/test_theme_integration
+
+build/test_desktop_commands: src/desktop_commands.c tests/test_desktop_commands.c $(HDRS)
+	$(CC) $(CFLAGS) -Isrc -o $@ src/desktop_commands.c tests/test_desktop_commands.c
+
+build/test_menu_navigation: src/menu_navigation.c tests/test_menu_navigation.c $(HDRS)
+	$(CC) $(CFLAGS) -o $@ src/menu_navigation.c tests/test_menu_navigation.c
+
+test: build/test_desktop_commands build/test_menu_navigation
+
+build/test_folder_view: $(CORE) src/os999_startup.c tests/test_folder_view.c $(HDRS)
+	$(CC) $(CFLAGS) -o $@ $(CORE) src/os999_startup.c tests/test_folder_view.c $(FT_LIBS) -lm
+
+test: build/test_folder_view
+
+build/test_menu_integration: $(CORE) src/os999_startup.c tests/test_menu_integration.c $(HDRS)
+	$(CC) $(CFLAGS) -o $@ $(CORE) src/os999_startup.c tests/test_menu_integration.c $(FT_LIBS) -lm
+
+test: build/test_menu_integration

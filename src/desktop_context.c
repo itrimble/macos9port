@@ -67,6 +67,8 @@ int context_open(Session *s, int x, int y) {
         snprintf(popup.folder, sizeof popup.folder, "%s", w->rel);
         if (item >= 0) snprintf(popup.item, sizeof popup.item, "%s", w->items[item].name);
         row("Open", CMD_OPEN, item < 0);
+        row("Get Info", CMD_GET_INFO, 0);
+        row("Copy Name", CMD_COPY, item < 0);
         row(NULL, 0, 1);
         row("New Folder", CMD_NEW_FOLDER, 0);
         row("Clean Up", CMD_CLEANUP, 0);
@@ -74,7 +76,10 @@ int context_open(Session *s, int x, int y) {
         int which = desktop_which(s->sw, s->sh, x, y);
         s->desk_sel = which;
         popup.target = which == 0 ? CONTEXT_DISK : which == 1 ? CONTEXT_TRASH : CONTEXT_DESKTOP;
-        if (which >= 0) row("Open", CMD_OPEN, 0);
+        if (which >= 0) {
+            row("Open", CMD_OPEN, 0);
+            row("Get Info", CMD_GET_INFO, 0);
+        }
         else {
             row("New Folder", CMD_NEW_FOLDER, 0);
             row("Clean Up", CMD_CLEANUP, 1); /* Desktop icon positions are currently fixed. */
@@ -103,6 +108,7 @@ static void dispatch(Session *s, int command) {
     context_close();
     if (command == CONTEXT_APPEARANCE) { session_command(s, command); return; }
     if (target == CONTEXT_DISK || target == CONTEXT_TRASH) {
+        if (command == CMD_GET_INFO) { s->desk_sel = target == CONTEXT_DISK ? 0 : 1; session_command(s, command); return; }
         if (command == CMD_OPEN && open_folder(s, target == CONTEXT_DISK ? "" : "Trash"))
             dialog_info(s, "Open", "Close a window first.");
         return;
@@ -118,11 +124,13 @@ static void dispatch(Session *s, int command) {
         bring_front(s, found);
         Window *w = &s->win[s->nwin - 1];
         select_only(w, -1);
-        if (command == CMD_OPEN) {
+        if (command == CMD_OPEN || (target == CONTEXT_ITEM &&
+            (command == CMD_GET_INFO || command == CMD_COPY))) {
             for (int i = 0; i < w->nitems; i++) {
                 if (!strcmp(w->items[i].name, item)) {
                     select_only(w, i);
-                    open_item(s, w, i);
+                    if (command == CMD_OPEN) open_item(s, w, i);
+                    else session_command(s, command);
                     return;
                 }
             }

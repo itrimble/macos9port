@@ -3,6 +3,7 @@
 
 #include "ospi.h"
 
+int session_open_text(Session *s, const char *title, const char *rel, const char *body);
 void bring_front(Session *s, int idx);
 void close_index(Session *s, int idx);
 void reload_folders(Session *s);

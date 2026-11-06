@@ -1,3 +1,4 @@
+#include "folder_view.h"
 #include "desktop_theme.h"
 #include "appearance_panel.h"
 #include "desktop_context.h"
@@ -234,6 +235,10 @@ static void paint_scroll(Fb *fb, const Window *w, const Layout *lay) {
 }
 
 static void paint_items(Fb *fb, const Window *w, const Layout *lay) {
+    if (w->view_mode == VIEW_LIST) {
+        folder_view_draw_list(fb, w, lay, draw_kind);
+        return;
+    }
     if (w->nitems == 0) {
         fb_text(fb, lay->content.x + 12, lay->content.y + 12, desktop_theme_color(THEME_DISABLED), "This folder is empty.");
         return;
@@ -434,6 +439,7 @@ void session_paint(Session *s, uint32_t *px, int w, int h) {
 }
 
 void session_overlay_paint(Session *s, uint32_t *px, int w, int h) {
+    menu_update(s);
     Fb fb;
     fb_init(&fb, px, w, h);
     appearance_panel_draw(s, &fb);

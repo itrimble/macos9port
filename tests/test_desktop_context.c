@@ -95,7 +95,8 @@ int main(void) {
     free(s);
     s=new_session();
     /* Empty area of a folder disables Open but New Folder targets clicked folder. */
-    assert(context_open(s,80,300)); enter_first(s);
+    assert(context_open(s,80,300));
+    context_key(s,CONTEXT_KEY_DOWN,0); enter_first(s);
     assert(last_command==CMD_NEW_FOLDER && !strcmp(command_folder,"folder0"));
     assert(context_open(s,230,120));
     strcpy(s->win[s->nwin-1].items[1].name,"Renamed");

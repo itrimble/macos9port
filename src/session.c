@@ -1,3 +1,6 @@
+#include "desktop_commands.h"
+#include "folder_view.h"
+#include "desktop_help.h"
 #include "desktop_theme.h"
 #include "appearance_panel.h"
 #include "desktop_context.h"
@@ -13,9 +16,9 @@
 #include <sys/stat.h>
 
 void bring_front(Session *s, int idx) {
-    if (idx < 0 || idx >= s->nwin || idx == s->nwin - 1) {
-        return;
-    }
+    if (idx < 0 || idx >= s->nwin) return;
+    s->desk_sel = -1;
+    if (idx == s->nwin - 1) return;
     Window tmp = s->win[idx];
     memmove(&s->win[idx], &s->win[idx + 1], (size_t)(s->nwin - idx - 1) * sizeof(Window));
     s->win[s->nwin - 1] = tmp;
@@ -33,18 +36,20 @@ static void reload_window(Session *s, Window *w) {
     if (!w || w->kind != WIN_FOLDER) {
         return;
     }
-    char keep[OSPI_NAME];
-    keep[0] = 0;
+    char keep[OSPI_MAX_ITEMS][OSPI_NAME];
+    int count = 0;
     for (int i = 0; i < w->nitems; i++) {
-        if (w->items[i].selected) {
-            snprintf(keep, sizeof keep, "%s", w->items[i].name);
-        }
+        if (w->items[i].selected)
+            snprintf(keep[count++], OSPI_NAME, "%s", w->items[i].name);
     }
     int n = volume_list(s->root, w->rel, w->items, OSPI_MAX_ITEMS);
     w->nitems = n < 0 ? 0 : n;
     for (int i = 0; i < w->nitems; i++) {
-        w->items[i].selected = keep[0] && strcmp(w->items[i].name, keep) == 0;
+        w->items[i].selected = 0;
+        for (int k = 0; k < count; k++)
+            if (!strcmp(w->items[i].name, keep[k])) w->items[i].selected = 1;
     }
+    folder_view_sort(w);
 }
 
 void reload_folders(Session *s) {
@@ -102,11 +107,12 @@ int open_folder(Session *s, const char *rel) {
     snprintf(w->title, sizeof w->title, "%s", base_name(rel));
     place_new(s, w, 0);
     s->nwin++;
+    s->desk_sel = -1;
     reload_window(s, w);
     return 0;
 }
 
-static int open_text(Session *s, const char *title, const char *rel, const char *body) {
+int session_open_text(Session *s, const char *title, const char *rel, const char *body) {
     for (int i = 0; i < s->nwin; i++) {
         if (s->win[i].kind == WIN_TEXT && strcmp(s->win[i].title, title) == 0) {
             snprintf(s->win[i].text, sizeof s->win[i].text, "%s", body ? body : "");
@@ -132,6 +138,7 @@ static int open_text(Session *s, const char *title, const char *rel, const char 
         w->shade_h = w->h;
     }
     s->nwin++;
+    s->desk_sel = -1;
     return 0;
 }
 
@@ -207,7 +214,7 @@ void open_item(Session *s, Window *w, int index) {
             dialog_info(s, "Open", "Could not read that file.");
             return;
         }
-        if (open_text(s, w->items[index].name, rel, buf) != 0) {
+        if (session_open_text(s, w->items[index].name, rel, buf) != 0) {
             dialog_info(s, "Open", "Close a window first.");
         }
         return;
@@ -263,6 +270,7 @@ static void format_ram(char *out, size_t n, uint64_t b) {
 }
 void session_command(Session *s, int cmd) {
     s->menu = -1;
+    if (desktop_command(s, cmd) || folder_view_command(s, cmd) || desktop_help_command(s, cmd)) return;
     if ((cmd >= CMD_THEME_BASE && cmd <= CMD_THEME_LAST) || cmd == CMD_THEME_NEXT) {
         int index = cmd == CMD_THEME_NEXT ? (desktop_theme_current() + 1) % desktop_theme_count() : cmd - CMD_THEME_BASE;
         if (desktop_theme_select(index) < 0)
@@ -306,7 +314,10 @@ void session_command(Session *s, int cmd) {
     case CMD_STARTUP_PREVIEW:
         s->startup_preview_request = 1;
         break;
+    case CMD_CLOSE_ALL:
+        context_close(); appearance_panel_close(); s->nwin = 0; break;
     case CMD_CLOSE:
+        if (appearance_panel_active()) { appearance_panel_close(); break; }
         if (s->nwin > 0) {
             close_index(s, s->nwin - 1);
         }
@@ -319,7 +330,7 @@ void session_command(Session *s, int cmd) {
         break;
     case CMD_NEW_FOLDER: {
         if (s->nwin == 0 || s->win[s->nwin - 1].kind != WIN_FOLDER) {
-            open_folder(s, "");
+            if (open_folder(s, "")) { dialog_info(s, "New Folder", "Close a window first."); break; }
         }
         Window *w = &s->win[s->nwin - 1];
         char created[OSPI_NAME];
@@ -335,6 +346,8 @@ void session_command(Session *s, int cmd) {
         break;
     }
     case CMD_OPEN: {
+        if (appearance_panel_active()) { appearance_panel_key(s, '\r', 0); break; }
+        if (s->desk_sel >= 0) { open_folder(s, s->desk_sel == 0 ? "" : "Trash"); break; }
         Window *w = s->nwin ? &s->win[s->nwin - 1] : NULL;
         if (w && w->kind == WIN_FOLDER) {
             for (int i = 0; i < w->nitems; i++) {
@@ -386,34 +399,8 @@ void session_command(Session *s, int cmd) {
                  "by classic Macintosh computing.\n"
                  "Compatibility is a work in progress.\n",
                  s->arch, ram, typeface_label());
-        if (open_text(s, "About This Mac", ":about", body) != 0) {
+        if (session_open_text(s, "About This Mac", ":about", body) != 0) {
             dialog_info(s, "About This Mac", "Close a window first.");
-        }
-        break;
-    }
-    case CMD_HELP: {
-        char body[OSPI_TEXT];
-        snprintf(body, sizeof body,
-                 "Click a menu, then a command.\n"
-                 "Double-click a folder or a file.\n"
-                 "Drag a file onto the Trash.\n"
-                 "Special, Empty Trash, deletes it.\n\n"
-                 "Cmd-N  New Folder\n"
-                 "Cmd-O  Open\n"
-                 "Cmd-W  Close\n"
-                 "Cmd-Q  Quit\n\n"
-                 "File, Install from Garden, copies\n"
-                 "an app or game you copied from\n"
-                 "macintoshgarden.org. Supported 68k\n"
-                 "apps open in OS999's own runtime.\n"
-                 "Some archives use a legacy launcher;\n"
-                 "many classic programs still fail.\n\n"
-                 "The volume on disk:\n%s\n\n"
-                 "Quit, then delete that folder,\n"
-                 "to get the original files back.\n",
-                 s->root);
-        if (open_text(s, "How to Use OS999 Stylized", ":help", body) != 0) {
-            dialog_info(s, "Help", "Close a window first.");
         }
         break;
     }

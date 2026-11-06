@@ -40,6 +40,10 @@ enum { CMD_WALLPAPER_BASE = 300, CMD_WALLPAPER_LAST = 359,
        CMD_WALLPAPER_PREVIOUS = 400, CMD_WALLPAPER_NEXT = 401,
        CMD_APPEARANCE_DESKTOP = 410, CMD_CONTROL_PANELS = 411,
        CMD_APPEARANCE_THEMES = 412, MENU_APPEARANCE = 6, WALLPAPERS_PER_PAGE = 10 };
+enum { CMD_GET_INFO = 420, CMD_SELECT_ALL = 421, CMD_COPY = 422, CMD_CLOSE_ALL = 423,
+       CMD_VIEW_ICONS = 430, CMD_VIEW_LIST = 431, CMD_SORT_NAME = 432, CMD_SORT_KIND = 433,
+       CMD_HELP_KEYS = 440, CMD_HELP_STATUS = 441 };
+enum { VIEW_ICONS = 0, VIEW_LIST = 1, SORT_NAME = 0, SORT_KIND = 1 };
 enum { MI_DISABLED = 1, MI_CHECKED = 2 };
 
 typedef struct {
@@ -71,6 +75,7 @@ typedef struct {
     int zoomed;
     int collapsed;
     int scroll;
+    int view_mode, sort_mode;
     char title[OSPI_NAME];
     char rel[OSPI_PATH];
     Item items[OSPI_MAX_ITEMS];
@@ -119,6 +124,9 @@ struct Session {
     int startup_preview_request;
     int sound_toggle_request;
     int host_sound_enabled;
+    int host_startup_enabled;
+    char clipboard_out[OSPI_TEXT];
+    int clipboard_write_request;
 };
 
 enum {
@@ -141,6 +149,7 @@ void desktop_icon_rect(int sw, int sh, int which, Rect *icon, Rect *hit);
 int desktop_which(int sw, int sh, int x, int y);
 void dialog_layout(const Session *s, Rect *box, Rect *cancel, Rect *ok);
 
+void menu_update(Session *s);
 void menu_set_sound_enabled(int enabled);
 void menu_wallpaper_page(int page);
 int menu_wallpaper_current_page(void);
