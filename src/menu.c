@@ -1,5 +1,7 @@
 #include "draw.h"
 #include "ospi.h"
+#include "desktop_wallpaper.h"
+#include <stdio.h>
 
 static const MenuItem k_pi[] = {
     {"About This Mac", CMD_ABOUT, 0, NULL, 0},
@@ -45,6 +47,37 @@ static const MenuItem k_help[] = {
     {"How to Use OS999 Stylized", CMD_HELP, 0, NULL, 0},
 };
 
+static MenuItem appearance[WALLPAPERS_PER_PAGE + 5];
+static char wallpaper_labels[WALLPAPERS_PER_PAGE][OSPI_NAME];
+static int wallpaper_page, appearance_count;
+
+void menu_wallpaper_page(int page) {
+    int count = desktop_wallpaper_count();
+    int last = count > 0 ? (count - 1) / WALLPAPERS_PER_PAGE : 0;
+    wallpaper_page = page < 0 ? 0 : page > last ? last : page;
+    int current = desktop_wallpaper_current();
+    int n = 0;
+    appearance[n++] = (MenuItem){"Plain Desktop", CMD_WALLPAPER_BASE,
+                                current < 0 ? MI_CHECKED : 0, NULL, 0};
+    appearance[n++] = (MenuItem){0};
+    int start = wallpaper_page * WALLPAPERS_PER_PAGE;
+    for (int i = 0; i < WALLPAPERS_PER_PAGE && start + i < count; i++) {
+        int index = start + i;
+        snprintf(wallpaper_labels[i], sizeof wallpaper_labels[i], "%02d %s",
+                 index + 1, desktop_wallpaper_name(index));
+        appearance[n++] = (MenuItem){wallpaper_labels[i], CMD_WALLPAPER_BASE + index + 1,
+                                    index == current ? MI_CHECKED : 0, NULL, 0};
+    }
+    appearance[n++] = (MenuItem){0};
+    appearance[n++] = (MenuItem){"Previous Wallpapers", CMD_WALLPAPER_PREVIOUS,
+                                wallpaper_page ? 0 : MI_DISABLED, NULL, 0};
+    appearance[n++] = (MenuItem){"Next Wallpapers", CMD_WALLPAPER_NEXT,
+                                wallpaper_page < last ? 0 : MI_DISABLED, NULL, 0};
+    appearance_count = n;
+}
+
+int menu_wallpaper_current_page(void) { return wallpaper_page; }
+
 static const struct {
     const char *title;
     const MenuItem *items;
@@ -56,6 +89,7 @@ static const struct {
     {"View", k_view, 2},
     {"Special", k_special, 5},
     {"Help", k_help, 1},
+    {"Appearance", NULL, 0},
 };
 
 int menu_count(void) { return (int)(sizeof k_menus / sizeof k_menus[0]); }
@@ -68,6 +102,10 @@ const char *menu_title(int index) {
 }
 
 int menu_nitems(int menu) {
+    if (menu == MENU_APPEARANCE) {
+        menu_wallpaper_page(wallpaper_page);
+        return appearance_count;
+    }
     if (menu < 0 || menu >= menu_count()) {
         return 0;
     }
@@ -75,6 +113,10 @@ int menu_nitems(int menu) {
 }
 
 const MenuItem *menu_at(int menu, int item) {
+    if (menu == MENU_APPEARANCE) {
+        menu_wallpaper_page(wallpaper_page);
+        return item >= 0 && item < appearance_count ? &appearance[item] : NULL;
+    }
     if (menu < 0 || menu >= menu_count() || item < 0 || item >= k_menus[menu].n) {
         return NULL;
     }

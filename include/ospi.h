@@ -34,6 +34,10 @@ enum {
     CMD_STARTUP_PREVIEW,
     CMD_SOUND_TOGGLE
 };
+/* 200..231 remains reserved for future themes. Wallpapers are separate. */
+enum { CMD_WALLPAPER_BASE = 300, CMD_WALLPAPER_LAST = 359,
+       CMD_WALLPAPER_PREVIOUS = 400, CMD_WALLPAPER_NEXT = 401,
+       MENU_APPEARANCE = 6, WALLPAPERS_PER_PAGE = 10 };
 enum { MI_DISABLED = 1, MI_CHECKED = 2 };
 
 typedef struct {
@@ -136,6 +140,8 @@ int desktop_which(int sw, int sh, int x, int y);
 void dialog_layout(const Session *s, Rect *box, Rect *cancel, Rect *ok);
 
 void menu_set_sound_enabled(int enabled);
+void menu_wallpaper_page(int page);
+int menu_wallpaper_current_page(void);
 int menu_count(void);
 const char *menu_title(int index);
 int menu_nitems(int menu);

@@ -1,4 +1,5 @@
 #include "ospi.h"
+#include "desktop_wallpaper.h"
 #include "draw.h"
 #include "session_int.h"
 
@@ -78,6 +79,11 @@ Session *session_create(const char *root) {
     s->press_win = -1;
     s->sw = OSPI_W;
     s->sh = OSPI_H;
+    char wallpaper_preference[OSPI_PATH + 32];
+    snprintf(wallpaper_preference, sizeof wallpaper_preference, "%s/.os999-wallpaper", s->root);
+    desktop_wallpaper_init(NULL, wallpaper_preference);
+    int selected = desktop_wallpaper_current();
+    menu_wallpaper_page(selected >= 0 ? selected / WALLPAPERS_PER_PAGE : 0);
     typeface_init(s->root);
     s->ram = host_ram();
     snprintf(s->arch, sizeof s->arch, "%s", host_arch());
@@ -87,7 +93,7 @@ Session *session_create(const char *root) {
     return s;
 }
 
-void session_destroy(Session *s) { free(s); }
+void session_destroy(Session *s) { desktop_wallpaper_shutdown(); free(s); }
 
 int session_take_startup_toggle(Session *s) {
     if (!s) return 0;

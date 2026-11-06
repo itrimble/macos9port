@@ -58,8 +58,10 @@ its setting is saved per volume. Four original Classic 9 sounds cover startup,
 alerts and menu transitions. Host effects are suppressed while a guest runs.
 The desktop now uses the delivered original icon pack, retaining guest app icons.
 These remain logical 32px icons; native HiDPI icon rendering is not implemented.
-The 59 wallpapers and HD variants are retained under `assets/`. The separate
-sixteen-theme delivery has not arrived, so Appearance and Cmd-T are not present.
+Appearance lists 59 original wallpapers, ten per page, and remembers the choice
+per volume. Plain Desktop keeps the original gradient. The macOS app packages
+1024×768 bitmaps converted with `sips`; HD masters remain under `assets/`.
+The separate sixteen-theme engine has not arrived; Cmd-T remains unbound.
 
 For a parallel test build, use `make app APP_BUNDLE="build/OS999 Test.app"`
 and launch it against a copied volume. Never rebuild a live bundle in place.

@@ -1,3 +1,4 @@
+#include "desktop_wallpaper.h"
 #include "ospi.h"
 #include "draw.h"
 #include "native_launch.h"
@@ -259,6 +260,24 @@ static void format_ram(char *out, size_t n, uint64_t b) {
 }
 void session_command(Session *s, int cmd) {
     s->menu = -1;
+    if (cmd == CMD_WALLPAPER_PREVIOUS || cmd == CMD_WALLPAPER_NEXT) {
+        int step = cmd == CMD_WALLPAPER_NEXT ? 1 : -1;
+        menu_wallpaper_page(menu_wallpaper_current_page() + step);
+        s->menu = MENU_APPEARANCE;
+        s->menu_hot = -1;
+        return;
+    }
+    if (cmd >= CMD_WALLPAPER_BASE && cmd <= CMD_WALLPAPER_LAST) {
+        int index = cmd - CMD_WALLPAPER_BASE - 1;
+        if (index >= desktop_wallpaper_count()) return;
+        int selected = desktop_wallpaper_select(index);
+        if (selected < 0)
+            dialog_info(s, "Appearance", "Could not save the desktop picture selection.");
+        else if (!selected && index >= 0)
+            dialog_info(s, "Appearance", "Desktop picture unavailable. Using the plain desktop.");
+        menu_wallpaper_page(menu_wallpaper_current_page());
+        return;
+    }
     switch (cmd) {
     case CMD_QUIT:
     case CMD_SHUTDOWN:

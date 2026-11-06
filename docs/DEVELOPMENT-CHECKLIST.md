@@ -250,6 +250,13 @@ Evidence IDs are retained in the loop record. CPU traces are separate evidence.
   from the still-required native HiDPI backing-store path and cursor scaling.
 - [ ] V04 Connect wallpaper selection and persistence to the actual desktop;
   validate aspect ratios and any macOS bitmap conversion on a disposable volume.
+  The wallpaper integration adds all 59 delivered pictures to a paged Appearance
+  menu, persists the choice per volume, and preserves the plain default. Bitmap
+  decoding, aspect-preserving cover fit, missing-file fallback and menu behavior
+  pass automated checks. A 5 November macOS window capture shows Aqua Bokeh,
+  the Appearance menu title and readable icon labels. Menu clicking and Ian’s
+  acceptance remain open;
+  this does not implement the separately missing 16-theme engine.
 - [ ] V05 Connect original host startup/interface sounds, mute preference and
   bounded nonblocking playback. Judge them by listening; synthesized waveforms
   and a successful audio-device open do not establish sound quality.

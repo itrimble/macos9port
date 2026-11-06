@@ -9,10 +9,10 @@ ifneq ($(FT_LIBS),)
 CFLAGS += $(FT_CFLAGS) -DOSPI_FREETYPE
 endif
 
-CORE := src/session_state.c src/typeface_metrics.c src/desktop_assets.c assets/icons/c/ospi_icon_set.c src/font.c src/draw.c src/geom.c src/menu.c src/volume.c src/archive_fs.c src/session_sit.c src/mac_icon.c src/mac_icon_palette.c src/runtime_bridge.c \
+CORE := src/desktop_wallpaper.c src/session_state.c src/typeface_metrics.c src/desktop_assets.c assets/icons/c/ospi_icon_set.c src/font.c src/draw.c src/geom.c src/menu.c src/volume.c src/archive_fs.c src/session_sit.c src/mac_icon.c src/mac_icon_palette.c src/runtime_bridge.c \
 	src/hostinfo.c src/text.c src/paint.c src/session.c src/input.c \
 	src/install.c src/classic.c src/typeface.c src/native_launch.c src/mac_resource.c
-HDRS := include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h
+HDRS := include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h
 
 .PHONY: all test app run clean runtime
 
@@ -258,6 +258,7 @@ build/test_mac_raster: $(RUNTIME_OBJ) tests/test_mac_raster.c $(RUNTIME_HDRS) $(
 
 test: build/test_os999_startup build/test_ospi build/test_archive_install build/test_mac_icon build/test_runtime_bridge build/test_mac_resource build/test_mac_cpu build/test_mac_runtime build/test_mac_resource_services build/test_mac_memory build/test_mac_traps build/test_native_launch build/test_mac_events build/test_mac_quickdraw build/test_runtime_video build/test_runtime_perf build/test_runtime_keys build/test_mac_raster build/test_mac_system build/test_mac_geometry build/test_mac_files build/test_mac_cursor build/test_mac_color build/test_mac_dialog build/test_runtime_cursor build/test_mac_color_port build/test_mac_copybits build/test_mac_palette build/test_mac_color_raster
 	./build/test_desktop_assets assets/icons/ospi-icons.icl8
+	./build/test_appearance
 	./build/test_os999_startup
 	./build/test_ospi
 	./build/test_archive_install
@@ -314,7 +315,7 @@ test: build/test_os999_startup build/test_ospi build/test_archive_install build/
 	./build/test_mac_palette_manager
 	./build/test_mac_menu_records
 
-app: build/ospi build/ospi-runtime macos/Info.plist
+app: build/ospi build/ospi-runtime macos/Info.plist wallpapers
 	rm -rf "$(APP_BUNDLE)"
 	mkdir -p "$(APP_BUNDLE)/Contents/MacOS" "$(APP_BUNDLE)/Contents/Resources/Fonts"
 	cp build/ospi "$(APP_BUNDLE)/Contents/MacOS/ospi"
@@ -324,6 +325,8 @@ app: build/ospi build/ospi-runtime macos/Info.plist
 	cp fonts/ChicagoFLF.ttf fonts/LICENSE.txt "$(APP_BUNDLE)/Contents/Resources/Fonts/"
 	mkdir -p "$(APP_BUNDLE)/Contents/Resources/sounds/classic9"
 	cp assets/sounds/classic9/01-startup_chord.wav assets/sounds/classic9/03-plain_beep.wav assets/sounds/classic9/16-menu_open.wav assets/sounds/classic9/17-menu_select.wav "$(APP_BUNDLE)/Contents/Resources/sounds/classic9/"
+	mkdir -p "$(APP_BUNDLE)/Contents/Resources/wallpapers"
+	cp build/wallpapers/*.bmp "$(APP_BUNDLE)/Contents/Resources/wallpapers/"
 	cp assets/icons/ospi-icons.icl8 "$(APP_BUNDLE)/Contents/Resources/"
 	cp macos/Info.plist "$(APP_BUNDLE)/Contents/Info.plist"
 	printf 'APPL????' > "$(APP_BUNDLE)/Contents/PkgInfo"
@@ -364,3 +367,19 @@ build/test_desktop_sound: tests/test_desktop_sound.c src/desktop_sound.c include
 .PHONY: test-desktop-sound
 test-desktop-sound: build/test_desktop_sound
 	./build/test_desktop_sound assets/sounds/classic9
+
+.PHONY: wallpapers test-wallpapers
+wallpapers:
+	zsh scripts/prepare-wallpapers.sh assets build/wallpapers
+
+build/test_desktop_wallpaper: src/desktop_wallpaper.c src/desktop_wallpaper_catalog.h include/desktop_wallpaper.h tests/test_desktop_wallpaper.c
+	mkdir -p build
+	$(CC) $(CFLAGS) src/desktop_wallpaper.c tests/test_desktop_wallpaper.c -o $@
+
+test-wallpapers: wallpapers build/test_desktop_wallpaper
+	./build/test_desktop_wallpaper build/wallpapers
+
+build/test_appearance: $(CORE) src/os999_startup.c tests/test_appearance.c $(HDRS) include/os999_startup.h
+	$(CC) $(CFLAGS) -o $@ $(filter-out src/desktop_wallpaper.c,$(CORE)) src/os999_startup.c tests/test_appearance.c $(FT_LIBS) -lm
+
+test: build/test_appearance

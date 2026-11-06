@@ -1,3 +1,4 @@
+#include "desktop_wallpaper.h"
 #include "draw.h"
 #include "desktop_assets.h"
 #include "mac_icon.h"
@@ -136,6 +137,8 @@ static void draw_label(Fb *fb, int cx, int y, const char *name, int selected, in
         fb_fill(fb, x - 2, y - 1, tw + 4, lh + 2, C_BLACK);
         fb_text(fb, x, y, C_WHITE, name);
     } else if (desktop) {
+        if (desktop_wallpaper_current() >= 0)
+            fb_fill(fb, x - 2, y - 1, tw + 4, lh + 2, 0xFF26304Au);
         fb_text(fb, x + 1, y + 1, C_BLACK, name);
         fb_text(fb, x, y, C_WHITE, name);
     } else {
@@ -395,7 +398,7 @@ void session_paint(Session *s, uint32_t *px, int w, int h) {
     session_clamp(s);
     Fb fb;
     fb_init(&fb, px, w, h);
-    fb_desktop(&fb);
+    if (!desktop_wallpaper_draw(&fb)) fb_desktop(&fb);
     paint_desktop_icons(&fb, s);
     for (int i = 0; i < s->nwin; i++) {
         paint_window(&fb, s, i);
