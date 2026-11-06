@@ -1,3 +1,4 @@
+#include "desktop_theme.h"
 #include "appearance_panel.h"
 #include "desktop_context.h"
 #include "desktop_wallpaper.h"
@@ -143,12 +144,12 @@ static void draw_label(Fb *fb, int cx, int y, const char *name, int selected, in
         fb_fill(fb, x - 2, y - 1, tw + 4, lh + 2, C_BLACK);
         fb_text(fb, x, y, C_WHITE, name);
     } else if (desktop) {
-        if (desktop_wallpaper_current() >= 0)
+        if (desktop_wallpaper_current() >= 0 || desktop_theme_current() > 0)
             fb_fill(fb, x - 2, y - 1, tw + 4, lh + 2, 0xFF26304Au);
         fb_text(fb, x + 1, y + 1, C_BLACK, name);
         fb_text(fb, x, y, C_WHITE, name);
     } else {
-        fb_text(fb, x, y, C_BLACK, name);
+        fb_text(fb, x, y, desktop_theme_color(THEME_FOREGROUND), name);
     }
 }
 
@@ -171,11 +172,11 @@ static void paint_desktop_icons(Fb *fb, const Session *s) {
 }
 
 static void stripes(Fb *fb, Rect title) {
-    fb_fill(fb, title.x, title.y, title.w, title.h, C_BLACK);
+    fb_fill(fb, title.x, title.y, title.w, title.h, desktop_theme_color(THEME_FOREGROUND));
     for (int i = 1; i < title.h - 1; i++) {
-        uint32_t c = (i & 1) ? C_STRIPE_B : C_STRIPE_A;
+        uint32_t c = (i & 1) ? desktop_theme_color(THEME_STRIPE_B) : desktop_theme_color(THEME_STRIPE_A);
         if (i == 1) {
-            c = C_WHITE;
+            c = desktop_theme_color(THEME_PANEL);
         } else if (i == title.h - 2) {
             c = 0xFFDCDCDCu;
         }
@@ -188,22 +189,22 @@ static int held(const Session *s, int win, int zone, Rect r) {
 }
 
 static void rbox(Fb *fb, Rect r, int invert) {
-    fb_fill(fb, r.x, r.y, r.w, r.h, C_WHITE);
-    fb_frame(fb, r.x, r.y, r.w, r.h, C_BLACK);
+    fb_fill(fb, r.x, r.y, r.w, r.h, desktop_theme_color(THEME_PANEL));
+    fb_frame(fb, r.x, r.y, r.w, r.h, desktop_theme_color(THEME_FOREGROUND));
     if (invert) {
         fb_invert(fb, r.x + 1, r.y + 1, r.w - 2, r.h - 2);
     }
 }
 
 static void paint_scroll(Fb *fb, const Window *w, const Layout *lay) {
-    fb_fill(fb, lay->vbar.x, lay->vbar.y, lay->vbar.w, lay->vbar.h, C_TRACK);
-    fb_fill(fb, lay->hbar.x, lay->hbar.y, lay->hbar.w, lay->hbar.h, C_TRACK);
+    fb_fill(fb, lay->vbar.x, lay->vbar.y, lay->vbar.w, lay->vbar.h, desktop_theme_color(THEME_TRACK));
+    fb_fill(fb, lay->hbar.x, lay->hbar.y, lay->hbar.w, lay->hbar.h, desktop_theme_color(THEME_TRACK));
     if (lay->vbar.h > 36) {
         rbox(fb, (Rect){lay->vbar.x, lay->vbar.y, lay->vbar.w, 16}, 0);
         rbox(fb, (Rect){lay->vbar.x, lay->vbar.y + lay->vbar.h - 16, lay->vbar.w, 16}, 0);
         for (int i = 0; i < 4; i++) {
-            fb_hline(fb, lay->vbar.x + 8 - i, lay->vbar.y + 6 + i, i * 2 + 1, C_BLACK);
-            fb_hline(fb, lay->vbar.x + 8 - i, lay->vbar.y + lay->vbar.h - 7 - i, i * 2 + 1, C_BLACK);
+            fb_hline(fb, lay->vbar.x + 8 - i, lay->vbar.y + 6 + i, i * 2 + 1, desktop_theme_color(THEME_FOREGROUND));
+            fb_hline(fb, lay->vbar.x + 8 - i, lay->vbar.y + lay->vbar.h - 7 - i, i * 2 + 1, desktop_theme_color(THEME_FOREGROUND));
         }
         int maxs = window_max_scroll(w);
         if (maxs > 0) {
@@ -223,8 +224,8 @@ static void paint_scroll(Fb *fb, const Window *w, const Layout *lay) {
             rbox(fb, (Rect){lay->vbar.x + 1, ty, lay->vbar.w - 2, thumb}, 0);
         }
     }
-    fb_fill(fb, lay->grow.x, lay->grow.y, lay->grow.w, lay->grow.h, C_MENU);
-    fb_frame(fb, lay->grow.x, lay->grow.y, lay->grow.w, lay->grow.h, C_BLACK);
+    fb_fill(fb, lay->grow.x, lay->grow.y, lay->grow.w, lay->grow.h, desktop_theme_color(THEME_MENU));
+    fb_frame(fb, lay->grow.x, lay->grow.y, lay->grow.w, lay->grow.h, desktop_theme_color(THEME_FOREGROUND));
     for (int i = 3; i <= 11; i += 3) {
         for (int k = 0; k <= i; k++) {
             fb_fill(fb, lay->grow.x + lay->grow.w - 4 - k, lay->grow.y + 3 + i - k, 1, 1, 0xFF6A6A6Au);
@@ -234,7 +235,7 @@ static void paint_scroll(Fb *fb, const Window *w, const Layout *lay) {
 
 static void paint_items(Fb *fb, const Window *w, const Layout *lay) {
     if (w->nitems == 0) {
-        fb_text(fb, lay->content.x + 12, lay->content.y + 12, C_DISABLED, "This folder is empty.");
+        fb_text(fb, lay->content.x + 12, lay->content.y + 12, desktop_theme_color(THEME_DISABLED), "This folder is empty.");
         return;
     }
     int cols = lay->content.w / CELL_W;
@@ -248,7 +249,7 @@ static void paint_items(Fb *fb, const Window *w, const Layout *lay) {
         int y = lay->content.y + row * CELL_H + 4 - w->scroll;
         draw_kind(fb, x, y, &w->items[i], w->rel);
         if (w->items[i].selected) {
-            fb_frame(fb, x - 2, y - 2, 36, 36, C_BLACK);
+            fb_frame(fb, x - 2, y - 2, 36, 36, desktop_theme_color(THEME_FOREGROUND));
         }
         draw_label(fb, x + 16, y + 34, w->items[i].name, w->items[i].selected, 0);
     }
@@ -258,11 +259,11 @@ static void paint_window(Fb *fb, const Session *s, int index) {
     const Window *w = &s->win[index];
     Layout lay;
     window_layout(w, &lay);
-    fb_fill(fb, lay.outer.x, lay.outer.y, lay.outer.w, lay.outer.h, C_WHITE);
+    fb_fill(fb, lay.outer.x, lay.outer.y, lay.outer.w, lay.outer.h, desktop_theme_color(THEME_PANEL));
     stripes(fb, lay.title);
     if (lay.info.h > 0) {
-        fb_fill(fb, lay.info.x, lay.info.y, lay.info.w, lay.info.h, C_MENU);
-        fb_hline(fb, lay.info.x, lay.info.y + lay.info.h - 1, lay.info.w, C_BLACK);
+        fb_fill(fb, lay.info.x, lay.info.y, lay.info.w, lay.info.h, desktop_theme_color(THEME_MENU));
+        fb_hline(fb, lay.info.x, lay.info.y + lay.info.h - 1, lay.info.w, desktop_theme_color(THEME_FOREGROUND));
         char info[80];
         char space[32];
         format_space(space, sizeof space, s->free_bytes);
@@ -270,17 +271,17 @@ static void paint_window(Fb *fb, const Session *s, int index) {
                  space);
         int tw = fb_text_width(info);
         fb_clip(fb, lay.info.x + 4, lay.info.y, lay.info.w - 8, lay.info.h);
-        fb_text(fb, lay.info.x + (lay.info.w - tw) / 2, text_y(lay.info.y, lay.info.h), C_BLACK, info);
+        fb_text(fb, lay.info.x + (lay.info.w - tw) / 2, text_y(lay.info.y, lay.info.h), desktop_theme_color(THEME_FOREGROUND), info);
         fb_unclip(fb);
     }
     rbox(fb, lay.closeb, held(s, index, Z_CLOSE, lay.closeb));
     rbox(fb, lay.shade, 0);
-    fb_hline(fb, lay.shade.x + 3, lay.shade.y + 6, lay.shade.w - 6, C_BLACK);
+    fb_hline(fb, lay.shade.x + 3, lay.shade.y + 6, lay.shade.w - 6, desktop_theme_color(THEME_FOREGROUND));
     if (held(s, index, Z_SHADE, lay.shade)) {
         fb_invert(fb, lay.shade.x + 1, lay.shade.y + 1, lay.shade.w - 2, lay.shade.h - 2);
     }
     rbox(fb, lay.zoom, 0);
-    fb_frame(fb, lay.zoom.x + 3, lay.zoom.y + 3, 6, 6, C_BLACK);
+    fb_frame(fb, lay.zoom.x + 3, lay.zoom.y + 3, 6, 6, desktop_theme_color(THEME_FOREGROUND));
     if (held(s, index, Z_ZOOM, lay.zoom)) {
         fb_invert(fb, lay.zoom.x + 1, lay.zoom.y + 1, lay.zoom.w - 2, lay.zoom.h - 2);
     }
@@ -288,13 +289,15 @@ static void paint_window(Fb *fb, const Session *s, int index) {
     int tw = fb_text_width(w->title);
     int tx = lay.title.x + (lay.title.w - tw) / 2;
     int ty = text_y(lay.title.y, lay.title.h);
-    fb_text(fb, tx + 1, ty + 1, C_WHITE, w->title);
-    fb_text(fb, tx, ty, C_BLACK, w->title);
+    if (desktop_theme_current() > 0)
+        fb_fill(fb, tx - 4, lay.title.y + 1, tw + 8, lay.title.h - 2, desktop_theme_color(THEME_MENU));
+    fb_text(fb, tx + 1, ty + 1, desktop_theme_color(THEME_PANEL), w->title);
+    fb_text(fb, tx, ty, desktop_theme_color(THEME_FOREGROUND), w->title);
     fb_unclip(fb);
     if (!w->collapsed && lay.content.w > 0 && lay.content.h > 0) {
         fb_clip(fb, lay.content.x, lay.content.y, lay.content.w, lay.content.h);
         if (w->kind == WIN_TEXT) {
-            text_draw(fb, lay.content.x + 8, lay.content.y + 6 - w->scroll, lay.content.w - 12, C_BLACK,
+            text_draw(fb, lay.content.x + 8, lay.content.y + 6 - w->scroll, lay.content.w - 12, desktop_theme_color(THEME_FOREGROUND),
                       w->text);
         } else {
             paint_items(fb, w, &lay);
@@ -302,21 +305,21 @@ static void paint_window(Fb *fb, const Session *s, int index) {
         fb_unclip(fb);
         paint_scroll(fb, w, &lay);
     }
-    fb_frame(fb, lay.outer.x, lay.outer.y, lay.outer.w, lay.outer.h, C_BLACK);
+    fb_frame(fb, lay.outer.x, lay.outer.y, lay.outer.w, lay.outer.h, desktop_theme_color(THEME_FOREGROUND));
 }
 
 static void paint_menus(Fb *fb, Session *s) {
-    fb_fill(fb, 0, 0, s->sw, 19, C_MENU);
-    fb_hline(fb, 0, 19, s->sw, C_BLACK);
+    fb_fill(fb, 0, 0, s->sw, 19, desktop_theme_color(THEME_MENU));
+    fb_hline(fb, 0, 19, s->sw, desktop_theme_color(THEME_FOREGROUND));
     for (int i = 0; i < menu_count(); i++) {
         Rect r;
         menu_title_rect(i, &r);
         int open = s->menu == i;
         if (open) {
-            fb_fill(fb, r.x, 1, r.w, 18, C_BLACK);
+            fb_fill(fb, r.x, 1, r.w, 18, desktop_theme_color(THEME_FOREGROUND));
         }
         if (i == 0) os999_draw_menu_apple(fb, r.x + 5, 0);
-        else fb_text(fb, r.x + 8, text_y(0, 19), open ? C_WHITE : C_BLACK, menu_title(i));
+        else fb_text(fb, r.x + 8, text_y(0, 19), open ? desktop_theme_color(THEME_PANEL) : desktop_theme_color(THEME_FOREGROUND), menu_title(i));
     }
     time_t now = time(NULL);
     struct tm tm;
@@ -327,8 +330,8 @@ static void paint_menus(Fb *fb, Session *s) {
     int finder_w = fb_text_width("Finder");
     int clock_w = fb_text_width(clk);
     int my = text_y(0, 19);
-    fb_text(fb, s->sw - finder_w - 12, my, C_BLACK, "Finder");
-    fb_text(fb, s->sw - finder_w - 28 - clock_w, my, C_BLACK, clk);
+    fb_text(fb, s->sw - finder_w - 12, my, desktop_theme_color(THEME_FOREGROUND), "Finder");
+    fb_text(fb, s->sw - finder_w - 28 - clock_w, my, desktop_theme_color(THEME_FOREGROUND), clk);
     if (s->menu < 0) {
         return;
     }
@@ -342,8 +345,8 @@ static void paint_menus(Fb *fb, Session *s) {
     menu_item_rect(s->menu, 0, &first);
     int ph = last.y + last.h - first.y;
     fb_fill(fb, first.x + 2, first.y + 2, first.w, ph, 0xFF8A8A8Au);
-    fb_fill(fb, first.x, first.y, first.w, ph, C_WHITE);
-    fb_frame(fb, first.x, first.y, first.w, ph, C_BLACK);
+    fb_fill(fb, first.x, first.y, first.w, ph, desktop_theme_color(THEME_PANEL));
+    fb_frame(fb, first.x, first.y, first.w, ph, desktop_theme_color(THEME_FOREGROUND));
     for (int i = 0; i < n; i++) {
         const MenuItem *it = menu_at(s->menu, i);
         Rect r;
@@ -354,9 +357,9 @@ static void paint_menus(Fb *fb, Session *s) {
             continue;
         }
         if (hot) {
-            fb_fill(fb, r.x + 1, r.y, r.w - 2, r.h, C_BLACK);
+            fb_fill(fb, r.x + 1, r.y, r.w - 2, r.h, desktop_theme_color(THEME_FOREGROUND));
         }
-        uint32_t color = hot ? C_WHITE : ((it->flags & MI_DISABLED) ? C_DISABLED : C_BLACK);
+        uint32_t color = hot ? desktop_theme_color(THEME_PANEL) : ((it->flags & MI_DISABLED) ? desktop_theme_color(THEME_DISABLED) : desktop_theme_color(THEME_FOREGROUND));
         int tx = r.x + 8;
         if (it->flags & MI_CHECKED) {
             fb_fill(fb, r.x + 6, r.y + 6, 6, 6, color);
@@ -378,24 +381,32 @@ static void paint_dialog(Fb *fb, const Session *s) {
     Rect box, cancel, ok;
     dialog_layout(s, &box, &cancel, &ok);
     fb_fill(fb, box.x + 3, box.y + 3, box.w, box.h, 0xFF6A6A6Au);
-    fb_fill(fb, box.x, box.y, box.w, box.h, C_WHITE);
+    fb_fill(fb, box.x, box.y, box.w, box.h, desktop_theme_color(THEME_PANEL));
     stripes(fb, (Rect){box.x, box.y, box.w, TITLE_H});
-    fb_frame(fb, box.x, box.y, box.w, box.h, C_BLACK);
+    fb_frame(fb, box.x, box.y, box.w, box.h, desktop_theme_color(THEME_FOREGROUND));
     int tw = fb_text_width(s->dialog_title);
-    fb_text(fb, box.x + (box.w - tw) / 2, text_y(box.y, TITLE_H), C_BLACK, s->dialog_title);
+    fb_text(fb, box.x + (box.w - tw) / 2, text_y(box.y, TITLE_H), desktop_theme_color(THEME_FOREGROUND), s->dialog_title);
     fb_clip(fb, box.x + 12, box.y + TITLE_H, box.w - 24, box.h - TITLE_H - 48);
-    text_draw(fb, box.x + 16, box.y + 32, box.w - 32, C_BLACK, s->dialog_body);
+    text_draw(fb, box.x + 16, box.y + 32, box.w - 32, desktop_theme_color(THEME_FOREGROUND), s->dialog_body);
     fb_unclip(fb);
     int ok_hot = s->dialog_down == 1 && rect_has(ok, s->mx, s->my);
     int cancel_hot = s->dialog_down == 2 && rect_has(cancel, s->mx, s->my);
     rbox(fb, ok, ok_hot);
     int ow = fb_text_width("OK");
-    fb_text(fb, ok.x + (ok.w - ow) / 2, text_y(ok.y, ok.h), C_BLACK, "OK");
+    fb_text(fb, ok.x + (ok.w - ow) / 2, text_y(ok.y, ok.h), desktop_theme_color(THEME_FOREGROUND), "OK");
     if (cancel.w > 0) {
         rbox(fb, cancel, cancel_hot);
         int cw = fb_text_width("Cancel");
-        fb_text(fb, cancel.x + (cancel.w - cw) / 2, text_y(cancel.y, cancel.h), C_BLACK, "Cancel");
+        fb_text(fb, cancel.x + (cancel.w - cw) / 2, text_y(cancel.y, cancel.h), desktop_theme_color(THEME_FOREGROUND), "Cancel");
     }
+}
+
+static void theme_desktop(Fb *fb) {
+    if (!desktop_theme_current()) { fb_desktop(fb); return; }
+    uint32_t a = desktop_theme_color(THEME_DESKTOP_TOP);
+    uint32_t b = desktop_theme_color(THEME_DESKTOP_BOTTOM);
+    for (int y = 0; y < fb->h; y++)
+        for (int x = 0; x < fb->w; x++) fb->px[y * fb->w + x] = ((x ^ y) & 1) ? a : b;
 }
 
 void session_paint(Session *s, uint32_t *px, int w, int h) {
@@ -404,14 +415,14 @@ void session_paint(Session *s, uint32_t *px, int w, int h) {
     session_clamp(s);
     Fb fb;
     fb_init(&fb, px, w, h);
-    if (!desktop_wallpaper_draw(&fb)) fb_desktop(&fb);
+    if (!desktop_wallpaper_draw(&fb)) theme_desktop(&fb);
     paint_desktop_icons(&fb, s);
     for (int i = 0; i < s->nwin; i++) {
         paint_window(&fb, s, i);
     }
     if (s->drag == 3) {
-        fb_frame(&fb, s->mx - 16, s->my - 12, 32, 28, C_BLACK);
-        fb_frame(&fb, s->mx - 15, s->my - 11, 30, 26, C_WHITE);
+        fb_frame(&fb, s->mx - 16, s->my - 12, 32, 28, desktop_theme_color(THEME_FOREGROUND));
+        fb_frame(&fb, s->mx - 15, s->my - 11, 30, 26, desktop_theme_color(THEME_PANEL));
         if (desktop_which(s->sw, s->sh, s->mx, s->my) == 1 && s->desk_sel != 1) {
             Rect icon, hit;
             desktop_icon_rect(s->sw, s->sh, 1, &icon, &hit);

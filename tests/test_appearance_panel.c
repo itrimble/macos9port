@@ -1,12 +1,27 @@
 #include "appearance_panel.h"
 #include "desktop_wallpaper.h"
+#include "desktop_theme.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "desktop_assets.h"
 
-static int current = -1, commands, last_command, icon_draws;
+static int current = -1, commands, last_command, icon_draws, selected_theme;
+int desktop_theme_count(void) { return 16; }
+int desktop_theme_current(void) { return selected_theme; }
+const char *desktop_theme_name(int index) { return index ? "Fixture Color Theme" : "Platinum"; }
+uint32_t desktop_theme_color(int role) {
+    static const uint32_t platinum[] = {C_WHITE, C_MENU, C_BLACK, C_DISABLED, C_BLACK,
+        C_TRACK, C_STRIPE_A, C_STRIPE_B, 0xFF9A98EEu, C_DESK, C_DESK2};
+    if (selected_theme == 2) {
+        if (role == THEME_PANEL) return 0xFF20252Du;
+        if (role == THEME_MENU) return 0xFF303640u;
+        if (role == THEME_FOREGROUND || role == THEME_FRAME) return C_WHITE;
+        if (role == THEME_ACCENT) return 0xFF6F86ACu;
+    }
+    return role >= 0 && role < THEME_ROLE_COUNT ? platinum[role] : C_BLACK;
+}
 int desktop_asset_draw(Fb *fb, int x, int y, const char *name) {
     if (strcmp(name, "control_panel")) return 0;
     icon_draws++;
@@ -19,7 +34,8 @@ const char *desktop_wallpaper_name(int index) { (void)index; return "Fixture Pic
 void session_command(Session *s, int cmd) {
     commands++;
     last_command = cmd;
-    current = cmd - CMD_WALLPAPER_BASE - 1;
+    if (cmd >= CMD_THEME_BASE && cmd <= CMD_THEME_LAST) selected_theme = cmd - CMD_THEME_BASE;
+    else current = cmd - CMD_WALLPAPER_BASE - 1;
     s->menu = -1;
 }
 static int checks, failures;
@@ -43,7 +59,7 @@ int main(void) {
     CHECK(appearance_panel_down(&s, 360, 220)); /* Themes tab. */
     int before = commands;
     CHECK(appearance_panel_down(&s, 250, 302));
-    CHECK(commands == before); /* No invented theme actions. */
+    CHECK(commands == before + 1 && selected_theme == 1 && current == 0);
     CHECK(appearance_panel_key(&s, '\t', 0)); /* Desktop tab. */
     for (int i = 0; i < 6; i++) CHECK(appearance_panel_down(&s, 740, 532));
     CHECK(appearance_panel_down(&s, 250, 470)); /* Last page, picture 59. */
@@ -54,6 +70,8 @@ int main(void) {
     CHECK(appearance_panel_down(&s, 250, 281));
     CHECK(current == -1 && last_command == CMD_WALLPAPER_BASE);
     CHECK(!appearance_panel_key(&s, 'q', MOD_CMD));
+    CHECK(!appearance_panel_key(&s, 't', MOD_CMD));
+    CHECK(!appearance_panel_key(&s, 'T', MOD_CMD));
     CHECK(appearance_panel_active());
     CHECK(appearance_panel_key(&s, 'w', MOD_CMD));
     CHECK(!appearance_panel_active());
@@ -65,7 +83,7 @@ int main(void) {
         fb_init(&fb, pixels, OSPI_W, OSPI_H);
         appearance_panel_draw(&s, &fb);
         CHECK(pixels[(size_t)174 * OSPI_W + 212] == C_BLACK);
-        CHECK(pixels[(size_t)400 * OSPI_W + 500] == C_MENU);
+        CHECK(pixels[(size_t)400 * OSPI_W + 500] == desktop_theme_color(THEME_PANEL));
         CHECK(pixels[10] == 0); /* Overlay does not paint the menu bar. */
         free(pixels);
     }
@@ -94,7 +112,8 @@ int main(void) {
     CHECK(appearance_panel_down(&s, 810, 583)); /* Themes context action. */
     before = commands;
     CHECK(appearance_panel_down(&s, 250, 302));
-    CHECK(commands == before);
+    CHECK(commands == before + 1 && last_command == CMD_THEME_BASE + 1);
+    before = commands;
     CHECK(appearance_panel_context(&s, 300, 300));
     CHECK(appearance_panel_key(&s, 27, 0)); /* Dismiss only the popup. */
     CHECK(appearance_panel_active());
@@ -109,6 +128,34 @@ int main(void) {
     CHECK(commands == before + 2);
     appearance_panel_close();
     CHECK(!appearance_panel_context(&s, 512, 360));
+    selected_theme = 0;
+    appearance_panel_open(&s, APPEARANCE_THEMES_TAB);
+    int wallpaper_before = current;
+    for (int page = 0; page < 2; page++) {
+        for (int row = 0; row < 8; row++) {
+            CHECK(appearance_panel_down(&s, 250, 281 + row * 29));
+            CHECK(selected_theme == page * 8 + row);
+            CHECK(last_command == CMD_THEME_BASE + selected_theme);
+        }
+        CHECK(appearance_panel_down(&s, 740, 532));
+    }
+    CHECK(current == wallpaper_before); /* Themes never overwrite wallpaper choice. */
+    CHECK(appearance_panel_down(&s, 250, 484));
+    CHECK(selected_theme == 15); /* Last page is bounded. */
+    selected_theme = 2;
+    appearance_panel_open(&s, APPEARANCE_THEMES_TAB);
+    pixels = calloc((size_t)OSPI_W * OSPI_H, sizeof *pixels);
+    CHECK(pixels != NULL);
+    if (pixels) {
+        Fb fb;
+        fb_init(&fb, pixels, OSPI_W, OSPI_H);
+        appearance_panel_draw(&s, &fb);
+        CHECK(pixels[(size_t)174 * OSPI_W + 212] == desktop_theme_color(THEME_FRAME));
+        CHECK(pixels[(size_t)400 * OSPI_W + 500] == desktop_theme_color(THEME_PANEL));
+        CHECK(pixels[(size_t)300 * OSPI_W + 215] == desktop_theme_color(THEME_MENU));
+        free(pixels);
+    }
+    appearance_panel_close();
     printf("appearance panel: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

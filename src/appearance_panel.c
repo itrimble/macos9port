@@ -1,14 +1,36 @@
 #include "appearance_panel.h"
 #include "desktop_wallpaper.h"
 #include "desktop_assets.h"
+#include "desktop_theme.h"
 
 #include <stdio.h>
 
 enum { PANEL_CLOSED, PANEL_CONTROLS, PANEL_APPEARANCE, ROW_HEIGHT = 21 };
 static Session *owner;
-static int mode, tab, page;
+static int mode, tab, page, theme_page;
 static int context_kind;
 static Rect context_box;
+
+static uint32_t selection_color(void) {
+    return desktop_theme_current() ? desktop_theme_color(THEME_ACCENT) : 0xFF344768u;
+}
+
+static uint32_t accent_text(void) {
+    uint32_t c = selection_color();
+    unsigned luma = ((c >> 16) & 255u) * 299u + ((c >> 8) & 255u) * 587u + (c & 255u) * 114u;
+    return luma >= 150000u ? 0xFF000000u : 0xFFFFFFFFu;
+}
+
+static int theme_count(void) {
+    int count = desktop_theme_count();
+    int limit = CMD_THEME_LAST - CMD_THEME_BASE + 1;
+    return count < 0 ? 0 : count > limit ? limit : count;
+}
+
+static int last_theme_page(void) {
+    int count = theme_count();
+    return count > 0 ? (count - 1) / 8 : 0;
+}
 
 static int picture_count(void) {
     int count = desktop_wallpaper_count();
@@ -47,7 +69,7 @@ void appearance_panel_close(void) {
     if (owner) owner->down = owner->drag = 0;
     owner = NULL;
     mode = PANEL_CLOSED;
-    tab = page = context_kind = 0;
+    tab = page = theme_page = context_kind = 0;
 }
 
 int appearance_panel_active(void) { return mode != PANEL_CLOSED; }
@@ -71,46 +93,48 @@ void appearance_panel_open(Session *s, int selected_tab) {
     int current = desktop_wallpaper_current();
     page = current >= 0 ? current / WALLPAPERS_PER_PAGE : 0;
     if (page > last_page()) page = last_page();
+    theme_page = desktop_theme_current() / 8;
+    if (theme_page < 0 || theme_page > 1) theme_page = 0;
     s->menu = s->menu_hot = -1;
 }
 
 static void button(Fb *fb, Rect r, const char *title, int active, int enabled) {
-    fb_fill(fb, r.x, r.y, r.w, r.h, active ? C_WHITE : C_MENU);
-    fb_frame(fb, r.x, r.y, r.w, r.h, enabled ? C_BLACK : C_GRAY);
-    fb_hline(fb, r.x + 1, r.y + 1, r.w - 2, C_WHITE);
+    fb_fill(fb, r.x, r.y, r.w, r.h, active ? desktop_theme_color(THEME_PANEL) : desktop_theme_color(THEME_MENU));
+    fb_frame(fb, r.x, r.y, r.w, r.h, enabled ? desktop_theme_color(THEME_FRAME) : (desktop_theme_current() ? desktop_theme_color(THEME_STRIPE_B) : C_GRAY));
+    fb_hline(fb, r.x + 1, r.y + 1, r.w - 2, desktop_theme_color(THEME_PANEL));
     int x = r.x + (r.w - fb_text_width(title)) / 2;
     int y = r.y + (r.h - typeface_line_height(0)) / 2;
-    fb_text(fb, x, y, enabled ? C_BLACK : C_DISABLED, title);
+    fb_text(fb, x, y, enabled ? desktop_theme_color(THEME_FOREGROUND) : desktop_theme_color(THEME_DISABLED), title);
 }
 
 static void frame(Fb *fb, Rect r, const char *title) {
     fb_fill(fb, r.x + 3, r.y + 3, r.w, r.h, 0xFF26304Au);
-    fb_fill(fb, r.x, r.y, r.w, r.h, C_MENU);
-    fb_frame(fb, r.x, r.y, r.w, r.h, C_BLACK);
+    fb_fill(fb, r.x, r.y, r.w, r.h, desktop_theme_color(THEME_MENU));
+    fb_frame(fb, r.x, r.y, r.w, r.h, desktop_theme_color(THEME_FRAME));
     for (int y = 4; y < TITLE_H - 2; y += 2)
-        fb_hline(fb, r.x + 3, r.y + y, r.w - 6, C_GRAY);
+        fb_hline(fb, r.x + 3, r.y + y, r.w - 6, (desktop_theme_current() ? desktop_theme_color(THEME_STRIPE_B) : C_GRAY));
     int tw = fb_text_width(title);
-    fb_fill(fb, r.x + (r.w - tw) / 2 - 5, r.y + 1, tw + 10, TITLE_H - 2, C_MENU);
-    fb_text(fb, r.x + (r.w - tw) / 2, r.y + 3, C_BLACK, title);
-    fb_hline(fb, r.x, r.y + TITLE_H, r.w, C_BLACK);
+    fb_fill(fb, r.x + (r.w - tw) / 2 - 5, r.y + 1, tw + 10, TITLE_H - 2, desktop_theme_color(THEME_MENU));
+    fb_text(fb, r.x + (r.w - tw) / 2, r.y + 3, desktop_theme_color(THEME_FOREGROUND), title);
+    fb_hline(fb, r.x, r.y + TITLE_H, r.w, desktop_theme_color(THEME_FRAME));
     Rect close = close_rect(r);
-    fb_fill(fb, close.x, close.y, close.w, close.h, C_WHITE);
-    fb_frame(fb, close.x, close.y, close.w, close.h, C_BLACK);
+    fb_fill(fb, close.x, close.y, close.w, close.h, desktop_theme_color(THEME_PANEL));
+    fb_frame(fb, close.x, close.y, close.w, close.h, desktop_theme_color(THEME_FRAME));
 }
 
 static void desktop_tab(Fb *fb, Rect r) {
-    fb_text(fb, r.x + 20, r.y + 74, C_BLACK, "Choose a desktop picture. Your choice is saved automatically.");
+    fb_text(fb, r.x + 20, r.y + 74, desktop_theme_color(THEME_FOREGROUND), "Choose a desktop picture. Your choice is saved automatically.");
     Rect list = list_rect(r);
-    fb_fill(fb, list.x, list.y, list.w, list.h, C_WHITE);
-    fb_frame(fb, list.x, list.y, list.w, list.h, C_BLACK);
+    fb_fill(fb, list.x, list.y, list.w, list.h, desktop_theme_color(THEME_PANEL));
+    fb_frame(fb, list.x, list.y, list.w, list.h, desktop_theme_color(THEME_FRAME));
     int current = desktop_wallpaper_current();
     for (int row = 0; row <= WALLPAPERS_PER_PAGE; row++) {
         int index = row ? page * WALLPAPERS_PER_PAGE + row - 1 : -1;
         if (index >= picture_count()) break;
         int y = list.y + 1 + row * ROW_HEIGHT;
         int selected = current == index;
-        if (selected) fb_fill(fb, list.x + 1, y, list.w - 2, ROW_HEIGHT, 0xFF344768u);
-        uint32_t color = selected ? C_WHITE : C_BLACK;
+        if (selected) fb_fill(fb, list.x + 1, y, list.w - 2, ROW_HEIGHT, selection_color());
+        uint32_t color = selected ? accent_text() : desktop_theme_color(THEME_FOREGROUND);
         char label[OSPI_NAME + 12];
         if (index < 0) snprintf(label, sizeof label, "Plain Desktop");
         else snprintf(label, sizeof label, "%02d  %s", index + 1, desktop_wallpaper_name(index));
@@ -123,8 +147,34 @@ static void desktop_tab(Fb *fb, Rect r) {
     button(fb, next_rect(r), "Next", 0, page < last_page());
     char position[64];
     snprintf(position, sizeof position, "Page %d of %d", page + 1, last_page() + 1);
-    fb_text(fb, r.x + (r.w - fb_text_width(position)) / 2, r.y + 352, C_BLACK, position);
-    fb_text(fb, r.x + 20, r.y + 389, 0xFF444444u, "Changes apply immediately.");
+    fb_text(fb, r.x + (r.w - fb_text_width(position)) / 2, r.y + 352, desktop_theme_color(THEME_FOREGROUND), position);
+    fb_text(fb, r.x + 20, r.y + 389, (desktop_theme_current() ? desktop_theme_color(THEME_FOREGROUND) : 0xFF444444u), "Changes apply immediately.");
+}
+
+static void themes_tab(Fb *fb, Rect r) {
+    uint32_t foreground = desktop_theme_color(THEME_FOREGROUND);
+    fb_text(fb, r.x + 20, r.y + 74, foreground, "Color themes");
+    Rect list = list_rect(r);
+    fb_fill(fb, list.x, list.y, list.w, list.h, desktop_theme_color(THEME_PANEL));
+    fb_frame(fb, list.x, list.y, list.w, list.h, desktop_theme_color(THEME_FRAME));
+    for (int row = 0; row < 8; row++) {
+        int index = theme_page * 8 + row;
+        if (index >= theme_count()) break;
+        int y = list.y + 1 + row * 29;
+        int selected = desktop_theme_current() == index;
+        if (selected) fb_fill(fb, list.x + 1, y, list.w - 2, 29, selection_color());
+        uint32_t ink = selected ? accent_text() : foreground;
+        fb_clip(fb, list.x + 6, y, list.w - 12, 29);
+        fb_text(fb, list.x + 8, y + 7, ink, selected ? "*" : " ");
+        fb_text(fb, list.x + 26, y + 7, ink, desktop_theme_name(index));
+        fb_unclip(fb);
+    }
+    button(fb, previous_rect(r), "Previous", 0, theme_page > 0);
+    button(fb, next_rect(r), "Next", 0, theme_page < last_theme_page());
+    char position[64];
+    snprintf(position, sizeof position, "Page %d of %d", theme_page + 1, last_theme_page() + 1);
+    fb_text(fb, r.x + (r.w - fb_text_width(position)) / 2, r.y + 352, foreground, position);
+    fb_text(fb, r.x + 20, r.y + 389, foreground, "Color palettes only. Window shapes and controls stay the same.");
 }
 
 static void context_action(Session *s, int row) {
@@ -138,15 +188,15 @@ static void context_draw(Session *s, Fb *fb) {
     if (!context_kind) return;
     Rect r = context_box;
     fb_fill(fb, r.x + 3, r.y + 3, r.w, r.h, 0xFF26304Au);
-    fb_fill(fb, r.x, r.y, r.w, r.h, C_WHITE);
-    fb_frame(fb, r.x, r.y, r.w, r.h, C_BLACK);
+    fb_fill(fb, r.x, r.y, r.w, r.h, desktop_theme_color(THEME_PANEL));
+    fb_frame(fb, r.x, r.y, r.w, r.h, desktop_theme_color(THEME_FRAME));
     int count = context_kind == 1 ? 1 : 2;
     for (int i = 0; i < count; i++) {
         Rect row = {r.x + 1, r.y + 1 + i * 24, r.w - 2, 24};
         int hot = rect_has(row, s->mx, s->my);
-        if (hot) fb_fill(fb, row.x, row.y, row.w, row.h, C_BLACK);
+        if (hot) fb_fill(fb, row.x, row.y, row.w, row.h, desktop_theme_color(THEME_FOREGROUND));
         const char *label = context_kind == 1 ? "Open Appearance" : i ? "Themes" : "Desktop Pictures";
-        fb_text(fb, row.x + 12, row.y + 4, hot ? C_WHITE : C_BLACK, label);
+        fb_text(fb, row.x + 12, row.y + 4, hot ? desktop_theme_color(THEME_PANEL) : desktop_theme_color(THEME_FOREGROUND), label);
     }
 }
 
@@ -176,28 +226,23 @@ void appearance_panel_draw(Session *s, Fb *fb) {
         Rect icon = controls_appearance(r);
         int ix = icon.x + (icon.w - 32) / 2;
         if (!desktop_asset_draw(fb, ix, icon.y, "control_panel")) {
-            fb_fill(fb, ix, icon.y, 32, 32, C_WHITE);
-            fb_frame(fb, ix, icon.y, 32, 32, C_BLACK);
+            fb_fill(fb, ix, icon.y, 32, 32, desktop_theme_color(THEME_PANEL));
+            fb_frame(fb, ix, icon.y, 32, 32, desktop_theme_color(THEME_FRAME));
             for (int i = 0; i < 3; i++) {
-                fb_fill(fb, ix + 6 + i * 9, icon.y + 5, 1, 22, C_BLACK);
-                fb_fill(fb, ix + 3 + i * 9, icon.y + 9 + i * 4, 7, 5, C_BLACK);
+                fb_fill(fb, ix + 6 + i * 9, icon.y + 5, 1, 22, desktop_theme_color(THEME_FOREGROUND));
+                fb_fill(fb, ix + 3 + i * 9, icon.y + 9 + i * 4, 7, 5, desktop_theme_color(THEME_FOREGROUND));
             }
         }
         fb_text(fb, icon.x + (icon.w - fb_text_width("Appearance")) / 2,
-                icon.y + 38, C_BLACK, "Appearance");
-        fb_text(fb, r.x + 24, r.y + 131, C_BLACK, "Desktop pictures and visual settings");
+                icon.y + 38, desktop_theme_color(THEME_FOREGROUND), "Appearance");
+        fb_text(fb, r.x + 24, r.y + 131, desktop_theme_color(THEME_FOREGROUND), "Desktop pictures and visual settings");
         context_draw(s, fb);
         return;
     }
     button(fb, tab_rect(r, 0), "Desktop", tab == 0, 1);
     button(fb, tab_rect(r, 1), "Themes", tab == 1, 1);
     if (tab == APPEARANCE_DESKTOP_TAB) desktop_tab(fb, r);
-    else {
-        fb_text(fb, r.x + 24, r.y + 98, C_BLACK, "Themes are not installed yet.");
-        fb_text(fb, r.x + 24, r.y + 128, C_BLACK, "No additional themes are available.");
-        fb_text(fb, r.x + 24, r.y + 158, C_BLACK, "Your current window style is unchanged.");
-        fb_text(fb, r.x + 24, r.y + 198, C_BLACK, "Use Desktop to choose from the installed pictures.");
-    }
+    else themes_tab(fb, r);
     context_draw(s, fb);
 }
 
@@ -221,7 +266,19 @@ int appearance_panel_down(Session *s, int x, int y) {
     }
     for (int i = 0; i < 2; i++)
         if (rect_has(tab_rect(r, i), x, y)) { tab = i; return 1; }
-    if (tab == APPEARANCE_THEMES_TAB) return 1;
+    if (tab == APPEARANCE_THEMES_TAB) {
+        if (rect_has(previous_rect(r), x, y) && theme_page > 0) theme_page--;
+        else if (rect_has(next_rect(r), x, y) && theme_page < last_theme_page()) theme_page++;
+        else {
+            Rect list = list_rect(r);
+            if (x > list.x && x < list.x + list.w - 1 && y > list.y && y < list.y + list.h - 1) {
+                int row = (y - list.y - 1) / 29;
+                int index = theme_page * 8 + row;
+                if (row < 8 && index < theme_count()) session_command(s, CMD_THEME_BASE + index);
+            }
+        }
+        return 1;
+    }
     if (rect_has(previous_rect(r), x, y) && page > 0) page--;
     else if (rect_has(next_rect(r), x, y) && page < last_page()) page++;
     else {
@@ -238,7 +295,7 @@ int appearance_panel_down(Session *s, int x, int y) {
 
 int appearance_panel_key(Session *s, int key, int mods) {
     if (!s || owner != s || mode == PANEL_CLOSED) return 0;
-    if ((mods & MOD_CMD) && (key == 'q' || key == 'Q')) return 0;
+    if ((mods & MOD_CMD) && (key == 'q' || key == 'Q' || key == 't' || key == 'T')) return 0;
     if (context_kind && key == 27) { context_kind = 0; return 1; }
     if (context_kind && (key == '\r' || key == '\n')) { context_action(s, 0); return 1; }
     if (key == 27 || ((mods & MOD_CMD) && (key == 'w' || key == 'W')))

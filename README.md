@@ -63,10 +63,13 @@ These remain logical 32px icons; native HiDPI icon rendering is not implemented.
 Appearance lists 59 original wallpapers, ten per page, and remembers the choice
 per volume. Plain Desktop keeps the original gradient. The macOS app packages
 1024×768 bitmaps converted with `sips`; HD masters remain under `assets/`.
-The separate sixteen-theme engine has not arrived; Cmd-T remains unbound.
+Sixteen built-in color themes are available in Appearance → Color Themes
+or Control Panels → Appearance → Themes. Cmd-T cycles themes; each volume
+remembers its selection. These are fresh local palettes, not the missing
+delivered skin engine. Themes change desktop colors; wallpaper, sounds and
+fonts remain separately configured. Custom theme files are not supported yet.
 Use OS999 → Control Panels → Appearance for Desktop and Themes tabs.
-Desktop offers the same saved picture selection; Themes reports that no theme
-pack is installed. Right-click or Control-click desktop space, disks, folders
+Desktop offers the same saved picture selection; Themes selects a color palette. Right-click or Control-click desktop space, disks, folders
 or files for contextual actions. Escape dismisses a popup; Escape or Cmd-W
 closes the control panel. Control Panels shows an Appearance icon with its own
 Open contextual action. Guest application clicks keep their existing routing.

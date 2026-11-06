@@ -48,7 +48,7 @@ static const MenuItem k_help[] = {
     {"How to Use OS999 Stylized", CMD_HELP, 0, NULL, 0},
 };
 
-static MenuItem appearance[WALLPAPERS_PER_PAGE + 5];
+static MenuItem appearance[WALLPAPERS_PER_PAGE + 8];
 static char wallpaper_labels[WALLPAPERS_PER_PAGE][OSPI_NAME];
 static int wallpaper_page, appearance_count;
 
@@ -58,6 +58,9 @@ void menu_wallpaper_page(int page) {
     wallpaper_page = page < 0 ? 0 : page > last ? last : page;
     int current = desktop_wallpaper_current();
     int n = 0;
+    appearance[n++] = (MenuItem){"Color Themes...", CMD_APPEARANCE_THEMES, 0, NULL, 0};
+    appearance[n++] = (MenuItem){"Next Color Theme", CMD_THEME_NEXT, 0, "Cmd-T", 't'};
+    appearance[n++] = (MenuItem){0};
     appearance[n++] = (MenuItem){"Plain Desktop", CMD_WALLPAPER_BASE,
                                 current < 0 ? MI_CHECKED : 0, NULL, 0};
     appearance[n++] = (MenuItem){0};

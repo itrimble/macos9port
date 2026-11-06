@@ -1,3 +1,4 @@
+#include "desktop_theme.h"
 #include "desktop_context.h"
 #include "session_int.h"
 #include <stdio.h>
@@ -172,16 +173,16 @@ void context_draw(Session *s, Fb *fb) {
     if (popup.box.y > s->sh - popup.box.h - 2) popup.box.y = s->sh - popup.box.h - 2;
     Fb saved = *fb;
     fb_clip(fb, popup.box.x, popup.box.y, popup.box.w, popup.box.h);
-    fb_fill(fb, popup.box.x, popup.box.y, popup.box.w, popup.box.h, C_MENU);
-    fb_frame(fb, popup.box.x, popup.box.y, popup.box.w, popup.box.h, C_BLACK);
+    fb_fill(fb, popup.box.x, popup.box.y, popup.box.w, popup.box.h, desktop_theme_color(THEME_MENU));
+    fb_frame(fb, popup.box.x, popup.box.y, popup.box.w, popup.box.h, desktop_theme_color(THEME_FOREGROUND));
     for (int i = 0; i < popup.count; i++) {
         Rect r = row_rect(i);
         ContextRow *it = &popup.rows[i];
         if (!it->label) { fb_hline(fb, r.x + 5, r.y + 3, r.w - 10, C_GRAY); continue; }
         int hot = i == popup.hot && enabled(i);
-        if (hot) fb_fill(fb, r.x, r.y, r.w, r.h, C_BLACK);
+        if (hot) fb_fill(fb, r.x, r.y, r.w, r.h, desktop_theme_color(THEME_FOREGROUND));
         fb_text(fb, r.x + 7, r.y + (r.h - typeface_line_height(0)) / 2,
-                it->disabled ? C_DISABLED : hot ? C_WHITE : C_BLACK, it->label);
+                it->disabled ? desktop_theme_color(THEME_DISABLED) : hot ? desktop_theme_color(THEME_PANEL) : desktop_theme_color(THEME_FOREGROUND), it->label);
     }
     *fb = saved;
 }

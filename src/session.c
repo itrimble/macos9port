@@ -1,3 +1,4 @@
+#include "desktop_theme.h"
 #include "appearance_panel.h"
 #include "desktop_context.h"
 #include "desktop_wallpaper.h"
@@ -262,6 +263,12 @@ static void format_ram(char *out, size_t n, uint64_t b) {
 }
 void session_command(Session *s, int cmd) {
     s->menu = -1;
+    if ((cmd >= CMD_THEME_BASE && cmd <= CMD_THEME_LAST) || cmd == CMD_THEME_NEXT) {
+        int index = cmd == CMD_THEME_NEXT ? (desktop_theme_current() + 1) % desktop_theme_count() : cmd - CMD_THEME_BASE;
+        if (desktop_theme_select(index) < 0)
+            dialog_info(s, "Appearance", "Could not save the color theme selection.");
+        return;
+    }
     if (cmd == CMD_WALLPAPER_PREVIOUS || cmd == CMD_WALLPAPER_NEXT) {
         int step = cmd == CMD_WALLPAPER_NEXT ? 1 : -1;
         menu_wallpaper_page(menu_wallpaper_current_page() + step);

@@ -244,7 +244,13 @@ Evidence IDs are retained in the loop record. CPU traces are separate evidence.
   checked selection, Cmd-T, volume themes and persisted selection. The local
   handoff describes commit `f876cdb`, but the delivered bundle ends at
   `1c1b1b9`. Theme code, integration patch and theme-aware script are missing.
-  Do not report themes as integrated from the handoff alone.
+  A new local palette-theme implementation was added independently, using
+  the requested 16 names. This is not the missing delivered engine: it changes
+  desktop colors only, with no shape skins, custom-file loader or automatic
+  wallpaper/sound/font collections. Production checks cover all 16 selections,
+  restart persistence, Cmd-T and unchanged guest-icon pixels. Both the isolated
+  and combined-checkout full suites pass; a fresh preview shows Titanium Night
+  chrome. Ian’s theme selection/visual acceptance remains pending.
 - [ ] V03 Use the delivered icon pack in the desktop and package required
   resources. Preserve guest-provided icons. Distinguish logical 32px rendering
   from the still-required native HiDPI backing-store path and cursor scaling.
@@ -253,7 +259,8 @@ Evidence IDs are retained in the loop record. CPU traces are separate evidence.
   Panels now has an Appearance icon and contextual actions. The isolated full
   suite, 62 panel checks and shared focused integration checks pass. A fresh
   5 November window capture confirms the Applications/Documents folder icons;
-  the panel fix and app-specific artwork still await Ian’s visual review.
+  Ian confirmed the Control Panels contextual-menu fix works. App-specific
+  artwork and native HiDPI rendering still await acceptance.
 - [ ] V04 Connect wallpaper selection and persistence to the actual desktop;
   validate aspect ratios and any macOS bitmap conversion on a disposable volume.
   The wallpaper integration adds all 59 delivered pictures to a paged Appearance
@@ -261,7 +268,7 @@ Evidence IDs are retained in the loop record. CPU traces are separate evidence.
   decoding, aspect-preserving cover fit, missing-file fallback and menu behavior
   pass automated checks. A 5 November macOS window capture shows Aqua Bokeh,
   the Appearance menu title and readable icon labels. Menu clicking and Ian’s
-  acceptance remain open;
+  restart persistence remains separately checked by automated tests;
   this does not implement the separately missing 16-theme engine.
   Ian approved the wallpaper appearance and supplied screenshots showing
   Spiral Galaxy selected in the open menu on 5 November 2026.
@@ -272,8 +279,9 @@ Evidence IDs are retained in the loop record. CPU traces are separate evidence.
   38 panel checks and real-session navigation/persistence checks pass. A live
   right-click opened the desktop menu on 5 November; automated left-click
   activation was blocked by the GUI tool, so panel interaction and Control-click
-  still need Ian’s check. Shared tests fail in the other session’s new HD-icon
-  pack test; this is separate from the passing isolated source suite.
+  were initially unverified. Ian subsequently confirmed the panel contextual
+  interaction works. The other session’s HD-icon test now passes 639 checks;
+  its private theme fixtures do not exercise production theme implementation.
 - [ ] V05 Connect original host startup/interface sounds, mute preference and
   bounded nonblocking playback. Judge them by listening; synthesized waveforms
   and a successful audio-device open do not establish sound quality.

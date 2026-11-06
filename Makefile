@@ -9,10 +9,10 @@ ifneq ($(FT_LIBS),)
 CFLAGS += $(FT_CFLAGS) -DOSPI_FREETYPE
 endif
 
-CORE := src/desktop_icon_map.c src/appearance_panel.c src/desktop_context.c src/desktop_wallpaper.c src/session_state.c src/typeface_metrics.c src/desktop_assets.c assets/icons/c/ospi_icon_set.c src/font.c src/draw.c src/geom.c src/menu.c src/volume.c src/archive_fs.c src/session_sit.c src/mac_icon.c src/mac_icon_palette.c src/runtime_bridge.c \
+CORE := src/desktop_theme.c src/desktop_icon_map.c src/appearance_panel.c src/desktop_context.c src/desktop_wallpaper.c src/session_state.c src/typeface_metrics.c src/desktop_assets.c assets/icons/c/ospi_icon_set.c src/font.c src/draw.c src/geom.c src/menu.c src/volume.c src/archive_fs.c src/session_sit.c src/mac_icon.c src/mac_icon_palette.c src/runtime_bridge.c \
 	src/hostinfo.c src/text.c src/paint.c src/session.c src/input.c \
 	src/install.c src/classic.c src/typeface.c src/native_launch.c src/mac_resource.c
-HDRS := include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h
+HDRS := include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h
 
 .PHONY: all test app run clean runtime
 
@@ -263,6 +263,8 @@ test: build/test_os999_startup build/test_ospi build/test_archive_install build/
 	./build/test_desktop_context
 	./build/test_desktop_controls
 	./build/test_desktop_icon_map
+	./build/test_desktop_theme
+	./build/test_theme_integration
 	./build/test_os999_startup
 	./build/test_ospi
 	./build/test_archive_install
@@ -394,8 +396,8 @@ build/test_appearance_panel: src/appearance_panel.c tests/test_appearance_panel.
 
 test: build/test_appearance_panel
 
-build/test_desktop_context: src/desktop_context.c src/geom.c tests/test_desktop_context.c $(HDRS)
-	$(CC) $(CFLAGS) -Isrc -o $@ src/desktop_context.c src/geom.c tests/test_desktop_context.c
+build/test_desktop_context: src/desktop_theme.c src/desktop_context.c src/geom.c tests/test_desktop_context.c $(HDRS)
+	$(CC) $(CFLAGS) -Isrc -o $@ src/desktop_theme.c src/desktop_context.c src/geom.c tests/test_desktop_context.c
 
 test: build/test_desktop_context
 
@@ -408,3 +410,11 @@ build/test_desktop_icon_map: src/desktop_icon_map.c tests/test_desktop_icon_map.
 	$(CC) $(CFLAGS) -o $@ src/desktop_icon_map.c tests/test_desktop_icon_map.c
 
 test: build/test_desktop_icon_map
+
+build/test_desktop_theme: src/desktop_theme.c tests/test_desktop_theme.c include/desktop_theme.h
+	$(CC) $(CFLAGS) -o $@ src/desktop_theme.c tests/test_desktop_theme.c
+
+build/test_theme_integration: $(CORE) src/os999_startup.c tests/test_theme_integration.c $(HDRS)
+	$(CC) $(CFLAGS) -o $@ $(CORE) src/os999_startup.c tests/test_theme_integration.c $(FT_LIBS) -lm
+
+test: build/test_desktop_theme build/test_theme_integration

@@ -34,7 +34,8 @@ enum {
     CMD_STARTUP_PREVIEW,
     CMD_SOUND_TOGGLE
 };
-/* 200..231 remains reserved for future themes. Wallpapers are separate. */
+/* Theme commands are separate from desktop picture commands. */
+enum { CMD_THEME_BASE = 200, CMD_THEME_LAST = 215, CMD_THEME_NEXT = 216 };
 enum { CMD_WALLPAPER_BASE = 300, CMD_WALLPAPER_LAST = 359,
        CMD_WALLPAPER_PREVIOUS = 400, CMD_WALLPAPER_NEXT = 401,
        CMD_APPEARANCE_DESKTOP = 410, CMD_CONTROL_PANELS = 411,

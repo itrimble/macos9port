@@ -59,15 +59,15 @@ int main(void) {
     CHECK(menu_count() == 7 && !strcmp(menu_title(5), "Help"));
     CHECK(!strcmp(menu_title(6), "Appearance"));
     CHECK(menu_cmd_for_key('o') == CMD_OPEN);
-    CHECK(menu_cmd_for_key('t') == CMD_NONE); /* Missing themes are not invented. */
-    CHECK(menu_at(MENU_APPEARANCE, 0)->flags & MI_CHECKED);
-    CHECK(menu_nitems(MENU_APPEARANCE) == 15);
+    CHECK(menu_cmd_for_key('t') == CMD_THEME_NEXT);
+    CHECK(menu_at(MENU_APPEARANCE, item_for(CMD_WALLPAPER_BASE))->flags & MI_CHECKED);
+    CHECK(menu_nitems(MENU_APPEARANCE) == 18);
     CHECK(menu_at(MENU_APPEARANCE, item_for(CMD_WALLPAPER_PREVIOUS))->flags & MI_DISABLED);
     for (int page = 1; page <= 5; page++) {
         click_command(s, CMD_WALLPAPER_NEXT);
         CHECK(s->menu == MENU_APPEARANCE && menu_wallpaper_current_page() == page);
     }
-    CHECK(menu_nitems(MENU_APPEARANCE) == 14);
+    CHECK(menu_nitems(MENU_APPEARANCE) == 17);
     CHECK(menu_at(MENU_APPEARANCE, item_for(CMD_WALLPAPER_NEXT))->flags & MI_DISABLED);
     click_command(s, CMD_WALLPAPER_NEXT);
     CHECK(menu_wallpaper_current_page() == 5);
@@ -76,10 +76,10 @@ int main(void) {
     CHECK(menu_at(MENU_APPEARANCE, item_for(CMD_WALLPAPER_LAST))->flags & MI_CHECKED);
     int before = calls;
     session_command(s, CMD_WALLPAPER_LAST + 1);
-    session_command(s, 200);
+    session_command(s, CMD_THEME_BASE);
     CHECK(calls == before && current == 58);
     click_command(s, CMD_WALLPAPER_BASE);
-    CHECK(current == -1 && menu_at(MENU_APPEARANCE, 0)->flags & MI_CHECKED);
+    CHECK(current == -1 && menu_at(MENU_APPEARANCE, item_for(CMD_WALLPAPER_BASE))->flags & MI_CHECKED);
     save_failure = 1;
     session_command(s, CMD_WALLPAPER_LAST);
     CHECK(s->dialog && current == -1);
@@ -113,6 +113,9 @@ int main(void) {
         free(pixels);
     }
     session_destroy(s);
+    char theme_path[OSPI_PATH];
+    snprintf(theme_path, sizeof theme_path, "%s/.os999-theme", root);
+    CHECK(unlink(theme_path) == 0);
     CHECK(rmdir(root) == 0);
     printf("appearance: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
