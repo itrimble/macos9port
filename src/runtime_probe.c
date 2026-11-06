@@ -134,9 +134,9 @@ static void apply_action(MacRuntime *rt, const ProbeAction *a, int *mouse_down, 
 }
 
 int main(int argc, char **argv) {
-    const char *path = NULL, *wav = NULL, *frames_dir = NULL, *script = NULL;
+    const char *path = NULL, *wav = NULL, *frames_dir = NULL, *script = NULL, *dump_ram = NULL;
     double seconds = 30, frame_every = 5;
-    int slices = 4;
+    int slices = 4, trace = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--seconds") && i + 1 < argc) seconds = atof(argv[++i]);
         else if (!strcmp(argv[i], "--wav") && i + 1 < argc) wav = argv[++i];
@@ -144,11 +144,13 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--frame-every") && i + 1 < argc) frame_every = atof(argv[++i]);
         else if (!strcmp(argv[i], "--script") && i + 1 < argc) script = argv[++i];
         else if (!strcmp(argv[i], "--slices") && i + 1 < argc) slices = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--trace")) trace = 1;
+        else if (!strcmp(argv[i], "--dump-ram") && i + 1 < argc) dump_ram = argv[++i];
         else if (argv[i][0] != '-' && !path) path = argv[i];
         else { fprintf(stderr, "Unexpected argument: %s\n", argv[i]); return 2; }
     }
     if (!path || seconds <= 0 || seconds > 1200 || slices < 1 || slices > 16 || frame_every <= 0) {
-        fprintf(stderr, "Usage: ospi-runtime-probe [--seconds S] [--wav out.wav] [--frames DIR] [--frame-every S] [--script FILE] [--slices N] resource-fork\n");
+        fprintf(stderr, "Usage: ospi-runtime-probe [--seconds S] [--wav out.wav] [--frames DIR] [--frame-every S] [--script FILE] [--slices N] [--trace] [--dump-ram FILE] resource-fork\n");
         return 2;
     }
     ProbeAction actions[PROBE_MAX_ACTIONS];
@@ -172,6 +174,7 @@ int main(int argc, char **argv) {
     MacRuntime rt;
     if (mac_runtime_init(&rt, &fork, error, sizeof error)) { fprintf(stderr, "Loader: %s\n", error); return 2; }
     rt.indexed_requested = 1;
+    rt.trace = trace;
     char data_root[PATH_MAX];
     if (!realpath(path, data_root)) { fprintf(stderr, "Cannot resolve %s\n", path); return 2; }
     char *slash = strrchr(data_root, '/');
@@ -229,6 +232,13 @@ int main(int argc, char **argv) {
     printf("instructions=%llu guest-ms=%llu captured-frames=%llu result=%d\n", (unsigned long long)rt.instructions,
            (unsigned long long)(clock_us / 1000), (unsigned long long)captured, result);
     if (pcm && write_wav(wav, pcm, captured)) fprintf(stderr, "Cannot write %s\n", wav);
+    if (dump_ram) {
+        FILE *f = fopen(dump_ram, "wb");
+        if (!f || fwrite(mac_cpu_ram(rt.cpu), 1, mac_cpu_ram_size(rt.cpu), f) != mac_cpu_ram_size(rt.cpu))
+            fprintf(stderr, "Cannot write RAM dump %s\n", dump_ram);
+        if (f) fclose(f);
+        fprintf(stderr, "ram-dump %s pc=%08x a7=%08x\n", dump_ram, mac_cpu_get(rt.cpu, MAC_PC), mac_cpu_get(rt.cpu, MAC_A7));
+    }
     free(pcm);
     mac_runtime_destroy(&rt);
     free(bytes);

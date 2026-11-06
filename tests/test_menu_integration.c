@@ -80,6 +80,20 @@ int main(void) {
     session_command(s,CMD_HELP_KEYS);CHECK(s->win[s->nwin-1].kind==WIN_TEXT);
     session_key(s,'c',MOD_CMD);CHECK(strstr(s->clipboard_out,"Cmd-I")!=NULL);
     menu_update(s);CHECK(!strcmp(action(2,CMD_COPY)->label,"Copy Text"));
+    /* S08/S09: the leftmost title is the OS999 fruit mark; a click on it opens
+     * the OS999 menu with About This Mac first, Control Panels, and Shut Down. */
+    {
+        Rect mark; menu_title_rect(0,&mark);
+        CHECK(mark.w==34 && mark.x==6 && mark.h==20);
+        CHECK(menu_title_at(mark.x+mark.w/2,mark.y+mark.h/2)==0);
+        s->menu=-1;
+        session_down(s,mark.x+mark.w/2,mark.y+mark.h/2,1);
+        CHECK(s->menu==0);
+        CHECK(menu_nitems(0)==4 && !strcmp(menu_at(0,0)->label,"About This Mac") && menu_at(0,0)->cmd==CMD_ABOUT);
+        CHECK(!strcmp(menu_at(0,1)->label,"Control Panels") && menu_at(0,3)->cmd==CMD_SHUTDOWN);
+        session_up(s,mark.x+mark.w/2,mark.y+mark.h/2);
+        session_key(s,27,0);CHECK(s->menu==-1);
+    }
     s->menu=2;s->menu_hot=-1;
     session_key(s,MENU_KEY_DOWN,0);CHECK(menu_at(2,s->menu_hot)->cmd==CMD_COPY);
     session_key(s,27,0);CHECK(s->menu==-1);

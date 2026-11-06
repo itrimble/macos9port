@@ -103,6 +103,50 @@ p50 16.52 ms (15.25–17.10), p95 22.45 ms, p99 24.12 ms, worst 33.4 ms.
 These are host presenter timings in bridge mode on this Mac, not GPU
 execution or input latency.
 
+## Monkey Island 2 (deterministic)
+
+Script `.ralph/evidence/mi2-play.script`: Return at 30 s brings the code
+wheel ("Recipe for Gout: Bat Wax / Owl Pellets"). The classic floppy table
+pairs outer E with inner H, offset 3, giving 46/22; typed as 4,6,2,2 and
+Return at 34–38 s the game accepts it and shows the difficulty choice; a
+click on the first checkbox at 45 s selects the full game. The hanging-cliff
+opening, LucasArts card, title and credits follow; Escape at 95 s skips the
+credits to "Deep in the Caribbean, Scabb Island" and the campfire cutscene,
+and the lighthouse scene is on screen by 200 s. MI2's music is streamed with
+SndPlayDoubleBuffer (no note commands); it starts at ~87 s in the credits.
+With the 280 s run (`mi2-play.wav`, `mi2-frames-play/`) the campfire
+cutscene ends, "Part I: The Largo Embargo" shows, and Woodtick's bridge with
+the verb panel and inventory is on screen by ~240 s: free play reached
+headlessly. `mi2-opening.wav` shows three 90–95 ms silences at 175.2, 177.2 and 179.3 s
+(2 s apart) during the credits; whether these are sequenced or a late
+doubleback refill is not yet determined.
+
+## Linux
+
+Debian 12 arm64 container (Apple `container` 1.6.1, gcc 12.2):
+`make -j2 test all probe` exit 0 on this tree
+(`.ralph/evidence/linux-container-test.log`). A Debian 12 x86_64 container (`--arch amd64`) passed the same
+`make -j2 test all probe` (`linux-container-amd64-test.log`). These are
+containers on the Mac, not a Raspberry Pi or the windowed app.
+
+## Castle of Dr. Brain
+
+The deterministic probe halts at guest 100 ms with Alert 143 "Can't load !".
+With `--trace` (new probe flag) the sequence is: CODE 1, cnfg 128, gama 128,
+PICT 200 drawn (384x198), ftbl 128, LoadSeg, GetVol, then a PBOpen whose
+Str255 name buffer at the stack is all zeros (length 0, vRefNum -1, read
+permission). The runtime answered paramErr; the game then opened INTERP.TXT,
+read it byte by byte and showed its E_CANT_LOAD text with an empty %s. The
+`cnfg` 128 resource is eight bytes (01 00 00 00 00 00 a0 00) and the data
+folder's resource.cfg has an empty `videoDrv=` line, so the empty name may be
+the game's own doing; Disassembly of the RAM dump (new `build/ospi-dasm`,
+`--dump-ram`) shows the Open comes from the interpreter's C-runtime `open()`
+glue at 0x10dc18, which converts a C path to the Str255 at 0x7fd202; the C
+path it received was empty, so the game's own path assembly produced ""
+before any file name was appended. Returning fnfErr instead of paramErr for
+the empty name changes nothing. The path assembly follows GetWDInfo,
+GetCatInfo (root) and PBHGetVInfo calls; those answers are the next suspects.
+
 ## Limitations
 
 - No human has listened to these captures yet. The ticking Ian reported on

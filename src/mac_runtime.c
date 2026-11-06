@@ -132,6 +132,7 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
 }
 
 int mac_runtime_load_segment(MacRuntime *rt, int16_t id) {
+    if (rt->trace) fprintf(stderr, "load-segment id=%d\n", id);
     uint32_t handle = mac_runtime_resource(rt, MAC_CODE_TYPE, id);
     if (!handle) return -1;
     uint32_t pointer = mac_cpu_read(rt->cpu, handle, 4);

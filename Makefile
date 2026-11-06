@@ -129,8 +129,12 @@ build/ospi-runtime-probe: $(RUNTIME_OBJ) src/runtime_probe.c $(RUNTIME_HDRS) $(C
 build/ospi-bridge-probe: src/bridge_probe.c src/runtime_bridge.c include/runtime_bridge.h
 	$(CC) $(CFLAGS) -pthread src/bridge_probe.c src/runtime_bridge.c -o $@
 
+# Guest RAM disassembler over Musashi's m68kdasm (diagnostic only).
+build/ospi-dasm: src/ram_dasm.c $(MUSASHI)/m68kops.c
+	$(CC) -O2 $(CPUFLAGS) -Wall src/ram_dasm.c $(MUSASHI)/m68kdasm.c -o $@
+
 .PHONY: probe
-probe: build/ospi-runtime-probe build/ospi-bridge-probe
+probe: build/ospi-runtime-probe build/ospi-bridge-probe build/ospi-dasm
 
 # Diagnostic runtime with the same code path; OSPI_AUDIO_WAV opts into a
 # bounded producer-PCM capture without replacing the app's live executable.

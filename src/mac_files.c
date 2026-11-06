@@ -185,17 +185,25 @@ static int open_file(MacRuntime *rt, uint32_t pb) {
     MacCpu *cpu = rt->cpu;
     FileState *s = rt->file_state;
     int volume = (int16_t)mac_cpu_read(cpu, pb + 22, 2);
-    if (!s || (volume != 0 && volume != -1)) return -35; /* nsvErr */
     unsigned permission = mac_cpu_read(cpu, pb + 27, 1);
-    if (permission > 1) return -54; /* permErr: read-only host policy */
     uint32_t p = mac_cpu_read(cpu, pb + 18, 4);
-    if (!valid(cpu, p, 1)) return -50;
-    unsigned length = mac_cpu_read(cpu, p, 1);
-    if (!length || !valid(cpu, p + 1, length)) return -50;
+    unsigned length = valid(cpu, p, 1) ? mac_cpu_read(cpu, p, 1) : 0;
     char name[256];
-    memcpy(name, mac_cpu_ram(cpu) + p + 1, length);
+    if (length && valid(cpu, p + 1, length)) memcpy(name, mac_cpu_ram(cpu) + p + 1, length);
+    else length = 0;
     name[length] = 0;
-    if (rt->trace) fprintf(stderr, "file-open name=%s permission=%u\n", name, permission);
+    if (rt->trace) {
+        fprintf(stderr, "file-open name=%s length=%u volume=%d permission=%u name-ptr=%08x\n",
+                name, length, volume, permission, p);
+        if (!length && valid(cpu, p, 64)) {
+            fprintf(stderr, "file-open-name-bytes");
+            for (unsigned i = 0; i < 64; i++) fprintf(stderr, " %02x", mac_cpu_ram(cpu)[p + i]);
+            fputc('\n', stderr);
+        }
+    }
+    if (!s || (volume != 0 && volume != -1)) return -35; /* nsvErr */
+    if (permission > 1) return -54; /* permErr: read-only host policy */
+    if (!valid(cpu, p, 1) || !length) return -50;
     for (unsigned i = 0; i < length; i++)
         if ((unsigned char)name[i] < 32 || (unsigned char)name[i] >= 127 ||
             name[i] == '/' || name[i] == ':' || name[i] == '\\') return -50;
@@ -343,9 +351,18 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode) {
     if (opcode == 0xa013) return result(cpu, pb, flush_volume(rt, pb));
     if (opcode == 0xa207) {
         FileState *state = rt->file_state;
-        return result(cpu, pb, mac_volume_info(rt, pb, state ? state->directory : -1));
+        int error = mac_volume_info(rt, pb, state ? state->directory : -1);
+        if (rt->trace) fprintf(stderr, "volume-info volume=%d index=%d error=%d\n",
+                               (int16_t)mac_cpu_read(cpu,pb+22,2), (int16_t)mac_cpu_read(cpu,pb+28,2), error);
+        return result(cpu, pb, error);
     }
-    if (wd) return result(cpu, pb, selector == 9 ? root_info(rt,pb) : working_directory(rt,pb));
+    if (wd) {
+        int error = selector == 9 ? root_info(rt,pb) : working_directory(rt,pb);
+        if (rt->trace) fprintf(stderr, "hfs-dispatch selector=%u volume=%d index=%d dirid=%u name-ptr=%08x error=%d\n",
+                               selector, (int16_t)mac_cpu_read(cpu,pb+22,2), (int16_t)mac_cpu_read(cpu,pb+28,2),
+                               mac_cpu_read(cpu,pb+48,4), mac_cpu_read(cpu,pb+18,4), error);
+        return result(cpu, pb, error);
+    }
     if (opcode == 0xa014) return result(cpu, pb, get_volume(rt, pb));
     if (opcode == 0xa000) return result(cpu, pb, open_file(rt, pb));
     if (opcode == 0xa002) mac_cpu_write(cpu, pb + 40, 4, 0);
