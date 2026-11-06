@@ -59,6 +59,11 @@ static int elapsed_microseconds(uint64_t counter, uint64_t frequency, uint64_t b
 static int run_guest_worker(void *context) {
     GuestWorker *worker = context;
     MacRuntime *rt = worker->rt;
+    /* This thread is the sole PCM producer. A host stall of one ring depth
+     * (85 ms) empties the ring, so ask for higher scheduling priority; a
+     * refusal is not fatal and is reported once. */
+    if (SDL_SetThreadPriority(SDL_THREAD_PRIORITY_HIGH))
+        fprintf(stderr, "Guest worker keeps normal priority: %s\n", SDL_GetError());
     uint64_t last_wall_counter = worker->began, last_elapsed_us = 0;
     uint64_t trace_ticks = SDL_GetTicks(), trace_instructions = rt->instructions;
     uint64_t trace_cycles = mac_cpu_cycles(rt->cpu);
@@ -147,11 +152,7 @@ static int run_guest_worker(void *context) {
 }
 #endif
 
-/* Bridge mode has no renderer/vsync. Pace outside the runtime mutex. */
-static uint32_t bridge_frame_delay(uint64_t now, uint64_t previous) {
-    uint64_t elapsed = now - previous;
-    return elapsed < 17 ? (uint32_t)(17 - elapsed) : 0;
-}
+#include "runtime_pacing.h"
 
 #include "runtime_video_pixels.h"
 
@@ -309,12 +310,12 @@ static int runtime_video_run(MacRuntime *rt, const char *title, size_t budget,
         fprintf(stderr, "Cannot start guest CPU worker: %s\n", SDL_GetError()); goto done;
     }
     worker_started = 1;
-    uint64_t bridge_frame_at = SDL_GetTicks64();
+    uint64_t bridge_deadline_us = host_microseconds();
     while (!SDL_AtomicGet(&worker.done)) {
         if (bridge) {
-            uint32_t delay = bridge_frame_delay(SDL_GetTicks64(), bridge_frame_at);
+            uint32_t delay = bridge_frame_delay(host_microseconds(), bridge_deadline_us);
             if (delay) SDL_Delay(delay);
-            bridge_frame_at = SDL_GetTicks64();
+            bridge_deadline_us = bridge_next_deadline(host_microseconds(), bridge_deadline_us);
         }
         SDL_Event event;
         if (bridge) {

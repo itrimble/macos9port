@@ -10,11 +10,27 @@ static void trace_note(MacRuntime *r, MacSoundChannel *c, MacSoundCommand cmd,
                        unsigned note, unsigned amplitude) {
  if (!getenv("OSPI_SOUND_NOTE_TRACE") || note_trace_count >= 4096) return;
  unsigned slot=(unsigned)(c-r->sound->channels);
- fprintf(stderr,"sound-note guest-us=%llu event=%llu channel=%u command=%u duration-half-ms=%u note=%u amplitude=%u playing=%d phase=%llu rate=%llu wait=%u queued=%u\n",
+ fprintf(stderr,"sound-note guest-us=%llu event=%llu channel=%u command=%u duration-half-ms=%u note=%u amplitude=%u playing=%d phase=%llu rate=%llu wait=%u queued=%u base=%u length=%u loop=%u..%u init=%x\n",
          (unsigned long long)r->clock_us,(unsigned long long)note_trace_count++,
          slot,cmd.command,cmd.param1,note,amplitude,
          c->playing,(unsigned long long)c->phase,(unsigned long long)c->rate,
-         c->wait_frames,c->count);
+         c->wait_frames,c->count,c->base_note,c->length,c->loop_start,c->loop_end,c->init);
+}
+static void trace_voice(MacRuntime *r, MacSoundChannel *c, unsigned command) {
+ if (!getenv("OSPI_SOUND_NOTE_TRACE") || note_trace_count >= 4096) return;
+ fprintf(stderr,"sound-voice guest-us=%llu event=%llu channel=%u command=%u data=%08x length=%u rate16=%08x loop=%u..%u base=%u init=%x\n",
+         (unsigned long long)r->clock_us,(unsigned long long)note_trace_count++,
+         (unsigned)(c-r->sound->channels),command,
+         command==80?c->voice_data:c->data,command==80?c->voice_length:c->length,
+         command==80?c->voice_rate:c->source_rate,
+         command==80?c->voice_loop_start:c->loop_start,command==80?c->voice_loop_end:c->loop_end,
+         command==80?c->voice_base:c->base_note,c->init);
+ uint32_t data=command==80?c->voice_data:c->data,length=command==80?c->voice_length:c->length;
+ if(length<=32 && mac_sound_range(r,data,length,0)){
+  fprintf(stderr,"sound-voice-bytes");
+  for(uint32_t i=0;i<length;i++)fprintf(stderr," %02x",mac_cpu_ram(r->cpu)[data+i]);
+  fputc('\n',stderr);
+ }
 }
 /* Independent sampled Sound Manager ABI: public Inside Macintosh Sound
  * Sound-73.html, Sound-74.html, Sound-97.html, Sound-100.html, Sound-131.html
@@ -133,11 +149,11 @@ int mac_sound_command(MacRuntime*r,MacSoundChannel*c,MacSoundCommand cmd){
   if(cmd.command==80 && (base<1 || base>127 || ((start || end) && (start>=end || end>length)))){char reason[180];snprintf(reason,sizeof reason,"Invalid voice header%08x length%u loop%u..%u base%u.",p,length,start,end,base);return mac_sound_fail(r,reason); }
   if(cmd.command==80){
    c->voice_data=data;c->voice_length=length;c->voice_rate=rate;c->voice_base=base;
-   c->voice_loop_start=start;c->voice_loop_end=end;c->voice=1;return 1;
+   c->voice_loop_start=start;c->voice_loop_end=end;c->voice=1;trace_voice(r,c,80);return 1;
   }
   c->data=data;c->length=length;c->rate=rate;c->source_rate=rate;c->phase=0;c->looping=0;
   c->note_playback=0;c->base_note=base;c->loop_start=start;c->loop_end=end;
-  c->playing=cmd.command==81;c->buffer_block=c->playing;return 1;
+  c->playing=cmd.command==81;c->buffer_block=c->playing;trace_voice(r,c,81);return 1;
  }
  default:{char reason[128];snprintf(reason,sizeof reason,"Unsupported sampled Sound Manager command %u (param1=%u param2=%08x).",cmd.command,cmd.param1,cmd.param2);return mac_sound_fail(r,reason); }
  }

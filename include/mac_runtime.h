@@ -8,6 +8,8 @@
 #define MAC_CODE_TYPE UINT32_C(0x434f4445)
 #define MAC_RUNTIME_RAM (16u * 1024u * 1024u)
 #define MAC_RUNTIME_HANDLES 512
+/* Smallest poll budget the VBL/Time Manager/sound pollers accept. */
+#define MAC_RUNTIME_SERVICE_MIN 10000u
 
 typedef struct {
     uint16_t what, modifiers;

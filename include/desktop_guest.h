@@ -7,6 +7,7 @@ typedef struct { int x, y, w, h, image_x, image_y, image_w, image_h; } GuestWind
 
 void guest_window_layout(GuestWindow *window, int width, int height,
                          int initial, int old_width, int old_height);
+int guest_window_drag(GuestWindow *window, int x, int y, int press_x, int press_y);
 void guest_pixel_point(const GuestWindow *window, int width, int height,
                        int x, int y, int *guest_x, int *guest_y);
 void draw_guest_window(uint32_t *frame, const GuestWindow *window,

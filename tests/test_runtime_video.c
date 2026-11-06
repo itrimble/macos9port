@@ -19,10 +19,25 @@ static int fails;
 #define CHECK(c) do { if (!(c)) { fprintf(stderr, "FAIL %d: %s\n", __LINE__, #c); fails++; } } while (0)
 
 int main(void) {
-    CHECK(bridge_frame_delay(100, 100) == 17);
-    CHECK(bridge_frame_delay(110, 100) == 7);
-    CHECK(bridge_frame_delay(117, 100) == 0);
-    CHECK(bridge_frame_delay(1000, 100) == 0);
+    /* Deadline pacing: wait until the deadline, never past it, and advance by
+     * one 16.667 ms period regardless of how long the frame copy took. */
+    CHECK(bridge_frame_delay(100000, 116667) == 16);
+    CHECK(bridge_frame_delay(110000, 116667) == 6);
+    CHECK(bridge_frame_delay(116667, 116667) == 0);
+    CHECK(bridge_frame_delay(200000, 116667) == 0);
+    CHECK(bridge_next_deadline(116667, 116667) == 133334);
+    CHECK(bridge_next_deadline(120000, 116667) == 133334); /* 3 ms of copy work */
+    CHECK(bridge_next_deadline(133000, 116667) == 133334); /* late but under a period */
+    CHECK(bridge_next_deadline(500000, 116667) == 516667); /* stalled: restart from now */
+    {
+        /* Sixty deadlines from t=0 span one second even with 3 ms of work each. */
+        uint64_t deadline = 0, now = 0;
+        for (int frame = 0; frame < 60; frame++) {
+            now = deadline + 3000;
+            deadline = bridge_next_deadline(now, deadline);
+        }
+        CHECK(deadline == 60 * BRIDGE_FRAME_US);
+    }
     uint64_t us = 0;
     CHECK(elapsed_microseconds(17000000, 1000000000, 12, &us) == 0 && us == 17012);
     CHECK(elapsed_microseconds(UINT64_C(18000000000000), 1000000000, 0, &us) == 0 && us == UINT64_C(18000000000));

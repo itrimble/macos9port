@@ -180,7 +180,13 @@ size_t mac_runtime_run(MacRuntime *rt, size_t instructions) {
 size_t mac_runtime_run_cycles(MacRuntime *rt, uint64_t cycles) {
     if (!rt || !rt->cpu || !cycles || mac_cpu_halted(rt->cpu)) return 0;
     uint64_t cycle_start = mac_cpu_cycles(rt->cpu);
+    /* VBL and Time Manager polls refuse budgets under 10,000 instructions so a
+     * callback can always complete. Real-time slices are often 1-2 ms (16-32k
+     * cycles), so a budget tied only to the slice starved every periodic task
+     * and the guest ran at a fraction of its speed. Keep the slice share, but
+     * never below the polls' minimum; the CPU slice absorbs any overrun. */
     size_t service_budget = cycles / 4 > 100000 ? 100000 : (size_t)(cycles / 4);
+    if (service_budget < MAC_RUNTIME_SERVICE_MIN) service_budget = MAC_RUNTIME_SERVICE_MIN;
     size_t ran = mac_time_poll(rt, service_budget);
     if (!mac_cpu_halted(rt->cpu) && ran < service_budget)
         ran += mac_vbl_poll(rt, service_budget - ran);

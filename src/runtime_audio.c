@@ -10,7 +10,7 @@
  * this bounded single-producer/single-consumer ring. It never runs guest code. */
 #define AUDIO_TARGET_FRAMES 4096u
 #define AUDIO_CHUNK_FRAMES 64u
-#define AUDIO_CAPTURE_SECONDS 120u
+#define AUDIO_CAPTURE_SECONDS 300u
 
 static void store_le16(uint8_t *p, uint16_t value) {
     p[0] = (uint8_t)value;

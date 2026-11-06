@@ -41,7 +41,7 @@ CPUFLAGS := -DM68K_ILLG_HAS_CALLBACK=1 -DM68K_INSTRUCTION_HOOK=1 -I$(MUSASHI)
 CPUOBJ := build/m68kcpu.o build/m68kops.o build/softfloat.o
 RUNTIME := src/mac_resource.c src/mac_cpu.c src/mac_runtime.c src/mac_services.c src/mac_memory.c src/mac_resource_services.c src/mac_events.c src/mac_quickdraw.c src/mac_toolbox.c src/mac_raster.c src/mac_system.c src/mac_geometry.c src/mac_files.c src/mac_cursor.c src/mac_color.c src/mac_dialog.c src/mac_color_port.c src/mac_copybits.c src/mac_palette.c src/mac_color_raster.c
 RUNTIME += src/mac_video_config.c src/mac_vbl.c src/mac_pixmap.c src/mac_pixels.c src/mac_volume.c src/mac_window.c src/mac_window_draw.c src/mac_regions.c src/mac_system_volume.c src/mac_color_pen.c src/mac_drive_queue.c src/mac_menu.c src/mac_menu_records.c src/mac_palette_manager.c src/mac_window_resource.c src/mac_window_registry.c src/font.c
-RUNTIME_HDRS := include/folder_navigation.h src/runtime_video_pixels.h include/mac_resource.h include/mac_cpu.h include/mac_runtime.h include/mac_window_int.h include/mac_system_volume.h include/mac_drive_queue.h include/mac_menu_int.h include/runtime_bridge.h
+RUNTIME_HDRS := include/folder_navigation.h src/runtime_video_pixels.h src/runtime_frame.h src/runtime_pacing.h include/mac_resource.h include/mac_cpu.h include/mac_runtime.h include/mac_window_int.h include/mac_system_volume.h include/mac_drive_queue.h include/mac_menu_int.h include/runtime_bridge.h
 RUNTIME += src/mac_resource_catalog.c src/mac_resource_files.c
 RUNTIME += src/mac_pict_decode.c src/mac_picture.c
 RUNTIME += src/mac_sane.c
@@ -119,6 +119,18 @@ build/softfloat.o: $(MUSASHI)/m68kops.c Makefile
 
 build/ospi-runtime: $(RUNTIME_OBJ) src/runtime_main.c src/runtime_video.c src/runtime_audio.c src/runtime_perf.c src/runtime_keys.c src/runtime_bridge.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(SDL_CFLAGS) $(RUNTIME_OBJ) src/runtime_main.c src/runtime_video.c src/runtime_audio.c src/runtime_perf.c src/runtime_keys.c src/runtime_bridge.c $(CPUOBJ) $(SDL_LIBS) -pthread -lm -o $@
+
+# Headless deterministic probe: scripted input, fixed 60 Hz clock, production
+# sound poll/render chain to WAV, periodic PPM frames. No SDL.
+build/ospi-runtime-probe: $(RUNTIME_OBJ) src/runtime_probe.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) -Isrc $(RUNTIME_OBJ) src/runtime_probe.c $(CPUOBJ) -lm -o $@
+
+# Real-time bridge probe: drives build/ospi-runtime --bridge like the desktop.
+build/ospi-bridge-probe: src/bridge_probe.c src/runtime_bridge.c include/runtime_bridge.h
+	$(CC) $(CFLAGS) -pthread src/bridge_probe.c src/runtime_bridge.c -o $@
+
+.PHONY: probe
+probe: build/ospi-runtime-probe build/ospi-bridge-probe
 
 # Diagnostic runtime with the same code path; OSPI_AUDIO_WAV opts into a
 # bounded producer-PCM capture without replacing the app's live executable.

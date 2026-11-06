@@ -26,6 +26,23 @@ void guest_window_layout(GuestWindow *window, int width, int height,
 }
 
 
+/* Move the window so the grab point (press_x, press_y inside the window)
+ * follows the pointer, then keep the whole frame on the desktop below the
+ * menu bar. Returns 1 when the pointer tried to leave the desktop and the
+ * window was held at an edge, so the caller can tell contained from free. */
+int guest_window_drag(GuestWindow *window, int x, int y, int press_x, int press_y) {
+    int clamped = 0;
+    window->x = x - press_x;
+    window->y = y - press_y;
+    if (window->x < 0) { window->x = 0; clamped = 1; }
+    if (window->y < TITLE_H) { window->y = TITLE_H; clamped = 1; }
+    if (window->x + window->w > OSPI_W) { window->x = OSPI_W - window->w; clamped = 1; }
+    if (window->y + window->h > OSPI_H) { window->y = OSPI_H - window->h; clamped = 1; }
+    window->image_x = window->x + 8;
+    window->image_y = window->y + 36;
+    return clamped;
+}
+
 void guest_pixel_point(const GuestWindow *window, int width, int height,
                               int x, int y, int *guest_x, int *guest_y) {
     int px = x - window->image_x, py = y - window->image_y;

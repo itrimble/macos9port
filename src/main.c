@@ -368,16 +368,7 @@ int main(int argc, char **argv) {
                 logical_point(win, ev.motion.x, ev.motion.y, &x, &y);
                 if (session_overlay_active(s)) { session_move(s, x, y); continue; }
                 if (guest_drag) {
-                    guest_window.x = x - s->press_x;
-                    guest_window.y = y - s->press_y;
-                    if (guest_window.x < 0) guest_window.x = 0;
-                    if (guest_window.y < TITLE_H) guest_window.y = TITLE_H;
-                    if (guest_window.x + guest_window.w > OSPI_W)
-                        guest_window.x = OSPI_W - guest_window.w;
-                    if (guest_window.y + guest_window.h > OSPI_H)
-                        guest_window.y = OSPI_H - guest_window.h;
-                    guest_window.image_x = guest_window.x + 8;
-                    guest_window.image_y = guest_window.y + 36;
+                    guest_window_drag(&guest_window, x, y, s->press_x, s->press_y);
                     continue;
                 }
                 if (native_surface_active() && guest_placed &&

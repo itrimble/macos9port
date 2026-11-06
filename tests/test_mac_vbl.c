@@ -87,4 +87,18 @@ static void budget_continuation(void){
  CHECK(!mac_vbl_poll(&r,10000) && r.vbl_last_tick==305);
  mac_cpu_destroy(r.cpu);
 }
-int main(void){countdown();queue_and_reentrant();faults();paused_host();budget_continuation();puts("mac VBL callback tests passed");return 0;}
+static void small_cycle_slices(void){
+ /* Real-time slices are 1-2 ms (16-32k cycles). A due VBL task must still
+  * fire through mac_runtime_run_cycles even when cycles/4 is below the
+  * pollers' 10,000-instruction minimum; the guest then runs the slice. */
+ MacRuntime r=fresh();mac_cpu_set_trap(r.cpu,trap,&r);
+ const uint16_t words[]={0x5268,14,0x317c,1,10,0x4e75}; /* addq.w #1,14(A0); move.w #1,10(A0); RTS */
+ for(unsigned i=0;i<6;i++)wr(&r,0x2000+i*2,2,words[i]);
+ wr(&r,0x4000,2,0x60fe); /* main code: bra.s self */
+ task(&r,0x3000,0x2000,1);install(&r,0x3000);
+ for(unsigned tick=1;tick<=4;tick++){r.ticks=tick;CHECK(mac_runtime_run_cycles(&r,16000)>0);}
+ CHECK(rd(&r,0x300e,2)==4 && !mac_cpu_halted(r.cpu));
+ CHECK(mac_cpu_cycles(r.cpu)>=4*16000);
+ mac_cpu_destroy(r.cpu);
+}
+int main(void){countdown();queue_and_reentrant();faults();paused_host();budget_continuation();small_cycle_slices();puts("mac VBL callback tests passed");return 0;}
