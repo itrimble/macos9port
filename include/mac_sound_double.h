@@ -5,7 +5,7 @@ typedef struct {
     uint32_t buffers[2], callback, rate, frames;
     uint64_t phase;
     unsigned current, pending;
-    int active, loaded;
+    int active, loaded, starved;
 } MacSoundDouble;
 int mac_sound_double_service(MacRuntime *rt, uint16_t opcode);
 /* Called only by the serialized CPU-side PCM producer, never audio thread.

@@ -118,8 +118,12 @@ With the 280 s run (`mi2-play.wav`, `mi2-frames-play/`) the campfire
 cutscene ends, "Part I: The Largo Embargo" shows, and Woodtick's bridge with
 the verb panel and inventory is on screen by ~240 s: free play reached
 headlessly. `mi2-opening.wav` shows three 90–95 ms silences at 175.2, 177.2 and 179.3 s
-(2 s apart) during the credits; whether these are sequenced or a late
-doubleback refill is not yet determined.
+(2 s apart) during the credits, and 46 ms silences later. With the new
+`sound-double` / `sound-double-starved` trace lines (OSPI_SOUND_NOTE_TRACE),
+a 130 s run logged 2,816 buffer completions (512 frames each at 11,127 Hz,
+i.e. one 46 ms buffer) and zero starvation events, so every buffer was ready
+before it was needed: those silences are buffers the game filled with
+silence, not late doubleback refills.
 
 ## Linux
 

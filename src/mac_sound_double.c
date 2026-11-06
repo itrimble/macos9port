@@ -1,6 +1,7 @@
 #include "mac_sound_int.h"
 #include "mac_sound_double.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 /* Independent implementation of public Inside Macintosh Sound ABI:
  * Sound-122.html, Sound-133.html, Sound-77.html at leopard-adc.pepas.com.
@@ -52,7 +53,14 @@ int mac_sound_double_sample(MacRuntime*r,unsigned i,int *value){
     if(!d->active)return 0;
     if(c->paused)return 1;
     uint32_t p=d->buffers[d->current];
-    if(!d->loaded){int valid=buffer(r,p,&d->frames);if(valid<0)return -1;if(!valid || (d->pending&(1u<<d->current)))return 1;d->loaded=1;}
+    if(!d->loaded){int valid=buffer(r,p,&d->frames);if(valid<0)return -1;
+        if(!valid || (d->pending&(1u<<d->current))){
+            if(!d->starved && getenv("OSPI_SOUND_NOTE_TRACE"))
+                fprintf(stderr,"sound-double-starved guest-us=%llu channel=%u buffer=%u ready=%d pending=%u\n",
+                        (unsigned long long)r->clock_us,i,d->current,valid,d->pending);
+            d->starved=1;return 1;
+        }
+        d->loaded=1;d->starved=0;}
     const uint64_t unit=(uint64_t)MAC_SOUND_RATE<<16;
     uint32_t at=(uint32_t)(d->phase/unit);
     if(at>=d->frames || !mac_sound_range(r,p+16,d->frames,0))return mac_sound_fail(r,"Double buffer playback span became invalid.");
@@ -62,6 +70,9 @@ int mac_sound_double_sample(MacRuntime*r,unsigned i,int *value){
     if(d->phase>=(uint64_t)d->frames*unit){
         d->phase-=(uint64_t)d->frames*unit;uint32_t flags=rd(r,p+4,4);wr(r,p+4,4,flags&~1u);
         d->loaded=0;d->pending|=1u<<d->current;
+        if(getenv("OSPI_SOUND_NOTE_TRACE"))
+            fprintf(stderr,"sound-double guest-us=%llu channel=%u buffer=%u frames=%u rate16=%08x flags=%x pending=%u\n",
+                    (unsigned long long)r->clock_us,i,d->current,d->frames,d->rate,flags,d->pending);
         if(flags&4)d->active=0;
         else d->current^=1;
     }
