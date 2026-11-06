@@ -1,0 +1,499 @@
+{
+  "variants": {
+    "8k": [
+      7680,
+      4320
+    ],
+    "4k": [
+      3840,
+      2160
+    ],
+    "1080p": [
+      1920,
+      1080
+    ],
+    "16x10": [
+      2560,
+      1600
+    ],
+    "4x3": [
+      1024,
+      768
+    ]
+  },
+  "tiles": "pattern wallpapers: 1x tile, scale by round(H/384)",
+  "wallpapers": [
+    {
+      "id": "01",
+      "title": "Halftone Grey",
+      "era": "1-bit desktop",
+      "year": 1984,
+      "kind": "pattern",
+      "file": "01-1984-halftone-grey.png"
+    },
+    {
+      "id": "02",
+      "title": "Basket Weave",
+      "era": "1-bit desktop",
+      "year": 1986,
+      "kind": "pattern",
+      "file": "02-1986-basket-weave.png"
+    },
+    {
+      "id": "03",
+      "title": "Tidal Tile",
+      "era": "early color",
+      "year": 1988,
+      "kind": "pattern",
+      "file": "03-1988-tidal-tile.png"
+    },
+    {
+      "id": "04",
+      "title": "Periwinkle Speckle",
+      "era": "System 7 color",
+      "year": 1991,
+      "kind": "pattern",
+      "file": "04-1991-periwinkle-speckle.png"
+    },
+    {
+      "id": "05",
+      "title": "Platinum Ripple",
+      "era": "Platinum",
+      "year": 1994,
+      "kind": "pattern",
+      "file": "05-1994-platinum-ripple.png"
+    },
+    {
+      "id": "06",
+      "title": "Lavender Bubbles",
+      "era": "Platinum",
+      "year": 1997,
+      "kind": "pattern",
+      "file": "06-1997-lavender-bubbles.png"
+    },
+    {
+      "id": "07",
+      "title": "Translucent Teal",
+      "era": "translucent hardware",
+      "year": 1998,
+      "kind": "art",
+      "file": "07-1998-translucent-teal.jpg"
+    },
+    {
+      "id": "08",
+      "title": "Five Flavors",
+      "era": "translucent hardware",
+      "year": 1999,
+      "kind": "art",
+      "file": "08-1999-five-flavors.jpg"
+    },
+    {
+      "id": "09",
+      "title": "Graphite",
+      "era": "translucent hardware",
+      "year": 2000,
+      "kind": "art",
+      "file": "09-2000-graphite.jpg"
+    },
+    {
+      "id": "10",
+      "title": "Aqua Swoosh",
+      "era": "early Aqua",
+      "year": 2001,
+      "kind": "art",
+      "file": "10-2001-aqua-swoosh.jpg"
+    },
+    {
+      "id": "11",
+      "title": "Aqua Pinstripe",
+      "era": "early Aqua",
+      "year": 2002,
+      "kind": "art",
+      "file": "11-2002-aqua-pinstripe.jpg"
+    },
+    {
+      "id": "12",
+      "title": "Brushed Metal",
+      "era": "brushed metal",
+      "year": 2003,
+      "kind": "art",
+      "file": "12-2003-brushed-metal.jpg"
+    },
+    {
+      "id": "13",
+      "title": "Aurora Blue",
+      "era": "big-cat Aqua",
+      "year": 2005,
+      "kind": "art",
+      "file": "13-2005-aurora-blue.jpg"
+    },
+    {
+      "id": "14",
+      "title": "Nebula Violet",
+      "era": "space era",
+      "year": 2007,
+      "kind": "art",
+      "file": "14-2007-nebula-violet.jpg"
+    },
+    {
+      "id": "15",
+      "title": "Snow Aurora",
+      "era": "space era",
+      "year": 2009,
+      "kind": "art",
+      "file": "15-2009-snow-aurora.jpg"
+    },
+    {
+      "id": "16",
+      "title": "Spiral Galaxy",
+      "era": "space era",
+      "year": 2011,
+      "kind": "art",
+      "file": "16-2011-spiral-galaxy.jpg"
+    },
+    {
+      "id": "17",
+      "title": "Big Wave",
+      "era": "California coast",
+      "year": 2013,
+      "kind": "art",
+      "file": "17-2013-big-wave.jpg"
+    },
+    {
+      "id": "18",
+      "title": "Granite Peaks",
+      "era": "California parks",
+      "year": 2014,
+      "kind": "art",
+      "file": "18-2014-granite-peaks.jpg"
+    },
+    {
+      "id": "19",
+      "title": "Night Cliff",
+      "era": "California parks",
+      "year": 2015,
+      "kind": "art",
+      "file": "19-2015-night-cliff.jpg"
+    },
+    {
+      "id": "20",
+      "title": "Blue Ridges",
+      "era": "California parks",
+      "year": 2016,
+      "kind": "art",
+      "file": "20-2016-blue-ridges.jpg"
+    },
+    {
+      "id": "21",
+      "title": "Alpine Lake",
+      "era": "California parks",
+      "year": 2017,
+      "kind": "art",
+      "file": "21-2017-alpine-lake.jpg"
+    },
+    {
+      "id": "22",
+      "title": "Dunes Day",
+      "era": "desert",
+      "year": 2018,
+      "kind": "art",
+      "file": "22-2018-dunes-day.jpg"
+    },
+    {
+      "id": "23",
+      "title": "Dunes Night",
+      "era": "desert",
+      "year": 2018,
+      "kind": "art",
+      "file": "23-2018-dunes-night.jpg"
+    },
+    {
+      "id": "24",
+      "title": "Island Cliff",
+      "era": "California coast",
+      "year": 2019,
+      "kind": "art",
+      "file": "24-2019-island-cliff.jpg"
+    },
+    {
+      "id": "25",
+      "title": "Coastal Gradient",
+      "era": "abstract gradient",
+      "year": 2020,
+      "kind": "art",
+      "file": "25-2020-coastal-gradient.jpg"
+    },
+    {
+      "id": "26",
+      "title": "Silk Folds",
+      "era": "abstract gradient",
+      "year": 2021,
+      "kind": "art",
+      "file": "26-2021-silk-folds.jpg"
+    },
+    {
+      "id": "27",
+      "title": "Bloom",
+      "era": "abstract gradient",
+      "year": 2022,
+      "kind": "art",
+      "file": "27-2022-bloom.jpg"
+    },
+    {
+      "id": "28",
+      "title": "Vineyard Hills",
+      "era": "abstract landscape",
+      "year": 2023,
+      "kind": "art",
+      "file": "28-2023-vineyard-hills.jpg"
+    },
+    {
+      "id": "29",
+      "title": "Glow Waves",
+      "era": "abstract gradient",
+      "year": 2024,
+      "kind": "art",
+      "file": "29-2024-glow-waves.jpg"
+    },
+    {
+      "id": "30",
+      "title": "Liquid Glass",
+      "era": "glass material",
+      "year": 2025,
+      "kind": "art",
+      "file": "30-2025-liquid-glass.jpg"
+    },
+    {
+      "id": "31",
+      "title": "Cheetah Dawn",
+      "era": "big-cat era",
+      "year": 2001,
+      "kind": "photo-ai",
+      "file": "31-2001-cheetah.jpg"
+    },
+    {
+      "id": "32",
+      "title": "Puma Blue Hour",
+      "era": "big-cat era",
+      "year": 2001,
+      "kind": "photo-ai",
+      "file": "32-2001-puma.jpg"
+    },
+    {
+      "id": "33",
+      "title": "Jaguar River",
+      "era": "big-cat era",
+      "year": 2002,
+      "kind": "photo-ai",
+      "file": "33-2002-jaguar.jpg"
+    },
+    {
+      "id": "34",
+      "title": "Black Panther",
+      "era": "big-cat era",
+      "year": 2003,
+      "kind": "photo-ai",
+      "file": "34-2003-panther.jpg"
+    },
+    {
+      "id": "35",
+      "title": "Tiger in the Mist",
+      "era": "big-cat era",
+      "year": 2005,
+      "kind": "photo-ai",
+      "file": "35-2005-tiger.jpg"
+    },
+    {
+      "id": "36",
+      "title": "Leopard Nebula",
+      "era": "big-cat era",
+      "year": 2007,
+      "kind": "photo-ai",
+      "file": "36-2007-leopard.jpg"
+    },
+    {
+      "id": "37",
+      "title": "Snow Leopard Aurora",
+      "era": "big-cat era",
+      "year": 2009,
+      "kind": "photo-ai",
+      "file": "37-2009-snow-leopard.jpg"
+    },
+    {
+      "id": "38",
+      "title": "Lion Under the Galaxy",
+      "era": "big-cat era",
+      "year": 2011,
+      "kind": "photo-ai",
+      "file": "38-2011-lion.jpg"
+    },
+    {
+      "id": "39",
+      "title": "Mountain Lion Alpenglow",
+      "era": "big-cat era",
+      "year": 2012,
+      "kind": "photo-ai",
+      "file": "39-2012-mountain-lion.jpg"
+    },
+    {
+      "id": "40",
+      "title": "Aqua Bokeh",
+      "era": "fruit era",
+      "year": 1999,
+      "kind": "art",
+      "file": "40-1999-aqua-bokeh.jpg"
+    },
+    {
+      "id": "41",
+      "title": "Teal Drift",
+      "era": "fruit era",
+      "year": 1999,
+      "kind": "art",
+      "file": "41-1999-teal-drift.jpg"
+    },
+    {
+      "id": "42",
+      "title": "Teal Bloom",
+      "era": "fruit era",
+      "year": 1999,
+      "kind": "photo-ai",
+      "file": "42-1999-teal-bloom.jpg"
+    },
+    {
+      "id": "43",
+      "title": "Glass Shelf",
+      "era": "fruit era",
+      "year": 2000,
+      "kind": "photo-ai",
+      "file": "43-2000-glass-shelf.jpg"
+    },
+    {
+      "id": "44",
+      "title": "Daisy Pop",
+      "era": "fruit era",
+      "year": 2000,
+      "kind": "art",
+      "file": "44-2000-daisy-pop.jpg"
+    },
+    {
+      "id": "45",
+      "title": "Amber Cosmos",
+      "era": "fruit era",
+      "year": 2000,
+      "kind": "photo-ai",
+      "file": "45-2000-amber-cosmos.jpg"
+    },
+    {
+      "id": "46",
+      "title": "Violet Drift",
+      "era": "fruit era",
+      "year": 1999,
+      "kind": "art",
+      "file": "46-1999-violet-drift.jpg"
+    },
+    {
+      "id": "47",
+      "title": "Violet Colony",
+      "era": "fruit era",
+      "year": 1999,
+      "kind": "photo-ai",
+      "file": "47-1999-violet-colony.jpg"
+    },
+    {
+      "id": "48",
+      "title": "Lime Spiral",
+      "era": "fruit era",
+      "year": 1999,
+      "kind": "photo-ai",
+      "file": "48-1999-lime-spiral.jpg"
+    },
+    {
+      "id": "49",
+      "title": "Lime Drift",
+      "era": "fruit era",
+      "year": 1999,
+      "kind": "art",
+      "file": "49-1999-lime-drift.jpg"
+    },
+    {
+      "id": "50",
+      "title": "Pi Desktop",
+      "era": "fruit era",
+      "year": 1999,
+      "kind": "art",
+      "file": "50-1999-pi-desktop.jpg"
+    },
+    {
+      "id": "51",
+      "title": "Silk Curves",
+      "era": "fruit era",
+      "year": 2001,
+      "kind": "photo-ai",
+      "file": "51-2001-silk-curves.jpg"
+    },
+    {
+      "id": "52",
+      "title": "Terracotta Shutters",
+      "era": "fruit era",
+      "year": 2000,
+      "kind": "photo-ai",
+      "file": "52-2000-terracotta-shutters.jpg"
+    },
+    {
+      "id": "53",
+      "title": "Berry Cells",
+      "era": "fruit era",
+      "year": 1999,
+      "kind": "photo-ai",
+      "file": "53-1999-berry-cells.jpg"
+    },
+    {
+      "id": "54",
+      "title": "Berry Drift",
+      "era": "fruit era",
+      "year": 1999,
+      "kind": "art",
+      "file": "54-1999-berry-drift.jpg"
+    },
+    {
+      "id": "55",
+      "title": "Tangerine Coral",
+      "era": "fruit era",
+      "year": 1999,
+      "kind": "photo-ai",
+      "file": "55-1999-tangerine-coral.jpg"
+    },
+    {
+      "id": "56",
+      "title": "Tangerine Drift",
+      "era": "fruit era",
+      "year": 1999,
+      "kind": "art",
+      "file": "56-1999-tangerine-drift.jpg"
+    },
+    {
+      "id": "57",
+      "title": "Tangerine Stars",
+      "era": "fruit era",
+      "year": 2000,
+      "kind": "photo-ai",
+      "file": "57-2000-tangerine-stars.jpg"
+    },
+    {
+      "id": "58",
+      "title": "Lime Saucers",
+      "era": "fruit era",
+      "year": 1999,
+      "kind": "photo-ai",
+      "file": "58-1999-lime-saucers.jpg"
+    },
+    {
+      "id": "59",
+      "title": "Golden Lenses",
+      "era": "fruit era",
+      "year": 2000,
+      "kind": "photo-ai",
+      "file": "59-2000-golden-lenses.jpg"
+    }
+  ]
+}

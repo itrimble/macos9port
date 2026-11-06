@@ -1,0 +1,217 @@
+{
+  "sample_rate": 48000,
+  "format": "PCM16 stereo",
+  "classic": "classic/: 22050 Hz 8-bit unsigned mono",
+  "sounds": [
+    {
+      "id": "01",
+      "name": "startup_chime",
+      "category": "system",
+      "file": "01-startup_chime.wav",
+      "seconds": 6.5
+    },
+    {
+      "id": "02",
+      "name": "shutdown",
+      "category": "system",
+      "file": "02-shutdown.wav",
+      "seconds": 4.0
+    },
+    {
+      "id": "03",
+      "name": "sleep",
+      "category": "system",
+      "file": "03-sleep.wav",
+      "seconds": 2.3
+    },
+    {
+      "id": "04",
+      "name": "wake",
+      "category": "system",
+      "file": "04-wake.wav",
+      "seconds": 2.1
+    },
+    {
+      "id": "05",
+      "name": "alert_beep",
+      "category": "alert",
+      "file": "05-alert_beep.wav",
+      "seconds": 0.16
+    },
+    {
+      "id": "06",
+      "name": "alert_droplet",
+      "category": "alert",
+      "file": "06-alert_droplet.wav",
+      "seconds": 0.95
+    },
+    {
+      "id": "07",
+      "name": "alert_glass",
+      "category": "alert",
+      "file": "07-alert_glass.wav",
+      "seconds": 2.56
+    },
+    {
+      "id": "08",
+      "name": "alert_boing",
+      "category": "alert",
+      "file": "08-alert_boing.wav",
+      "seconds": 0.6
+    },
+    {
+      "id": "09",
+      "name": "alert_pluck",
+      "category": "alert",
+      "file": "09-alert_pluck.wav",
+      "seconds": 1.7
+    },
+    {
+      "id": "10",
+      "name": "alert_marimba",
+      "category": "alert",
+      "file": "10-alert_marimba.wav",
+      "seconds": 1.6
+    },
+    {
+      "id": "11",
+      "name": "alert_whistle",
+      "category": "alert",
+      "file": "11-alert_whistle.wav",
+      "seconds": 1.123
+    },
+    {
+      "id": "12",
+      "name": "alert_bloop",
+      "category": "alert",
+      "file": "12-alert_bloop.wav",
+      "seconds": 0.825
+    },
+    {
+      "id": "13",
+      "name": "error_buzz",
+      "category": "alert",
+      "file": "13-error_buzz.wav",
+      "seconds": 0.32
+    },
+    {
+      "id": "14",
+      "name": "notification",
+      "category": "alert",
+      "file": "14-notification.wav",
+      "seconds": 2.4
+    },
+    {
+      "id": "15",
+      "name": "menu_tick",
+      "category": "ui",
+      "file": "15-menu_tick.wav",
+      "seconds": 0.03
+    },
+    {
+      "id": "16",
+      "name": "button_click",
+      "category": "ui",
+      "file": "16-button_click.wav",
+      "seconds": 0.08
+    },
+    {
+      "id": "17",
+      "name": "key_click",
+      "category": "ui",
+      "file": "17-key_click.wav",
+      "seconds": 0.05
+    },
+    {
+      "id": "18",
+      "name": "window_open",
+      "category": "ui",
+      "file": "18-window_open.wav",
+      "seconds": 0.759
+    },
+    {
+      "id": "19",
+      "name": "window_close",
+      "category": "ui",
+      "file": "19-window_close.wav",
+      "seconds": 0.703
+    },
+    {
+      "id": "20",
+      "name": "windowshade_roll",
+      "category": "ui",
+      "file": "20-windowshade_roll.wav",
+      "seconds": 0.34
+    },
+    {
+      "id": "21",
+      "name": "drag_pickup",
+      "category": "ui",
+      "file": "21-drag_pickup.wav",
+      "seconds": 0.09
+    },
+    {
+      "id": "22",
+      "name": "drop_thunk",
+      "category": "ui",
+      "file": "22-drop_thunk.wav",
+      "seconds": 0.2
+    },
+    {
+      "id": "23",
+      "name": "trash_drop",
+      "category": "finder",
+      "file": "23-trash_drop.wav",
+      "seconds": 0.85
+    },
+    {
+      "id": "24",
+      "name": "trash_empty",
+      "category": "finder",
+      "file": "24-trash_empty.wav",
+      "seconds": 1.636
+    },
+    {
+      "id": "25",
+      "name": "folder_open",
+      "category": "finder",
+      "file": "25-folder_open.wav",
+      "seconds": 0.9
+    },
+    {
+      "id": "26",
+      "name": "copy_complete",
+      "category": "finder",
+      "file": "26-copy_complete.wav",
+      "seconds": 2.0
+    },
+    {
+      "id": "27",
+      "name": "download_complete",
+      "category": "finder",
+      "file": "27-download_complete.wav",
+      "seconds": 2.5
+    },
+    {
+      "id": "28",
+      "name": "disk_insert",
+      "category": "finder",
+      "file": "28-disk_insert.wav",
+      "seconds": 1.0
+    },
+    {
+      "id": "29",
+      "name": "disk_eject",
+      "category": "finder",
+      "file": "29-disk_eject.wav",
+      "seconds": 0.9
+    },
+    {
+      "id": "30",
+      "name": "screenshot_shutter",
+      "category": "finder",
+      "file": "30-screenshot_shutter.wav",
+      "seconds": 0.55
+    }
+  ]
+}

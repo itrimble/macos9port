@@ -1,0 +1,281 @@
+{
+  "pack": "Classic 9",
+  "sample_rate": 48000,
+  "format": "PCM16 stereo",
+  "classic": "classic/: 22050 Hz 8-bit unsigned mono",
+  "note": "Original synthesis; no sampled or transcribed audio.",
+  "sounds": [
+    {
+      "id": "01",
+      "name": "startup_chord",
+      "category": "system",
+      "file": "01-startup_chord.wav",
+      "use": "big warm startup chord",
+      "seconds": 6.446
+    },
+    {
+      "id": "02",
+      "name": "restart_tone",
+      "category": "system",
+      "file": "02-restart_tone.wav",
+      "use": "short rising restart bells",
+      "seconds": 2.8
+    },
+    {
+      "id": "03",
+      "name": "plain_beep",
+      "category": "alert",
+      "file": "03-plain_beep.wav",
+      "use": "the plain everyday beep",
+      "seconds": 0.32
+    },
+    {
+      "id": "04",
+      "name": "tin_chime",
+      "category": "alert",
+      "file": "04-tin_chime.wav",
+      "use": "two quick metallic strikes",
+      "seconds": 1.6
+    },
+    {
+      "id": "05",
+      "name": "eep",
+      "category": "alert",
+      "file": "05-eep.wav",
+      "use": "squeaky startled squeal",
+      "seconds": 0.824
+    },
+    {
+      "id": "06",
+      "name": "quack",
+      "category": "alert",
+      "file": "06-quack.wav",
+      "use": "synthesized duck",
+      "seconds": 0.606
+    },
+    {
+      "id": "07",
+      "name": "droplet",
+      "category": "alert",
+      "file": "07-droplet.wav",
+      "use": "water drop plip",
+      "seconds": 1.4
+    },
+    {
+      "id": "08",
+      "name": "indigo",
+      "category": "alert",
+      "file": "08-indigo.wav",
+      "use": "shimmering bell arpeggio",
+      "seconds": 3.4
+    },
+    {
+      "id": "09",
+      "name": "temple",
+      "category": "alert",
+      "file": "09-temple.wav",
+      "use": "struck singing bowl",
+      "seconds": 5.7
+    },
+    {
+      "id": "10",
+      "name": "uh_oh",
+      "category": "alert",
+      "file": "10-uh_oh.wav",
+      "use": "two-syllable vocal oops",
+      "seconds": 1.04
+    },
+    {
+      "id": "11",
+      "name": "voltage",
+      "category": "alert",
+      "file": "11-voltage.wav",
+      "use": "electric zap",
+      "seconds": 0.55
+    },
+    {
+      "id": "12",
+      "name": "whit",
+      "category": "alert",
+      "file": "12-whit.wav",
+      "use": "quick flute chirp",
+      "seconds": 0.527
+    },
+    {
+      "id": "13",
+      "name": "pong",
+      "category": "alert",
+      "file": "13-pong.wav",
+      "use": "8-bit paddle blips",
+      "seconds": 0.224
+    },
+    {
+      "id": "14",
+      "name": "squeak_toy",
+      "category": "alert",
+      "file": "14-squeak_toy.wav",
+      "use": "rubber toy squeeze",
+      "seconds": 0.809
+    },
+    {
+      "id": "15",
+      "name": "wah_wah",
+      "category": "alert",
+      "file": "15-wah_wah.wav",
+      "use": "short sad brass fall",
+      "seconds": 1.705
+    },
+    {
+      "id": "16",
+      "name": "menu_open",
+      "category": "platinum",
+      "file": "16-menu_open.wav",
+      "use": "menu drops down",
+      "seconds": 0.12
+    },
+    {
+      "id": "17",
+      "name": "menu_select",
+      "category": "platinum",
+      "file": "17-menu_select.wav",
+      "use": "menu item chosen (flash)",
+      "seconds": 0.08
+    },
+    {
+      "id": "18",
+      "name": "menu_close",
+      "category": "platinum",
+      "file": "18-menu_close.wav",
+      "use": "menu dismissed",
+      "seconds": 0.09
+    },
+    {
+      "id": "19",
+      "name": "window_open_zoom",
+      "category": "platinum",
+      "file": "19-window_open_zoom.wav",
+      "use": "window zooms open",
+      "seconds": 0.649
+    },
+    {
+      "id": "20",
+      "name": "window_close_zoom",
+      "category": "platinum",
+      "file": "20-window_close_zoom.wav",
+      "use": "window zooms closed",
+      "seconds": 0.591
+    },
+    {
+      "id": "21",
+      "name": "collapse_up",
+      "category": "platinum",
+      "file": "21-collapse_up.wav",
+      "use": "window shade rolls up",
+      "seconds": 0.207
+    },
+    {
+      "id": "22",
+      "name": "expand_down",
+      "category": "platinum",
+      "file": "22-expand_down.wav",
+      "use": "window shade rolls down",
+      "seconds": 0.25
+    },
+    {
+      "id": "23",
+      "name": "zoom_box",
+      "category": "platinum",
+      "file": "23-zoom_box.wav",
+      "use": "zoom box toggled",
+      "seconds": 0.22
+    },
+    {
+      "id": "24",
+      "name": "drag_begin",
+      "category": "platinum",
+      "file": "24-drag_begin.wav",
+      "use": "drag starts",
+      "seconds": 0.1
+    },
+    {
+      "id": "25",
+      "name": "drag_end",
+      "category": "platinum",
+      "file": "25-drag_end.wav",
+      "use": "drag lands",
+      "seconds": 0.07
+    },
+    {
+      "id": "26",
+      "name": "button_press",
+      "category": "platinum",
+      "file": "26-button_press.wav",
+      "use": "push button down",
+      "seconds": 0.03
+    },
+    {
+      "id": "27",
+      "name": "button_release",
+      "category": "platinum",
+      "file": "27-button_release.wav",
+      "use": "push button up",
+      "seconds": 0.025
+    },
+    {
+      "id": "28",
+      "name": "checkbox",
+      "category": "platinum",
+      "file": "28-checkbox.wav",
+      "use": "checkbox or radio toggled",
+      "seconds": 0.052
+    },
+    {
+      "id": "29",
+      "name": "scroll_tick",
+      "category": "platinum",
+      "file": "29-scroll_tick.wav",
+      "use": "scroll arrow step",
+      "seconds": 0.012
+    },
+    {
+      "id": "30",
+      "name": "resize_grow",
+      "category": "platinum",
+      "file": "30-resize_grow.wav",
+      "use": "grow box drag",
+      "seconds": 0.3
+    },
+    {
+      "id": "31",
+      "name": "spring_open",
+      "category": "finder",
+      "file": "31-spring_open.wav",
+      "use": "spring-loaded folder pops open",
+      "seconds": 0.7
+    },
+    {
+      "id": "32",
+      "name": "trash_crumple",
+      "category": "finder",
+      "file": "32-trash_crumple.wav",
+      "use": "Empty Trash",
+      "seconds": 1.627
+    },
+    {
+      "id": "33",
+      "name": "lid_clank",
+      "category": "finder",
+      "file": "33-lid_clank.wav",
+      "use": "item dropped on Trash",
+      "seconds": 0.95
+    },
+    {
+      "id": "34",
+      "name": "alert_appear",
+      "category": "finder",
+      "file": "34-alert_appear.wav",
+      "use": "alert window appears",
+      "seconds": 1.0
+    }
+  ]
+}

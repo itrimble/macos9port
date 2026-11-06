@@ -1,0 +1,305 @@
+{
+ "format": "OSPIICN1",
+ "record_bytes": 1464,
+ "icons": {
+  "hard_disk": {
+   "category": "volume"
+  },
+  "floppy": {
+   "category": "volume"
+  },
+  "cd_rom": {
+   "category": "volume"
+  },
+  "removable_drive": {
+   "category": "volume"
+  },
+  "sd_card": {
+   "category": "volume"
+  },
+  "network_volume": {
+   "category": "volume"
+  },
+  "disk_image": {
+   "category": "volume"
+  },
+  "trash_empty": {
+   "category": "trash"
+  },
+  "trash_full": {
+   "category": "trash"
+  },
+  "folder": {
+   "category": "folder"
+  },
+  "system_folder": {
+   "category": "folder"
+  },
+  "applications_folder": {
+   "category": "folder"
+  },
+  "documents_folder": {
+   "category": "folder"
+  },
+  "downloads_folder": {
+   "category": "folder"
+  },
+  "garden_folder": {
+   "category": "folder"
+  },
+  "preferences_folder": {
+   "category": "folder"
+  },
+  "extensions_folder": {
+   "category": "folder"
+  },
+  "control_panels_folder": {
+   "category": "folder"
+  },
+  "fonts_folder": {
+   "category": "folder"
+  },
+  "startup_items_folder": {
+   "category": "folder"
+  },
+  "home_folder": {
+   "category": "folder"
+  },
+  "music_folder": {
+   "category": "folder"
+  },
+  "pictures_folder": {
+   "category": "folder"
+  },
+  "movies_folder": {
+   "category": "folder"
+  },
+  "utilities_folder": {
+   "category": "folder"
+  },
+  "shared_folder": {
+   "category": "folder"
+  },
+  "folder_open": {
+   "category": "folder"
+  },
+  "document": {
+   "category": "document"
+  },
+  "text_document": {
+   "category": "document"
+  },
+  "rich_text_document": {
+   "category": "document"
+  },
+  "image_document": {
+   "category": "document"
+  },
+  "sound_document": {
+   "category": "document"
+  },
+  "movie_document": {
+   "category": "document"
+  },
+  "portable_document": {
+   "category": "document"
+  },
+  "archive_sit": {
+   "category": "document"
+  },
+  "archive_zip": {
+   "category": "document"
+  },
+  "font_file": {
+   "category": "document"
+  },
+  "preferences_file": {
+   "category": "document"
+  },
+  "extension": {
+   "category": "system"
+  },
+  "control_panel": {
+   "category": "system"
+  },
+  "script_document": {
+   "category": "document"
+  },
+  "source_code": {
+   "category": "document"
+  },
+  "web_document": {
+   "category": "document"
+  },
+  "stationery": {
+   "category": "document"
+  },
+  "application": {
+   "category": "app"
+  },
+  "ospi_desktop": {
+   "category": "app"
+  },
+  "text_editor": {
+   "category": "app"
+  },
+  "calculator": {
+   "category": "app"
+  },
+  "clock": {
+   "category": "app"
+  },
+  "terminal": {
+   "category": "app"
+  },
+  "settings": {
+   "category": "app"
+  },
+  "help": {
+   "category": "app"
+  },
+  "garden_installer": {
+   "category": "app"
+  },
+  "music_player": {
+   "category": "app"
+  },
+  "photo_viewer": {
+   "category": "app"
+  },
+  "web_browser": {
+   "category": "app"
+  },
+  "mail": {
+   "category": "app"
+  },
+  "chat": {
+   "category": "app"
+  },
+  "calendar": {
+   "category": "app"
+  },
+  "notes": {
+   "category": "app"
+  },
+  "puzzle_game": {
+   "category": "app"
+  },
+  "paint": {
+   "category": "app"
+  },
+  "scrapbook": {
+   "category": "app"
+  },
+  "archive_utility": {
+   "category": "app"
+  },
+  "disk_utility": {
+   "category": "app"
+  },
+  "system_profiler": {
+   "category": "app"
+  },
+  "runtime_68k": {
+   "category": "app"
+  },
+  "printer": {
+   "category": "hardware"
+  },
+  "monitor": {
+   "category": "hardware"
+  },
+  "keyboard": {
+   "category": "hardware"
+  },
+  "mouse": {
+   "category": "hardware"
+  },
+  "speaker": {
+   "category": "hardware"
+  },
+  "network": {
+   "category": "hardware"
+  },
+  "cpu": {
+   "category": "hardware"
+  },
+  "battery": {
+   "category": "hardware"
+  },
+  "wireless": {
+   "category": "hardware"
+  },
+  "alert_stop": {
+   "category": "alert"
+  },
+  "alert_caution": {
+   "category": "alert"
+  },
+  "alert_note": {
+   "category": "alert"
+  },
+  "badge_alias": {
+   "category": "overlay"
+  },
+  "badge_locked": {
+   "category": "overlay"
+  },
+  "pi_logo": {
+   "category": "logo"
+  }
+ },
+ "cursors": {
+  "arrow": {
+   "hotspot": [
+    1,
+    1
+   ]
+  },
+  "ibeam": {
+   "hotspot": [
+    7,
+    8
+   ]
+  },
+  "wait": {
+   "hotspot": [
+    8,
+    8
+   ]
+  },
+  "crosshair": {
+   "hotspot": [
+    7,
+    7
+   ]
+  },
+  "hand": {
+   "hotspot": [
+    5,
+    0
+   ]
+  },
+  "grab": {
+   "hotspot": [
+    8,
+    6
+   ]
+  },
+  "plus": {
+   "hotspot": [
+    7,
+    7
+   ]
+  }
+ },
+ "png_sizes": [
+  16,
+  32,
+  64,
+  128,
+  256,
+  512,
+  1024
+ ]
+}
