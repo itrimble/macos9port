@@ -323,13 +323,14 @@ void session_command(Session *s, int cmd) {
         }
         break;
     case CMD_CLEANUP:
+        if (s->desk_sel == DESK_BACKGROUND) break;
         if (s->nwin > 0 && s->win[s->nwin - 1].kind == WIN_FOLDER) {
             s->win[s->nwin - 1].scroll = 0;
             reload_window(s, &s->win[s->nwin - 1]);
         }
         break;
     case CMD_NEW_FOLDER: {
-        if (s->desk_sel >= 0 && open_folder(s, s->desk_sel == 0 ? "" : "Trash")) {
+        if (s->desk_sel != DESK_WINDOW && open_folder(s, s->desk_sel == 1 ? "Trash" : "")) {
             dialog_info(s, "New Folder", "Close a window first."); break;
         }
         if (s->nwin == 0 || s->win[s->nwin - 1].kind != WIN_FOLDER) {
@@ -349,6 +350,7 @@ void session_command(Session *s, int cmd) {
         break;
     }
     case CMD_OPEN: {
+        if (s->desk_sel == DESK_BACKGROUND && !appearance_panel_active()) break;
         if (appearance_panel_active()) { appearance_panel_key(s, '\r', 0); break; }
         if (s->desk_sel >= 0) { open_folder(s, s->desk_sel == 0 ? "" : "Trash"); break; }
         Window *w = s->nwin ? &s->win[s->nwin - 1] : NULL;

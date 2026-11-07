@@ -74,7 +74,7 @@ int context_open(Session *s, int x, int y) {
         row("Clean Up", CMD_CLEANUP, 0);
     } else {
         int which = desktop_which(s->sw, s->sh, x, y);
-        s->desk_sel = which;
+        s->desk_sel = which >= 0 ? which : DESK_BACKGROUND;
         popup.target = which == 0 ? CONTEXT_DISK : which == 1 ? CONTEXT_TRASH : CONTEXT_DESKTOP;
         if (which >= 0) {
             row("Open", CMD_OPEN, 0);

@@ -13,6 +13,8 @@ enum {
     OSPI_PATH = 640,
     OSPI_TEXT = 4096
 };
+/* desk_sel: window focus, blank desktop, or desktop icon index 0/1. */
+enum { DESK_WINDOW = -1, DESK_BACKGROUND = -2 };
 enum { MOD_CMD = 1, MOD_OTHER = 2 };
 enum { WIN_FOLDER = 1, WIN_TEXT = 2 };
 enum { ITEM_FILE = 1, ITEM_FOLDER = 2, ITEM_SYSTEM = 3, ITEM_APPLICATION = 4 };

@@ -35,7 +35,7 @@ void folder_view_sort(Window *w) {
 int folder_view_command(Session *s, int command) {
     if (command != CMD_VIEW_ICONS && command != CMD_VIEW_LIST &&
         command != CMD_SORT_NAME && command != CMD_SORT_KIND) return 0;
-    if (!s) return 1;
+    if (!s || s->desk_sel == DESK_BACKGROUND) return 1;
     s->menu = -1;
     if (s->nwin <= 0 || s->nwin > OSPI_MAX_WIN) return 1;
     Window *w = &s->win[s->nwin - 1];

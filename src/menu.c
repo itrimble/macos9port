@@ -69,7 +69,7 @@ void menu_update(Session *s) {
     if (!s) return;
     int panel = appearance_panel_active();
     const Window *w = s->nwin ? &s->win[s->nwin - 1] : NULL;
-    int folder = w && w->kind == WIN_FOLDER && !panel && !s->dialog;
+    int folder = w && w->kind == WIN_FOLDER && s->desk_sel != DESK_BACKGROUND && !panel && !s->dialog;
     int selected = 0;
     if (folder) for (int i = 0; i < w->nitems; i++) selected |= w->items[i].selected;
     enabled(&k_file[0], !panel && !s->dialog);

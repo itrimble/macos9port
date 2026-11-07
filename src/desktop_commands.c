@@ -19,7 +19,7 @@ static int selections(const Window *w) {
     return count;
 }
 int desktop_command_enabled(Session *s, int command) {
-    if (!s || s->dialog) return 0;
+    if (!s || s->dialog || s->desk_sel == DESK_BACKGROUND) return 0;
     Window *w = front(s);
     if (command == INFO_COMMAND) {
         if (s->desk_sel == 0 || s->desk_sel == 1) return 1;

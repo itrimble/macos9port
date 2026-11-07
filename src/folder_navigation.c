@@ -19,7 +19,7 @@ static void reveal(Window *w, const Layout *lay, int index, int columns) {
 }
 
 int folder_navigation_key(Session *s, int key, int mods) {
-    if (!s || mods || s->desk_sel >= 0 || s->nwin <= 0 || s->nwin > OSPI_MAX_WIN ||
+    if (!s || mods || s->desk_sel != DESK_WINDOW || s->nwin <= 0 || s->nwin > OSPI_MAX_WIN ||
         s->down || session_overlay_active(s)) return 0;
     Window *w = &s->win[s->nwin - 1];
     if (w->kind != WIN_FOLDER || w->collapsed || w->nitems < 0 ||

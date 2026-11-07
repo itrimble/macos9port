@@ -198,7 +198,8 @@ void session_down(Session *s, int x, int y, int clicks) {
         }
         return;
     }
-    s->desk_sel = -1;
+    s->desk_sel = DESK_BACKGROUND;
+    for (int i = 0; i < s->nwin; i++) select_only(&s->win[i], -1);
 }
 
 void session_move(Session *s, int x, int y) {

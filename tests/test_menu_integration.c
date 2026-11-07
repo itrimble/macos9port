@@ -108,6 +108,41 @@ int main(void) {
     session_context(s,10,s->sh-100); CHECK(context_active());
     session_key(s,'n',MOD_CMD); CHECK(!context_active());
     CHECK(!strcmp(s->win[s->nwin-1].rel,""));
+    /* Blank desktop owns focus even while a folder remains frontmost. */
+    w=&s->win[s->nwin-1];
+    session_key(s,'a',MOD_CMD);
+    session_down(s,10,s->sh-100,1);session_up(s,10,s->sh-100);
+    CHECK(s->desk_sel==DESK_BACKGROUND);
+    for(int i=0;i<w->nitems;i++)CHECK(!w->items[i].selected);
+    menu_update(s);
+    CHECK(action(1,CMD_OPEN)->flags&MI_DISABLED);
+    CHECK(action(1,CMD_GET_INFO)->flags&MI_DISABLED);
+    CHECK(action(2,CMD_COPY)->flags&MI_DISABLED);
+    CHECK(action(2,CMD_SELECT_ALL)->flags&MI_DISABLED);
+    CHECK(action(3,CMD_VIEW_LIST)->flags&MI_DISABLED);
+    CHECK(action(3,CMD_CLEANUP)->flags&MI_DISABLED);
+    /* Even stale selection injected by a reload cannot steal desktop focus. */
+    w->items[0].selected=1; w->scroll=7;
+    int mode=w->view_mode, sort=w->sort_mode; nwin=s->nwin;
+    s->clipboard_write_request=0;
+    int blocked[]={CMD_OPEN,CMD_GET_INFO,CMD_COPY,CMD_SELECT_ALL,
+        CMD_VIEW_LIST,CMD_VIEW_ICONS,CMD_SORT_KIND,CMD_SORT_NAME,CMD_CLEANUP};
+    for(size_t i=0;i<sizeof blocked/sizeof blocked[0];i++)session_command(s,blocked[i]);
+    CHECK(s->nwin==nwin && !s->dialog && !s->clipboard_write_request);
+    CHECK(w->view_mode==mode && w->sort_mode==sort && w->scroll==7);
+    session_key(s,FOLDER_KEY_END,0); session_key(s,'a',0);
+    CHECK(s->desk_sel==DESK_BACKGROUND && w->items[0].selected);
+    window_layout(w,&layout);
+    session_down(s,layout.title.x+100,layout.title.y+10,1);
+    session_up(s,layout.title.x+100,layout.title.y+10);
+    CHECK(s->desk_sel==DESK_WINDOW);
+    menu_update(s); CHECK(!(action(2,CMD_COPY)->flags&MI_DISABLED));
+    s->desk_sel=1;session_command(s,CMD_OPEN);
+    CHECK(!strcmp(s->win[s->nwin-1].rel,"Trash"));
+    session_context(s,10,s->sh-100);CHECK(s->desk_sel==DESK_BACKGROUND);
+    session_key(s,27,0);CHECK(!context_active() && s->desk_sel==DESK_BACKGROUND);
+    session_key(s,'n',MOD_CMD);
+    CHECK(s->desk_sel==DESK_WINDOW && !strcmp(s->win[s->nwin-1].rel,""));
     session_destroy(s);
     printf("menu integration: %s\n",failures?"FAILED":"ok");return !!failures;
 }
