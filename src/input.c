@@ -11,7 +11,7 @@
 
 void session_wheel(Session *s, int dy) {
     s->click_valid = 0;
-    if (session_overlay_active(s) || s->nwin <= 0) {
+    if (s->desk_sel != DESK_WINDOW || session_overlay_active(s) || s->nwin <= 0) {
         return;
     }
     Window *w = &s->win[s->nwin - 1];
@@ -331,7 +331,7 @@ void session_key(Session *s, int key, int mods) {
         }
         return;
     }
-    if (folder_navigation_key(s, key, mods)) return;
+    if (folder_navigation_key(s, key, mods) || text_navigation_key(s, key, mods)) return;
     if (key == '\r') {
         session_command(s, CMD_OPEN);
     }

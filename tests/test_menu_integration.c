@@ -143,6 +143,18 @@ int main(void) {
     session_key(s,27,0);CHECK(!context_active() && s->desk_sel==DESK_BACKGROUND);
     session_key(s,'n',MOD_CMD);
     CHECK(s->desk_sel==DESK_WINDOW && !strcmp(s->win[s->nwin-1].rel,""));
+    w=&s->win[s->nwin-1]; w->kind=WIN_TEXT;
+    memset(w->text,'x',sizeof w->text-1);w->text[sizeof w->text-1]=0;
+    w->scroll=0; session_key(s,FOLDER_KEY_END,0); CHECK(w->scroll==window_max_scroll(w) && w->scroll>0);
+    session_key(s,FOLDER_KEY_HOME,0);CHECK(w->scroll==0);
+    session_key(s,FOLDER_KEY_PAGE_DOWN,0);CHECK(w->scroll>0);
+    int before=w->scroll;
+    session_key(s,FOLDER_KEY_HOME,MOD_OTHER);CHECK(w->scroll==before);
+    s->desk_sel=DESK_BACKGROUND;session_wheel(s,1);CHECK(w->scroll==before);
+    session_key(s,FOLDER_KEY_HOME,0);CHECK(w->scroll==before);
+    s->desk_sel=0;session_wheel(s,1);CHECK(w->scroll==before);
+    s->desk_sel=DESK_WINDOW;session_wheel(s,1);CHECK(w->scroll<before);
+    s->dialog=1;before=w->scroll;session_key(s,FOLDER_KEY_END,0);CHECK(w->scroll==before);s->dialog=0;
     session_destroy(s);
     printf("menu integration: %s\n",failures?"FAILED":"ok");return !!failures;
 }

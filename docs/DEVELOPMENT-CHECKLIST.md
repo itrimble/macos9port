@@ -297,8 +297,15 @@ Evidence IDs are retained in the loop record. CPU traces are separate evidence.
   The next pass adds folder keyboard navigation with selection scrolling,
   clickable list headings, row-sized list scroll buttons, context shortcuts and
   correct New Folder targeting for selected desktop volumes. Startup preview
-  shortcuts respect overlays. Blank-desktop focus still needs an explicit model
-  so clicking the background cannot leave old folder commands as the target.
+  shortcuts respect overlays. Commit 880fbb4 adds explicit blank-desktop focus:
+  background clicks clear folder selections and block stale item commands.
+  Its isolated full suite and combined desktop integration checks passed;
+  Focus Preview launched on a copied volume. Hands-on acceptance is pending.
+  Scrolling follow-up adds text arrow/page/Home/End controls and folder page
+  selection, and prevents background wheel events from scrolling old windows.
+  Full isolated build/tests and combined desktop integration passed on
+  6 November; focused navigation passed 188 sanitizer checks. Live acceptance
+  remains pending.
   On 6 November, isolated and combined build/test suites passed, including 91
   focused navigation checks. The signed Navigation Preview launched on a copied
   volume; a fresh window capture confirms rendering. Automated keyboard input
