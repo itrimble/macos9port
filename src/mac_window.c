@@ -407,6 +407,7 @@ int mac_window_service(MacRuntime *rt,uint16_t opcode) {
     if(!valid(rt,sp,args+result,1))return fail(rt,"Window call stack is invalid.");
     if(opcode==0xaa45)return create_window(rt,sp);
     if(opcode==0xa90d) {
+        if(!rd(rt,sp+4,4)){mac_cpu_set(rt->cpu,MAC_A7,sp+8);return 1;}   /* PaintBehind(NIL, rgn): no window to start from, nothing to paint (as CalcVisBehind(NIL)) */
         if(!mac_window_select(rt,rd(rt,sp+4,4)))return fail(rt,"PaintBehind start window is not registered.");
         return paint_behind(rt,sp);
     }

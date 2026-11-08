@@ -81,7 +81,9 @@ int mac_font_find(const MacResourceFork *f, int family, int size, unsigned style
             }
         }
     }
-    if (family == 0 && style == 0) {      /* the system font: not carried by the program, so rendered from ChicagoFLF (mac_sysfont.h) */
+    /* The system font (family 0) and the application font (family 1: Geneva on a real Mac; here the same stand-in, since no Geneva may be shipped, so
+     * its letter shapes and widths are NOT Geneva's) are not carried by the program, so they are rendered from ChicagoFLF (mac_sysfont.h). */
+    if ((family == 0 || family == 1) && style == 0) {
         const char *sys_why = NULL;
         if (mac_sysfont_strike(size, out, &sys_why) == 0) return 0;
         *why = sys_why;

@@ -49,6 +49,23 @@ int main(void){
      mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,341);CHECK(mac_color_raster_service(&r,0xa862)==1 && mac_cpu_read(r.cpu,PORT+80,4)==102);
      mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,4242);CHECK(mac_color_raster_service(&r,0xa862)==-1 && mac_cpu_halted(r.cpu) && strstr(mac_cpu_error(r.cpu),"color constants")!=NULL);}
     mac_cpu_destroy(r.cpu);
+    /* GetForeColor / GetBackColor(VAR color: RGBColor): the colour port's own RGB; a basic port's constant as a pure colour; bad pointers and unknown constants halt */
+    r=setup();
+    w(&r,PORT+36,2,1111);w(&r,PORT+38,2,2222);w(&r,PORT+40,2,3333);w(&r,PORT+42,2,4444);w(&r,PORT+44,2,5555);w(&r,PORT+46,2,6666);
+    mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,0x500);memset(mac_cpu_ram(r.cpu)+0x500,0xee,8);
+    CHECK(mac_color_raster_service(&r,0xaa19)==1 && mac_cpu_read(r.cpu,0x500,2)==1111 && mac_cpu_read(r.cpu,0x502,2)==2222 && mac_cpu_read(r.cpu,0x504,2)==3333 && mac_cpu_read(r.cpu,0x506,1)==0xee && mac_cpu_get(r.cpu,MAC_A7)==SP+4);
+    mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,0x500);
+    CHECK(mac_color_raster_service(&r,0xaa1a)==1 && mac_cpu_read(r.cpu,0x500,2)==4444 && mac_cpu_read(r.cpu,0x502,2)==5555 && mac_cpu_read(r.cpu,0x504,2)==6666 && mac_cpu_get(r.cpu,MAC_A7)==SP+4);
+    mac_cpu_destroy(r.cpu);
+    r=setup();w(&r,PORT+6,2,8);w(&r,PORT+80,4,205);w(&r,PORT+84,4,409);                                       /* a basic port: red on blue */
+    mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,0x500);CHECK(mac_color_raster_service(&r,0xaa19)==1 && mac_cpu_read(r.cpu,0x500,2)==65535 && mac_cpu_read(r.cpu,0x502,2)==0 && mac_cpu_read(r.cpu,0x504,2)==0);
+    mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,0x500);CHECK(mac_color_raster_service(&r,0xaa1a)==1 && mac_cpu_read(r.cpu,0x500,2)==0 && mac_cpu_read(r.cpu,0x504,2)==65535);
+    w(&r,PORT+80,4,7);mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,0x500);
+    CHECK(mac_color_raster_service(&r,0xaa19)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);               /* a basic port with an unknown constant */
+    {static const uint32_t bad[]={0,1,0x1ffc,0xfffffffeu};
+     for(unsigned i=0;i<sizeof bad/sizeof*bad;i++){r=setup();mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,bad[i]);
+      CHECK(mac_color_raster_service(&r,0xaa19)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);}}
+    r=setup();w(&r,0x80,4,0);mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,0x500);CHECK(mac_color_raster_service(&r,0xaa1a)==-1);mac_cpu_destroy(r.cpu);   /* no current port */
     r=setup();w(&r,PORT+6,2,8);mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,205);CHECK(mac_color_raster_service(&r,0xa862)==0 && mac_cpu_get(r.cpu,MAC_A7)==SP && mac_cpu_read(r.cpu,PORT+80,4)==3);   /* a basic port is not ours */
     mac_cpu_destroy(r.cpu);
     r=setup();w(&r,PORT+6,2,0xc000);

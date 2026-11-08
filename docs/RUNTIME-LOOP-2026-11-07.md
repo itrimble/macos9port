@@ -479,3 +479,16 @@ the probe, not a window I watched, and I have not listened to any audio.
   earlier "not enough memory ... music" box. `make test` 0, ASan clean on the window tests, Monkey Island and Monkey Island 2 identical, Castle
   refreshed. Not verified: that the picture is drawn right (I looked at one downscaled frame), the 'no houses' cause (a missing house file or
   the missing folders, since DirCreate is refused with -123), anything about play, audio, or a windowed run.
+
+- **Glider PRO: full-colour title screen (headless, 100 s, no halt).** The "no houses" dialog is the app's own and honest: the trace shows only two File
+  Manager calls (GetCatInfo, then the DirCreate we refuse with -123), no house enumeration at all, and no house file exists on this machine (`find`
+  under ~/projects found none; only the app and its resource file are in scratchpad). After a scripted click on that dialog's Okay the game went on
+  and needed, in order: `PaletteDispatch` selector `$0002` = **RestoreDeviceClut** (MPW listing: `$7002`; resets the device table and forgets the active palette;
+  gd nil or the main device), `PaintBehind(NIL, rgn)` (a NIL start window is a no-op, like `CalcVisBehind(NIL)`), **GetForeColor/GetBackColor** (`$AA19/$AA1A`),
+  **Index2Color/Color2Index** (`$AA34/$AA33`, `src/mac_colorindex.c`; Color2Index's pointer-argument convention is from my memory) and the **application font**
+  (family 1; Geneva on a real Mac) which is now served from the same ChicagoFLF stand-in as family 0, so its glyph shapes are not Geneva's. Result: the colour
+  title screen (illustration, "Glider PRO by john calhoun", paper gliders, a Game and an Options menu, and the text "House: Slumberland") on screen
+  with no halt. Tests: `test_mac_palette_manager`, `test_mac_paintbehind`, `test_mac_color_raster`, `test_mac_colorindex`, `test_mac_text` (corrupt pointers,
+  stacks, indices, depths; mutants killed except one equivalent odd-pointer check); ASan clean; `make test` 0; Monkey Island and Monkey Island 2 identical;
+  Castle refreshed. This is one downscaled frame: I have not checked the picture pixel by pixel, nor clicked into the game, nor listened to anything;
+  windowed behaviour is untested.

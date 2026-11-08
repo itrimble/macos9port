@@ -226,4 +226,24 @@ static void pm_colors(void){
     }
     r=animate_rig(&window,&palette);mac_cpu_set(r.cpu,MAC_A7,(uint32_t)mac_cpu_ram_size(r.cpu)-1);CHECK(mac_palette_manager_service(&r,0xaa97)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
 }
-int main(void){animate();pm_colors();palette_dispatch();dispatched();successful();failure();associations();puts("mac palette manager object and association tests passed");return 0;}
+static void restore_clut(void){
+ MacRuntime r=fresh();CHECK(mac_color_init(&r)==1);uint32_t gd=r.main_device;
+ uint32_t white=r.palette[0],black=r.palette[255],e5=r.palette[5];
+ for(unsigned i=0;i<256;i++)r.palette[i]=0x123456;r.palette_active=0x9999;
+ mac_cpu_set(r.cpu,MAC_A7,0x8000);mac_cpu_set(r.cpu,MAC_D0,0x0002);wr(&r,0x8000,4,gd);
+ CHECK(mac_palette_manager_service(&r,0xaaa2)==1 && mac_cpu_get(r.cpu,MAC_A7)==0x8004 && !mac_cpu_halted(r.cpu));      /* RestoreDeviceClut(gd): table back to its default */
+ CHECK(r.palette[0]==white && r.palette[255]==black && r.palette[5]==e5 && r.palette_active==0);
+ for(unsigned i=0;i<256;i++)r.palette[i]=0x654321;
+ mac_cpu_set(r.cpu,MAC_A7,0x8000);mac_cpu_set(r.cpu,MAC_D0,0x0002);wr(&r,0x8000,4,0);                                   /* nil: every device */
+ CHECK(mac_palette_manager_service(&r,0xaaa2)==1 && r.palette[0]==white && mac_cpu_get(r.cpu,MAC_A7)==0x8004);
+ mac_cpu_destroy(r.cpu);
+ r=fresh();CHECK(mac_color_init(&r)==1);r.palette[0]=0x111111;                                                          /* a device we do not have halts, changing nothing */
+ mac_cpu_set(r.cpu,MAC_A7,0x8000);mac_cpu_set(r.cpu,MAC_D0,0x0002);wr(&r,0x8000,4,0x7000);
+ CHECK(mac_palette_manager_service(&r,0xaaa2)==-1 && mac_cpu_halted(r.cpu) && r.palette[0]==0x111111);mac_cpu_destroy(r.cpu);
+ r=fresh();CHECK(mac_color_init(&r)==1);                                                                                /* a stack at the end of RAM halts */
+ mac_cpu_set(r.cpu,MAC_A7,(uint32_t)mac_cpu_ram_size(r.cpu)-2);mac_cpu_set(r.cpu,MAC_D0,0x0002);
+ CHECK(mac_palette_manager_service(&r,0xaaa2)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
+ r=fresh();CHECK(mac_color_init(&r)==1);mac_cpu_set(r.cpu,MAC_A7,0x8000);mac_cpu_set(r.cpu,MAC_D0,0x0012);              /* a neighbouring selector is still refused */
+ CHECK(mac_palette_manager_service(&r,0xaaa2)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
+}
+int main(void){restore_clut();animate();pm_colors();palette_dispatch();dispatched();successful();failure();associations();puts("mac palette manager object and association tests passed");return 0;}

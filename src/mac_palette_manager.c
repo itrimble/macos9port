@@ -141,6 +141,14 @@ static int association(MacRuntime*r,uint16_t opcode,uint32_t sp){
 static int palette_dispatch(MacRuntime *r){
     uint32_t sel=mac_cpu_get(r->cpu,MAC_D0)&0xffff,sp=mac_cpu_get(r->cpu,MAC_A7);
     unsigned routine=sel&0xff,args=sel>>8;
+    if(sel==0x0002){   /* RestoreDeviceClut(gd: GDHandle) ($7002 in the MPW interface, listing opened): put the device colour table back to its default and forget the active window palette. gd is nil (every device) or the main device; the only device here is the main one. */
+        if(!valid(r,sp,4))return fail(r,"RestoreDeviceClut stack exceeds guest RAM.");
+        uint32_t gd=rd(r,sp,4);
+        if(gd && gd!=r->main_device)return fail(r,"RestoreDeviceClut names a device this runtime does not have.");
+        if(mac_color_reset_table(r))return fail(r,"RestoreDeviceClut could not reset the device table.");
+        r->palette_active=0;
+        mac_cpu_set(r->cpu,MAC_A7,sp+4);return 1;
+    }
     if((routine!=0x13 && routine!=0x14) || args!=10){
         static char message[80];
         snprintf(message,sizeof message,"PaletteDispatch selector 0x%04x is unsupported.",(unsigned)sel);

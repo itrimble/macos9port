@@ -1,6 +1,7 @@
 /* The font engine: strike parsing and lookup from a hand-built resource fork, then metrics and drawing on a real colour port. */
 #include "mac_runtime.h"
 #include "mac_font.h"
+#include "mac_sysfont.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -110,6 +111,9 @@ static void lookup_checks(void) {
     CHECK(mac_font_find(&f, 5, 11, 0, &s, &why) == -1 && why);
     CHECK(strstr(why, "family 5 size 11 style 0") != NULL);                         /* the refusal names the face asked for */                          /* no such size, and nothing is scaled */
     CHECK(mac_font_find(&f, 4, 10, 0, &s, &why) == -1);                                 /* no such family */
+    /* families 0 and 1 (system and application font) come from the stand-in face when the program has no strike of that id; 2 and 3 do not */
+    {MacStrike a, b; const char *w2; mac_sysfont_set_path("fonts/ChicagoFLF.ttf");
+     if (mac_font_find(&f, 0, 12, 0, &a, &w2) == 0) { CHECK(mac_font_find(&f, 1, 12, 0, &b, &w2) == 0 && a.rectH == b.rectH && a.ascent == b.ascent); CHECK(mac_font_find(&f, 1, 12, 1, &b, &w2) == -1); CHECK(mac_font_find(&f, 2, 12, 0, &b, &w2) == -1); CHECK(mac_font_find(&f, 3, 12, 0, &b, &w2) == -1); }}
     CHECK(mac_font_find(&f, 5, 9, 1, &s, &why) == -1);                                  /* a bold strike is not in the association table */
     CHECK(mac_font_find(&f, 5, 10, 1, &s, &why) == -1);                                 /* a FONT id carries no style */
     CHECK(mac_font_find(&f, 5, 0, 0, &s, &why) == -1 && why);                           /* size 0, although a FONT with that id exists */

@@ -90,6 +90,16 @@ static void failures(void){for(unsigned kind=0;kind<5;kind++){
  CHECK(paint(&r,h)==-1 && mac_cpu_get(r.cpu,MAC_A7)==SP);
  CHECK(!memcmp(before,mac_cpu_ram(r.cpu)+r.screen_base,sizeof before) && !memcmp(update,mac_cpu_ram(r.cpu)+up,10));mac_cpu_destroy(r.cpu);
 }}
+static void nil_start(void){   /* PaintBehind(NIL, rgn): no window to start from; pops its 8 bytes, draws nothing, changes nothing; an unregistered non-nil window still halts */
+ MacRuntime r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
+ uint32_t up=rd(&r,r.window.handles[10],4),h=region_args(&r,50,60,70,80);
+ uint8_t before[307200],update[10];memcpy(before,mac_cpu_ram(r.cpu)+r.screen_base,sizeof before);memcpy(update,mac_cpu_ram(r.cpu)+up,10);
+ mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,h);wr(&r,SP+4,4,0);
+ CHECK(mac_window_service(&r,0xa90d)==1 && mac_cpu_get(r.cpu,MAC_A7)==SP+8 && !mac_cpu_halted(r.cpu));
+ CHECK(!memcmp(before,mac_cpu_ram(r.cpu)+r.screen_base,sizeof before) && !memcmp(update,mac_cpu_ram(r.cpu)+up,10) && r.window.address==STORAGE);
+ mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,h);wr(&r,SP+4,4,0x7770);
+ CHECK(mac_window_service(&r,0xa90d)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
+}
 static void plain_dialog(void){
  MacRuntime r=fresh();new_args(&r,STORAGE,0);wr(&r,SP+10,2,2);
  CHECK(mac_window_service(&r,0xaa45)==1 && r.window.proc_id==2 && !r.window.visible);
@@ -108,4 +118,4 @@ static void plain_dialog(void){
  CHECK(mac_cpu_ram(r.cpu)[r.screen_base+39*640+49]==77);
  CHECK(mac_cpu_ram(r.cpu)[r.screen_base+30*640+100]==42);mac_cpu_destroy(r.cpu);
 }
-int main(void){complex_region();repaint();failures();plain_dialog();puts("mac PaintBehind and plainDBox tests passed");return 0;}
+int main(void){complex_region();repaint();failures();plain_dialog();nil_start();puts("mac PaintBehind and plainDBox tests passed");return 0;}

@@ -154,7 +154,30 @@ int mac_color_shape(MacRuntime *rt,uint32_t port,int t,int l,int b,int r,uint16_
     Box x={t,l,b,r};
     return draw(rt,port,0,op,&x,fillpat,outer,inner);
 }
+/* GetForeColor / GetBackColor(VAR color: RGBColor) ($AA19 / $AA1A, MPW listing): a colour port holds the RGB it was given (CGrafPort +36 / +42);
+ * a basic port holds one of QuickDraw's eight colour constants, reported as the pure colour it stands for. Anything else halts. */
+static int get_color(MacRuntime *rt,uint32_t port,uint32_t out,int back) {
+    if(!out || valid(rt,out,6,1)<0)return fail(rt,"Invalid RGBColor pointer.");
+    unsigned c[3];
+    if((rd(rt,port+6,2)&0xc000)==0xc000){for(unsigned k=0;k<3;k++)c[k]=rd(rt,port+(back?42:36)+k*2,2);}
+    else {
+        unsigned c8[3];
+        if(!mac_qd_color_constant(rd(rt,port+(back?84:80),4),c8))return fail(rt,"GetForeColor/GetBackColor on a basic port with a color other than QuickDraw's eight constants is unsupported.");
+        for(unsigned k=0;k<3;k++)c[k]=c8[k]*257;
+    }
+    for(unsigned k=0;k<3;k++)wr(rt,out+k*2,2,c[k]);
+    return 1;
+}
 int mac_color_raster_service(MacRuntime *rt,uint16_t opcode) {
+    if(opcode==0xaa19 || opcode==0xaa1a) {
+        if(!rt || !rt->cpu || mac_cpu_halted(rt->cpu))return -1;
+        if(!rt->qd_globals || valid(rt,rt->qd_globals,4,1)<0)return fail(rt,"QuickDraw globals are not initialized.");
+        uint32_t port=rd(rt,rt->qd_globals,4),sp=mac_cpu_get(rt->cpu,MAC_A7);
+        if(!port || valid(rt,port,108,1)<0 || valid(rt,sp,4,1)<0)return fail(rt,"Invalid current port.");
+        int rc=get_color(rt,port,rd(rt,sp,4),opcode==0xaa1a);
+        if(rc>0)mac_cpu_set(rt->cpu,MAC_A7,sp+4);
+        return rc;
+    }
     if((opcode<0xa8a1 || opcode>0xa8a5) && opcode!=0xaa14 && opcode!=0xaa15 && opcode!=0xa862 && opcode!=0xa863)return 0;
     if(!rt || !rt->cpu || mac_cpu_halted(rt->cpu))return -1;
     if(!rt->qd_globals || valid(rt,rt->qd_globals,4,1)<0)return fail(rt,"QuickDraw globals are not initialized.");
