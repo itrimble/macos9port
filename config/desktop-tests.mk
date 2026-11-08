@@ -297,3 +297,10 @@ build/test_desktop_bt_driver: tests/test_desktop_bt_driver.c src/desktop_bt_darw
 test-desktop-bt-driver: build/test_desktop_bt_driver
 	./build/test_desktop_bt_driver
 test: test-desktop-bt-driver
+
+build/test_desktop_bt_host: tests/test_desktop_bt_host.c src/desktop_bt_host.c include/desktop_bt_host.h $(DESKTOP_BT_HDR)
+	$(CC) $(CFLAGS) $(BT_INC) -DOS999_DESKTOP_BLUETOOTH -o $@ tests/test_desktop_bt_host.c src/desktop_bt_host.c
+.PHONY: test-desktop-bt-host
+test-desktop-bt-host: build/test_desktop_bt_host
+	./build/test_desktop_bt_host
+test: test-desktop-bt-host

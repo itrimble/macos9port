@@ -1,4 +1,5 @@
 #include <SDL.h>
+#include "desktop_bt_host.h"
 #include "session_int.h"
 #include "desktop_host.h"
 #include "desktop_sound.h"
@@ -56,6 +57,7 @@ void desktop_host_init(const char *volume) {
     previous_dialog = 0;
     find_sounds(sounds, sizeof sounds);
     media_panel_init_hooks();
+    desktop_bt_host_init();
     int n = snprintf(preference, sizeof preference, "%s/.os999-sound", volume);
     if (n <= 0 || (size_t)n >= sizeof preference) return;
     if (!desktop_sound_init(sounds, preference))
@@ -66,6 +68,7 @@ void desktop_host_init(const char *volume) {
 void desktop_host_tick(Session *s, int guest_active) {
     if (!s) return;
     media_panel_tick();
+    desktop_bt_host_tick();
     if (s->clipboard_write_request) {
         s->clipboard_write_request = 0;
         if (SDL_SetClipboardText(session_clipboard_output(s)) != 0)
@@ -98,6 +101,7 @@ void desktop_host_tick(Session *s, int guest_active) {
 }
 
 void desktop_host_shutdown(void) {
+    desktop_bt_host_shutdown();
     media_panel_shutdown();
     desktop_sound_shutdown();
     previous_menu = -1;

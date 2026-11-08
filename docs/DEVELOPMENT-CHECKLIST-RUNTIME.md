@@ -204,5 +204,5 @@ No physical peer, desktop radio wiring or classic runtime hook acceptance yet.
 
 Bluetooth driver follow-up: production source manifest now links the macOS
 backend; 31 fake-IOBluetooth-boundary checks cover real driver negotiation and
-teardown. Integration owns shared host/menu hooks; no usable panel or physical
+teardown. Combined desktop lifecycle hooks are tested; menu/panel hooks remain pending. No physical
 peer acceptance is claimed. [Driver handoff](BLUETOOTH-DESKTOP-DRIVER-2026-11-08.md).

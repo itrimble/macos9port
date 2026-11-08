@@ -18,8 +18,13 @@ GN_OK correctly; it previously treated successful nonzero writes as errors.
 
 ## Host and menu ownership
 
-The active Control Panels producer's files were not changed. Integration owns
-these remaining shared hooks, which must run on the main thread:
+The combined candidate now calls the following lifecycle through
+`desktop_bt_host.c` from desktop startup, frame ticks and shutdown. Its focused
+test checks restart, allocation failure and manager-before-service teardown
+without radio access. The desktop-only build flag keeps mobile linkage unchanged.
+Menu/panel controls and the classic guest runtime hook remain pending.
+
+The active Control Panels producer's files were not changed. The shared hooks below run on the main thread:
 
 ```c
 /* Once at host startup. This allocates services without scanning or connecting. */
@@ -40,7 +45,7 @@ The menu/panel should call `desktop_bt_scan`, `desktop_bt_connect`, and
 state text/error, peer and local address through the manager getters. Checking
 `desktop_bt_available()` queries controller power state; it is not a peer
 connectivity test. The source manifest/linkage is complete, but no new menu,
-panel, shared host-loop hooks, or classic guest-runtime hook is claimed here.
+panel or classic guest-runtime hook is claimed here.
 
 ## Evidence and limits
 
