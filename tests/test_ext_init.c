@@ -77,6 +77,12 @@ static void test_rollback(void) {
     CHECK(run_code(&rt, FX_HALT, sizeof FX_HALT, 1000, &rep) == -2); /* unsupported trap halts the CPU */
     CHECK(mac_cpu_halted(rt.cpu));
     mac_runtime_destroy(&rt);
+
+    /* LoadSeg is host-only: an INIT calling it fails instead of reading the host's CODE 0. */
+    CHECK(host(&rt) == 0);
+    CHECK(run_code(&rt, FX_LOADSEG, sizeof FX_LOADSEG, 1000, &rep) == -2);
+    CHECK(strstr(rep.error, "LoadSeg") != NULL);
+    mac_runtime_destroy(&rt);
 }
 
 static char root[64];

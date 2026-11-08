@@ -101,6 +101,10 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
         rt->trap_addresses[key] = address;
         return 0;
     }
+    if (opcode == 0xa9f0 && rt->init_guard) { /* Segments belong to the host, not to an INIT. */
+        mac_cpu_halt(cpu, "An INIT called LoadSeg.");
+        return -1;
+    }
     if (opcode == 0xa9f0) { /* LoadSeg, direct or chained through a guest patch. */
         uint32_t sp = mac_cpu_get(cpu, MAC_A7);
         int16_t id = (int16_t)mac_cpu_read(cpu, sp, 2);

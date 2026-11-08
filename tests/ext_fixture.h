@@ -56,6 +56,8 @@ static const uint8_t FX_PATCH_PROTECTED[] = {0x41, 0xfa, 0x00, 0x14, 0x30, 0x3c,
                                              0x4e, 0x75};
 /* Leaves junk in D0 (MOVEQ #1) like real INITs do; must still load. */
 static const uint8_t FX_JUNK_D0[] = {0x70, 0x01, 0x4e, 0x75};
+/* MOVE.W #1,-(SP) ; LoadSeg ; RTS: segment loading is refused inside an INIT. */
+static const uint8_t FX_LOADSEG[] = {0x3f, 0x3c, 0x00, 0x01, 0xa9, 0xf0, 0x4e, 0x75};
 /* MOVE.L #'test',D0 ; SUBA.L A0,A0 ; NewGestalt ; RTS */
 static const uint8_t FX_GESTALT[] = {0x20, 0x3c, 't', 'e', 's', 't', 0x91, 0xc8, 0xa3, 0xad, 0x4e, 0x75};
 #endif
