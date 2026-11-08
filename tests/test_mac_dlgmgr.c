@@ -85,6 +85,7 @@ static void fixture_fork(Fork *f) {
     dlog(f, 136, 40, 50, 41, 51, 1, 132);     /* far too small */
     dlog(f, 137, 40, 50, 140, 330, 1, 132);   /* one button */
     dlog(f, 138, -30, -20, 70, 260, 1, 132);  /* hangs off the top-left: moved on */
+    dlog(f, 139, 40, 50, 140, 330, 0, 128);   /* hidden until ShowWindow */
 }
 typedef struct { MacRuntime rt; Fork fork; uint8_t image[16384]; } Rig;
 static uint32_t raw(const MacRuntime *rt, uint32_t p, unsigned n) { const uint8_t *ram = mac_cpu_ram(rt->cpu); uint32_t v = 0; for (unsigned i = 0; i < n; i++) v = v << 8 | ram[p + i]; return v; }
@@ -137,7 +138,7 @@ static void creating(void) {
     CHECK(rig_open(&g) == 0); d = get_new(&g, 999, 0, 0xffffffffu, &rc); CHECK(rc == 1 && d == 0 && screen_all_back(&g)); mac_runtime_destroy(&g.rt);
     CHECK(rig_open(&g) == 0); d = get_new(&g, 135, 0, 0xffffffffu, &rc); CHECK(rc == 1 && d); {const uint8_t *sc = mac_cpu_ram(g.rt.cpu) + g.rt.screen_base; CHECK(sc[479 * 640 + 600] != BACK && sc[400 * 640 + 639] != BACK);} mac_runtime_destroy(&g.rt);
     /* refusals: nothing is allocated and the guest halts */
-    static const struct { int id; uint32_t storage, behind; } bad[] = { {130,0,0xffffffffu}, {131,0,0xffffffffu}, {132,0,0xffffffffu}, {133,0,0xffffffffu}, {134,0,0xffffffffu}, {136,0,0xffffffffu},
+    static const struct { int id; uint32_t storage, behind; } bad[] = { {130,0,0xffffffffu}, {131,0,0xffffffffu}, {133,0,0xffffffffu}, {134,0,0xffffffffu}, {136,0,0xffffffffu},
         {128,0,0x50000}, {128,0x40001,0}, {128,0xfffffff0u,0} };
     for (unsigned k = 0; k < sizeof bad / sizeof *bad; k++) {
         CHECK(rig_open(&g) == 0); d = get_new(&g, bad[k].id, bad[k].storage, bad[k].behind, &rc);
@@ -185,6 +186,85 @@ static void disabled_and_clamped(void) {
     mac_runtime_destroy(&g.rt);
     CHECK(rig_open(&g) == 0); get_new(&g, 138, 0, 0xffffffffu, &rc); CHECK(rc == 1);
     {const uint8_t *sc = mac_cpu_ram(g.rt.cpu) + g.rt.screen_base; CHECK(sc[50 * 640 + 0] == 1 && sc[0 * 640 + 100] == 1);}   /* the border sits on the screen's edge */
+    mac_runtime_destroy(&g.rt);
+}
+static void hidden_moved_and_items(void) {
+    Rig g; int rc; CHECK(rig_open(&g) == 0);
+    uint32_t d = get_new(&g, 139, 0, 0xffffffffu, &rc), ev = 0x31000;
+    CHECK(rc == 1 && d && screen_all_back(&g) && raw(&g.rt, d + 110, 1) == 0);                          /* hidden: nothing drawn */
+    wr(&g.rt, SP, 4, 0xdead); CHECK(trap(&g, 0xa924, SP) == 0);                                            /* FrontWindow ignores it */
+    wr(&g.rt, ev, 2, 1); wr(&g.rt, SP, 4, ev); CHECK(trap(&g, 0xa97f, SP) == 1 && raw(&g.rt, SP + 4, 1) == 0);   /* and so does IsDialogEvent */
+    wr(&g.rt, SP, 4, d); wr(&g.rt, 0x31200, 4, 0); CHECK(trap(&g, 0xa981, SP) == 1 && screen_all_back(&g));      /* DrawDialog draws nothing while hidden */
+    wr(&g.rt, SP, 4, 0x31500); CHECK(trap(&g, 0xa915, SP) == 0 && trap(&g, 0xa916, SP) == 0 && trap(&g, 0xa91b, SP) == 0 && trap(&g, 0xa91f, SP) == 0);   /* other windows are not ours */
+    wr(&g.rt, SP, 4, d); CHECK(trap(&g, 0xa915, SP) == 1 && mac_cpu_get(g.rt.cpu, MAC_A7) == SP + 4 && !screen_all_back(&g) && raw(&g.rt, d + 110, 1) == 1);   /* ShowWindow */
+    wr(&g.rt, SP, 4, 0xdead); CHECK(trap(&g, 0xa924, SP) == 1 && raw(&g.rt, SP, 4) == d);
+    /* MoveWindow(window, h, v, front): content to (h, v); the old place is restored, the regions follow, off-screen targets are brought on */
+    wr(&g.rt, SP, 2, 0); wr(&g.rt, SP + 2, 2, 200); wr(&g.rt, SP + 4, 2, 300); wr(&g.rt, SP + 6, 4, d);
+    CHECK(trap(&g, 0xa91b, SP) == 1 && mac_cpu_get(g.rt.cpu, MAC_A7) == SP + 10);
+    {const uint8_t *sc = mac_cpu_ram(g.rt.cpu) + g.rt.screen_base; CHECK(sc[40 * 640 + 100] == BACK && sc[200 * 640 + 310] != BACK);
+     uint32_t cr = raw(&g.rt, raw(&g.rt, d + 118, 4), 4); CHECK(raw(&g.rt, cr + 2, 2) == 200 && raw(&g.rt, cr + 4, 2) == 300 && raw(&g.rt, cr + 6, 2) == 300 && raw(&g.rt, cr + 8, 2) == 580);}
+    wr(&g.rt, SP, 2, 0); wr(&g.rt, SP + 2, 2, 1000); wr(&g.rt, SP + 4, 2, 1000); wr(&g.rt, SP + 6, 4, d); CHECK(trap(&g, 0xa91b, SP) == 1);
+    {uint32_t cr = raw(&g.rt, raw(&g.rt, d + 118, 4), 4); CHECK(raw(&g.rt, cr + 2, 2) == 380 && raw(&g.rt, cr + 4, 2) == 360);}
+    wr(&g.rt, SP, 2, 0); wr(&g.rt, SP + 2, 2, 0xffff); wr(&g.rt, SP + 4, 2, 0xffff); wr(&g.rt, SP + 6, 4, d); CHECK(trap(&g, 0xa91b, SP) == 1);
+    {uint32_t cr = raw(&g.rt, raw(&g.rt, d + 118, 4), 4); CHECK(raw(&g.rt, cr + 2, 2) == 0 && raw(&g.rt, cr + 4, 2) == 0);}
+    /* SelectWindow, then HideWindow puts the screen back and ShowWindow brings it again */
+    wr(&g.rt, SP, 4, d); CHECK(trap(&g, 0xa91f, SP) == 1 && mac_cpu_get(g.rt.cpu, MAC_A7) == SP + 4);
+    wr(&g.rt, SP, 4, d); CHECK(trap(&g, 0xa916, SP) == 1 && screen_all_back(&g) && raw(&g.rt, d + 110, 1) == 0);
+    wr(&g.rt, SP, 4, d); CHECK(trap(&g, 0xa916, SP) == 1 && screen_all_back(&g));                           /* hiding twice is harmless */
+    mac_cpu_ram(g.rt.cpu)[g.rt.screen_base + 60 * 640 + 60] = 99;                                              /* the screen changes while it is hidden... */
+    wr(&g.rt, SP, 4, d); CHECK(trap(&g, 0xa915, SP) == 1 && !screen_all_back(&g));
+    wr(&g.rt, SP, 4, d); CHECK(trap(&g, 0xa983, SP) == 1 && mac_cpu_ram(g.rt.cpu)[g.rt.screen_base + 60 * 640 + 60] == 99);   /* ...and disposal restores that, not the old pixels */
+    mac_cpu_ram(g.rt.cpu)[g.rt.screen_base + 60 * 640 + 60] = BACK; CHECK(screen_all_back(&g));
+    mac_runtime_destroy(&g.rt);
+    /* HideDItem / ShowDItem(dialog, item): not drawn, not hit, box 16384 to the right; the edit selection moves on */
+    CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); uint32_t hit = 0x31000, bx = 0x31040;
+    wr(&g.rt, SP, 2, 1); wr(&g.rt, SP + 2, 4, d); CHECK(trap(&g, 0xa827, SP) == 1 && mac_cpu_get(g.rt.cpu, MAC_A7) == SP + 6);
+    {const uint8_t *sc = mac_cpu_ram(g.rt.cpu) + g.rt.screen_base; unsigned ink = 0; for (int y = 112; y < 128; y++) for (int x = 272; x < 318; x++) ink += sc[y * 640 + x] == 1; CHECK(ink == 0);}
+    wr(&g.rt, hit, 2, 0xffff); post(&g, 1, 0, 0, OK_X); post(&g, 2, 0, 0, OK_X); modal(&g, 0, hit); CHECK(raw(&g.rt, hit, 2) == 0xffff && mac_cpu_get(g.rt.cpu, MAC_PC) == 0x10000);
+    wr(&g.rt, SP, 4, bx); wr(&g.rt, SP + 4, 4, 0x31010); wr(&g.rt, SP + 8, 4, 0x31020); wr(&g.rt, SP + 12, 2, 1); wr(&g.rt, SP + 14, 4, d); trap(&g, 0xa98d, SP);
+    CHECK(raw(&g.rt, bx + 2, 2) == 220 + 16384 && raw(&g.rt, bx + 6, 2) == 270 + 16384);
+    wr(&g.rt, SP, 2, 1); wr(&g.rt, SP + 2, 4, d); CHECK(trap(&g, 0xa828, SP) == 1);
+    wr(&g.rt, SP, 4, bx); wr(&g.rt, SP + 4, 4, 0x31010); wr(&g.rt, SP + 8, 4, 0x31020); wr(&g.rt, SP + 12, 2, 1); wr(&g.rt, SP + 14, 4, d); trap(&g, 0xa98d, SP);
+    CHECK(raw(&g.rt, bx + 2, 2) == 220);
+    {const uint8_t *sc = mac_cpu_ram(g.rt.cpu) + g.rt.screen_base; unsigned ink = 0; for (int y = 112; y < 128; y++) for (int x = 272; x < 318; x++) ink += sc[y * 640 + x] == 1; CHECK(ink > 10);}
+    mac_runtime_destroy(&g.rt);
+    /* hiding the selected edit item deselects it: typing then goes nowhere, and showing it again restores the selection */
+    CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc);
+    wr(&g.rt, SP, 2, 5); wr(&g.rt, SP + 2, 4, d); trap(&g, 0xa827, SP);
+    post(&g, 3, 'Z', 0, 0, 0); modal(&g, 0, hit);
+    wr(&g.rt, SP, 2, 5); wr(&g.rt, SP + 2, 4, d); trap(&g, 0xa828, SP);
+    {uint32_t ty = 0x31020, hp = 0x31030, str = 0x31100; wr(&g.rt, SP, 4, bx); wr(&g.rt, SP + 4, 4, hp); wr(&g.rt, SP + 8, 4, ty); wr(&g.rt, SP + 12, 2, 5); wr(&g.rt, SP + 14, 4, d); trap(&g, 0xa98d, SP);
+     wr(&g.rt, SP, 4, str); wr(&g.rt, SP + 4, 4, raw(&g.rt, hp, 4)); trap(&g, 0xa990, SP); CHECK(raw(&g.rt, str, 1) == 3 && !memcmp(mac_cpu_ram(g.rt.cpu) + str + 1, "abc", 3));
+     post(&g, 3, 'Y', 0, 0, 0); modal(&g, 0, hit); wr(&g.rt, SP, 4, bx); wr(&g.rt, SP + 4, 4, hp); wr(&g.rt, SP + 8, 4, ty); wr(&g.rt, SP + 12, 2, 5); wr(&g.rt, SP + 14, 4, d); trap(&g, 0xa98d, SP);
+     wr(&g.rt, SP, 4, str); wr(&g.rt, SP + 4, 4, raw(&g.rt, hp, 4)); trap(&g, 0xa990, SP); CHECK(raw(&g.rt, str, 1) == 4);}   /* selection back: typing works */
+    mac_runtime_destroy(&g.rt);
+    CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc);
+    wr(&g.rt, SP, 2, 99); wr(&g.rt, SP + 2, 4, d); CHECK(trap(&g, 0xa827, SP) == -1 && mac_cpu_halted(g.rt.cpu));
+    mac_runtime_destroy(&g.rt);
+    /* a moved/shown/hidden/selected dialog that is busy in ModalDialog halts */
+    for (unsigned k = 0; k < 2; k++) {
+        CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); modal(&g, 0, hit);
+        wr(&g.rt, SP + 40, 2, 0); wr(&g.rt, SP + 42, 2, 5); wr(&g.rt, SP + 44, 2, 5); wr(&g.rt, SP + 46, 4, d);
+        if (k == 0) CHECK(trap(&g, 0xa91b, SP + 40) == -1 && mac_cpu_halted(g.rt.cpu)); else { wr(&g.rt, SP + 40, 4, d); CHECK(trap(&g, 0xa916, SP + 40) == -1 && mac_cpu_halted(g.rt.cpu)); }
+        mac_runtime_destroy(&g.rt);
+    }
+    /* drawing with a dialog as the port: decoration is swallowed (arguments popped, nothing drawn), anything else halts, another SetPort ends it */
+    CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc);
+    wr(&g.rt, SP, 4, d); CHECK(trap(&g, 0xa873, SP) == 1);
+    {static const struct { unsigned op, args; } sw[] = { {0xa8b0,8},{0xa8b1,8},{0xa8b2,8},{0xa8b3,8},{0xa8a1,4},{0xa8a2,4},{0xa8a3,4},{0xa8a4,4},{0xa8a5,8},{0xa8b7,4},{0xa8b8,4},{0xa8b9,4},{0xa8ba,4},
+        {0xa884,4},{0xa883,2},{0xa89b,4},{0xa89c,2},{0xa89d,4},{0xa89e,0},{0xa893,4},{0xa894,4},{0xa891,4},{0xa892,4},{0xa862,4},{0xa863,4},{0xa87c,4},{0xa864,2},{0xa896,0},{0xa897,0},{0xa887,2},{0xa888,2},{0xa889,2},{0xa88a,2} };
+     for (unsigned i = 0; i < sizeof sw / sizeof *sw; i++) { mac_cpu_set(g.rt.cpu, MAC_A7, SP); CHECK(mac_dlgmgr_service(&g.rt, (uint16_t)sw[i].op) == 1 && mac_cpu_get(g.rt.cpu, MAC_A7) == SP + sw[i].args); }}
+    CHECK(trap(&g, 0xa8a9, SP) == 0);                                                                                 /* InsetRect is not drawing: not ours */
+    wr(&g.rt, SP, 4, 0x31500); CHECK(trap(&g, 0xa873, SP) == 0);                                                      /* another SetPort ends it */
+    mac_cpu_set(g.rt.cpu, MAC_A7, SP); CHECK(mac_dlgmgr_service(&g.rt, 0xa8b0) == 0);
+    mac_runtime_destroy(&g.rt);
+    for (unsigned k = 0; k < 9; k++) {
+        static const unsigned unsup[] = { 0xa8f6, 0xa8ec, 0xa8ef, 0xa885, 0xa8c6, 0xa8d2, 0xa8be, 0xa8bb, 0xa8b4 };
+        CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); wr(&g.rt, SP, 4, d); trap(&g, 0xa873, SP);
+        mac_cpu_set(g.rt.cpu, MAC_A7, SP); CHECK(mac_dlgmgr_service(&g.rt, (uint16_t)unsup[k]) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
+    }
+    CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); wr(&g.rt, SP, 4, d); trap(&g, 0xa873, SP);
+    wr(&g.rt, SP, 4, d); trap(&g, 0xa983, SP); mac_cpu_set(g.rt.cpu, MAC_A7, SP); CHECK(mac_dlgmgr_service(&g.rt, 0xa8f6) == 0 && !mac_cpu_halted(g.rt.cpu));   /* disposing the dialog ends it too */
     mac_runtime_destroy(&g.rt);
 }
 static void refusing_items(void) {
@@ -327,7 +407,7 @@ static void event_loop_pieces(void) {
     CHECK(rig_open(&g) == 0); get_new(&g, 128, 0, 0xffffffffu, &rc); g.rt.last_trap_pc = 0x2100; CHECK(trap(&g, 0xa991, SP) == -1); mac_runtime_destroy(&g.rt);
 }
 int main(void) {
-    creating(); items(); disabled_and_clamped(); refusing_items(); modal_loop(); event_loop_pieces();
+    creating(); items(); disabled_and_clamped(); hidden_moved_and_items(); refusing_items(); modal_loop(); event_loop_pieces();
     if (!fails) puts("Dialog Manager checks passed");
     return fails ? 1 : 0;
 }

@@ -251,6 +251,16 @@ the probe, not a window I watched, and I have not listened to any audio.
   procedures of the app's own, or more than four open dialogs (all halt by name). 20 of 21 mutants killed after eight added checks; the
   survivor cannot change an outcome (a text-capacity bound the Pascal length byte already enforces). Glider Edit's error box is the first
   real user: its own `ModalDialog`-style loop (`FrontWindow`, `WaitNextEvent`, `IsDialogEvent`, `DialogSelect`) now runs to the OK button.
+- **Room Editor with the Dialog Manager (headless frames):** choosing "The House" in its open dialog (row, then Open) loads it and shows the
+  editor's own alert, *"Ye intruders desist - this house protected by the Wicked Witch of the West!"* (the house is password protected;
+  I take the box to be the app's, not ours). Okay then reaches a dialog whose DLOG is hidden, so the Dialog Manager now supports hidden
+  dialogs (`ShowWindow` and `HideWindow` on a dialog; `FrontWindow` and `IsDialogEvent` ignore a hidden one), `MoveWindow` and `SelectWindow`
+  on a dialog, and `HideDItem`/`ShowDItem`. Next halt: `DrawPicture` (`$A8F6`) with a dialog as the current port. A dialog has no
+  drawable port here, so while one is the port a short list of decorative calls and the pen and text state calls that go with them
+  (default-button outline via `FrameRoundRect`, frames, erases, `DrawString`, `PenSize`, `ForeColor`, ...) are accepted and **ignored**: what the
+  app draws into a dialog itself is not shown. Every other drawing call halts by name. That is the honest limit now; real ports for
+  dialogs would be the next piece. 20 of 23 new mutants killed, two more killed after added checks, one equivalent. (Castle's total
+  instruction count differs by tens between identical runs, so the earlier "24 fewer instructions" was noise, not a behaviour change.)
 - **Parity:** Monkey Island and Monkey Island 2 are byte-identical to the previous baseline; `make test` exits 0; ASan on Castle (90 s with
   the menu script) and on the new and touched menu, window and utility tests reports nothing.
 

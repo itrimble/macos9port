@@ -16,8 +16,9 @@
  * with our own 8x8 chrome (mac_dialog_draw.c) at its DLOG rectangle moved onto the screen, over a saved backdrop restored on disposal.
  * ^0 to ^3 in static text come from ParamText. Buttons, checkboxes and radio buttons act on mouse-up inside the item; a checkbox toggles; Return
  * and Enter hit item 1 when it is an enabled button; edit text takes printable keys and Backspace and a click selects it.
+ * A dialog whose DLOG is not visible draws nothing until ShowWindow (HideWindow puts the screen back); FrontWindow ignores it.
  * Not supported, and halting by name: user items and SetDItem, control items, filter procedures (other than the one GetStdFilterProc
- * hands out), NewDialog, DialogSelect and IsDialogEvent, hidden dialogs, a dStorage that is not zeroable RAM, more than four open
+ * hands out), NewDialog, a dStorage that is not zeroable RAM, more than four open
  * dialogs. Icons draw the application's ICON resource when it has one; PICT items are left blank. */
 enum { DLOG_TYPE = 0x444c4f47, DITL_TYPE = 0x4449544c, ICON_TYPE = 0x49434f4e, MAX_OPEN = 4, TEXT_CAP = 255, RECORD = 170, FILTER_KEY = 0xbf1, FILTER_OP = 0xabf1 };
 #define STD_FILTER mac_native_stub(FILTER_KEY)   /* a guest-callable stub: the standard ModalFilterProc */
@@ -26,12 +27,13 @@ typedef struct {
     MacDitl ditl; uint8_t length[MAC_DITL_MAX_ITEMS]; char text[MAC_DITL_MAX_ITEMS][TEXT_CAP + 1]; int16_t value[MAC_DITL_MAX_ITEMS];
     uint32_t handle[MAC_DITL_MAX_ITEMS], block[MAC_DITL_MAX_ITEMS];   /* item handles and the text blocks they point at: the host's own record of both */
     uint32_t region[3];                                            /* strucRgn, contRgn, updateRgn handles, owned as ordinary regions */
-    int edit_item, sel_start, sel_end, def_item, cancel_item;
+    uint8_t item_hidden[MAC_DITL_MAX_ITEMS];                       /* HideDItem: not drawn, not hit, and its box reports 16384 pixels to the right */
+    int edit_item, sel_start, sel_end, def_item, cancel_item, hidden;   /* hidden: drawn nothing until ShowWindow */
     uint8_t *backdrop; int drawn;
     int modal, pressed; uint32_t sp, pc, hit_ptr;
     int select_busy; uint32_t select_dlg_ptr;                    /* DialogSelect waiting for the mouse-up of a press */
 } Dlg;
-typedef struct MacDlgMgr { Dlg *open[MAX_OPEN]; } Mgr;
+typedef struct MacDlgMgr { Dlg *open[MAX_OPEN]; uint32_t port; /* the dialog SetPort last named, 0 once any other port is set */ } Mgr;
 #define M(rt) ((Mgr *)(rt)->dlgmgr)
 
 static int fail(MacRuntime *rt, const char *why) { mac_cpu_halt(rt->cpu, why); return -1; }
@@ -51,6 +53,11 @@ static uint32_t new_rect_region(MacRuntime *rt, int t, int l, int b, int r) {
     rt->handles[slot] = (MacHandle){.handle = block, .pointer = p, .size = 10, .type = REGION_OWNED};
     if (rt->handle_count <= slot) rt->handle_count = (unsigned)slot + 1;
     return block;
+}
+static void set_region(MacRuntime *rt, uint32_t h, int t, int l, int b, int r) {   /* rewrite our own rectangular region, found through the host's table */
+    for (size_t i = 0; h && i < rt->handle_count; i++) if (rt->handles[i].handle == h && rt->handles[i].size >= 10) {
+        uint32_t p = rt->handles[i].pointer; wr(rt, p, 2, 10); wr(rt, p + 2, 2, (uint16_t)t); wr(rt, p + 4, 2, (uint16_t)l); wr(rt, p + 6, 2, (uint16_t)b); wr(rt, p + 8, 2, (uint16_t)r);
+    }
 }
 static void free_region(MacRuntime *rt, uint32_t h) {
     for (size_t i = 0; h && i < rt->handle_count; i++) if (rt->handles[i].handle == h) rt->handles[i] = (MacHandle){0};
@@ -103,11 +110,13 @@ static unsigned expand(const MacRuntime *rt, const Dlg *d, unsigned k, char *out
     return n;
 }
 static void draw(MacRuntime *rt, Dlg *d) {
+    if (d->hidden) return;
     MacPen pen; mac_pen_init(&pen, rt, d->left, d->top, d->width, d->height);
     if (!d->drawn) { mac_pen_save(&pen, d->backdrop); d->drawn = 1; }
     mac_pen_frame(&pen);
     for (unsigned k = 0; k < d->ditl.count; k++) {
         const MacDitlItem *it = &d->ditl.items[k];
+        if (d->item_hidden[k]) continue;
         int l = d->left + it->left, t = d->top + it->top, r = d->left + it->right, b = d->top + it->bottom;
         char text[512]; unsigned n = has_text(it) ? expand(rt, d, k, text, sizeof text) : 0;
         if (it->kind == MAC_ITEM_BUTTON) mac_pen_button(&pen, l, t, r, b, (const uint8_t *)text, n, !it->disabled, d->modal && d->pressed == (int)k + 1, (int)k + 1 == d->def_item);
@@ -143,7 +152,6 @@ static int get_new_dialog(MacRuntime *rt, uint32_t sp) {
     if (mac_dlog_parse(dlog.data, dlog.size, &g, &why)) return fail(rt, why);
     if (mac_resource_find(&rt->fork, DITL_TYPE, g.items_id, &ditl) || mac_ditl_parse(ditl.data, ditl.size, &list, &why))
         return fail(rt, why ? why : "The dialog's item list (DITL) is missing.");
-    if (!g.visible) return fail(rt, "Hidden dialogs are unsupported.");
     int w = g.right - g.left, h = g.bottom - g.top;
     if (w < 16 || h < 16 || w > 640 || h > 480) return fail(rt, "The dialog size is unsupported.");
     for (unsigned k = 0; k < list.count; k++) {
@@ -160,7 +168,7 @@ static int get_new_dialog(MacRuntime *rt, uint32_t sp) {
     if (!d) return fail(rt, "GetNewDialog could not allocate the dialog.");
     d->backdrop = malloc((size_t)w * (size_t)h);
     if (!d->backdrop) { free(d); return fail(rt, "GetNewDialog could not allocate the dialog backdrop."); }
-    d->ptr = ptr; d->id = id; d->width = w; d->height = h; d->ditl = list; d->visible_flag = g.visible;
+    d->hidden = !g.visible; d->ptr = ptr; d->id = id; d->width = w; d->height = h; d->ditl = list; d->visible_flag = g.visible;
     int top = g.top, left = g.left;
     if (top + h > 480) top = 480 - h;
     if (left + w > 640) left = 640 - w;
@@ -178,7 +186,7 @@ static int get_new_dialog(MacRuntime *rt, uint32_t sp) {
     d->region[1] = new_rect_region(rt, d->top, d->left, d->top + h, d->left + w);                   /* content */
     d->region[2] = new_rect_region(rt, 0, 0, 0, 0);                                                 /* update: nothing to draw */
     if (!d->region[0] || !d->region[1] || !d->region[2]) { dispose(rt, d, 0); return fail(rt, "GetNewDialog could not allocate the window regions."); }
-    wr(rt, ptr + 110, 1, 1); wr(rt, ptr + 111, 1, 1);                                              /* visible, hilited */
+    wr(rt, ptr + 110, 1, d->hidden ? 0 : 1); wr(rt, ptr + 111, 1, d->hidden ? 0 : 1);               /* visible, hilited */
     wr(rt, ptr + 114, 4, d->region[0]); wr(rt, ptr + 118, 4, d->region[1]); wr(rt, ptr + 122, 4, d->region[2]);
     wr(rt, ptr + 16, 2, 0); wr(rt, ptr + 18, 2, 0); wr(rt, ptr + 20, 2, (uint16_t)h); wr(rt, ptr + 22, 2, (uint16_t)w);   /* portRect, local */
     M(rt)->open[slot] = d;
@@ -191,7 +199,7 @@ static void select_edit(Dlg *d, int item) { d->edit_item = item; d->sel_start = 
 static int hit_item(const Dlg *d, int x, int y) {
     for (unsigned k = 0; k < d->ditl.count; k++) {
         const MacDitlItem *it = &d->ditl.items[k];
-        if (it->kind == MAC_ITEM_HELP || !enabled(d, k)) continue;
+        if (it->kind == MAC_ITEM_HELP || d->item_hidden[k] || !enabled(d, k)) continue;
         if (x >= d->left + it->left && x < d->left + it->right && y >= d->top + it->top && y < d->top + it->bottom) return (int)k + 1;
     }
     return 0;
@@ -252,7 +260,7 @@ static int is_dialog_event(MacRuntime *rt, uint32_t sp) {
     uint32_t ev = rd(rt, sp, 4);
     if (!valid(rt, ev, 16)) return fail(rt, "IsDialogEvent event pointer is invalid.");
     unsigned what = rd(rt, ev, 2);
-    int yes = front(rt) && (what == 1 || what == 3 || what == 5 || what == 6 || what == 8);
+    int yes = front(rt) && !front(rt)->hidden && (what == 1 || what == 3 || what == 5 || what == 6 || what == 8);
     wr(rt, sp + 4, 1, yes ? 1 : 0); wr(rt, sp + 5, 1, 0);
     mac_cpu_set(rt->cpu, MAC_A7, sp + 4);
     return 1;
@@ -264,6 +272,7 @@ static int dialog_select(MacRuntime *rt, uint32_t sp, uint32_t pc) {
     if (!valid(rt, sp, 14)) return fail(rt, "DialogSelect stack is invalid.");
     uint32_t ev = rd(rt, sp + 8, 4), dp = rd(rt, sp + 4, 4), ip = rd(rt, sp, 4);
     Dlg *d = front(rt);
+    if (d && d->hidden) d = NULL;
     if (!d) { wr(rt, sp + 12, 2, 0); mac_cpu_set(rt->cpu, MAC_A7, sp + 12); return 1; }
     if (!valid(rt, ev, 16) || !valid(rt, dp, 4) || !valid(rt, ip, 2)) return fail(rt, "DialogSelect pointer is invalid.");
     unsigned chosen = 0, handled = 0;
@@ -292,25 +301,59 @@ static int dialog_select(MacRuntime *rt, uint32_t sp, uint32_t pc) {
     return 1;
 }
 
+/* While a dialog is the current port, drawing the application does into it is not shown: our dialogs are drawn from their DITLs, and
+ * nothing here gives a dialog a port to draw in. The small set of QuickDraw calls that only decorate (outlining the default button with
+ * FrameRoundRect, a frame, an erase, a string) and the pen and text state calls that go with them are accepted and ignored, so they do
+ * not land on the application's own window port; every other drawing call halts by name. */
+static int swallowed_args(uint16_t op) {
+    switch (op) {
+    case 0xa89b: case 0xa893: case 0xa894: case 0xa891: case 0xa892: case 0xa862: case 0xa863: case 0xa87c: return 4;   /* PenSize, MoveTo, Move, LineTo, Line, ForeColor, BackColor, BackPat */
+    case 0xa864: return 2;                                                                                  /* ColorBit */
+    case 0xa896: case 0xa897: return 0;                                                                     /* HidePen, ShowPen */
+    case 0xa89c: case 0xa887: case 0xa888: case 0xa889: case 0xa88a: return 2;                             /* PenMode, TextFont, TextFace, TextMode, TextSize */
+    case 0xa89d: return 4;                                                                                  /* PenPat */
+    case 0xa89e: return 0;                                                                                  /* PenNormal */
+    case 0xa8a1: case 0xa8a2: case 0xa8a3: case 0xa8a4: case 0xa8b7: case 0xa8b8: case 0xa8b9: case 0xa8ba: case 0xa884: return 4;   /* Frame/Paint/Erase/Invert Rect and Oval, DrawString */
+    case 0xa8a5: return 8;                                                                                  /* FillRect */
+    case 0xa8b0: case 0xa8b1: case 0xa8b2: case 0xa8b3: return 8;                                           /* Frame/Paint/Erase/Invert RoundRect */
+    case 0xa883: return 2;                                                                                  /* DrawChar */
+    default: return -1;
+    }
+}
+static int drawing_trap(uint16_t op) {
+    return (op >= 0xa8a1 && op <= 0xa8a5) || (op >= 0xa8b0 && op <= 0xa8b4) || (op >= 0xa8b7 && op <= 0xa8bb) || (op >= 0xa8be && op <= 0xa8c2) ||
+           (op >= 0xa8c6 && op <= 0xa8ca) || (op >= 0xa8d2 && op <= 0xa8d6) || (op >= 0xa883 && op <= 0xa885) || op == 0xa891 || op == 0xa892 ||
+           op == 0xa8ec || op == 0xa8ef || op == 0xa8f6;
+}
 int mac_dlgmgr_service(MacRuntime *rt, uint16_t opcode) {
+    if (rt && rt->dlgmgr && M(rt)->port && rt->cpu && !mac_cpu_halted(rt->cpu) && find(rt, M(rt)->port) && (drawing_trap(opcode) || swallowed_args(opcode) >= 0)) {
+        int args = swallowed_args(opcode);
+        uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7);
+        if (args >= 0 && !(sp & 1) && valid(rt, sp, (size_t)args + 2)) { mac_cpu_set(rt->cpu, MAC_A7, sp + (uint32_t)args); return 1; }
+        char m[128]; snprintf(m, sizeof m, "QuickDraw trap $%04x with a dialog as the current port is unsupported.", opcode);
+        return fail(rt, m);
+    }
     switch (opcode) {
     case 0xa97c: case 0xa991: case 0xa981: case 0xa982: case 0xa983: case 0xa98d: case 0xa990: case 0xa98f: case 0xa97e: case 0xa98c: case 0xaa68:
-    case 0xa97d: case 0xa98e: case 0xa980: case 0xa97f: case 0xa984: case 0xa978: case 0xa979: case 0xa97a: case 0xa924: case 0xa873: case 0xabf1: break;
+    case 0xa97d: case 0xa98e: case 0xa980: case 0xa97f: case 0xa984: case 0xa978: case 0xa979: case 0xa97a: case 0xa924: case 0xa873: case 0xabf1: case 0xa915: case 0xa916: case 0xa91b: case 0xa91f: case 0xa827: case 0xa828: break;
     default: return 0;
     }
     if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1;
     uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7), pc = (mac_cpu_get(rt->cpu, MAC_PC) - 2) & 0xffffff;
     if ((sp & 1) || !valid(rt, sp, 4)) return fail(rt, "Dialog Manager call has an invalid stack.");
-    if (opcode != FILTER_OP && rt->last_trap_pc >= 0x2000 && rt->last_trap_pc < 0x2000 + 4096 * 8) return fail(rt, "A Dialog Manager call reached through a patched trap vector is unsupported.");
+    int passthrough = opcode == 0xa924 || opcode == 0xa873 || opcode == 0xa915 || opcode == 0xa916 || opcode == 0xa91b || opcode == 0xa91f;   /* these act only on our dialogs and otherwise belong to other services */
+    if (!passthrough && opcode != FILTER_OP && rt->last_trap_pc >= 0x2000 && rt->last_trap_pc < 0x2000 + 4096 * 8) return fail(rt, "A Dialog Manager call reached through a patched trap vector is unsupported.");
     unsigned pop = 0;
+    if (rt->dlgmgr && M(rt)->port && !find(rt, M(rt)->port)) M(rt)->port = 0;                       /* the dialog went away */
     switch (opcode) {
-    case 0xa924: {                                    /* FrontWindow: an open dialog is the front window */
+    case 0xa924: {                                    /* FrontWindow: an open, visible dialog is the front window */
         Dlg *d = front(rt);
-        if (!d) return 0;
+        if (!d || d->hidden) return 0;
         if (!valid(rt, sp, 4)) return fail(rt, "FrontWindow stack is invalid.");
         wr(rt, sp, 4, d->ptr); return 1; }
     case 0xa873: {                                    /* SetPort on an open dialog: nothing is drawn through the port, so accept it */
-        if (!find(rt, rd(rt, sp, 4))) return 0;
+        if (!find(rt, rd(rt, sp, 4))) { if (rt->dlgmgr) M(rt)->port = 0; return 0; }
+        M(rt)->port = rd(rt, sp, 4);
         pop = 4; break; }
     case 0xabf1: {                                    /* the standard filter, called by the guest: theDialog, VAR event, VAR itemHit -> Boolean */
         if (!valid(rt, sp, 14)) return fail(rt, "The standard filter procedure has an invalid stack.");
@@ -324,6 +367,48 @@ int mac_dlgmgr_service(MacRuntime *rt, uint16_t opcode) {
         if (hit) wr(rt, ip, 2, hit);
         wr(rt, sp + 12, 1, hit ? 1 : 0); wr(rt, sp + 13, 1, 0);
         pop = 12; break; }
+    case 0xa91b: {                                    /* MoveWindow(window, h, v, front) on a dialog: content to (h, v), kept on the screen */
+        if (!valid(rt, sp, 10)) return fail(rt, "MoveWindow stack is invalid.");
+        Dlg *d = find(rt, rd(rt, sp + 6, 4));
+        if (!d) return 0;
+        if (d->modal || d->select_busy) return fail(rt, "A dialog was moved while it was being used.");
+        int left = (int16_t)rd(rt, sp + 4, 2), top = (int16_t)rd(rt, sp + 2, 2);
+        if (top + d->height > 480) top = 480 - d->height;
+        if (left + d->width > 640) left = 640 - d->width;
+        if (top < 0) top = 0; if (left < 0) left = 0;
+        MacPen pen; mac_pen_init(&pen, rt, d->left, d->top, d->width, d->height);
+        int was = d->drawn;
+        if (was) mac_pen_restore(&pen, d->backdrop);
+        d->drawn = 0; d->left = left; d->top = top;
+        set_region(rt, d->region[0], top - 1, left - 1, top + d->height + 1, left + d->width + 1);
+        set_region(rt, d->region[1], top, left, top + d->height, left + d->width);
+        if (was) draw(rt, d);
+        pop = 10; break; }
+    case 0xa827: case 0xa828: {                      /* HideDItem(dialog, item) / ShowDItem(dialog, item) */
+        if (!valid(rt, sp, 6)) return fail(rt, "HideDItem stack is invalid.");
+        Dlg *d = find(rt, rd(rt, sp + 2, 4)); int item = (int16_t)rd(rt, sp, 2);
+        if (!d || item < 1 || (unsigned)item > d->ditl.count) return fail(rt, "HideDItem names a dialog or item that does not exist.");
+        d->item_hidden[item - 1] = opcode == 0xa827;
+        if (opcode == 0xa827 && d->edit_item == item) d->edit_item = 0;
+        if (opcode == 0xa828 && !d->edit_item && d->ditl.items[item - 1].kind == MAC_ITEM_EDIT) d->edit_item = item;
+        if (d->drawn) { MacPen pen; mac_pen_init(&pen, rt, d->left, d->top, d->width, d->height); mac_pen_restore(&pen, d->backdrop); d->drawn = 0; draw(rt, d); }
+        pop = 6; break; }
+    case 0xa91f: {                                    /* SelectWindow on a dialog: it is already the only active window, so this only marks it hilited */
+        Dlg *d = find(rt, rd(rt, sp, 4));
+        if (!d) return 0;
+        if (!d->hidden) wr(rt, d->ptr + 111, 1, 1);
+        pop = 4; break; }
+    case 0xa915: case 0xa916: {                       /* ShowWindow, HideWindow on a dialog; any other window is not ours */
+        Dlg *d = find(rt, rd(rt, sp, 4));
+        if (!d) return 0;
+        if (opcode == 0xa915 && d->hidden) { d->hidden = 0; wr(rt, d->ptr + 110, 1, 1); wr(rt, d->ptr + 111, 1, 1); draw(rt, d); }
+        else if (opcode == 0xa916 && !d->hidden) {
+            if (d->modal || d->select_busy) return fail(rt, "A dialog was hidden while it was being used.");
+            MacPen pen; mac_pen_init(&pen, rt, d->left, d->top, d->width, d->height);
+            if (d->drawn) mac_pen_restore(&pen, d->backdrop);
+            d->drawn = 0; d->hidden = 1; wr(rt, d->ptr + 110, 1, 0); wr(rt, d->ptr + 111, 1, 0);
+        }
+        pop = 4; break; }
     case 0xa97f: return is_dialog_event(rt, sp);
     case 0xa980: return dialog_select(rt, sp, pc);
     case 0xa97c: return get_new_dialog(rt, sp);
@@ -344,7 +429,8 @@ int mac_dlgmgr_service(MacRuntime *rt, uint16_t opcode) {
         const MacDitlItem *it = &d->ditl.items[item - 1];
         wr(rt, type_p, 2, (unsigned)it->kind | (it->disabled ? 128u : 0));
         wr(rt, handle_p, 4, d->handle[item - 1]);
-        wr(rt, box_p, 2, (uint16_t)it->top); wr(rt, box_p + 2, 2, (uint16_t)it->left); wr(rt, box_p + 4, 2, (uint16_t)it->bottom); wr(rt, box_p + 6, 2, (uint16_t)it->right);
+        int away = d->item_hidden[item - 1] ? 16384 : 0;
+        wr(rt, box_p, 2, (uint16_t)it->top); wr(rt, box_p + 2, 2, (uint16_t)(it->left + away)); wr(rt, box_p + 4, 2, (uint16_t)it->bottom); wr(rt, box_p + 6, 2, (uint16_t)(it->right + away));
         pop = 18; break; }
     case 0xa990: case 0xa98f: {                                                                      /* GetIText(h, VAR s) / SetIText(h, s) */
         if (!valid(rt, sp, 8)) return fail(rt, "Dialog text call has an invalid stack.");
