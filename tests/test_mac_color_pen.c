@@ -62,6 +62,7 @@ static void failures(void){
         if(kind==7){op=0xa897;wr(&r,PORT+66,2,32767);}
         uint8_t before[108],pattern[28];memcpy(before,mac_cpu_ram(r.cpu)+PORT,108);memcpy(pattern,mac_cpu_ram(r.cpu)+p,28);
         CHECK(call(&r,op)==-1 && mac_cpu_halted(r.cpu) && mac_cpu_get(r.cpu,MAC_A7)==SP);
+        if(kind==4)CHECK(strstr(mac_cpu_error(r.cpu),"mode 16 ")!=NULL);                                      /* the refusal names the mode */
         CHECK(!memcmp(before,mac_cpu_ram(r.cpu)+PORT,108) && !memcmp(pattern,mac_cpu_ram(r.cpu)+p,28));
         mac_cpu_destroy(r.cpu);
     }

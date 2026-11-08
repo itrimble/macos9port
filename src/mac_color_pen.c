@@ -1,4 +1,5 @@
 #include "mac_runtime.h"
+#include <stdio.h>
 #include <string.h>
 
 /* Independent old-pattern CGrafPort pen state from public QuickDraw contracts:
@@ -82,7 +83,10 @@ int mac_color_pen_service(MacRuntime *rt,uint16_t opcode) {
         wr(rt,port+offset,2,v);wr(rt,port+offset+2,2,h);
     } else if(opcode==0xa89c) {
         uint16_t mode=(uint16_t)rd(rt,sp,2);
-        if(mode<8 || mode>15)return fail(rt,"Color pen transfer mode is unsupported.");
+        if(mode<8 || mode>15) {   /* source modes, the arithmetic modes (blend, addPin, ..., $20-$27), ditherCopy, hilite and anything else */
+            char why[96];snprintf(why,sizeof why,"Color pen transfer mode %u is unsupported (only patCopy to patBic, 8 to 15).",mode);
+            return fail(rt,why);
+        }
         wr(rt,port+56,2,mode);
     } else if(opcode==0xa89a) {
         uint32_t out=rd(rt,sp,4),point=rd(rt,port+48,4);

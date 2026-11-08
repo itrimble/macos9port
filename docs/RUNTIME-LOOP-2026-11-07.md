@@ -289,6 +289,13 @@ the probe, not a window I watched, and I have not listened to any audio.
     colour missing from the destination may map to a different entry); other modes with different tables still halt.
   Mutation checks: all mutants killed after three rounds of added tests (the last survivors were an off-by-one in a clamp, a pen-size
   reduction that only matters for round rectangles, and a region-edge case at column 639).
+- **Driving Glider 4.10 (headless frames, scripted mouse only):** the **Game** menu pulls down (New Game? #N, Load House, End Game, Open
+  Saved Game..., Save Game, Save Game As?, Quit; the greyed ones are dimmed) and **Options** (Controls, Sound?, Air is Invisible, Depth
+  Restore is On, High Scores, Help). **High Scores** draws its notepad page (a default entry, "Ozma of OZ!" 214050, and empty rows).
+  **New Game?** halts: the game calls `PenMode(44)`, a mode that is not patCopy..patBic, a source mode, a Color QuickDraw arithmetic mode
+  ($20-$27) or ditherCopy or hilite that I can find in the interface listing here, and what it means is unknown to me; the refusal now
+  names the mode ("Color pen transfer mode 44 is unsupported"). I have not guessed a behaviour for it. Choosing **Controls** shows nothing I
+  could see in the next 16 s (no dialog calls were made); not investigated.
 - **Parity:** Monkey Island and Monkey Island 2 are byte-identical to the previous baseline; `make test` exits 0; ASan on Castle (90 s with
   the menu script) and on the new and touched menu, window and utility tests reports nothing.
 
