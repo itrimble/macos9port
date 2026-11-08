@@ -63,8 +63,7 @@ static void draw(MacRuntime *rt, int clear_content,const int16_t clip[4]) {
     fill(d,l,t-1,r,t,frame);
     if(w->active) {
         if(mac_cpu_ram(rt->cpu)[w->address+112])box(d,l+5,t-15,l+15,t-5,frame);
-        box(d,r-15,t-15,r-5,t-5,frame);
-        fill(d,r-14,t-13,r-6,t-12,frame);
+        if(w->proc_id==12){box(d,r-15,t-15,r-5,t-5,frame);fill(d,r-14,t-13,r-6,t-12,frame);}
     }
     int max_chars=(r-l-48)/8,n=w->title[0];if(n>max_chars)n=max_chars;
     int x=l+(r-l-n*8)/2;
@@ -84,7 +83,7 @@ int mac_window_hit(MacRuntime *rt,int x,int y) {
     if(x<l-1 || x>=r+1 || y<t-20 || y>=b+1)return 0;
     if(y<t && w->active) {
         if(mac_cpu_ram(rt->cpu)[w->address+112] && x>=l+5 && x<l+15 && y>=t-15 && y<t-5)return 6;
-        if(x>=r-15 && x<r-5 && y>=t-15 && y<t-5)return 8; /* inZoomIn */
+        if(w->proc_id==12 && x>=r-15 && x<r-5 && y>=t-15 && y<t-5)return 8; /* inZoomIn */
     }
     return y<t ? 4 : 0; /* inDrag; frame sides are not content. */
 }

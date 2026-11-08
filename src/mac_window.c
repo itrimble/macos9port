@@ -68,8 +68,8 @@ static void activate(MacRuntime *rt,int active) {
     }
 }
 static void restore_background(MacRuntime *rt) {
-    MacWindowState *w=&rt->window;int frame=w->proc_id==1?7:1;
-    int t=w->bounds[0]-(w->proc_id==12?20:frame),l=w->bounds[1]-frame,b=w->bounds[2]+frame,r=w->bounds[3]+frame;
+    MacWindowState *w=&rt->window;int frame=mac_window_frame(w->proc_id);
+    int t=w->bounds[0]-mac_window_top_extent(w->proc_id),l=w->bounds[1]-frame,b=w->bounds[2]+frame,r=w->bounds[3]+frame;
     if(t<0)t=0;if(l<0)l=0;if(b>480)b=480;if(r>640)r=640;
     uint8_t *ram=mac_cpu_ram(rt->cpu);
     for(int y=t;y<b;y++)memcpy(ram+rt->screen_base+y*640+l,ram+w->backdrop+y*640+l,(size_t)(r-l));
@@ -94,7 +94,7 @@ static int create_window(MacRuntime *rt,uint32_t sp) {
     if(rt->window_count>=8)return fail(rt,"Owned window registry capacity is exhausted.");
     if(visible && mac_window_front(rt))return fail(rt,"Multiple visible windows require unsupported clipping and compositing.");
     if(visible && rt->event_count>=64)return fail(rt,"NewCWindow cannot publish its activation event because the queue is full.");
-    if((proc!=12 && proc!=2 && proc!=1) || (behind!=0 && behind!=UINT32_MAX))return fail(rt,"Only standard zoomNoGrow, plainDBox and dBoxProc windows with native chrome are supported; custom WDEFs are unsupported.");
+    if((proc!=12 && proc!=4 && proc!=2 && proc!=1) || (behind!=0 && behind!=UINT32_MAX))return fail(rt,"Only standard zoomNoGrow, noGrowDocProc, plainDBox and dBoxProc windows with native chrome are supported; custom WDEFs are unsupported.");
     if(!valid(rt,bounds,8,1) || !valid(rt,text,1,0) || !valid(rt,text,(size_t)rd(rt,text,1)+1,0) ||
        (storage && !valid(rt,storage,156,1)))return fail(rt,"NewCWindow rectangle, title, or storage exceeds guest RAM.");
     memcpy(title,mac_cpu_ram(rt->cpu)+text,(size_t)rd(rt,text,1)+1);
@@ -163,11 +163,11 @@ static int create_window(MacRuntime *rt,uint32_t sp) {
     fresh.proc_id=(uint16_t)proc;memcpy(fresh.title,title,sizeof title);rt->window=fresh;
     rect(rt,pm+6,-t,-l,480-t,640-l);rect(rt,storage+16,0,0,b-t,r-l);
     rect(rt,region(rt,fresh.handles[2])+2,0,0,0,0);
-    int frame=proc==1?7:1;
-    rect(rt,region(rt,fresh.handles[8])+2,t-(proc==12?20:frame),l-frame,b+frame,r+frame);
+    int frame=mac_window_frame(proc);
+    rect(rt,region(rt,fresh.handles[8])+2,t-mac_window_top_extent(proc),l-frame,b+frame,r+frame);
     rect(rt,region(rt,fresh.handles[9])+2,t,l,b,r);
     uint32_t state=rd(rt,fresh.handles[12],4);rect(rt,state,t,l,b,r);rect(rt,state+8,20,0,480,640);
-    wr(rt,storage+108,2,8);wr(rt,storage+112,1,(unsigned)close);wr(rt,storage+113,1,1);
+    wr(rt,storage+108,2,8);wr(rt,storage+112,1,(unsigned)close);wr(rt,storage+113,1,(unsigned)(proc==12)); /* spareFlag: zoom box only on zoomNoGrow */
     for(unsigned i=0;i<3;i++)wr(rt,storage+114+i*4,4,fresh.handles[8+i]);
     /* windowDefProc remains NIL: native chrome is not a guest executable
      * WDEF handle. Direct WDEF invocation/custom WDEFs are unsupported.
@@ -240,8 +240,8 @@ static int paint_behind(MacRuntime *rt,uint32_t sp) {
      * Refuse any on-screen damage outside this window before touching pixels. */
     int visible_clip[4]={clip[0]>0?clip[0]:0,clip[1]>0?clip[1]:0,
                          clip[2]<480?clip[2]:480,clip[3]<640?clip[3]:640};
-    int frame=w->proc_id==1?7:1;
-    int structure_top=w->bounds[0]-(w->proc_id==12?20:frame);
+    int frame=mac_window_frame(w->proc_id);
+    int structure_top=w->bounds[0]-mac_window_top_extent(w->proc_id);
     if(visible_clip[0]<visible_clip[2] && visible_clip[1]<visible_clip[3] &&
        (!w->visible || visible_clip[0]<structure_top || visible_clip[1]<w->bounds[1]-frame ||
         visible_clip[2]>w->bounds[2]+frame || visible_clip[3]>w->bounds[3]+frame))
@@ -304,7 +304,7 @@ static int size_window(MacRuntime *rt,uint32_t sp) {
         if(area)memcpy(update,bounds,sizeof update);else memset(update,0,sizeof update);
     }
     if(w->visible) {
-        int frame=w->proc_id==1?7:1,top=t-(w->proc_id==12?20:frame);
+        int frame=mac_window_frame(w->proc_id),top=t-mac_window_top_extent(w->proc_id);
         uint8_t *ram=mac_cpu_ram(rt->cpu);unsigned light=0,max=0;
         for(unsigned i=0;i<256;i++) {uint32_t c=rt->palette[i];unsigned v=((c>>16)&255)+((c>>8)&255)+(c&255);if(v>=max){max=v;light=i;}}
         /* Restore only old pixels no longer in the new content. Retain the
@@ -315,8 +315,8 @@ static int size_window(MacRuntime *rt,uint32_t sp) {
     }
     w->bounds[2]=(int16_t)b;w->bounds[3]=(int16_t)r;
     rect(rt,w->address+16,local_t,local_l,local_t+height,local_l+width);
-    int frame=w->proc_id==1?7:1;
-    rect(rt,region(rt,w->handles[8])+2,t-(w->proc_id==12?20:frame),l-frame,b+frame,r+frame);
+    int frame=mac_window_frame(w->proc_id);
+    rect(rt,region(rt,w->handles[8])+2,t-mac_window_top_extent(w->proc_id),l-frame,b+frame,r+frame);
     rect(rt,region(rt,w->handles[9])+2,t,l,b,r);
     rect(rt,rd(rt,w->handles[12],4),t,l,b,r);
     if(w->visible)rect(rt,vis+2,local_t,local_l,local_t+height,local_l+width);

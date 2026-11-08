@@ -204,9 +204,30 @@ static int append(MacRuntime*r,uint32_t sp){
     if(length)(void)resize(r,m,out,used);
     mac_cpu_set(r->cpu,MAC_A7,sp+8);return 1;
 }
+/* SetItem(menu, item, text): replace one item's text literally (no metacharacter parsing, unlike AppendMenu); mark, key,
+ * style and enable bits are kept. The record is rebuilt so the item widths in the header stay true. An out-of-range item
+ * is ignored. Empty text cannot be stored in this record encoding (a zero length byte ends the item list), so it halts. */
+static int set_item(MacRuntime*r,uint32_t sp){
+    unsigned count;MacHandle*m=mac_menu_record(r,rd(r,sp+6,4),&count);uint32_t text=rd(r,sp,4);unsigned item=rd(r,sp+4,2);
+    if(!m || !valid(r,text,1) || !valid(r,text,1+rd(r,text,1)))return fail(r,"SetItem requires a valid owned menu and string.");
+    unsigned n=rd(r,text,1);
+    if(!n)return fail(r,"SetItem empty item text is unsupported.");
+    if(item && item<=count){
+        uint8_t out[4096];const uint8_t*b=mac_cpu_ram(r->cpu)+m->pointer;size_t p=15u+b[14];
+        for(unsigned i=1;i<item;i++)p+=b[p]+5u;
+        size_t old=b[p],total=m->size-old+n;
+        if(total>sizeof out)return fail(r,"Menu record exceeds bounded storage.");
+        memcpy(out,b,p);out[p]=(uint8_t)n;memcpy(out+p+1,mac_cpu_ram(r->cpu)+text+1,n);
+        memcpy(out+p+1+n,b+p+1+old,m->size-(p+1+old));
+        unsigned width,height;if(!dimensions(out,total,&width,&height))return fail(r,"SetItem produced unsupported item data.");
+        out[2]=(uint8_t)(width>>8);out[3]=(uint8_t)width;out[4]=(uint8_t)(height>>8);out[5]=(uint8_t)height;
+        (void)resize(r,m,out,(unsigned)total);
+    }
+    mac_cpu_set(r->cpu,MAC_A7,sp+10);return 1;
+}
 int mac_menu_records_service(MacRuntime*r,uint16_t op){
     unsigned args=0,result=0;
-    switch(op){case 0xa931:args=6;result=4;break;case 0xa933:case 0xa945:case 0xa94d:args=8;break;
+    switch(op){case 0xa931:args=6;result=4;break;case 0xa947:args=10;break;case 0xa933:case 0xa945:case 0xa94d:args=8;break;
     case 0xa939:case 0xa93a:case 0xa935:args=6;break;case 0xa932:case 0xa93c:args=4;break;case 0xa936:args=2;break;
     case 0xa934:args=0;break;
     case 0xa9bf:case 0xa9c0:args=2;result=4;break;case 0xa950:args=4;result=2;break;case 0xa949:args=2;result=4;break;default:return 0;}
@@ -217,6 +238,7 @@ int mac_menu_records_service(MacRuntime*r,uint16_t op){
     if(op==0xa9bf)return get_menu(r,sp);
     if(op==0xa9c0)return get_new_mbar(r,sp);
     if(op==0xa933)return append(r,sp);
+    if(op==0xa947)return set_item(r,sp);
     if(op==0xa94d){
         if(!mac_menu_record(r,rd(r,sp+4,4),NULL))return fail(r,"AppendResMenu menu is invalid.");
         uint32_t type=rd(r,sp,4);
