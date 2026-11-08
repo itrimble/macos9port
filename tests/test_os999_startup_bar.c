@@ -175,26 +175,35 @@ int main(void) {
     CHECK(edge_early > 0);
     CHECK(edge_late > edge_early);
 
-    /* The lit edge always advances to the right: sample the whole boot and
-       check the edge never goes backwards. The reveal is excluded because the
-       bar is deliberately dissolving into the desktop there. */
+    /* The lit edge always advances to the right. Across the whole boot the
+       edge never retreats, and while the bar is still filling it must move
+       forward at every sample, never stalling. The reveal is excluded because
+       the bar is deliberately dissolving into the desktop there. */
     os999_startup_begin(&s, 0, 0);
-    int previous_edge = -1;
-    int advances = 0;
+    int previous_edge = -1;      /* the bar starts empty */
+    int strict_advances = 0;
     int samples = 0;
-    for (uint32_t t = 0; t <= 4900; t += 100) {
+    int filling = 1;
+    for (uint32_t t = 50; t <= 4900; t += 50) {
         /* The desktop comes up while the fruit is still turning, so the intro
            can leave the spin and finish the bar. */
         os999_startup_frame(&s, t, t > 3300, image, desktop, W, H);
         if (s.phase == OS999_STARTUP_REVEAL) break;
         int edge = bright_edge(inner_x, inner_y + 2, inner_w);
         CHECK(edge >= previous_edge);
-        if (edge > previous_edge) advances++;
+        if (filling) {
+            /* While the bar is filling, the edge has to move every sample. */
+            CHECK(edge > previous_edge);
+            strict_advances++;
+        }
+        if (s.phase != OS999_STARTUP_SPIN) filling = 0;
         previous_edge = edge;
         samples++;
     }
-    CHECK(samples > 40);
-    CHECK(advances > 30);
+    CHECK(samples > 90);
+    CHECK(strict_advances > 60);
+    /* The bar ends full, with the lit edge at the far end of the track. */
+    CHECK(previous_edge >= inner_w - 2);
 
     /* A desktop that is ready early must not snap the bar to full: the fill
        still has to cross the track while the intro plays. */

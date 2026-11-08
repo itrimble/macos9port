@@ -526,3 +526,10 @@ Pages inspected on 4 November 2026; page descriptions are not execution proof.
 - [Chromium macOS builds](https://chromium.googlesource.com/chromium/src/+/main/docs/mac_build_instructions.md)
 - [Chromium sandbox design](https://chromium.googlesource.com/chromium/src/+/main/docs/design/sandbox.md)
 - [OpenSSL release/support policy](https://openssl-library.org/policies/releasestrat/index.html)
+
+### Startup recovery checkpoint (8 November 2026)
+
+Preserved the interrupted producer's stronger progress-edge regression in an
+isolated checkout; 183 bar checks plus 61 startup checks pass without renderer
+changes. [Recovery scope and evidence](BOOT-RECOVERY-2026-11-08.md). No fresh GUI
+acceptance is claimed and the original running app was left untouched.
