@@ -82,6 +82,14 @@ static void show_hide_checks(void) {
     CHECK(mac_window_service(&rt,0xaa45)==-1 && mac_cpu_halted(rt.cpu));mac_cpu_destroy(rt.cpu);
     rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);new_args(&rt,STORAGE+0x400,1);wr(&rt,0x4100,2,100);wr(&rt,0x4102,2,100);wr(&rt,0x4104,2,200);wr(&rt,0x4106,2,300);CHECK(mac_window_service(&rt,0xaa45)==1);
     {mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,4,STORAGE);CHECK(mac_window_service(&rt,0xa92d)==-1 && mac_cpu_halted(rt.cpu));}mac_cpu_destroy(rt.cpu);
+    /* Content rectangles: a short strip (20 high, full width, as Glider PRO's WIND 130) is fine; an empty or inverted one, or one off the screen, halts */
+    {static const struct{int t,l,b,r,ok;}k[]={{0,0,20,640,1},{100,100,101,101,1},{0,0,480,640,1},{10,10,10,200,0},{10,10,50,10,0},{50,10,40,200,0},{10,50,40,40,0},{-1,0,20,640,0},{0,-1,20,640,0},{0,0,481,640,0},{0,0,20,641,0}};
+     for(unsigned i=0;i<sizeof k/sizeof*k;i++){
+        rt=fresh();new_args(&rt,STORAGE,0);wr(&rt,SP+10,2,2);wr(&rt,0x4100,2,(uint16_t)k[i].t);wr(&rt,0x4102,2,(uint16_t)k[i].l);wr(&rt,0x4104,2,(uint16_t)k[i].b);wr(&rt,0x4106,2,(uint16_t)k[i].r);
+        int rc=mac_window_service(&rt,0xaa45);
+        CHECK(k[i].ok?(rc==1 && rt.window.address==STORAGE && rt.window.bounds[2]-rt.window.bounds[0]==k[i].b-k[i].t):(rc==-1 && mac_cpu_halted(rt.cpu)));
+        mac_cpu_destroy(rt.cpu);
+     }}
     /* An unknown window halts before anything changes. */
     rt=fresh();new_args(&rt,STORAGE,0);CHECK(mac_window_service(&rt,0xaa45)==1);
     CHECK(show_hide(&rt,STORAGE+0x400,0)==-1 && mac_cpu_halted(rt.cpu));
@@ -208,10 +216,12 @@ static void sizing(void) {
  CHECK(rd(&r,content+6,2)==238 && rd(&r,content+8,2)==434 && rd(&r,vis+6,4)==0 && rd(&r,up+6,4)==0);
  CHECK(r.current_port==port && r.heap_next==heap && r.event_count==events && mac_cpu_ram(r.cpu)[r.screen_base+100*640+100]==77);
  CHECK(resize(&r,0,0,1)==1 && r.window.bounds[2]==238);
+ CHECK(resize(&r,640,20,0)==1 && r.window.bounds[2]==40+20 && r.window.bounds[3]==50+640 && rd(&r,STORAGE+20,2)==20);   /* a short full-width strip is fine (Glider PRO's WIND 130) */
+ CHECK(resize(&r,1,1,0)==1 && r.window.bounds[2]==41 && r.window.bounds[3]==51);
  mac_cpu_destroy(r.cpu);
- for(unsigned k=0;k<6;k++) {                                  /* larger than the screen, or smaller than the minimum: refused atomically */
+ for(unsigned k=0;k<8;k++) {                                  /* larger than the screen, empty or negative: refused atomically */
   r=fresh();new_args(&r,STORAGE,0);CHECK(mac_window_service(&r,0xaa45)==1);
-  CHECK(resize(&r,k==0?700:k==1?600:k==2?63:k==3?100:k==4?641:640,k==0?470:k==1?490:k==2?100:k==3?31:k==4?100:481,0)==-1 && mac_cpu_halted(r.cpu) && r.window.bounds[2]==300 && r.window.bounds[3]==450);
+  CHECK(resize(&r,k==0?700:k==1?600:k==2?0:k==3?100:k==4?641:k==6?-5:k==7?100:640,k==0?470:k==1?490:k==2?100:k==3?0:k==4?100:k==6?100:k==7?-5:481,0)==-1 && mac_cpu_halted(r.cpu) && r.window.bounds[2]==300 && r.window.bounds[3]==450);
   mac_cpu_destroy(r.cpu);
  }
  r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
@@ -245,7 +255,10 @@ static void moving(void) {
   CHECK(r.current_port==port && r.event_count==events);
   if(visible){CHECK(mac_cpu_ram(r.cpu)[r.screen_base+201*640+178]==42);CHECK(mac_cpu_ram(r.cpu)[r.screen_base+100*640+100]==77);CHECK(rd(&r,up+2,2)==141 && rd(&r,up+4,2)==128);}
   else CHECK(rd(&r,up+2,4)==0 && rd(&r,up+6,4)==0);
-  CHECK(move_to(&r,-1,141,0)==-1 && r.window.bounds[1]==128);mac_cpu_destroy(r.cpu);
+  if(!visible){uint32_t order0=r.window_order[0];unsigned count=r.window_count;                       /* front=TRUE on a hidden window: moved, not activated, not reordered, no event */
+   CHECK(move_to(&r,130,142,1)==1 && r.window.bounds[0]==142 && r.window.bounds[1]==130 && r.event_count==events && !r.window.active && r.window_order[0]==order0 && r.window_count==count);}
+  else{CHECK(move_to(&r,130,142,1)==1 && r.window.bounds[0]==142 && r.window.active);}                     /* a visible window with front=TRUE is activated as before */
+  CHECK(move_to(&r,-1,141,0)==-1 && r.window.bounds[1]==130);mac_cpu_destroy(r.cpu);
  }
 }
 /* A window may extend past the bottom or right edge of the screen while it is sized (a game can size first and move after). Nothing may

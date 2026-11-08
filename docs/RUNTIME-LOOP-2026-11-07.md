@@ -466,3 +466,16 @@ the probe, not a window I watched, and I have not listened to any audio.
   and OpenCPort needs eight slots); `MAC_RUNTIME_HANDLES` is now 4096 (every user of it takes the macro; `make test` 0, Monkey Island and Monkey
   Island 2 identical, Castle refreshed). **Next halt:** `NewCWindow requires initialized 640x480 indexed display and bounded content
   rectangle`: the app opens a window whose rectangle falls outside our 640x480 limits (negative origin, off-screen, or too small); not examined yet.
+
+- **Glider PRO reaches its title screen (headless).** The window it asks for (WIND 130: 20 pixels high, full width, plainDBox, hidden) tripped
+  a minimum size I had set (32 x 64) that has no reason behind it: the chrome and backdrop code clip to the screen. NewCWindow and SizeWindow now
+  take any rectangle with at least 1 x 1 pixels inside the screen (zero-size, inverted or off-screen rectangles still halt; the old pinned
+  minimums in the tests were replaced by a table of accepted and refused rectangles; 8 mutants killed). Then `MoveWindow(front = TRUE)` on a hidden
+  window halted: Apple's *Macintosh Toolbox Essentials* (MoveWindow, opened) says front TRUE calls SelectWindow if the window is not active; this
+  runtime's SelectWindow does nothing for a hidden window, so the move now just moves it (hidden: no activation, no reordering, no event;
+  visible: activated as before; one mutant, killed). Result, from a **headless frame at 90 s with no halt**: Glider PRO draws its title picture
+  (a greyscale illustration with paper gliders, drawn through our indexed path) and its own dialog "A problem came up: There are no houses on this
+  drive! ... Error #: 0": it looks for a house file (the game's levels are separate 'gliH' files in its Houses folder) and we have none, plus the
+  earlier "not enough memory ... music" box. `make test` 0, ASan clean on the window tests, Monkey Island and Monkey Island 2 identical, Castle
+  refreshed. Not verified: that the picture is drawn right (I looked at one downscaled frame), the 'no houses' cause (a missing house file or
+  the missing folders, since DirCreate is refused with -123), anything about play, audio, or a windowed run.

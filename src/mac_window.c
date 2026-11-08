@@ -100,7 +100,7 @@ static int create_window(MacRuntime *rt,uint32_t sp) {
        (storage && !valid(rt,storage,156,1)))return fail(rt,"NewCWindow rectangle, title, or storage exceeds guest RAM.");
     memcpy(title,mac_cpu_ram(rt->cpu)+text,(size_t)rd(rt,text,1)+1);
     int t=(int16_t)rd(rt,bounds,2),l=(int16_t)rd(rt,bounds+2,2),b=(int16_t)rd(rt,bounds+4,2),r=(int16_t)rd(rt,bounds+6,2);
-    if(t<0 || l<0 || b>480 || r>640 || b-t<32 || r-l<64 || !display(rt) ||
+    if(t<0 || l<0 || b>480 || r>640 || b-t<1 || r-l<1 || !display(rt) ||
        !rt->main_device || !valid(rt,rt->qd_globals,4,1) || !(rt->manager_flags&2))
         return fail(rt,"NewCWindow requires initialized 640x480 indexed display and bounded content rectangle.");
     if(storage && ((storage<sp+30 && storage+156>sp) ||
@@ -293,7 +293,7 @@ static int size_window(MacRuntime *rt,uint32_t sp) {
     if(!width && !height){mac_cpu_set(rt->cpu,MAC_A7,sp+10);return 1;}
     if(w->updating || !mac_window_registry_valid(rt))return fail(rt,"SizeWindow requires stable owned window geometry.");
     int t=w->bounds[0],l=w->bounds[1],old_b=w->bounds[2],old_r=w->bounds[3],b=t+height,r=l+width;
-    if(width<64 || height<32 || width>640 || height>480)return fail(rt,"SizeWindow exceeds supported content dimensions.");
+    if(width<1 || height<1 || width>640 || height>480)return fail(rt,"SizeWindow exceeds supported content dimensions.");
     /* A window may be sized so that part of it lies below or right of the screen (a game can size first and move after); every pixel
      * loop below and in MoveWindow clips to the screen. The update region cannot name the off-screen part, so growing an off-screen
      * window with updating = TRUE is refused rather than losing it. */
@@ -350,7 +350,7 @@ static int move_window(MacRuntime *rt,uint32_t sp) {
     if(w->updating || !mac_window_registry_valid(rt) || top<0 || left<0 || top+height>480 || left+width>640)
         return fail(rt,"MoveWindow requires stable geometry within the owned display.");
     if(w->visible && mac_window_front(rt)!=w->address)return fail(rt,"MoveWindow requires a single visible window.");
-    if(front && !w->visible)return fail(rt,"MoveWindow activation of a hidden window is unsupported.");
+    if(!w->visible)front=0;   /* front=TRUE means SelectWindow (Toolbox-246); on a hidden window this runtime's SelectWindow does nothing, so neither does this */
     if(front && !w->active && rt->event_count>=64)return fail(rt,"MoveWindow activation queue is full.");
     uint32_t pm=rd(rt,w->handles[0],4),regions[3];int edges[3][4],bitmap[4];
     for(unsigned i=0;i<4;i++) {
