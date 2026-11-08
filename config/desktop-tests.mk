@@ -304,3 +304,9 @@ build/test_desktop_bt_host: tests/test_desktop_bt_host.c src/desktop_bt_host.c i
 test-desktop-bt-host: build/test_desktop_bt_host
 	./build/test_desktop_bt_host
 test: test-desktop-bt-host
+build/test_quicktime: src/quicktime_decode.c src/quicktime_decode.h src/quicktime_movie.c include/quicktime_movie.h $(AUDIO_SRC) $(AUDIO_HDRS) tests/test_quicktime.c
+	mkdir -p build
+	$(CC) $(CFLAGS) $(SDL_CFLAGS) $(FFMPEG_CFLAGS) -o $@ src/quicktime_decode.c src/quicktime_movie.c $(AUDIO_SRC) tests/test_quicktime.c $(SDL_LIBS) $(FFMPEG_LIBS) -pthread -lm
+.PHONY: test-quicktime
+test-quicktime: build/test_quicktime
+	sh scripts/test-quicktime-fixtures.sh

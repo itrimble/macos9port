@@ -130,6 +130,7 @@ typedef struct {
     char *expanded_text;
     struct TermSession *term;
     void *movie;
+    int movie_modern;
 } Window;
 
 /* Small fixtures/windows retain inline storage; large folders own their buffer. */

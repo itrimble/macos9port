@@ -1,5 +1,8 @@
 #include "movie_fixture.h"
 #include "movie_window.h"
+#include "movie_host.h"
+#include "finder_drag.h"
+#include "finder_edit.h"
 #include "ospi.h"
 
 #include <fcntl.h>
@@ -84,6 +87,33 @@ static void remove_tree(const char *root) {
         rmdir(path);
     }
 }
+
+typedef struct { uint32_t time; int state; float volume; } MockMovie;
+static int mock_closed;
+static void *mock_open(const char *path, char *err, size_t n) {
+    (void)path; (void)err; (void)n;
+    MockMovie *m = calloc(1, sizeof *m); m->volume = 1; return m;
+}
+static void mock_close(void *p) { mock_closed++; free(p); }
+static void mock_play(void *p) { ((MockMovie *)p)->state = MAC_MOVIE_PLAYING; }
+static void mock_pause(void *p) { ((MockMovie *)p)->state = MAC_MOVIE_PAUSED; }
+static int mock_seek(void *p, uint32_t t) { ((MockMovie *)p)->time = t; return 0; }
+static int mock_tick(void *p, uint32_t t) { (void)p; (void)t; return 0; }
+static int mock_state(const void *p) { return ((const MockMovie *)p)->state; }
+static uint32_t mock_time(const void *p) { return ((const MockMovie *)p)->time; }
+static uint32_t mock_duration(const void *p) { (void)p; return 20000; }
+static const uint32_t *mock_pixels(const void *p, int *w, int *h) {
+    (void)p; static const uint32_t pixels[] = {0xFF123456};
+    if (w) *w = 1;
+    if (h) *h = 1;
+    return pixels;
+}
+static void mock_volume(void *p, float v) { ((MockMovie *)p)->volume = v; }
+static float mock_get_volume(const void *p) { return ((const MockMovie *)p)->volume; }
+static const MovieHostBackend mock_backend = {
+    mock_open, mock_close, mock_play, mock_pause, mock_seek, mock_tick,
+    mock_state, mock_time, mock_duration, mock_pixels, mock_volume, mock_get_volume
+};
 
 int main(void) {
     CHECK(movie_is_name("clip.mov") && movie_is_name("Clip.MOV"));
@@ -221,7 +251,36 @@ int main(void) {
 
     CHECK(open_named(s, docs, "clip.mov") == 0);
     CHECK(s->win[s->nwin - 1].kind == WIN_MOVIE);
+    session_key(s, 'w', MOD_CMD);
+    movie_host_install(&mock_backend);
+    CHECK(open_named(s, docs, "clip.mov") == 0);
+    movie = &s->win[s->nwin - 1];
+    CHECK(movie->movie_modern && strstr(movie->title, "QuickTime Player"));
+    session_key(s, FINDER_KEY_RIGHT, 0);
+    CHECK(movie_window_time(movie) == 5000);
+    session_key(s, FINDER_KEY_LEFT, 0);
+    CHECK(movie_window_time(movie) == 0);
+    window_layout(movie, &lay);
+    click_at(s, lay.content.x + lay.content.w / 2, lay.content.y + lay.content.h - 8, 1);
+    CHECK(movie_window_time(movie) > 9000 && movie_window_time(movie) < 11000);
+    click_at(s, lay.content.x + lay.content.w - 38, lay.content.y + lay.content.h - 30, 1);
+    CHECK(((MockMovie *)movie->movie)->volume == 0.5f);
+    session_key(s, ' ', 0);
+    CHECK(movie_window_state(movie) == MAC_MOVIE_PAUSED);
+    session_paint(s, px, OSPI_W, OSPI_H);
+    CHECK(picture_at(s, px, &pic) == 0xFF123456);
+    for (int i = 0; i < s->win[docs].nitems; i++) s->win[docs].items[i].selected = 0;
+    int drop_item = item_named(&s->win[docs], "codec.mov");
+    CHECK(drop_item >= 0);
+    s->win[docs].items[drop_item].selected = 1;
+    nwin = s->nwin;
+    finder_drag_drop(s, docs, lay.content.x + 10, lay.content.y + 10);
+    CHECK(s->nwin == nwin + 1 && s->win[s->nwin - 1].movie_modern);
+    snprintf(path, sizeof path, "%s/Documents/codec.mov", root);
+    CHECK(access(path, F_OK) == 0);
     session_destroy(s);
+    CHECK(mock_closed == 2);
+    movie_host_install(NULL);
     free(px);
     remove_tree(root);
     if (failures) fprintf(stderr, "%d movie window checks failed\n", failures);

@@ -65,9 +65,9 @@ icons: $(OUT)/mobile_icons
 	./$(OUT)/mobile_icons mobile/assets
 
 MOBILE_AUDIO := src/media_player_panel.c src/winamp_skin.c src/audio_decoder.c src/audio_dsp.c src/audio_midi.c src/audio_output.c src/audio_service.c
-FFMPEG_CFLAGS := $(shell pkg-config --cflags libavformat libavcodec libswresample libavutil 2>/dev/null)
-FFMPEG_LIBS := $(shell pkg-config --libs libavformat libavcodec libswresample libavutil 2>/dev/null)
-SIM := $(MOBILE_AUDIO) mobile/sdl/mobile_main.c mobile/sdl/mobile_platform.c src/desktop_host.c src/desktop_sound.c $(KBD_DIR)/src/kbd_sdl.c $(KBD_DIR)/src/kbd_haptics.c
+FFMPEG_CFLAGS := $(shell pkg-config --cflags libavformat libavcodec libswresample libavutil libswscale 2>/dev/null)
+FFMPEG_LIBS := $(shell pkg-config --libs libavformat libavcodec libswresample libavutil libswscale 2>/dev/null)
+SIM := src/quicktime_decode.c src/quicktime_movie.c src/quicktime_backend.c $(MOBILE_AUDIO) mobile/sdl/mobile_main.c mobile/sdl/mobile_platform.c src/desktop_host.c src/desktop_sound.c $(KBD_DIR)/src/kbd_sdl.c $(KBD_DIR)/src/kbd_haptics.c
 ifeq ($(shell uname -s),Darwin)
 SDL_LIBS += -lobjc
 endif

@@ -19,7 +19,7 @@ add_library(os999_mobile_dependencies INTERFACE)
 target_include_directories(os999_mobile_dependencies INTERFACE ${OS999_AV_INCLUDE_DIR})
 target_link_libraries(os999_mobile_dependencies INTERFACE
     os999_mobile_storage CURL::libcurl Threads::Threads)
-foreach(component avformat avcodec swresample avutil)
+foreach(component avformat avcodec swresample avutil swscale)
     find_library(OS999_${component}_LIBRARY NAMES ${component} REQUIRED)
     target_link_libraries(os999_mobile_dependencies INTERFACE ${OS999_${component}_LIBRARY})
 endforeach()

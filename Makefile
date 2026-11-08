@@ -15,8 +15,8 @@ CFLAGS += -DOS999_ENABLE_TEST_HOOKS=1
 endif
 SDL_CFLAGS := $(shell pkg-config --cflags sdl2 2>/dev/null)
 SDL_LIBS := $(shell pkg-config --libs sdl2 2>/dev/null)
-FFMPEG_CFLAGS := $(shell pkg-config --cflags libavformat libavcodec libswresample libavutil 2>/dev/null)
-FFMPEG_LIBS := $(shell pkg-config --libs libavformat libavcodec libswresample libavutil 2>/dev/null)
+FFMPEG_CFLAGS := $(shell pkg-config --cflags libavformat libavcodec libswresample libavutil libswscale 2>/dev/null)
+FFMPEG_LIBS := $(shell pkg-config --libs libavformat libavcodec libswresample libavutil libswscale 2>/dev/null)
 FT_CFLAGS := $(shell pkg-config --cflags freetype2 2>/dev/null)
 FT_LIBS := $(shell pkg-config --libs freetype2 2>/dev/null)
 ifneq ($(FT_LIBS),)
@@ -28,15 +28,16 @@ STORAGE_A := $(STORAGE_OUT)/libos999storage.a
 STORAGE_LINK = $(STORAGE_A) $(STORAGE_LIBS)
 CFLAGS += -Istorage/include
 
+VIDEO_SRC := src/quicktime_decode.c src/quicktime_movie.c src/quicktime_backend.c
 AUDIO_SRC := src/audio_decoder.c src/audio_dsp.c src/audio_midi.c src/audio_output.c src/audio_service.c
-AUDIO_HDRS := include/osa.h include/osa_bridge.h include/osa_events.h include/osa_json.h include/osa_session.h include/volume_directory.h include/audio_decoder.h include/audio_dsp.h include/audio_midi.h include/audio_output.h include/audio_service.h
+AUDIO_HDRS := include/movie_host.h include/quicktime_movie.h src/quicktime_decode.h include/osa.h include/osa_bridge.h include/osa_events.h include/osa_json.h include/osa_session.h include/volume_directory.h include/audio_decoder.h include/audio_dsp.h include/audio_midi.h include/audio_output.h include/audio_service.h
 
 # Boot startup renderer and the original pixel-art fruit sprite it draws.
 STARTUP_SRC := src/os999_startup.c src/os999_startup_sprite.c
 STARTUP_HDR := include/os999_startup.h include/os999_startup_sprite.h
 
 include config/core-sources.mk
-HDRS := src/install_int.h include/application_probe.h include/quake_launch.h include/term_font.h include/tailnet.h include/finder_edit.h include/app_switcher.h include/desktop_gesture.h include/finder_apps.h include/finder_print.h include/finder_recent.h include/finder_batch.h include/finder_drag.h include/finder_selection.h include/finder_popup.h include/finder_state.h include/finder_settings.h include/finder_search.h include/finder_files.h include/desktop_finder.h include/modern_network.h include/folder_navigation.h include/desktop_commands.h include/desktop_help.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h include/term.h include/mac_movie.h include/movie_window.h
+HDRS := include/movie_host.h src/install_int.h include/application_probe.h include/quake_launch.h include/term_font.h include/tailnet.h include/finder_edit.h include/app_switcher.h include/desktop_gesture.h include/finder_apps.h include/finder_print.h include/finder_recent.h include/finder_batch.h include/finder_drag.h include/finder_selection.h include/finder_popup.h include/finder_state.h include/finder_settings.h include/finder_search.h include/finder_files.h include/desktop_finder.h include/modern_network.h include/folder_navigation.h include/desktop_commands.h include/desktop_help.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h include/term.h include/mac_movie.h include/movie_window.h
 
 PRINT_HOST := src/desktop_print_stub.c
 SHORTCUT_HOST := src/desktop_shortcuts_stub.c
@@ -63,9 +64,9 @@ else
 BROWSER_OVERLAY := src/browser_overlay_linux.c
 endif
 include config/desktop-bluetooth.mk
-build/ospi: $(DESKTOP_BT_APP_SRC) $(DESKTOP_BT_APP_HDR) $(DESKTOP_BT_APP_HOST) $(DESKTOP_BT_APP_ARCHIVES) $(SHORTCUT_HOST) include/desktop_shortcuts.h $(PRINT_HOST) $(CORE) $(STORAGE_A) $(AUDIO_SRC) src/winamp_skin.c src/media_player_panel.c $(STARTUP_SRC) src/main.c src/desktop_guest.c src/desktop_host.c src/desktop_sound.c $(HDRS) $(AUDIO_HDRS) include/winamp_skin.h include/media_player_panel.h $(STARTUP_HDR) include/desktop_guest.h include/desktop_host.h include/desktop_sound.h $(BROWSER_SRC) $(BROWSER_OVERLAY) $(BROWSER_HDRS)
+build/ospi: $(DESKTOP_BT_APP_SRC) $(DESKTOP_BT_APP_HDR) $(DESKTOP_BT_APP_HOST) $(DESKTOP_BT_APP_ARCHIVES) $(SHORTCUT_HOST) include/desktop_shortcuts.h $(PRINT_HOST) $(CORE) $(STORAGE_A) $(AUDIO_SRC) $(VIDEO_SRC) src/winamp_skin.c src/media_player_panel.c $(STARTUP_SRC) src/main.c src/desktop_guest.c src/desktop_host.c src/desktop_sound.c $(HDRS) $(AUDIO_HDRS) include/winamp_skin.h include/media_player_panel.h $(STARTUP_HDR) include/desktop_guest.h include/desktop_host.h include/desktop_sound.h $(BROWSER_SRC) $(BROWSER_OVERLAY) $(BROWSER_HDRS)
 	mkdir -p build
-	$(CC) $(CFLAGS) $(DESKTOP_BT_APP_INC) $(SDL_CFLAGS) $(FFMPEG_CFLAGS) -o $@ $(DESKTOP_BT_APP_SRC) $(DESKTOP_BT_APP_HOST) $(SHORTCUT_HOST) $(PRINT_HOST) $(CORE) $(STORAGE_LINK) $(AUDIO_SRC) src/winamp_skin.c src/media_player_panel.c $(STARTUP_SRC) src/main.c src/desktop_guest.c src/desktop_host.c src/desktop_sound.c $(BROWSER_SRC) $(BROWSER_OVERLAY) $(SDL_LIBS) $(FFMPEG_LIBS) $(FT_LIBS) $(BROWSER_LIBS) -pthread -lm $(NET_LIBS) $(DESKTOP_BT_APP_ARCHIVES) $(DESKTOP_BT_APP_LIBS)
+	$(CC) $(CFLAGS) $(DESKTOP_BT_APP_INC) $(SDL_CFLAGS) $(FFMPEG_CFLAGS) -o $@ $(DESKTOP_BT_APP_SRC) $(DESKTOP_BT_APP_HOST) $(SHORTCUT_HOST) $(PRINT_HOST) $(CORE) $(STORAGE_LINK) $(AUDIO_SRC) $(VIDEO_SRC) src/winamp_skin.c src/media_player_panel.c $(STARTUP_SRC) src/main.c src/desktop_guest.c src/desktop_host.c src/desktop_sound.c $(BROWSER_SRC) $(BROWSER_OVERLAY) $(SDL_LIBS) $(FFMPEG_LIBS) $(FT_LIBS) $(BROWSER_LIBS) -pthread -lm $(NET_LIBS) $(DESKTOP_BT_APP_ARCHIVES) $(DESKTOP_BT_APP_LIBS)
 
 build/test_os999_startup: $(STARTUP_SRC) src/font.c tests/test_os999_startup.c $(STARTUP_HDR) include/draw.h
 	mkdir -p build

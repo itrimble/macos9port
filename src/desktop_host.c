@@ -1,3 +1,4 @@
+#include "quicktime_movie.h"
 #include <SDL.h>
 #include "desktop_bt_host.h"
 #include "session_int.h"
@@ -58,6 +59,7 @@ void desktop_host_init(const char *volume) {
     find_sounds(sounds, sizeof sounds);
     media_panel_init_hooks();
     desktop_bt_host_init();
+    quicktime_install_backend();
     int n = snprintf(preference, sizeof preference, "%s/.os999-sound", volume);
     if (n <= 0 || (size_t)n >= sizeof preference) return;
     if (!desktop_sound_init(sounds, preference))

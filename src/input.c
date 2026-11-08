@@ -368,7 +368,7 @@ void session_up(Session *s, int x, int y) {
             terminal_up(s, &s->win[win], &lay, x, y);
         }
         if (zone == Z_CONTENT && !drag && s->win[win].kind == WIN_MOVIE && rect_has(lay.content, x, y)) {
-            movie_window_toggle(&s->win[win]);
+            movie_window_click(&s->win[win], x, y);
             return;
         }
     }
@@ -449,8 +449,8 @@ void session_key(Session *s, int key, int mods) {
     if (s->menu < 0 && terminal_front(s) && terminal_key(s, orig_key, mods)) {
         return;
     }
-    if (key == ' ' && s->menu < 0 && s->nwin > 0 && s->win[s->nwin - 1].kind == WIN_MOVIE) {
-        movie_window_toggle(&s->win[s->nwin - 1]);
+    if (s->menu < 0 && s->nwin > 0 && s->win[s->nwin - 1].kind == WIN_MOVIE &&
+        movie_window_key(&s->win[s->nwin - 1], key)) {
         return;
     }
     if (key == 27) {

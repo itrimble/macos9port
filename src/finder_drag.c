@@ -1,3 +1,4 @@
+#include "movie_window.h"
 #include "finder_apps.h"
 #include "appearance_panel.h"
 #include "finder_desktop_positions.h"
@@ -53,6 +54,16 @@ void finder_drag_drop(Session *s, int source_window, int x, int y) {
     for (int i = s->nwin - 1; i >= 0; i--) {
         Window *w = &s->win[i]; Layout lay; window_layout(w, &lay);
         if (!rect_has(lay.outer, x, y)) continue;
+        if (w->kind == WIN_MOVIE && !w->collapsed && rect_has(lay.content, x, y)) {
+            int selected = 0, item = -1;
+            for (int j = 0; j < source->nitems; j++) if (window_items(source)[j].selected) { selected++; item = j; }
+            if (selected == 1 && window_items(source)[item].kind == ITEM_FILE && movie_is_name(window_items(source)[item].name)) {
+                char rel[OSPI_PATH];
+                int n = snprintf(rel, sizeof rel, "%s%s%s", source->rel, source->rel[0] ? "/" : "", window_items(source)[item].name);
+                if (n > 0 && (size_t)n < sizeof rel) (void)movie_window_open(s, window_items(source)[item].name, rel);
+            }
+            return; /* Document drop opens in a player; never moves source files. */
+        }
         if (w->kind != WIN_FOLDER || w->search_results || w->collapsed || !rect_has(lay.content, x, y)) return;
         int item = item_index_at(w, x, y);
         if (item >= 0 && (window_items(w)[item].kind == ITEM_FOLDER || window_items(w)[item].kind == ITEM_SYSTEM)) {
