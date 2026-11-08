@@ -37,7 +37,7 @@ static int implemented(unsigned key) {
     switch (0xa000 | key) {
     case 0xa800:
     case 0xa801: case 0xa803: case 0xa804: case 0xa807:
-    case 0xa9eb: case 0xa9ee: case 0xa830: case 0xa816: case 0xa9fc: case 0xa9fd: case 0xa9fe: case 0xa99b:
+    case 0xa9eb: case 0xa9ee: case 0xa830: case 0xa816: case 0xa9fc: case 0xa9fd: case 0xa9fe: case 0xa99b: case 0xa9e1: case 0xa9e3:
     case 0xa8f6:
     case 0xa997: case 0xa994: case 0xa998: case 0xa99a: case 0xa9a4:
     case 0xaa52:
@@ -130,6 +130,8 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (timer) return timer > 0 ? 0 : -1;
     int delay = mac_delay_service(rt, opcode);
     if (delay) return delay > 0 ? 0 : -1;
+    int handcopy = mac_handcopy_service(rt, opcode);
+    if (handcopy) return handcopy > 0 ? 0 : -1;
     int resload = mac_resload_service(rt, opcode);
     if (resload) return resload > 0 ? 0 : -1;
     int scrap = mac_scrap_service(rt, opcode);

@@ -17,7 +17,9 @@ static int range(MacRuntime *rt, uint32_t p, size_t n) {
     return !(p & 1) && p <= size && n <= size - p;
 }
 
-static uint32_t watch_cursor(MacRuntime *rt) {
+/* The standard cursors a program expects the System to supply: 1 I-beam, 2 crosshair, 3 plus, 4 watch (hourglass). The pixels are authored here
+ * (simple geometric shapes), not taken from a Macintosh asset; hot spots are the shape centres. */
+static uint32_t standard_cursor(MacRuntime *rt, int16_t id) {
     const uint32_t type = MAC_RESOURCE_TYPE('C','U','R','S');
     size_t slot = 0;
     while (slot < rt->handle_count && (rt->handles[slot].handle || rt->handles[slot].pointer)) slot++;
@@ -28,10 +30,16 @@ static uint32_t watch_cursor(MacRuntime *rt) {
     /* Original geometric hourglass: two horizontal bars and converging sides.
      * These pixels were authored here, not taken from a Macintosh asset. */
     uint8_t *cursor = mac_cpu_ram(rt->cpu) + p;
-    for (unsigned y = 2; y <= 13; y++) {
-        unsigned inset = y <= 7 ? y - 2 : 13 - y;
-        uint16_t bits = y == 2 || y == 13 ? 0x3ffc :
-            (uint16_t)((0x2000u >> inset) | (4u << inset));
+    for (unsigned y = 0; y < 16; y++) {
+        uint16_t bits = 0;
+        if (id == 4) {
+            if (y >= 2 && y <= 13) {
+                unsigned inset = y <= 7 ? y - 2 : 13 - y;
+                bits = y == 2 || y == 13 ? 0x3ffc : (uint16_t)((0x2000u >> inset) | (4u << inset));
+            }
+        } else if (id == 1) bits = y == 0 || y == 15 ? 0x07e0 : 0x0180;                              /* I-beam: serifs and a stem */
+        else if (id == 2) bits = y == 7 ? 0x7ffe : (y >= 1 && y <= 14) ? 0x0100 : 0;                  /* crosshair: thin cross */
+        else bits = (y >= 6 && y <= 9) ? 0x3ffc : (y >= 2 && y <= 13) ? 0x0180 : 0;                   /* plus: thick cross */
         cursor[y * 2] = (uint8_t)(bits >> 8);
         cursor[y * 2 + 1] = (uint8_t)bits;
     }
@@ -39,7 +47,7 @@ static uint32_t watch_cursor(MacRuntime *rt) {
     cursor[65] = 7; cursor[67] = 7;
     mac_cpu_write(rt->cpu, h, 4, p);
     rt->handles[slot] = (MacHandle){.handle=h, .pointer=p, .size=68,
-        .type=type, .id=4, .resource=1};
+        .type=type, .id=id, .resource=1};
     if (slot == rt->handle_count) rt->handle_count++;
     return h;
 }
@@ -62,8 +70,9 @@ int mac_cursor_service(MacRuntime *rt, uint16_t opcode) {
         uint32_t h = mac_runtime_resource(rt, type, id);
         MacResource resource;
         int absent = mac_resource_find(&rt->fork, type, id, &resource) != 0;
-        if (!h && absent && id == 4) h = watch_cursor(rt);
-        int error = h ? 0 : absent && id != 4 ? -192 : -108;
+        int standard = id >= 1 && id <= 4;
+        if (!h && absent && standard) h = standard_cursor(rt, id);
+        int error = h ? 0 : absent && !standard ? -192 : -108;
         mac_cpu_write(rt->cpu, sp + 2, 4, h);
         mac_cpu_write(rt->cpu, 0xa60, 2, (uint16_t)error);
     } else if (opcode == 0xa851) {

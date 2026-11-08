@@ -440,3 +440,17 @@ the probe, not a window I watched, and I have not listened to any audio.
   the music won't be loaded" (Whatever to dismiss), then "Couldn't Load a Resource ... (program error = 4)". The trace shows no resource
   lookup failing (all `snd ` 1029-1045 found), so the program is judging memory from something we report (free memory / largest block / a
   failed NewHandle or purge): the next thing to find; not started.
+
+- **Glider PRO: standard cursors, HandToHand/PtrToHand, ForeColor/BackColor (headless).** The "Couldn't Load a Resource (program error = 4)" box
+  was real and ours: the startup routine calls `GetCursor(1)` (the I-beam), which the System supplies on a real Mac; the runtime only made the
+  watch cursor. It now makes the standard cursors 1 I-beam, 2 crosshair, 3 plus and 4 watch (shapes authored here, centre hot spots; ids 0 and 5
+  are still "not found"). The "isn't enough memory ... the music won't be loaded" box is the app's own decision and still appears; I did not find
+  what it measures. Next halts, in order: `$A9E1` **HandToHand** (and its neighbour PtrToHand `$A9E3`, `src/mac_handcopy.c`; register
+  conventions from my memory: A0 handle in, A0 copy out, D0 OSErr; purged -112, forged/unknown -109/-111, no room -108), then `$A862`
+  **ForeColor** (`BackColor` `$A863`) on a basic port (`mac_raster.c`) and on a colour port (`mac_color_raster.c`), with QuickDraw's eight colour
+  constants (33, 30, 205, 341, 409, 273, 137, 69; from my memory) taken as pure colours and matched to the nearest palette entry
+  (`src/mac_qdcolor.c`); any other value halts. Tests: `test_mac_cursor`, `test_mac_handcopy`, `test_mac_raster`, `test_mac_color_raster`
+  (corrupt handles/pointers/sizes, full handle table and heap, bad constants, colour vs basic ports); mutants killed except two equivalent ones
+  in HandToHand (the size cap and the odd-handle test are shadowed by later checks); ASan clean; `make test` 0; Monkey Island and Monkey Island 2
+  identical; Castle refreshed. **Next halt:** `PICT header requires matching version2 fixed bounds (opcode 0c00, byte 40)`: a PICT whose version-2
+  header carries bounds that do not match the picture frame; not examined yet.

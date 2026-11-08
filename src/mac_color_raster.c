@@ -1,4 +1,5 @@
 #include "mac_runtime.h"
+#include "mac_qdcolor.h"
 #include "mac_shape.h"
 #include <limits.h>
 #include <string.h>
@@ -46,9 +47,20 @@ static int pattern(MacRuntime *r,uint32_t h,uint8_t out[8]) {
     if(rd(r,p,2)!=0)return fail(r,"Complex color pixel patterns are unsupported.");
     memcpy(out,mac_cpu_ram(r->cpu)+p+20,8);return 1;
 }
+static int set_rgb(MacRuntime *rt,uint32_t port,const unsigned rgb[3],int back);
 static int rgb(MacRuntime *rt,uint32_t port,uint32_t arg,int back) {
     if(!arg || valid(rt,arg,6,1)<0)return fail(rt,"Invalid RGBColor pointer.");
-    unsigned rgb[3]={rd(rt,arg,2),rd(rt,arg+2,2),rd(rt,arg+4,2)};
+    unsigned in[3]={rd(rt,arg,2),rd(rt,arg+2,2),rd(rt,arg+4,2)};
+    return set_rgb(rt,port,in,back);
+}
+/* ForeColor / BackColor(color: LONGINT) on a colour port: one of QuickDraw's eight constants (mac_qdcolor.h) becomes the RGB the port uses. */
+static int constant_color(MacRuntime *rt,uint32_t port,uint32_t color,int back) {
+    unsigned c8[3];
+    if(!mac_qd_color_constant(color,c8))return fail(rt,"ForeColor/BackColor take one of QuickDraw's eight color constants here.");
+    unsigned in[3]={c8[0]*257,c8[1]*257,c8[2]*257};
+    return set_rgb(rt,port,in,back);
+}
+static int set_rgb(MacRuntime *rt,uint32_t port,const unsigned rgb[3],int back) {
     uint8_t allowed[256];memset(allowed,1,sizeof allowed);
     if(rt->main_device && mac_palette_match_mask(rt,allowed)<0)return -1;
     uint64_t best=UINT64_MAX;unsigned index=0;
@@ -143,7 +155,7 @@ int mac_color_shape(MacRuntime *rt,uint32_t port,int t,int l,int b,int r,uint16_
     return draw(rt,port,0,op,&x,fillpat,outer,inner);
 }
 int mac_color_raster_service(MacRuntime *rt,uint16_t opcode) {
-    if((opcode<0xa8a1 || opcode>0xa8a5) && opcode!=0xaa14 && opcode!=0xaa15)return 0;
+    if((opcode<0xa8a1 || opcode>0xa8a5) && opcode!=0xaa14 && opcode!=0xaa15 && opcode!=0xa862 && opcode!=0xa863)return 0;
     if(!rt || !rt->cpu || mac_cpu_halted(rt->cpu))return -1;
     if(!rt->qd_globals || valid(rt,rt->qd_globals,4,1)<0)return fail(rt,"QuickDraw globals are not initialized.");
     uint32_t port=rd(rt,rt->qd_globals,4);
@@ -151,7 +163,7 @@ int mac_color_raster_service(MacRuntime *rt,uint16_t opcode) {
     if((rd(rt,port+6,2)&0xc000)!=0xc000)return 0;
     uint32_t sp=mac_cpu_get(rt->cpu,MAC_A7);unsigned args=opcode==0xa8a5?8:4;
     if(valid(rt,sp,args,1)<0)return -1;
-    int rc=opcode==0xaa14 || opcode==0xaa15?rgb(rt,port,rd(rt,sp,4),opcode==0xaa15):draw(rt,port,sp,opcode,NULL,0,NULL,NULL);
+    int rc=opcode==0xa862 || opcode==0xa863?constant_color(rt,port,rd(rt,sp,4),opcode==0xa863):opcode==0xaa14 || opcode==0xaa15?rgb(rt,port,rd(rt,sp,4),opcode==0xaa15):draw(rt,port,sp,opcode,NULL,0,NULL,NULL);
     if(rc>0)mac_cpu_set(rt->cpu,MAC_A7,sp+args);
     return rc;
 }

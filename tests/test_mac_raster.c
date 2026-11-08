@@ -21,6 +21,7 @@ static int call(MacRuntime *rt,uint16_t op,uint32_t arg) {
     return mac_raster_service(rt,op);
 }
 
+#define RAW4(r,a) ((uint32_t)mac_cpu_ram((r)->cpu)[(a)]<<24|(uint32_t)mac_cpu_ram((r)->cpu)[(a)+1]<<16|(uint32_t)mac_cpu_ram((r)->cpu)[(a)+2]<<8|mac_cpu_ram((r)->cpu)[(a)+3])  /* raw, readable after a halt */
 static void clear(MacRuntime *rt) { memset(mac_cpu_ram(rt->cpu)+rt->screen_base,0,80*480); }
 static unsigned byte(MacRuntime *rt,unsigned y,unsigned x) {return mac_cpu_ram(rt->cpu)[rt->screen_base+y*80+x];}
 
@@ -155,6 +156,20 @@ int main(void) {
         for(unsigned i=0;i<256;i++)rt.palette[i]=0xff808080u;rt.palette[7]=0xff000000u;rt.palette[200]=0xffffffffu;
         memset(scr,0x55,640*480);rect(&rt,RECT,0,0,1,1);CHECK(call(&rt,0xa8a2,RECT)==1);CHECK(PIX(0,0)==7);
         CHECK(call(&rt,0xa8a3,RECT)==1);CHECK(PIX(0,0)==200);
+        /* ForeColor / BackColor on the basic port: the eight constants, taken as pure colours, choose the ink (bit 1 / bit 0) */
+        for(unsigned i=0;i<256;i++)rt.palette[i]=0xff808080u;
+        rt.palette[0]=0xffffffffu;rt.palette[255]=0xff000000u;rt.palette[10]=0xffff0000u;rt.palette[20]=0xff0000ffu;rt.palette[30]=0xff00ff00u;
+        rt.palette[40]=0xff00ffffu;rt.palette[50]=0xffff00ffu;rt.palette[60]=0xffffff00u;
+        rect(&rt,PORT+8,0,0,480,640);rect(&rt,PORT+16,0,0,480,640);rect(&rt,RECT,0,0,1,1);
+        {static const struct{unsigned c,idx;}k[]={{205,10},{409,20},{341,30},{273,40},{137,50},{69,60},{33,255},{30,0}};
+         for(unsigned i=0;i<sizeof k/sizeof*k;i++){
+             memset(scr,0x55,640*480);CHECK(call(&rt,0xa862,k[i].c)==1 && mac_cpu_read(rt.cpu,PORT+80,4)==k[i].c);
+             CHECK(call(&rt,0xa8a2,RECT)==1 && PIX(0,0)==k[i].idx);                                         /* PaintRect: black pattern bits take the foreground */
+             CHECK(call(&rt,0xa862,33)==1);
+             CHECK(call(&rt,0xa863,k[i].c)==1 && mac_cpu_read(rt.cpu,PORT+84,4)==k[i].c);
+             CHECK(call(&rt,0xa8a3,RECT)==1 && PIX(0,0)==k[i].idx);                                         /* EraseRect: white pattern bits take the background */
+             CHECK(call(&rt,0xa863,30)==1);
+         }}
         /* ties: the first of equally dark entries is black, the last of equally light ones is white (the same choice the window chrome makes) */
         for(unsigned i=0;i<256;i++)rt.palette[i]=0xff808080u;rt.palette[3]=0xff000000u;rt.palette[9]=0xff000000u;rt.palette[100]=0xffffffffu;rt.palette[150]=0xffffffffu;
         memset(scr,0x55,640*480);CHECK(call(&rt,0xa8a2,RECT)==1);CHECK(PIX(0,0)==3);CHECK(call(&rt,0xa8a3,RECT)==1);CHECK(PIX(0,0)==150);
@@ -166,6 +181,16 @@ int main(void) {
         CHECK(call(&rt,0xa8a2,RECT)==-1 && strstr(mac_cpu_error(rt.cpu),"dimensions")!=NULL);mac_runtime_destroy(&rt);
         if(init(&rt))return 1;rt.screen_depth=4;rt.screen_width=640;rt.screen_height=480;rect(&rt,RECT,0,0,1,1);
         CHECK(call(&rt,0xa8a2,RECT)==-1 && strstr(mac_cpu_error(rt.cpu),"screen depth")!=NULL);mac_runtime_destroy(&rt);
+        /* a color constant that is not one of the eight halts and stores nothing; BackColor likewise; a corrupt fgColor field halts drawing */
+        if(init(&rt))return 1;rt.screen_depth=8;rt.screen_width=640;rt.screen_height=480;rt.screen_row_bytes=640;
+        CHECK(call(&rt,0xa862,12345)==-1 && mac_cpu_halted(rt.cpu) && RAW4(&rt,PORT+80)==33);mac_runtime_destroy(&rt);
+        if(init(&rt))return 1;rt.screen_depth=8;rt.screen_width=640;rt.screen_height=480;rt.screen_row_bytes=640;
+        CHECK(call(&rt,0xa863,99)==-1 && mac_cpu_halted(rt.cpu) && RAW4(&rt,PORT+84)==30);mac_runtime_destroy(&rt);
+        if(init(&rt))return 1;rt.screen_depth=8;rt.screen_width=640;rt.screen_height=480;rt.screen_row_bytes=640;
+        mac_cpu_write(rt.cpu,PORT+80,4,99);mac_cpu_write(rt.cpu,PORT+6,2,640);rect(&rt,PORT+8,0,0,480,640);rect(&rt,PORT+16,0,0,480,640);rect(&rt,RECT,0,0,1,1);
+        CHECK(call(&rt,0xa8a2,RECT)==-1 && strstr(mac_cpu_error(rt.cpu),"foreground")!=NULL);mac_runtime_destroy(&rt);
+        if(init(&rt))return 1;                                                                               /* a color port: the colour services own ForeColor, this one declines */
+        mac_cpu_write(rt.cpu,PORT+6,2,0xc000);CHECK(call(&rt,0xa862,205)==0 && mac_cpu_read(rt.cpu,PORT+80,4)==33);mac_runtime_destroy(&rt);
         #undef PIX
     }
     /* A color port (portVersion 0xC000 at +6): the clip traps work, drawing and pen traps still refuse. */

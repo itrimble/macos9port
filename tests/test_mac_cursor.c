@@ -72,6 +72,23 @@ static void resources(void) {
     rt.handles[0].id = -9;
     CHECK(get(&rt, -9) == h && rt.heap_next == saved);
     mac_cpu_destroy(rt.cpu);
+    /* the other standard cursors (1 I-beam, 2 crosshair, 3 plus): authored shapes, mask = data, centre hot spot, one handle each, cached */
+    setup(&rt);
+    for (int16_t id = 1; id <= 3; id++) {
+        uint32_t c = get(&rt, id), at = rt.heap_next; CHECK(c != 0 && get(&rt, id) == c && rt.heap_next == at);
+        uint32_t cp = mac_cpu_read(rt.cpu, c, 4);
+        CHECK(!memcmp(mac_cpu_ram(rt.cpu) + cp, mac_cpu_ram(rt.cpu) + cp + 32, 32) && mac_cpu_read(rt.cpu, cp + 64, 4) == 0x00070007);
+        CHECK(mac_cpu_read(rt.cpu, 0xa60, 2) == 0);
+    }
+    {   uint32_t a = get(&rt, 1), b = get(&rt, 2), c = get(&rt, 3), w = get(&rt, 4);
+        CHECK(a != b && b != c && c != a && w != a && rt.handle_count == 4);
+        uint32_t pa = mac_cpu_read(rt.cpu, a, 4), pb = mac_cpu_read(rt.cpu, b, 4), pc = mac_cpu_read(rt.cpu, c, 4);
+        CHECK(mac_cpu_read(rt.cpu, pa, 2) == 0x07e0 && mac_cpu_read(rt.cpu, pa + 2, 2) == 0x0180 && mac_cpu_read(rt.cpu, pa + 30, 2) == 0x07e0);   /* I-beam */
+        CHECK(mac_cpu_read(rt.cpu, pb + 14, 2) == 0x7ffe && mac_cpu_read(rt.cpu, pb + 2, 2) == 0x0100 && mac_cpu_read(rt.cpu, pb, 2) == 0);         /* crosshair */
+        CHECK(mac_cpu_read(rt.cpu, pc + 12, 2) == 0x3ffc && mac_cpu_read(rt.cpu, pc + 4, 2) == 0x0180 && mac_cpu_read(rt.cpu, pc, 2) == 0 && mac_cpu_read(rt.cpu, pc + 18, 2) == 0x3ffc && mac_cpu_read(rt.cpu, pc + 20, 2) == 0x0180 && mac_cpu_read(rt.cpu, pc + 26, 2) == 0x0180 && mac_cpu_read(rt.cpu, pc + 28, 2) == 0);}       /* plus */
+    CHECK(get(&rt, 0) == 0 && (int16_t)mac_cpu_read(rt.cpu, 0xa60, 2) == -192);                    /* 0 and 5 are not standard cursors */
+    CHECK(get(&rt, 5) == 0 && (int16_t)mac_cpu_read(rt.cpu, 0xa60, 2) == -192);
+    mac_cpu_destroy(rt.cpu);
     setup(&rt); saved = rt.heap_next; rt.heap_limit = saved + 4;
     CHECK(get(&rt, 4) == 0);
     CHECK(rt.heap_next == saved && rt.handle_count == 0);

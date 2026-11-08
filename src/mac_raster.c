@@ -1,5 +1,6 @@
 #include "mac_runtime.h"
 #include "mac_shape.h"
+#include "mac_qdcolor.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -73,6 +74,17 @@ static int region_box(MacRuntime *rt, uint32_t h, uint32_t *p, Box *b) {
     return get_box(rt, *p + 2, b);
 }
 
+static void constant_rgb(uint32_t c, int *ok, unsigned rgb[3]) { *ok = mac_qd_color_constant(c, rgb); }
+static uint8_t nearest_entry(const MacRuntime *rt, const unsigned rgb[3]) {
+    unsigned best = 0; long bd = -1;
+    for (unsigned i = 0; i < 256; i++) {
+        uint32_t c = rt->palette[i];
+        long dr = (long)((c >> 16) & 255) - (long)rgb[0], dg = (long)((c >> 8) & 255) - (long)rgb[1], db = (long)(c & 255) - (long)rgb[2], d = dr*dr + dg*dg + db*db;
+        if (bd < 0 || d < bd) { bd = d; best = i; }
+    }
+    return (uint8_t)best;
+}
+
 static int canvas(Raster *r, MacRuntime *rt, uint32_t port) {
     memset(r, 0, sizeof *r); r->rt=rt; r->port=port;
     unsigned row=rd(rt,port+6,2);
@@ -106,7 +118,12 @@ static int canvas(Raster *r, MacRuntime *rt, uint32_t port) {
         if (region_box(rt,rd(rt,port+off,4),&data,&b)<0) return -1;
         r->clip=intersect(r->clip,b);
     }
-    if (rd(rt,port+80,4)!=33 || rd(rt,port+84,4)!=30)
+    if (r->indexed) {                                             /* ForeColor/BackColor set the ink: bit 1 draws the foreground, bit 0 the background */
+        int fok, bok; unsigned f[3], b[3];
+        constant_rgb(rd(rt,port+80,4), &fok, f); constant_rgb(rd(rt,port+84,4), &bok, b);
+        if (!fok || !bok) return fail(rt, "A foreground or background color other than QuickDraw's eight constants is unsupported.");
+        if (rd(rt,port+80,4)!=33 || rd(rt,port+84,4)!=30) { r->black = nearest_entry(rt, f); r->white = nearest_entry(rt, b); }
+    } else if (rd(rt,port+80,4)!=33 || rd(rt,port+84,4)!=30)
         return fail(rt, "Non-default mono foreground/background colors are unsupported.");
     return 1;
 }
@@ -168,7 +185,7 @@ int mac_raster_shape(MacRuntime *rt,uint32_t port,int t,int l,int b,int r,uint32
 int mac_raster_service(MacRuntime *rt,uint16_t opcode) {
     unsigned args;
     switch(opcode) {
-        case 0xa87c: case 0xa879: case 0xa87a: case 0xa87b:
+        case 0xa862: case 0xa863: case 0xa87c: case 0xa879: case 0xa87a: case 0xa87b:
         case 0xa893: case 0xa891: case 0xa89b: case 0xa89d: case 0xa89a:
         case 0xa8a1: case 0xa8a2: case 0xa8a3: case 0xa8a4: args=4;break;
         case 0xa8a5: args=8;break;
@@ -180,6 +197,7 @@ int mac_raster_service(MacRuntime *rt,uint16_t opcode) {
     if (range(rt,sp,args,1)<0 || current_port(rt,&port)<0) return -1;
     /* GetClip, SetClip and ClipRect only move the clip region, and clipRgn sits at port+28 in both a GrafPort and a
      * CGrafPort, so they work on either. Everything else here reads pen or pattern fields whose offsets differ. */
+    if ((opcode==0xa862 || opcode==0xa863) && (rd(rt,port+6,2)&0xc000)==0xc000) return 0;   /* colour ports: the colour services own these */
     int clip_only=opcode==0xa879 || opcode==0xa87a || opcode==0xa87b;
     if (!clip_only && (rd(rt,port+6,2)&0xc000)==0xc000)
         return fail(rt,"This pen or drawing operation is not implemented for color ports yet.");
@@ -211,6 +229,10 @@ int mac_raster_service(MacRuntime *rt,uint16_t opcode) {
                 rc=paint(rt,port,b,port+58,(int)rd(rt,port+56,2),0,0,NULL,NULL);
         }
         if(rc>0) {wr(rt,port+48,2,(uint16_t)y);wr(rt,port+50,2,(uint16_t)x);}
+    } else if(opcode==0xa862 || opcode==0xa863) {          /* ForeColor / BackColor on a basic port: fgColor at +80, bkColor at +84 */
+        int known; unsigned rgb[3]; constant_rgb(arg,&known,rgb);
+        if(!known)return fail(rt,"ForeColor/BackColor take one of QuickDraw's eight color constants here.");
+        wr(rt,port+(opcode==0xa862?80:84),4,arg);
     } else if(opcode==0xa89b) {
         if((int16_t)rd(rt,sp,2)<0 || (int16_t)rd(rt,sp+2,2)<0)return fail(rt,"Negative QuickDraw pen size.");
         wr(rt,port+52,4,arg);

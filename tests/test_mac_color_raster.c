@@ -39,6 +39,19 @@ int main(void){
     r.palette[19]=0xff0000;w(&r,RECT,2,65535);w(&r,RECT+2,2,0);w(&r,RECT+4,2,0);
     CHECK(call(&r,0xaa14)==1);CHECK(mac_cpu_read(r.cpu,PORT+80,4)==19);CHECK(mac_cpu_read(r.cpu,PORT+36,2)==65535);
     CHECK(call(&r,0xaa15)==1);CHECK(mac_cpu_read(r.cpu,PORT+84,4)==19);
+    /* ForeColor / BackColor(color: LONGINT) on a colour port: the eight constants, as pure colours, matched to the nearest palette entry */
+    for(unsigned i=0;i<256;i++)r.palette[i]=0xff808080u;
+    r.palette[100]=0xffff0000u;r.palette[101]=0xff0000ffu;r.palette[102]=0xff00ff00u;r.palette[103]=0xff000000u;r.palette[104]=0xffffffffu;
+    {mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,205);CHECK(mac_color_raster_service(&r,0xa862)==1 && mac_cpu_read(r.cpu,PORT+80,4)==100 && mac_cpu_read(r.cpu,PORT+36,2)==65535 && mac_cpu_read(r.cpu,PORT+38,2)==0 && mac_cpu_get(r.cpu,MAC_A7)==SP+4);
+     mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,409);CHECK(mac_color_raster_service(&r,0xa863)==1 && mac_cpu_read(r.cpu,PORT+84,4)==101 && mac_cpu_read(r.cpu,PORT+42,2)==0 && mac_cpu_read(r.cpu,PORT+46,2)==65535 && mac_cpu_get(r.cpu,MAC_A7)==SP+4);
+     mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,33);CHECK(mac_color_raster_service(&r,0xa862)==1 && mac_cpu_read(r.cpu,PORT+80,4)==103);
+     mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,30);CHECK(mac_color_raster_service(&r,0xa863)==1 && mac_cpu_read(r.cpu,PORT+84,4)==104);
+     mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,341);CHECK(mac_color_raster_service(&r,0xa862)==1 && mac_cpu_read(r.cpu,PORT+80,4)==102);
+     mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,4242);CHECK(mac_color_raster_service(&r,0xa862)==-1 && mac_cpu_halted(r.cpu) && strstr(mac_cpu_error(r.cpu),"color constants")!=NULL);}
+    mac_cpu_destroy(r.cpu);
+    r=setup();w(&r,PORT+6,2,8);mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,205);CHECK(mac_color_raster_service(&r,0xa862)==0 && mac_cpu_get(r.cpu,MAC_A7)==SP && mac_cpu_read(r.cpu,PORT+80,4)==3);   /* a basic port is not ours */
+    mac_cpu_destroy(r.cpu);
+    r=setup();w(&r,PORT+6,2,0xc000);
     w(&r,PORT+6,2,8);CHECK(call(&r,0xa8a2)==0);CHECK(mac_cpu_get(r.cpu,MAC_A7)==SP);
     mac_cpu_destroy(r.cpu);
     for(int error=0;error<4;error++){
