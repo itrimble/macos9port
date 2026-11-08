@@ -147,10 +147,32 @@ static void intersections(void) {
     memset(mac_cpu_ram(r.cpu)+RAM-4,0x5a,4);CHECK(mac_geometry_service(&r,0xa8aa)==-1);
     CHECK(mac_cpu_get(r.cpu,MAC_A7)==SP && mac_cpu_ram(r.cpu)[RAM-1]==0x5a);mac_cpu_destroy(r.cpu);
 }
+static void unions(void) {
+    const int16_t inputs[][8]={{-10,-20,30,40,0,-30,50,10},{0,0,10,10,10,0,20,10},{10,0,-10,20,-20,-20,40,40},{-32768,-32768,0,0,0,0,32767,32767},{5,5,5,5,1,1,2,2}};
+    const int16_t expected[][4]={{-10,-30,50,40},{0,0,20,10},{-20,-20,40,40},{-32768,-32768,32767,32767},{1,1,5,5}};
+    for(unsigned k=0;k<5;k++)for(unsigned alias=0;alias<3;alias++) {
+        MacRuntime r=fresh();uint32_t dst=RECT+alias*8;
+        for(unsigned i=0;i<8;i++)mac_cpu_write(r.cpu,RECT+i*2,2,(uint16_t)inputs[k][i]);
+        mac_cpu_write(r.cpu,SP,4,dst);mac_cpu_write(r.cpu,SP+4,4,RECT+8);mac_cpu_write(r.cpu,SP+8,4,RECT);mac_cpu_write(r.cpu,SP+12,2,0x55aa);
+        CHECK(mac_geometry_service(&r,0xa8ab)==1 && mac_cpu_get(r.cpu,MAC_A7)==SP+12);
+        for(unsigned i=0;i<4;i++)CHECK((int16_t)mac_cpu_read(r.cpu,dst+2*i,2)==expected[k][i]);
+        CHECK(mac_cpu_read(r.cpu,SP+12,2)==0x55aa);mac_cpu_destroy(r.cpu);               /* a procedure: nothing above its arguments changes */
+    }
+    for(unsigned k=0;k<5;k++) {                                                          /* NIL and out-of-RAM rectangles, or a short stack, halt and write nothing */
+        MacRuntime r=fresh();mac_cpu_write(r.cpu,SP,4,k==0?0:k==3?RAM-4:RECT+16);mac_cpu_write(r.cpu,SP+4,4,k==1?0:k==4?RAM-4:RECT+8);mac_cpu_write(r.cpu,SP+8,4,k==2?0:RECT);
+        memset(mac_cpu_ram(r.cpu)+RECT+16,0x5a,8);
+        if(k==4)mac_cpu_write(r.cpu,SP+4,4,RAM-4);
+        CHECK(mac_geometry_service(&r,0xa8ab)==-1 && mac_cpu_halted(r.cpu) && mac_cpu_get(r.cpu,MAC_A7)==SP);
+        for(unsigned i=0;i<8;i++)CHECK(mac_cpu_ram(r.cpu)[RECT+16+i]==0x5a);
+        mac_cpu_destroy(r.cpu);
+    }
+    MacRuntime r=fresh();mac_cpu_set(r.cpu,MAC_A7,RAM-8);CHECK(mac_geometry_service(&r,0xa8ab)==-1);mac_cpu_destroy(r.cpu);
+}
 
 int main(void) {
     equal_checks();
     intersections();
+    unions();
     set_point_checks();
     offset_checks();
     MacRuntime rt = fresh();

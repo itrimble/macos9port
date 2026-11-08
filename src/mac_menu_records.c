@@ -80,8 +80,9 @@ static int get_menu_core(MacRuntime*r,int16_t id,uint32_t *out){
     if(mac_resource_find(&r->fork,MENU_TYPE,id,&resource)){
         wr(r,0xa60,2,(uint16_t)-192);return 1;
     }
-    if(mac_resource_find(&r->fork,MAC_RESOURCE_TYPE('m','c','t','b'),id,&colors)==0)
-        return fail(r,"GetMenu custom color resources are unsupported.");
+    /* A menu colour table ('mctb') with the same ID is not consulted: menus are drawn in our own black and white (see mac_menu.c), so the
+     * colours it names do not show. The menu itself is read as usual. */
+    (void)colors;
     const uint8_t *data=resource.data;size_t size=resource.size;MacHandle *m=NULL;
     for(size_t i=0;i<r->handle_count;i++){
         MacHandle*h=&r->handles[i];if(h->resource && h->type==MENU_TYPE && h->id==id){

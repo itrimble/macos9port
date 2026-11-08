@@ -206,6 +206,7 @@ int mac_stdfile_service(MacRuntime *rt, uint16_t opcode); /* Pack3 Standard File
 void mac_stdfile_destroy(MacRuntime *rt);
 int mac_stdput_service(MacRuntime *rt, uint32_t sp, uint32_t pc, int spec); /* Pack3 selectors 1 (SFPutFile) and 5 (StandardPutFile), mac_stdput.c */
 void mac_stdput_destroy(MacRuntime *rt);
+int mac_devmgr_service(MacRuntime *rt, uint16_t opcode); /* Device Manager Control, mac_devmgr.c */
 int mac_dlgmgr_service(MacRuntime *rt, uint16_t opcode); /* GetNewDialog, ModalDialog and friends (mac_dlgmgr.c) */
 void mac_dlgmgr_destroy(MacRuntime *rt);
 int mac_menu_service(MacRuntime *rt, uint16_t opcode);

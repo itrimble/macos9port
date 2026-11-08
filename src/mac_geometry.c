@@ -13,7 +13,7 @@ static int valid(MacCpu *cpu, uint32_t address, size_t size) {
  * passed by value (vertical, horizontal); rectangles are passed by address.
  * Bounds enclose pixels: top/left inclusive, bottom/right exclusive. */
 int mac_geometry_service(MacRuntime *rt, uint16_t opcode) {
-    if (opcode != 0xa8aa && opcode != 0xa8ad && opcode != 0xa8a8 && opcode != 0xa880 && opcode != 0xa8a6) return 0;
+    if (opcode != 0xa8aa && opcode != 0xa8ab && opcode != 0xa8ad && opcode != 0xa8a8 && opcode != 0xa880 && opcode != 0xa8a6) return 0;
     MacCpu *cpu = rt->cpu;
     if (mac_cpu_halted(cpu)) return -1;
     uint32_t sp = mac_cpu_get(cpu, MAC_A7);
@@ -32,6 +32,20 @@ int mac_geometry_service(MacRuntime *rt, uint16_t opcode) {
         /* Snapshot all source edges before writing; destination may be source. */
         for(unsigned i=0;i<4;i++)mac_cpu_write(cpu,dst+2*i,2,intersects?(uint16_t)edges[i]:0);
         mac_cpu_write(cpu,sp+12,1,intersects);mac_cpu_set(cpu,MAC_A7,sp+12);return 1;
+    }
+    if (opcode == 0xa8ab) { /* UnionRect(src1,src2,VAR dst): the smallest rectangle enclosing both, empty ones included (my reading of the
+        * public contract: no special case for an empty source). dst may be a source. Pascal reverse order, no result. */
+        if (!valid(cpu,sp,12)) return -1;
+        uint32_t dst=mac_cpu_read(cpu,sp,4), b=mac_cpu_read(cpu,sp+4,4), a=mac_cpu_read(cpu,sp+8,4);
+        if (!a || !b || !dst) {mac_cpu_halt(cpu,"UnionRect requires non-NIL rectangles.");return -1;}
+        if (!valid(cpu,a,8) || !valid(cpu,b,8) || !valid(cpu,dst,8)) return -1;
+        int16_t edges[4];
+        for(unsigned i=0;i<4;i++) {
+            int16_t av=(int16_t)mac_cpu_read(cpu,a+2*i,2),bv=(int16_t)mac_cpu_read(cpu,b+2*i,2);
+            edges[i]=i<2?(av<bv?av:bv):(av>bv?av:bv);
+        }
+        for(unsigned i=0;i<4;i++)mac_cpu_write(cpu,dst+2*i,2,(uint16_t)edges[i]);
+        mac_cpu_set(cpu,MAC_A7,sp+12);return 1;
     }
     if (opcode == 0xa880) { /* SetPt(VAR pt; h,v), Pascal reverse order.
         * https://dev.os9.ca/techpubs/mac/QuickDraw/QuickDraw-57.html */

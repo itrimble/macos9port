@@ -100,7 +100,7 @@ None of these has reached its main loop. "Traps" is the count before the halt.
 
 | App | Traps | Stops at | What it is |
 | --- | --- | --- | --- |
-| Glider 4.10 | 1249 | `A204` | a Device Manager `Control` (PBControlImmed) on driver reference number -4, csCode 2, csParam 3, reached from library glue. Glider's source calls `GetSoundVol`/`SetSoundVol`, which are glue in MPW, so that is the likely cause; I did not find a source that confirms it, so it is unimplemented, not guessed |
+| Glider 4.10 | 0 | `FrameRoundRect` inside `OpenRgn` | headless frames, 9 Nov 2026: opening picture and its keyboard alert shown; then oval/round-rect rasterising is missing (see the note above) |
 | Room Editor 1.06 | (dialog) | `DrawPicture` (`A8F6`) into a dialog port | headless frames, 9 Nov 2026: open dialog, its own password alert, Okay, then a hidden dialog is created, moved, shown and its items adjusted (all handled by the new Dialog Manager) until the app draws a picture into the dialog's port, which has no drawable port here. WIND 128 (procID 160, the app's own WDEF 10) is still ahead |
 | Glider PRO 1.1.2 | 143 | `A260` | `PBDirCreate` (HFSDispatch selector 6) to create a "Preferences" folder; the file system has one flat directory, so this needs a hierarchy, not a one-off |
 | Glider Edit 1.1.1 | 36 | idles at its menu bar after an error dialog | headless frames, 9 Nov 2026: with the new Dialog Manager, opening a (wrong-format) copy of a PRO house retyped `gliH` shows the editor's own box, *The house "Test" is locked.* (ParamText filled in; "locked" because the data volume is read-only without `--saves`), OK dismisses it and the editor returns to its menu bar. I have not seen a house open successfully: the only houses available are the wrong format |
@@ -261,6 +261,14 @@ the probe, not a window I watched, and I have not listened to any audio.
   app draws into a dialog itself is not shown. Every other drawing call halts by name. That is the honest limit now; real ports for
   dialogs would be the next piece. 20 of 23 new mutants killed, two more killed after added checks, one equivalent. (Castle's total
   instruction count differs by tens between identical runs, so the earlier "24 fewer instructions" was noise, not a behaviour change.)
+- **Glider 4.10 draws its title screen (headless frames):** the old halt, `A204`, is a Device Manager `Control` (immediate) on reference
+  -4, csCode 2, one word of parameter. It is now answered with `controlErr` (-17: no driver responds), or `badUnitErr` (-21) for other
+  references; nothing is faked as success and I have not identified what the call means. The game carries on, draws its opening
+  picture (a folded-paper glider on a desk, "Hey!!! Fly a REAL Glider", a pencil) and shows its own alert, *"New keyboard. Switching to
+  default keyboard controls."* Okay then needed `UnionRect` (`A8AB`, smallest rectangle enclosing both, empty ones included: my reading)
+  and no longer stops at a menu colour table (`mctb` is now ignored: menus are black and white here). The next halt is
+  `FrameRoundRect` while recording a region (`OpenRgn`): the runtime has no oval or round-rectangle rasteriser at all, and a
+  region outline of one would have to match QuickDraw's own scan conversion, which I have no reference for.
 - **Parity:** Monkey Island and Monkey Island 2 are byte-identical to the previous baseline; `make test` exits 0; ASan on Castle (90 s with
   the menu script) and on the new and touched menu, window and utility tests reports nothing.
 
