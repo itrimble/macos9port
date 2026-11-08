@@ -91,3 +91,14 @@ int mac_dlgwin_flush(MacRuntime *rt) {
     }
     return 1;
 }
+
+/* BeginUpdate / EndUpdate on a dialog's port window. The window's visible region is the whole dialog (mac_dlgwin_create), so nothing is intersected or restored: the
+ * pair only records that an update is open (the window service refuses a nested one and a visibility change inside one). */
+int mac_dlgwin_update(MacRuntime *rt, uint32_t window, int begin) {
+    MacWindowState *w = mac_window_find(rt, window);
+    if (!w || !w->port_only) return fail(rt, "A dialog's port window has disappeared."), -1;
+    if (begin && w->updating) return fail(rt, "Nested BeginUpdate is unsupported."), -1;
+    if (!begin && !w->updating) return fail(rt, "EndUpdate requires a matching BeginUpdate."), -1;
+    w->updating = begin ? 1 : 0;
+    return 1;
+}

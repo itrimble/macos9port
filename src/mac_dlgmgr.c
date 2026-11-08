@@ -66,7 +66,7 @@ static void mirror(MacRuntime *rt, const Dlg *d, unsigned k) {
     if (block) { wr(rt, d->handle[k], 4, block); memset(mac_cpu_ram(rt->cpu) + block, 0, TEXT_CAP + 1); memcpy(mac_cpu_ram(rt->cpu) + block, d->text[k], d->length[k]); }
 }
 
-static void draw(MacRuntime *rt, Dlg *d) { mac_dlg_draw(rt, d); d->last_hash = mac_dlg_state_hash(rt, d); if (d->port_window) { mac_dlgwin_shown(rt, d->port_window, !d->hidden); if (!d->hidden) d->ctl_pending = 1; } }
+static void draw(MacRuntime *rt, Dlg *d) { d->update_due = 1; mac_dlg_draw(rt, d); d->last_hash = mac_dlg_state_hash(rt, d); if (d->port_window) { mac_dlgwin_shown(rt, d->port_window, !d->hidden); if (!d->hidden) d->ctl_pending = 1; } }
 /* The repaint of a dialog that is merely waiting: only when its state changed (a program that draws into the dialog itself, e.g. a house list, must not be wiped every step). */
 static void redraw_changed(MacRuntime *rt, Dlg *d) { if (!d->drawn || mac_dlg_state_hash(rt, d) != d->last_hash) draw(rt, d); }
 static int swallowing(MacRuntime *rt) { Dlg *pd = find(rt, M(rt)->port); return pd && !pd->port_window; }   /* only a dialog without a port window has its QuickDraw discarded */
@@ -222,6 +222,7 @@ static int modal_dialog(MacRuntime *rt, uint32_t sp, uint32_t pc) {
     if (d->filter) {                                                                                    /* one event (or a null event) per pass through the guest filter */
         int real = mac_dialog_next_event(rt, &e);
         if (!real) e = (MacEvent){ 0, rt->modifiers, 0, rt->ticks, rt->mouse_x, rt->mouse_y };
+        if (!real && d->update_due && d->port_window && !d->hidden) { e.what = 6; e.message = d->ptr; d->update_due = 0; }   /* the repaint above covered the program's own drawing: an update event asks the filter for it again */
         return call_filter(rt, d, &e, real) < 0 ? -1 : 1;
     }
     while (!chosen && mac_dialog_next_event(rt, &e)) chosen = handle_event(d, &e);
@@ -378,8 +379,8 @@ static int dlg_service(MacRuntime *rt, uint16_t opcode) {
     case 0xa981: case 0xa982: case 0xa983: {                                                         /* DrawDialog, CloseDialog, DisposeDialog */
         Dlg *d = find(rt, rd(rt, sp, 4));
         if (!d) return fail(rt, "The dialog call names a dialog that is not open.");
-        if (d->modal) return fail(rt, "A dialog was closed while ModalDialog was running.");
-        if (opcode == 0xa981) draw(rt, d); else dispose(rt, d, 1);
+        if (d->modal && opcode != 0xa981) return fail(rt, "A dialog was closed while ModalDialog was running.");
+        if (opcode == 0xa981) { draw(rt, d); d->update_due = 0; } else dispose(rt, d, 1);   /* DrawDialog from a filter's update handling is the answer to the update event, not a reason for another */
         pop = 4; break; }
     case 0xa98d: {                                                                                   /* GetDItem(dlg, item, VAR type, VAR handle, VAR box) */
         if (!valid(rt, sp, 18)) return fail(rt, "GetDItem stack is invalid.");
@@ -442,7 +443,19 @@ static int dlg_service(MacRuntime *rt, uint16_t opcode) {
 }
 
 /* The entry point: a call that completed may have repainted a dialog over its controls, so they are redrawn (see mac_dlgwin_flush). */
+/* BeginUpdate / EndUpdate(theDialog): a dialog pointer is not a window here, its port window is. The dialog's whole rectangle is its visible region, so the update
+ * region is not consulted: the pair only brackets the program's drawing. Anything that is not an open dialog with a port window is left to the window service. */
+static int dialog_update(MacRuntime *rt, uint16_t opcode) {
+    uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7);
+    if (!valid(rt, sp, 4)) return 0;
+    Dlg *d = find(rt, rd(rt, sp, 4));
+    if (!d || !d->port_window) return 0;
+    int rc = mac_dlgwin_update(rt, d->port_window, opcode == 0xa922);
+    if (rc > 0) mac_cpu_set(rt->cpu, MAC_A7, sp + 4);
+    return rc;
+}
 int mac_dlgmgr_service(MacRuntime *rt, uint16_t opcode) {
+    if ((opcode == 0xa922 || opcode == 0xa923) && rt && rt->dlgmgr && !mac_cpu_halted(rt->cpu)) { int u = dialog_update(rt, opcode); if (u) return u; }
     int rc = dlg_service(rt, opcode);
     return rc > 0 && rt && rt->dlgmgr ? mac_dlgwin_flush(rt) : rc;
 }

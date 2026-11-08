@@ -18,12 +18,14 @@ typedef struct {
     uint32_t filter, scratch; MacEvent pend; int pend_real;     /* ModalDialog filterProc: the guest routine, its scratch (event + itemHit) and the event it is looking at */
     uint32_t port_window; int ctl_pending; unsigned last_hash;   /* last_hash: the state the native drawing last showed */
                          /* a hidden registered window that is the dialog's colour port (control items), and a redraw of its controls owed */
+    int update_due;                                              /* the native drawing repainted the dialog: a ModalDialog filter procedure is owed an update event, so a program that draws its own items repaints them */
     int select_busy; uint32_t select_dlg_ptr;                    /* DialogSelect waiting for the mouse-up of a press */
 } Dlg;
 typedef struct MacDlgMgr { Dlg *open[MAX_OPEN]; uint32_t port; /* the dialog SetPort last named, 0 once any other port is set */ } Mgr;
 #define M(rt) ((Mgr *)(rt)->dlgmgr)
 
 
+void mac_dlg_draw_pict(MacRuntime *rt, int l, int t, int r, int b, int16_t id);   /* a PICT item, scaled to its rectangle (mac_dlgpict.c) */
 static inline int has_text(const MacDitlItem *it) { return it->kind == MAC_ITEM_STATIC || it->kind == MAC_ITEM_EDIT || it->kind == MAC_ITEM_BUTTON || it->kind == MAC_ITEM_CHECK || it->kind == MAC_ITEM_RADIO; }
 uint32_t mac_dlg_new_rect_region(MacRuntime *rt, int t, int l, int b, int r);
 void mac_dlg_set_region(MacRuntime *rt, uint32_t h, int t, int l, int b, int r);

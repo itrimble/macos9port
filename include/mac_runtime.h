@@ -200,6 +200,7 @@ int mac_alert_service(MacRuntime *rt, uint16_t opcode); /* Alert, StopAlert, Not
 void mac_alert_destroy(MacRuntime *rt);
 void mac_cdef_destroy(MacRuntime *rt);
 int mac_sysbeep_service(MacRuntime *rt, uint16_t opcode); /* SysBeep (mac_sysbeep.c) */
+int mac_textbox_service(MacRuntime *rt, uint16_t opcode); /* TextBox (mac_textbox.c) */
 int mac_cicn_service(MacRuntime *rt, uint16_t opcode); /* GetCIcon/PlotCIcon/DisposeCIcon (mac_cicn.c) */
 int mac_controls_service(MacRuntime *rt, uint16_t opcode); /* Control Manager subset (mac_controls.c) */
 int mac_alias_service(MacRuntime *rt, uint16_t opcode); /* AliasDispatch $A823 (mac_alias.c) */

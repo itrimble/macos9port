@@ -59,7 +59,7 @@ void mac_dlg_draw(MacRuntime *rt, Dlg *d) {
         } else if (it->kind == MAC_ITEM_ICON) {
             MacResource icon;
             if (!mac_resource_find(&rt->fork, ICON_TYPE, (int16_t)be16(it->data), &icon) && icon.size == 128) mac_pen_icon(&pen, l, t, icon.data);
-        }
+        } else if (it->kind == MAC_ITEM_PICT && it->length == 2) mac_dlg_draw_pict(rt, l, t, r, b, (int16_t)be16(it->data));
     }
 }
 

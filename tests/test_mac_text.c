@@ -264,11 +264,61 @@ static void refusal_checks(const MacResourceFork *f) {
     CHECK(mac_text_service(&rt, 0xa887) == 0 && mac_text_service(&rt, 0xa88f) == 0 && mac_text_service(&rt, 0xa882) == 0);
     mac_cpu_destroy(rt.cpu);
 }
+/* TextBox ($A9CE): word-wrapped, justified, clipped to its rectangle; the pen stays. Line height here is ascent 2 + descent 1 + leading 1 = 4; A is 4 wide. */
+static void text_box_set(const char *s, int len, int top, int left, int bottom, int right, int just) {
+    memcpy(mac_cpu_ram(rt.cpu) + 0x8200, s, strlen(s));
+    wrw(0x8300, 2, (uint16_t)top); wrw(0x8302, 2, (uint16_t)left); wrw(0x8304, 2, (uint16_t)bottom); wrw(0x8306, 2, (uint16_t)right);
+    wrw(SPT, 2, (uint16_t)just); wrw(SPT + 2, 4, 0x8300); wrw(SPT + 6, 4, (uint32_t)len); wrw(SPT + 10, 4, 0x8200);
+    mac_cpu_set(rt.cpu, MAC_A7, SPT);
+}
+static int text_box(const char *s, int len, int top, int left, int bottom, int right, int just) { text_box_set(s, len, top, left, bottom, right, just); return mac_textbox_service(&rt, 0xa9ce); }
+static void textbox_checks(const MacResourceFork *f) {
+    rig(f); CHECK(text_box("AAAAA", 5, 3, 10, 13, 22, 0) == 1 && mac_cpu_get(rt.cpu, MAC_A7) == SPT + 14);
+    CHECK(px(10, 3) == 200 && px(14, 3) == 200 && px(18, 3) == 200 && px(10, 7) == 200 && px(14, 7) == 200);      /* three to a line (12 wide), two on the next */
+    CHECK(px(18, 7) == 50 && px(22, 3) == 50 && pen_h() == 10 && (int16_t)rdw(PORT + 48, 2) == 5);            /* the pen did not move */
+    mac_cpu_destroy(rt.cpu);
+    rig(f); text_box("A\rA", 3, 3, 10, 13, 22, 0); CHECK(px(10, 3) == 200 && px(10, 7) == 200 && px(14, 3) == 50);   /* a carriage return ends the line */
+    mac_cpu_destroy(rt.cpu);
+    rig(f); text_box("AA AA", 5, 3, 10, 13, 22, 0);                                                              /* wraps before the word; the space is not drawn */
+    CHECK(px(10, 3) == 200 && px(14, 3) == 200 && px(18, 3) == 50 && px(19, 3) == 50 && px(10, 7) == 200 && px(14, 7) == 200);
+    mac_cpu_destroy(rt.cpu);
+    rig(f); text_box("A", 1, 3, 10, 13, 22, 1); CHECK(px(14, 3) == 200 && px(16, 3) == 200 && px(10, 3) == 50 && px(12, 3) == 50);                          /* centred: 10 + (12 - 4) / 2 */
+    mac_cpu_destroy(rt.cpu);
+    rig(f); text_box("A", 1, 3, 10, 13, 22, -1); CHECK(px(18, 3) == 200 && px(10, 3) == 50);                         /* right aligned */
+    mac_cpu_destroy(rt.cpu);
+    rig(f); text_box("A", 1, 3, 10, 13, 22, 2); CHECK(px(10, 3) == 200);                                             /* systemDefault: left */
+    mac_cpu_destroy(rt.cpu);
+    rig(f); text_box("AAAAAAAA", 8, 3, 10, 7, 22, 0); CHECK(px(10, 3) == 200 && px(10, 7) == 50);                    /* stops at the bottom of the box */
+    mac_cpu_destroy(rt.cpu);
+    rig(f); text_box("A", 1, 3, 10, 13, 12, 0); CHECK(px(10, 3) == 200 && px(12, 3) == 50 && px(12, 4) == 50);       /* clipped to the box */
+    mac_cpu_destroy(rt.cpu);
+    rig(f); text_box("", 0, 3, 10, 13, 22, 0); CHECK(mac_cpu_get(rt.cpu, MAC_A7) == SPT + 14 && px(10, 3) == 50);     /* nothing to draw */
+    CHECK(text_box("A", 1, 3, 10, 13, 10, 0) == 1 && px(10, 3) == 50);                                              /* an empty box draws nothing */
+    mac_cpu_destroy(rt.cpu);
+    rig(f); wrw(PORT + 66, 2, 0xffff); text_box("A", 1, 3, 10, 13, 22, 0); CHECK(px(10, 3) == 50);                    /* a hidden pen */
+    mac_cpu_destroy(rt.cpu);
+    /* Refusals halt and draw nothing: odd stack, no port, rectangle or text outside RAM, negative or huge length. */
+    for (unsigned k = 0; k < 7; k++) {
+        rig(f); uint8_t before[W * H]; memcpy(before, mac_cpu_ram(rt.cpu) + PIX, sizeof before);
+        text_box_set("AB", 2, 3, 10, 13, 22, 0);
+        if (k == 0) mac_cpu_set(rt.cpu, MAC_A7, SPT + 1);
+        if (k == 1) rt.current_port = 0;
+        if (k == 2) wrw(SPT + 2, 4, 0x1000000 - 4);
+        if (k == 3) wrw(SPT + 10, 4, 0x1000000 - 1);
+        if (k == 4) wrw(SPT + 6, 4, (uint32_t)-1);
+        if (k == 5) wrw(SPT + 6, 4, 40000);
+        if (k == 6) wrw(PORT + 68, 2, 99);                                   /* a font it does not supply */
+        int rc = mac_textbox_service(&rt, 0xa9ce);
+        CHECK(rc == -1 && mac_cpu_halted(rt.cpu) && !memcmp(before, mac_cpu_ram(rt.cpu) + PIX, sizeof before));
+        mac_cpu_destroy(rt.cpu);
+    }
+    rig(f); CHECK(mac_textbox_service(&rt, 0xa9cf) == 0 && mac_textbox_service(&rt, 0xa9cd) == 0); mac_cpu_destroy(rt.cpu);
+}
 int main(void) {
     parse_checks(); lookup_checks();
     { size_t sn = make_strike(), fn = make_fond(); Res list[] = {{FONT_T, 5 * 128 + 10, strike, sn}, {NFNT_T, 2000, strike, sn}, {FOND_T, 5, fond, fn}};
       static uint8_t img2[4096]; MacResourceFork f; char err[200]; size_t total = build_fork(img2, list, 3);
-      CHECK(mac_resource_open(&f, img2, total, err, sizeof err) == 0); service_checks(&f); refusal_checks(&f); default_size(&f); }
+      CHECK(mac_resource_open(&f, img2, total, err, sizeof err) == 0); service_checks(&f); refusal_checks(&f); default_size(&f); textbox_checks(&f); }
     if (!fails) puts("Font engine checks passed");
     return fails ? 1 : 0;
 }

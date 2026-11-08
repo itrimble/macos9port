@@ -74,6 +74,16 @@ static void fixture(Fork *f) {
     memset(&w, 0, sizeof w); word(&w, 0); item(&w, 30, 10, 50, 110, 7, "\0\312", 2); add(f, 0x4449544c, 305, w.b, w.n);                                           /* CNTL 202: CDEF 5 is missing */
     cntl(f, 200, 1, 0, "Go"); cntl(f, 201, 1, 2048, "Pop"); cntl(f, 202, 1, 80, "Bad");
     { uint8_t cdef[32]; for (unsigned i = 0; i < 32; i++) cdef[i] = (uint8_t)(0x4e + (i & 1)); add(f, 0x43444546, 128, cdef, 32); }
+    {   /* PICT 500: a version-1 1-bit BitsRect, 16x4: row 0 black cols 0-3, row 1 black cols 4-15, row 2 alternating, row 3 white */
+        static const uint8_t rows[8] = {0xf0, 0x00, 0x0f, 0xff, 0xaa, 0x55, 0x00, 0x00}; W p = {0};
+        word(&p, 0); word(&p, 0); word(&p, 0); word(&p, 4); word(&p, 16); word(&p, 0x1101); byte(&p, 0xa0); word(&p, 0x82); byte(&p, 1); word(&p, 10);
+        word(&p, 0); word(&p, 0); word(&p, 4); word(&p, 16); byte(&p, 0x90); word(&p, 2); for (unsigned k = 0; k < 3; k++) { word(&p, 0); word(&p, 0); word(&p, 4); word(&p, 16); }
+        word(&p, 0); for (unsigned k = 0; k < 8; k++) byte(&p, rows[k]); byte(&p, 0xa0); word(&p, 0x83); byte(&p, 0xff); p.b[0] = (uint8_t)(p.n >> 8); p.b[1] = (uint8_t)p.n;
+        add(f, 0x50494354, 500, p.b, p.n);
+        memset(&p, 0, sizeof p); word(&p, 1); item(&p, 10, 10, 14, 26, 64, "\1\364", 2); item(&p, 70, 220, 90, 270, 4, "OK", 2); add(f, 0x4449544c, 308, p.b, p.n);         /* a PICT item naming PICT 500 */
+        memset(&p, 0, sizeof p); word(&p, 0); item(&p, 10, 10, 14, 26, 64, "\3\347", 2); add(f, 0x4449544c, 309, p.b, p.n);                                           /* PICT 999: missing */
+        memset(&p, 0, sizeof p); word(&p, 0); item(&p, 10, 10, 14, 26, 64, "", 0); add(f, 0x4449544c, 310, p.b, p.n);                                                  /* no id */
+        dlog(f, 308, 40, 50, 140, 330, 1, 308); dlog(f, 309, 40, 50, 140, 330, 1, 309); dlog(f, 310, 40, 50, 140, 330, 1, 310); }
     dlog(f, 300, 40, 50, 140, 330, 1, 300); dlog(f, 301, 40, 50, 140, 330, 1, 301); dlog(f, 302, 40, 50, 140, 330, 1, 302); dlog(f, 303, 40, 50, 140, 330, 1, 303);
     dlog(f, 304, 40, 50, 140, 330, 1, 304); dlog(f, 305, 40, 50, 140, 330, 1, 305); dlog(f, 306, 40, 50, 140, 330, 0, 301); dlog(f, 307, 40, 50, 140, 330, 0, 300);
 }
@@ -195,6 +205,67 @@ int main(void) {
     {   MacRuntime rt = fresh(); CHECK(get_new(&rt, 304) == 1); uint32_t d = raw(&rt, SP + 10, 4), type, ok;                    /* a value change on a static or a button is refused */
         CHECK(get_ditem(&rt, d, 1, &type, &ok) == 1); mac_cpu_set(rt.cpu, MAC_A7, SP); wr(&rt, SP, 2, 1); wr(&rt, SP + 2, 4, ok);
         CHECK(mac_controls_service(&rt, 0xa963) == -1 && mac_cpu_halted(rt.cpu)); mac_cpu_destroy(rt.cpu); }
+    /* A ModalDialog filter is offered an update event (what 6, message the dialog) after the dialog repainted itself and the program has a port window to draw in, once:
+     * a program that draws its own items repaints them then. BeginUpdate / EndUpdate on the dialog pointer bracket that drawing; DrawDialog inside is the answer, not a halt. */
+    {   enum { FILT = 0x20000 };
+        for (unsigned mode = 0; mode < 2; mode++) {                                                          /* 0: SetPort(dialog) made a port window; 1: none */
+            MacRuntime rt = fresh(); CHECK(get_new(&rt, 304) == 1); uint32_t d = raw(&rt, SP + 10, 4);
+            if (mode == 0) { wr(&rt, SP, 4, d); CHECK(trap(&rt, 0xa873, SP) == 1 && rt.window_count == 1); }
+            for (unsigned pass = 0; pass < 3; pass++) {
+                wr(&rt, SP, 4, 0x4000); wr(&rt, SP + 4, 4, FILT); CHECK(trap(&rt, 0xa991, SP) == 1 && rt.guest.active);
+                uint32_t sp = a7(&rt), ev = raw(&rt, sp + 8, 4); unsigned what = raw(&rt, ev, 2);
+                CHECK(what == (mode == 0 && pass == 0 ? 6u : 0u));                                          /* once, the first time; never without a port window */
+                if (what == 6) CHECK(raw(&rt, ev + 2, 4) == d);
+                if (what == 6) {   /* the filter's own handling: BeginUpdate(theDialog), DrawDialog(theDialog), EndUpdate(theDialog): none of them halts, and DrawDialog asks for no second update */
+                    MacWindowState *w = mac_window_find(&rt, rt.current_port); CHECK(w && !w->updating);
+                    wr(&rt, SP + 300, 4, d); CHECK(trap(&rt, 0xa922, SP + 300) == 1 && a7(&rt) == SP + 304 && w->updating);
+                    wr(&rt, SP + 300, 4, d); CHECK(trap(&rt, 0xa922, SP + 300) == -1 && mac_cpu_halted(rt.cpu));                          /* nested BeginUpdate */
+                    mac_cpu_destroy(rt.cpu); rt = fresh(); CHECK(get_new(&rt, 304) == 1); d = raw(&rt, SP + 10, 4);
+                    wr(&rt, SP, 4, d); CHECK(trap(&rt, 0xa873, SP) == 1); w = mac_window_find(&rt, rt.current_port);
+                    wr(&rt, SP + 300, 4, d); CHECK(trap(&rt, 0xa923, SP + 300) == -1 && mac_cpu_halted(rt.cpu));                          /* EndUpdate without BeginUpdate */
+                    mac_cpu_destroy(rt.cpu); rt = fresh(); CHECK(get_new(&rt, 304) == 1); d = raw(&rt, SP + 10, 4);
+                    wr(&rt, SP, 4, d); CHECK(trap(&rt, 0xa873, SP) == 1); w = mac_window_find(&rt, rt.current_port);
+                    wr(&rt, SP + 300, 4, d); CHECK(trap(&rt, 0xa922, SP + 300) == 1 && w->updating);
+                    wr(&rt, SP + 300, 4, d); CHECK(trap(&rt, 0xa981, SP + 300) == 1 && !mac_cpu_halted(rt.cpu));                          /* DrawDialog while ModalDialog waits */
+                    wr(&rt, SP + 300, 4, d); CHECK(trap(&rt, 0xa923, SP + 300) == 1 && !w->updating);
+                    break;
+                }
+                mac_cpu_set(rt.cpu, MAC_A7, rt.guest.sp - 2); wr(&rt, rt.guest.sp - 2, 2, 0); CHECK(mac_guest_return(&rt) == 0);   /* FALSE: the dialog handles the (null) event */
+            }
+            if (mode == 1) { wr(&rt, SP + 300, 4, d); CHECK(trap(&rt, 0xa922, SP + 300) == 0); }                                       /* no port window: the window service's business */
+            mac_cpu_destroy(rt.cpu);
+        }
+        /* After the update event is answered no second one is owed; a hidden dialog is offered none. */
+        {   MacRuntime r2 = fresh(); CHECK(get_new(&r2, 304) == 1); uint32_t d2 = raw(&r2, SP + 10, 4); wr(&r2, SP, 4, d2); CHECK(trap(&r2, 0xa873, SP) == 1);
+            for (unsigned pass = 0; pass < 2; pass++) {
+                wr(&r2, SP, 4, 0x4000); wr(&r2, SP + 4, 4, FILT); CHECK(trap(&r2, 0xa991, SP) == 1 && raw(&r2, raw(&r2, a7(&r2) + 8, 4), 2) == (pass ? 0u : 6u));
+                mac_cpu_set(r2.cpu, MAC_A7, r2.guest.sp - 2); wr(&r2, r2.guest.sp - 2, 2, 0); CHECK(mac_guest_return(&r2) == 0);
+            }
+            mac_cpu_destroy(r2.cpu); }
+        {   MacRuntime r2 = fresh(); CHECK(get_new(&r2, 307) == 1); uint32_t d2 = raw(&r2, SP + 10, 4); wr(&r2, SP, 4, d2); CHECK(trap(&r2, 0xa873, SP) == 1);
+            wr(&r2, SP, 4, 0x4000); wr(&r2, SP + 4, 4, FILT); CHECK(trap(&r2, 0xa991, SP) == 1 && raw(&r2, raw(&r2, a7(&r2) + 8, 4), 2) == 0);
+            mac_cpu_destroy(r2.cpu); }
+        /* DrawDialog inside the update does not owe a second update: the next idle pass offers a null event. */
+        MacRuntime rt = fresh(); CHECK(get_new(&rt, 304) == 1); uint32_t d = raw(&rt, SP + 10, 4);
+        wr(&rt, SP, 4, d); CHECK(trap(&rt, 0xa873, SP) == 1);
+        wr(&rt, SP, 4, 0x4000); wr(&rt, SP + 4, 4, FILT); CHECK(trap(&rt, 0xa991, SP) == 1 && raw(&rt, raw(&rt, a7(&rt) + 8, 4), 2) == 6);
+        wr(&rt, SP + 300, 4, d); CHECK(trap(&rt, 0xa981, SP + 300) == 1);
+        mac_cpu_set(rt.cpu, MAC_A7, rt.guest.sp - 2); wr(&rt, rt.guest.sp - 2, 2, 0); CHECK(mac_guest_return(&rt) == 0);
+        wr(&rt, SP, 4, 0x4000); wr(&rt, SP + 4, 4, FILT); CHECK(trap(&rt, 0xa991, SP) == 1 && raw(&rt, raw(&rt, a7(&rt) + 8, 4), 2) == 0);
+        mac_cpu_destroy(rt.cpu); }
+    /* A PICT item draws the picture resource it names, scaled to the item rectangle, in screen coordinates (dialog at 50,40; item at 10,10 to 14,26); a missing picture
+     * or an item without an id leaves it blank. */
+    {   MacRuntime rt = fresh(); CHECK(get_new(&rt, 308) == 1); const uint8_t *s = mac_cpu_ram(rt.cpu) + rt.screen_base;
+        unsigned black = s[50 * 640 + 60], white = s[53 * 640 + 60];
+        CHECK(black != BACK && white != BACK && black != white);
+        CHECK(s[50 * 640 + 63] == black && s[50 * 640 + 64] == white && s[51 * 640 + 64] == black && s[51 * 640 + 75] == black && s[51 * 640 + 60] == white);   /* rows 0 and 1 of the picture */
+        CHECK(s[52 * 640 + 60] == black && s[52 * 640 + 61] == white && s[53 * 640 + 75] == white);                                                          /* the alternating row and the white row */
+        CHECK(s[49 * 640 + 60] != black && s[54 * 640 + 60] != black && s[50 * 640 + 76] != black);                                                          /* nothing outside the item rectangle */
+        mac_cpu_destroy(rt.cpu); }
+    {   MacRuntime rt = fresh(); CHECK(get_new(&rt, 309) == 1 && !mac_cpu_halted(rt.cpu));                                                                     /* a picture the program lacks: blank */
+        const uint8_t *s = mac_cpu_ram(rt.cpu) + rt.screen_base; unsigned ink = 0; for (int y = 50; y < 54; y++) for (int x = 60; x < 76; x++) if (s[y * 640 + x] != s[50 * 640 + 60]) ink++;
+        CHECK(ink == 0); mac_cpu_destroy(rt.cpu); }
+    {   MacRuntime rt = fresh(); CHECK(get_new(&rt, 310) == -1 && mac_cpu_halted(rt.cpu)); mac_cpu_destroy(rt.cpu); }                                      /* an item without an id is refused by the DITL parser */
     /* Refusals: a missing CNTL, an item that names none, a CDEF the program lacks. Each halts and registers no window. */
     for (unsigned k = 0; k < 3; k++) {
         MacRuntime rt = fresh(); int rc = get_new(&rt, k == 0 ? 302 : k == 1 ? 303 : 305);
