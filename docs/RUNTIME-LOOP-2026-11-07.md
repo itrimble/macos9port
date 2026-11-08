@@ -57,6 +57,7 @@ R04 and G02. Items stay unchecked.
 | `97434ee` | Time Manager poll: each callback runs against the poll's whole budget instead of what earlier callbacks in the same poll left. Castle's timer task is long (it does file reads and pixel loops) and was cut off mid-run with a return mismatch. A runaway callback is still stopped at the budget (the existing 10,000-instruction test still holds). 4 of 4 mutants killed; the new test fails without the change. |
 | `5da36ec` | `PBGetVInfo` (`$A007`). The shared volume-info code takes the size of the block the call owns: the plain call writes only the first 64 bytes, never the HFS fields at 64 and beyond (a caller's block is often only that big). 7 of 7 mutants killed after tests for the 64-byte boundary, a name buffer inside and outside the block, and a block with too little room. |
 | `f2dd086` | Fix to `5da36ec`, found by an automated security review after the commit and reproduced with ASan (`READ of size 122`, heap-buffer-overflow, `tests/test_mac_files.c`): `PBGetVInfo` range-checked 64 bytes but copied a 122-byte scratch buffer from guest RAM, so a block at the very end of RAM made the host read past its allocation. The extra bytes were never written back to the guest, so nothing leaked, but it was a real out-of-bounds read. I had not run ASan on the new tests before committing; all five new tests of this session are now ASan/UBSan clean. |
+| `a588842` | `AnimatePalette` (`$AA9A`; the MPW listing puts each `INLINE` after its declaration, so `$AA99` is `AnimateEntry` and `$AA9B` `GetEntryColor`). It replaces the device colors of the window palette\'s animated entries from a color table, at once, with no redraw. The device index is the one activation chose (for the explicit-and-animated entries Castle uses, the entry\'s own index). A non-animated entry, an inactive palette, bad indices or lengths and a bad source table halt by name, all before the first device entry changes. The palette\'s own stored colors are not rewritten, so a later activation restores them: an interpretation I could not check against the Palette Manager chapter (only the interface listing is local), so it is unverified. 21 mutants: 3 survivors after the first pass were tightened (palette bound, stack message, source range); 2 equivalent survivors remain (a missing palette or a negative entry still halt at a later check). **Castle now runs its whole 20 s probe with no halt.** |
 
 ## Compatibility profile decision
 
@@ -152,11 +153,12 @@ screen black and the real run cannot show the colour work. The unit tests carry 
 
 ## Castle of Dr. Brain, 8 Nov 2026 (headless only)
 
-Startup completes and the game now runs about 5 s of guest time (15,952,027 instructions in the 8 s probe), up from 2.7 s.
-The 4 s frame shows the game window with its title bar, menus and a black content area; the game screen itself has not been
-drawn. The 14 s capture is still silent (peak 0 over 242,200 frames): nothing is claimed about audio. No input was sent, so
-input and play are unverified. Next halt: unhandled `$AA9A` at `0040cbbc`. Parity: Monkey Island and Monkey Island 2 are byte-identical to
-`baseline/games-outputs-regions`; ASan on Castle (8 s) reported nothing; `make test` exits 0.
+Startup completes and the game no longer halts: the 20 s probe ran to its budget (61,675,482 instructions, result 4, "gameplay
+unverified"), up from 2.7 s before this session's InvalRect work. The window (title bar, menus, content area) appears at 4 s and the
+frame changes once more at 6 s, then stays identical to 20 s. The content area is black and the Edit menu is dimmed: the game is
+sitting in its event loop, and why it draws nothing is not yet known. The 20 s capture is silent (peak 0 over 960,000 frames), so
+nothing is claimed about audio. No input was sent: input and play are unverified. Parity: Monkey Island and Monkey Island 2 are
+byte-identical to `baseline/games-outputs-regions`; ASan on Castle (10 s) and on the new tests reports nothing; `make test` exits 0.
 
 ## Next reproducible steps
 
