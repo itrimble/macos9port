@@ -18,6 +18,7 @@
 #include "desktop_context.h"
 #include "desktop_wallpaper.h"
 #include "ospi.h"
+#include "native_apps.h"
 #include "draw.h"
 #include "movie_window.h"
 #include "native_launch.h"
@@ -270,7 +271,7 @@ void session_command(Session *s, int cmd) {
     case CMD_CONTROL_PANELS:
         context_close();
         finder_apps_command(s, CMD_APP_FINDER);
-        control_panels_open(s); break;
+        control_panels_open(s); native_app_note(s, NATIVE_CONTROLS); break;
     case CMD_CP_GENERAL:
     case CMD_CP_SOUND:
     case CMD_CP_MONITORS:
@@ -284,7 +285,7 @@ void session_command(Session *s, int cmd) {
         };
         context_close();
         finder_apps_command(s, CMD_APP_FINDER);
-        control_panels_open_module(s, ids[cmd - CMD_CP_GENERAL]);
+        control_panels_open_module(s, ids[cmd - CMD_CP_GENERAL]); native_app_note(s, NATIVE_CONTROLS);
         break;
     }
     case CMD_APPEARANCE_DESKTOP:

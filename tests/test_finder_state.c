@@ -18,17 +18,22 @@ int main(void) {
     char root[]="/tmp/os999-finder-state-XXXXXX"; CHECK(mkdtemp(root)); CHECK(!volume_seed(root));
     Session *s=session_create(root); CHECK(s); if(!s)return 1;
     CHECK(!finder_label(root,"Documents","Notes",3));
-    Item results[2];int limited=0;CHECK(finder_search(root,"Notes",results,2,&limited)==1);
-    CHECK(results[0].label==3 && !limited);
+    Item results[8];int limited=0;
+    int count=finder_search(root,"Notes",results,8,&limited);
+    CHECK(count==2 && !limited);
+    int document=-1;
+    for(int i=0;i<count;i++)if(results[i].label==3)document=i;
+    CHECK(document>=0);
+    if(document<0)return 1;
     char note[OSPI_PATH+32];snprintf(note,sizeof note,"%s/Documents/Notes",root);
     struct stat metadata;CHECK(!stat(note,&metadata));
 #ifdef __APPLE__
-    CHECK(results[0].created==(int64_t)metadata.st_birthtime);
+    CHECK(results[document].created==(int64_t)metadata.st_birthtime);
 #else
-    CHECK(results[0].created==0);
+    CHECK(results[document].created==0);
 #endif
     CHECK(s->nwin==1); CHECK(!open_folder(s,"Documents"));
-    CHECK(window_items(&s->win[s->nwin-1])[0].created==results[0].created);
+    CHECK(window_items(&s->win[s->nwin-1])[0].created==results[document].created);
     Window *w=&s->win[s->nwin-1]; w->view_mode=VIEW_LIST; w->sort_mode=SORT_DATE;
     w->sort_reverse=1;w->list_columns[0]=350;w->list_columns[1]=550;w->list_columns[2]=720;
     w->x=230;w->y=180;w->w=600;w->h=410;

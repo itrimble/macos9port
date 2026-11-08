@@ -1,3 +1,4 @@
+#include "native_apps.h"
 #include "finder_apps.h"
 #include "app_switcher.h"
 #include "desktop_gesture.h"
@@ -300,6 +301,7 @@ void browser_window_frame(Session *s, SDL_Window *win, uint32_t *frame, int hidd
     if (s->browser_request || auto_url) {
         s->browser_request = 0;
         bw_open_window(auto_url ? auto_url : "https://www.youtube.com");
+        if (BS.norder) native_app_note(s, NATIVE_BROWSER);
         s->browser_active = s->browser_focused = 1; s->app_request = 4;
         appearance_panel_deactivate();
         s->browser_hidden = s->media_focused = s->guest_focused = 0;

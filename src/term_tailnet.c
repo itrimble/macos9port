@@ -1,5 +1,6 @@
 #include "session_int.h"
 #include "term.h"
+#include "native_apps.h"
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -27,5 +28,6 @@ int terminal_tailnet_open(Session *s) {
     int result = terminal_open_custom(s, TERM_MODE_SHELL, args);
     Window *w = terminal_front(s);
     if (!result && w) snprintf(w->title, sizeof w->title, "Tailscale");
+    if (!result) native_app_note(s, NATIVE_TAILSCALE);
     return result;
 }

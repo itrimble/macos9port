@@ -5,6 +5,7 @@
 #include "ospi.h"
 
 int movie_is_name(const char *name);
+int movie_window_launcher(Session *s);
 /* 0 when the file was handled, including a dialog for a bad movie.
  * -1 only when every window slot is already in use. */
 int movie_window_open(Session *s, const char *title, const char *rel);

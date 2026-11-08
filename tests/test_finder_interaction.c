@@ -74,18 +74,24 @@ int main(void) {
     session_up(s,lay.content.x+CELL_W*2-4,lay.content.y+2);CHECK(w->items[0].selected && w->items[1].selected);
     int source=s->nwin-1;select_only(w,item(w,"A"));
     CHECK(!open_folder(s,"Applications"));Window *target=&s->win[s->nwin-1];window_layout(target,&lay);
-    s->mouse_mods=0;finder_drag_drop(s,source,lay.content.x+400,lay.content.y+90);
+    /* Drop on folder background, not a newly seeded application or Utilities. */
+    int drop_x=0,drop_y=0;
+    for(int y=lay.content.y+2;y<lay.content.y+lay.content.h-2&&!drop_y;y++)
+        for(int x=lay.content.x+2;x<lay.content.x+lay.content.w-2;x++)
+            if(item_index_at(target,x,y)<0){drop_x=x;drop_y=y;break;}
+    CHECK(drop_y!=0);
+    s->mouse_mods=0;finder_drag_drop(s,source,drop_x,drop_y);
     snprintf(path,sizeof path,"%s/Applications/A",root);CHECK(!access(path,F_OK));
     snprintf(path,sizeof path,"%s/Documents/A",root);CHECK(access(path,F_OK)<0);
     session_command(s,CMD_UNDO);CHECK(!access(path,F_OK));
     w=&s->win[source];select_only(w,item(w,"B"));s->mouse_mods=MOD_OPTION;
-    finder_drag_drop(s,source,lay.content.x+400,lay.content.y+90);
+    finder_drag_drop(s,source,drop_x,drop_y);
     snprintf(path,sizeof path,"%s/Applications/B",root);CHECK(!access(path,F_OK));
     snprintf(path,sizeof path,"%s/Documents/B",root);CHECK(!access(path,F_OK));
     session_command(s,CMD_UNDO);
     snprintf(path,sizeof path,"%s/Applications/B",root);CHECK(access(path,F_OK)<0);
     w=&s->win[source];select_only(w,item(w,"A"));w->items[item(w,"C")].selected=1;
-    s->mouse_mods=0;finder_drag_drop(s,source,lay.content.x+400,lay.content.y+90);
+    s->mouse_mods=0;finder_drag_drop(s,source,drop_x,drop_y);
     CHECK(s->undo_count==2);
     snprintf(path,sizeof path,"%s/Documents/C",root);
     FILE *conflict=fopen(path,"w");CHECK(conflict);if(conflict)fclose(conflict);

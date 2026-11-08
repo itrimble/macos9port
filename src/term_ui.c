@@ -1,4 +1,5 @@
 #include "finder_apps.h"
+#include "native_apps.h"
 #include "term.h"
 #include "term_font.h"
 #include "desktop_theme.h"
@@ -64,10 +65,12 @@ int terminal_open_custom(Session *s, int mode, char *const argv[]) {
     calc_grid_dims(&lay, &rows, &cols);
     term_vt_init(&ts->vt, rows, cols);
 
+    int launch_failed = 0;
     if (ts->mode == TERM_MODE_SHELL) {
         int rc = argv ? term_pty_open(&ts->pty, rows, cols, s->root, argv)
                       : term_pty_open_shell(&ts->pty, rows, cols, s->root);
         if (rc != 0) {
+            launch_failed = 1;
             const char *err = "\x1b[1;31mCould not start host shell PTY.\x1b[0m\r\n";
             term_vt_feed(&ts->vt, err, strlen(err));
         }
@@ -76,11 +79,13 @@ int terminal_open_custom(Session *s, int mode, char *const argv[]) {
     }
     s->desk_sel = -1; s->desktop_focus = 0; s->finder_hidden = 0; s->media_focused = s->browser_focused = s->guest_focused = 0; s->app_request = 1; finder_apps_note(s, 1);
     session_clamp(s);
-    return 0;
+    return launch_failed ? -1 : 0;
 }
 
 int terminal_open(Session *s, int mode) {
-    return terminal_open_custom(s, mode, NULL);
+    int result = terminal_open_custom(s, mode, NULL);
+    if (!result) native_app_note(s, mode == TERM_MODE_CONSOLE ? NATIVE_CONSOLE : NATIVE_TERMINAL);
+    return result;
 }
 
 void terminal_window_close(Session *s, Window *w) {
@@ -134,6 +139,11 @@ void terminal_tick(Session *s) {
                 if (rlen > 0) (void)term_pty_write(&ts->pty, reply, rlen);
                 budget = (size_t)n < budget ? budget - (size_t)n : 0;
             }
+        }
+        if ((ts->mode == TERM_MODE_CONSOLE && ts->console.close_requested) ||
+            (ts->mode == TERM_MODE_SHELL && ts->pty.child_pid > 0 &&
+             !term_pty_alive(&ts->pty) && ts->pty.exit_status == 0)) {
+            close_index(s, i--); /* Only this exited utility/shell; never the desktop or VPN daemon. */
         }
     }
 }

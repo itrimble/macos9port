@@ -136,6 +136,7 @@ typedef struct TermPty {
 
 typedef struct TermConsole {
     Session *session;
+    int close_requested;
     char line[512];
     int len;
     int cursor;

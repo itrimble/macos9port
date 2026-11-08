@@ -1,4 +1,5 @@
 #include "ospi.h"
+#include "native_apps.h"
 #include "mac_icon.h"
 #include "volume_directory.h"
 
@@ -16,12 +17,6 @@ static const struct {
     const char *rel;
     const char *body;
 } k_seed[] = {
-    {"Applications/Nothing Installed Yet",
-     "No classic applications are installed.\n\n"
-     "Copy a supported 68k app here and\n"
-     "double-click it to try OS999's own\n"
-     "runtime. Support is incomplete. Some\n"
-     "archive formats use a legacy launcher.\n"},
     {"Applications/Utilities/Tailscale", "OS999-BUILTIN:tailscale:1\n"},
     {"Applications/Utilities/Terminal", "OS999-BUILTIN:terminal:1\n"},
     {"Documents/Notes",
@@ -131,17 +126,10 @@ static int exists_file(const char *path) {
 }
 
 int volume_builtin_terminal(const char *root, const char *rel) {
-    if (!rel || strcmp(rel, "Applications/Utilities/Terminal")) return 0;
-    char body[64];
-    return volume_read(root, rel, body, sizeof body) == 0 &&
-           !strcmp(body, "OS999-BUILTIN:terminal:1\n");
+    return native_catalog_id(root, rel) == NATIVE_TERMINAL;
 }
-
 int volume_builtin_tailnet(const char *root, const char *rel) {
-    if (!rel || strcmp(rel, "Applications/Utilities/Tailscale")) return 0;
-    char body[64];
-    return volume_read(root, rel, body, sizeof body) == 0 &&
-           !strcmp(body, "OS999-BUILTIN:tailscale:1\n");
+    return native_catalog_id(root, rel) == NATIVE_TAILSCALE;
 }
 
 int volume_seed(const char *root) {
@@ -183,7 +171,7 @@ int volume_seed(const char *root) {
         }
         fclose(f);
     }
-    return 0;
+    return native_catalog_seed(root);
 }
 
 int volume_free_bytes(const char *root, uint64_t *out) {
@@ -267,8 +255,9 @@ static int list_items(const char *root, const char *rel, Item **buffer, int max,
             char file_rel[OSPI_PATH];
             int fn = rel && rel[0] ? snprintf(file_rel, sizeof file_rel, "%s/%s", rel, de->d_name)
                                    : snprintf(file_rel, sizeof file_rel, "%s", de->d_name);
+            if (fn > 0 && (size_t)fn < sizeof file_rel && native_catalog_placeholder(root, file_rel)) continue;
             int builtin = fn > 0 && (size_t)fn < sizeof file_rel && S_ISREG(st.st_mode) &&
-                          (volume_builtin_terminal(root, file_rel) || volume_builtin_tailnet(root, file_rel));
+                          native_catalog_id(root, file_rel) != NATIVE_NONE;
             items[n].kind = builtin || (S_ISREG(st.st_mode) && mac_icon_application_at(fd, de->d_name, &items[n])) ?
                             ITEM_APPLICATION : ITEM_FILE;
         }

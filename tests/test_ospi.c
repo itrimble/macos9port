@@ -1,5 +1,6 @@
 #include "draw.h"
 #include "ospi.h"
+#include "native_apps.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -153,14 +154,11 @@ int main(void) {
     CHECK(volume_seed(dir) == 0);
     {
         char readme[OSPI_TEXT];
-        char installed[OSPI_TEXT];
         CHECK(volume_read(dir, "Read Me", readme, sizeof readme) == 0);
         CHECK(strstr(readme, "OS999's own") != NULL);
         CHECK(strstr(readme, "Systemless") == NULL);
-        CHECK(volume_read(dir, "Applications/Nothing Installed Yet",
-                          installed, sizeof installed) == 0);
-        CHECK(strstr(installed, "supported 68k app") != NULL);
-        CHECK(strstr(installed, "legacy launcher") != NULL);
+        CHECK(native_catalog_id(dir, "Applications/Terminal") == NATIVE_TERMINAL);
+        CHECK(native_catalog_id(dir, "Applications/Movie Player") == NATIVE_MOVIE);
     }
     test_repeat_clicks(dir);
     Session *s = session_create(dir);
@@ -220,7 +218,7 @@ int main(void) {
     click(s, ax, ay, 2);
     CHECK(s->nwin == 2);
     CHECK(strcmp(s->win[1].rel, "Applications") == 0);
-    CHECK(s->win[1].nitems == 2); /* Placeholder plus bundled Utilities. */
+    CHECK(s->win[1].nitems == 9); /* Eight implemented native apps plus Utilities. */
 
     int cx, cy;
     CHECK(ospi_control_center(&s->win[1], 0, &cx, &cy) == 0);

@@ -1,4 +1,5 @@
 #include "finder_recent.h"
+#include "native_apps.h"
 #include "movie_window.h"
 #include "appearance_panel.h"
 #include "session_int.h"
@@ -57,8 +58,8 @@ void open_item(Session *s, Window *w, int index) {
     if (join_rel(rel, sizeof rel, w->rel, window_items(w)[index].name) != 0) {
         return;
     }
-    if (volume_builtin_tailnet(s->root, rel)) { terminal_tailnet_open(s); return; }
-    if (volume_builtin_terminal(s->root, rel)) { terminal_open(s, TERM_MODE_SHELL); return; }
+    int native = native_catalog_id(s->root, rel);
+    if (native) { (void)native_app_open(s, native); return; }
     if (session_is_sit(window_items(w)[index].name)) {
         session_open_sit(s, rel);
         return;

@@ -37,10 +37,10 @@ $(PHASE_STANDALONE_TESTS): build/%: tests/%.c
 	$(CC) $(CFLAGS) -o $@ $<
 build/test_mac_perf_audio_gates: src/runtime_perf.c tests/test_mac_perf_audio_gates.c include/runtime_perf.h
 	$(CC) $(CFLAGS) -o $@ src/runtime_perf.c tests/test_mac_perf_audio_gates.c
-build/test_mac_fuzz_soak: src/mac_resource.c src/mac_icon.c src/mac_icon_palette.c src/volume.c src/volume_folders.c assets/icons/c/ospi_icon_hd.c src/runtime_bridge.c tests/test_mac_fuzz_soak.c $(HDRS) assets/icons/c/ospi_icon_hd.h
-	$(CC) $(CFLAGS) -o $@ src/mac_resource.c src/mac_icon.c src/mac_icon_palette.c src/volume.c src/volume_folders.c assets/icons/c/ospi_icon_hd.c src/runtime_bridge.c tests/test_mac_fuzz_soak.c
-build/test_platform_sandbox_audit: build/runtime/mac_cpu.o build/runtime/mac_resource.o src/hostinfo.c src/archive_fs.c src/volume.c src/volume_folders.c src/mac_icon.c src/mac_icon_palette.c tests/test_platform_sandbox_audit.c $(CPUOBJ) $(HDRS) include/mac_cpu.h
-	$(CC) $(CFLAGS) $(CPUFLAGS) build/runtime/mac_cpu.o build/runtime/mac_resource.o src/hostinfo.c src/archive_fs.c src/volume.c src/volume_folders.c src/mac_icon.c src/mac_icon_palette.c tests/test_platform_sandbox_audit.c $(CPUOBJ) -lm -o $@
+build/test_mac_fuzz_soak: src/mac_resource.c src/mac_icon.c src/mac_icon_palette.c src/volume.c src/volume_folders.c src/native_catalog.c assets/icons/c/ospi_icon_hd.c src/runtime_bridge.c tests/test_mac_fuzz_soak.c $(HDRS) assets/icons/c/ospi_icon_hd.h
+	$(CC) $(CFLAGS) -o $@ src/mac_resource.c src/mac_icon.c src/mac_icon_palette.c src/volume.c src/volume_folders.c src/native_catalog.c assets/icons/c/ospi_icon_hd.c src/runtime_bridge.c tests/test_mac_fuzz_soak.c
+build/test_platform_sandbox_audit: build/runtime/mac_cpu.o build/runtime/mac_resource.o src/hostinfo.c src/archive_fs.c src/volume.c src/volume_folders.c src/native_catalog.c src/mac_icon.c src/mac_icon_palette.c tests/test_platform_sandbox_audit.c $(CPUOBJ) $(HDRS) include/mac_cpu.h
+	$(CC) $(CFLAGS) $(CPUFLAGS) build/runtime/mac_cpu.o build/runtime/mac_resource.o src/hostinfo.c src/archive_fs.c src/volume.c src/volume_folders.c src/native_catalog.c src/mac_icon.c src/mac_icon_palette.c tests/test_platform_sandbox_audit.c $(CPUOBJ) -lm -o $@
 
 test: build/test_appearance build/test_mac_containers build/test_mac_writable_files build/test_mac_controls_textedit build/test_mac_quickdraw_accel build/test_desktop_themes build/test_mac_perf_audio_gates build/test_mac_fuzz_soak build/test_platform_sandbox_audit $(PHASE_STANDALONE_TESTS)
 
@@ -123,7 +123,7 @@ test-network: build/test_modern_network
 
 test: build/test_modern_network
 
-FINDER_VOLUME_SRC := src/volume.c src/volume_folders.c src/mac_icon.c src/mac_icon_palette.c src/mac_resource.c
+FINDER_VOLUME_SRC := src/native_catalog.c src/volume.c src/volume_folders.c src/mac_icon.c src/mac_icon_palette.c src/mac_resource.c
 build/test_finder_files: $(FINDER_VOLUME_SRC) tests/test_finder_files.c src/finder_files.c src/finder_alias.c src/archive_fs.c include/finder_files.h include/ospi.h include/volume_directory.h
 	mkdir -p build
 	$(CC) $(CFLAGS) $(FINDER_VOLUME_SRC) tests/test_finder_files.c src/finder_files.c src/finder_alias.c src/archive_fs.c -o $@
@@ -347,3 +347,15 @@ test-controlpanels: test-controlpanels-safety
 test-controlpanels-safety: build/test_ramdisk_safety build/test_controlpanels_storage_safety
 	./build/test_ramdisk_safety
 	./build/test_controlpanels_storage_safety
+
+build/test_native_apps: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_native_apps.c $(HDRS) build/os999-tailnet
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_native_apps.c $(FT_LIBS) -lm $(NET_LIBS)
+.PHONY: test-native-apps
+test-native-apps: build/test_native_apps
+	./build/test_native_apps
+	./build/test_native_host
+test: test-native-apps
+
+build/test_native_host: $(QT_LIFECYCLE_SRC) $(STORAGE_A) tests/test_native_host.c $(HDRS) $(AUDIO_HDRS) include/desktop_host.h
+	$(CC) $(CFLAGS) $(SDL_CFLAGS) $(FFMPEG_CFLAGS) -o $@ $(QT_LIFECYCLE_SRC) $(STORAGE_LINK) tests/test_native_host.c $(SDL_LIBS) $(FFMPEG_LIBS) $(FT_LIBS) $(NET_LIBS) -pthread -lm
+test-native-apps: build/test_native_host

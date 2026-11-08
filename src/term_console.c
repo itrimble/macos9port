@@ -73,7 +73,8 @@ static int cmd_help(TermVt *vt) {
         "  wallpaper set <id|plain>  Activate a desktop picture or plain desktop\r\n"
         "  sound preview <id>        Preview a system sound (startup, alert, menu)\r\n"
         "  open <target>             Open a folder, document, or application\r\n"
-        "  clear                     Clear the console screen\r\n");
+        "  clear                     Clear the console screen\r\n"
+        "  quit / exit               Close this console window\r\n");
     return 0;
 }
 
@@ -308,6 +309,7 @@ int term_console_exec(TermConsole *con, TermVt *vt, const char *cmd_line) {
     if (!*p) return 0;
 
     int rc = -1;
+    if (!strcmp(p, "quit") || !strcmp(p, "exit")) { con->close_requested = 1; return 0; }
     if (strcmp(p, "help") == 0 || strcmp(p, "?") == 0) rc = cmd_help(vt);
     else if (strcmp(p, "about") == 0) rc = cmd_about(con, vt);
     else if (strcmp(p, "clear") == 0) {
@@ -372,6 +374,7 @@ void term_console_input(TermConsole *con, TermVt *vt, const char *data, size_t l
                 }
                 con->history_index = con->history_count;
                 (void)term_console_exec(con, vt, con->line);
+                if (con->close_requested) return;
             }
             con->len = 0;
             con->cursor = 0;

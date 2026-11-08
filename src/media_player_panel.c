@@ -1,3 +1,4 @@
+#include "native_apps.h"
 #include "media_player_panel.h"
 #include "winamp_skin.h"
 #include "finder_apps.h"
@@ -172,6 +173,7 @@ AudioMediaPlayer *media_panel_current_player(void) { return active_player; }
 void media_panel_open(Session *s, int selected_tab) {
     if (!s) return;
     owner = s;
+    native_app_note(s, NATIVE_MUSIC);
     s->down = s->drag = 0;
     state_mode = PANEL_OPEN;
     finder_apps_command(s, CMD_APP_MEDIA);

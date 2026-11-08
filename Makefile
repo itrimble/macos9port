@@ -30,14 +30,14 @@ CFLAGS += -Istorage/include
 
 VIDEO_SRC := src/quicktime_decode.c src/quicktime_movie.c src/quicktime_backend.c
 AUDIO_SRC := src/audio_decoder.c src/audio_dsp.c src/audio_midi.c src/audio_output.c src/audio_service.c
-AUDIO_HDRS := include/sound_preferences.h include/movie_host.h include/quicktime_movie.h src/quicktime_decode.h include/osa.h include/osa_bridge.h include/osa_events.h include/osa_json.h include/osa_session.h include/volume_directory.h include/audio_decoder.h include/audio_dsp.h include/audio_midi.h include/audio_output.h include/audio_service.h
+AUDIO_HDRS := include/sound_preferences.h include/native_apps.h include/movie_host.h include/quicktime_movie.h src/quicktime_decode.h include/osa.h include/osa_bridge.h include/osa_events.h include/osa_json.h include/osa_session.h include/volume_directory.h include/audio_decoder.h include/audio_dsp.h include/audio_midi.h include/audio_output.h include/audio_service.h
 
 # Boot startup renderer and the original pixel-art fruit sprite it draws.
 STARTUP_SRC := src/os999_startup.c src/os999_startup_sprite.c
 STARTUP_HDR := include/os999_startup.h include/os999_startup_sprite.h
 
 include config/core-sources.mk
-HDRS := include/native_settings.h include/control_panel_store.h include/os999_cdev.h include/control_panels.h src/cdev_ui.h src/control_panels_int.h include/movie_host.h src/install_int.h include/application_probe.h include/quake_launch.h include/term_font.h include/tailnet.h include/finder_edit.h include/app_switcher.h include/desktop_gesture.h include/finder_apps.h include/finder_print.h include/finder_recent.h include/finder_batch.h include/finder_drag.h include/finder_selection.h include/finder_popup.h include/finder_state.h include/finder_settings.h include/finder_search.h include/finder_files.h include/desktop_finder.h include/modern_network.h include/folder_navigation.h include/desktop_commands.h include/desktop_help.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h include/term.h include/mac_movie.h include/movie_window.h
+HDRS := include/sound_preferences.h include/native_apps.h include/native_settings.h include/control_panel_store.h include/os999_cdev.h include/control_panels.h src/cdev_ui.h src/control_panels_int.h include/movie_host.h src/install_int.h include/application_probe.h include/quake_launch.h include/term_font.h include/tailnet.h include/finder_edit.h include/app_switcher.h include/desktop_gesture.h include/finder_apps.h include/finder_print.h include/finder_recent.h include/finder_batch.h include/finder_drag.h include/finder_selection.h include/finder_popup.h include/finder_state.h include/finder_settings.h include/finder_search.h include/finder_files.h include/desktop_finder.h include/modern_network.h include/folder_navigation.h include/desktop_commands.h include/desktop_help.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h include/term.h include/mac_movie.h include/movie_window.h
 
 PRINT_HOST := src/desktop_print_stub.c
 SHORTCUT_HOST := src/desktop_shortcuts_stub.c
@@ -238,8 +238,8 @@ build/test_runtime_perf: tests/test_runtime_perf.c src/runtime_perf.c include/ru
 build/test_runtime_keys: tests/test_runtime_keys.c src/runtime_keys.c include/runtime_keys.h include/runtime_bridge.h
 	$(CC) $(CFLAGS) $(SDL_CFLAGS) tests/test_runtime_keys.c src/runtime_keys.c -o $@
 
-build/test_mac_icon: tests/test_mac_icon.c src/mac_icon.c src/mac_icon_palette.c src/mac_resource.c src/volume.c src/volume_folders.c include/mac_icon.h include/mac_resource.h include/ospi.h include/volume_directory.h
-	$(CC) $(CFLAGS) -o $@ tests/test_mac_icon.c src/mac_icon.c src/mac_icon_palette.c src/mac_resource.c src/volume.c src/volume_folders.c
+build/test_mac_icon: tests/test_mac_icon.c src/mac_icon.c src/mac_icon_palette.c src/mac_resource.c src/volume.c src/volume_folders.c src/native_catalog.c include/mac_icon.h include/mac_resource.h include/ospi.h include/volume_directory.h include/native_apps.h
+	$(CC) $(CFLAGS) -o $@ tests/test_mac_icon.c src/mac_icon.c src/mac_icon_palette.c src/mac_resource.c src/volume.c src/volume_folders.c src/native_catalog.c
 
 build/test_runtime_bridge: tests/test_runtime_bridge.c src/runtime_bridge.c include/runtime_bridge.h
 	mkdir -p build
