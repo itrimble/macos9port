@@ -492,3 +492,11 @@ the probe, not a window I watched, and I have not listened to any audio.
   stacks, indices, depths; mutants killed except one equivalent odd-pointer check); ASan clean; `make test` 0; Monkey Island and Monkey Island 2 identical;
   Castle refreshed. This is one downscaled frame: I have not checked the picture pixel by pixel, nor clicked into the game, nor listened to anything;
   windowed behaviour is untested.
+
+- **Glider PRO menus (headless, scripted mouse).** From the title screen (after the three dialog clicks): **Game** shows New Game (dimmed, Cmd-N), Two Player
+  Game (dimmed), Open Saved Game? (dimmed), Load House? (Cmd-L), Quit (Cmd-Q); the dimmed items fit "no houses". **Options** shows Room Editor (Cmd-E), High
+  Scores? (dimmed), Preferences? (Cmd-P), Demo? (Cmd-D). Choosing **Load House?** and **Demo?** (menu drag, release on the item at y 74) left the title
+  screen unchanged for 25 s with no halt (not investigated: either the item missed, or the app waited for a file dialog or a house we do not have).
+  Choosing **Preferences?** halts: `Dialog user items are unsupported.` The Preferences dialog draws custom items with guest procedures (DITL user
+  items); running them needs a dialog GrafPort that guest drawing can target, and dialogs here have none (they are painted from their item lists; see the
+  parked "real dialog GrafPort" item, which this and Room Editor's PICT item both need). That is the next real subsystem; not started in this pass.
