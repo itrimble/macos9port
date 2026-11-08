@@ -135,7 +135,8 @@ static int volume_info(MacRuntime *rt, uint32_t pb, int directory_fd, size_t siz
     if (error) return error;
     if (mac_drive_mount(rt, 1, metadata.blocks)) return -108;
     uint8_t out[VOLUME_PB_SIZE];
-    memcpy(out, input, sizeof(out));
+    memset(out, 0, sizeof(out));
+    memcpy(out, input, size); /* only the bytes the call owns exist in guest RAM; never read past them */
     memset(out + 30, 0, sizeof(out) - 30);
     put16(out + 22, UINT16_MAX); /* The mounted application data volume. */
 #ifdef __APPLE__
