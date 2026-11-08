@@ -207,6 +207,32 @@ static int resize(MacRuntime *r,int width,int height,int update) {
  mac_cpu_set(r->cpu,MAC_A7,SP);wr(r,SP,2,update?0x0100:0);wr(r,SP+2,2,height);wr(r,SP+4,2,width);wr(r,SP+6,4,STORAGE);
  return mac_window_service(r,0xa91d);
 }
+static int set_title(MacRuntime *r,uint32_t w,uint32_t src){mac_cpu_set(r->cpu,MAC_A7,SP);wr(r,SP,4,src);wr(r,SP+4,4,w);return mac_window_service(r,0xa91a);}
+static void titling(void){
+ /* SetWTitle copies the Pascal string, GetWTitle returns it, a visible titled window redraws its title bar; bad strings halt and change nothing */
+ MacRuntime r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
+ const uint8_t *scr=mac_cpu_ram(r.cpu)+r.screen_base;static uint8_t before[307200];memcpy(before,scr,sizeof before);
+ memcpy(mac_cpu_ram(r.cpu)+0x5000,"\006Houses",7);
+ CHECK(set_title(&r,STORAGE,0x5000)==1 && mac_cpu_get(r.cpu,MAC_A7)==SP+8 && r.window.title[0]==6 && !memcmp(r.window.title+1,"Houses",6));
+ CHECK(memcmp(before,scr,sizeof before)!=0);                                                                  /* the title bar was redrawn */
+ mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,0x6000);wr(&r,SP+4,4,STORAGE);memset(mac_cpu_ram(r.cpu)+0x6000,0xee,16);
+ CHECK(mac_window_service(&r,0xa919)==1 && rd(&r,0x6000,1)==6 && !memcmp(mac_cpu_ram(r.cpu)+0x6001,"Houses",6) && rd(&r,0x6007,1)==0xee);
+ mac_cpu_ram(r.cpu)[0x5000]=0;CHECK(set_title(&r,STORAGE,0x5000)==1 && r.window.title[0]==0);                  /* an empty title is fine */
+ memset(mac_cpu_ram(r.cpu)+0x5100,'x',256);mac_cpu_ram(r.cpu)[0x5100]=255;CHECK(set_title(&r,STORAGE,0x5100)==1 && r.window.title[0]==255 && r.window.title[255]=='x');   /* the longest Str255 */
+ mac_cpu_destroy(r.cpu);
+ r=fresh();new_args(&r,STORAGE,0);CHECK(mac_window_service(&r,0xaa45)==1);memcpy(before,mac_cpu_ram(r.cpu)+r.screen_base,sizeof before);       /* hidden: stored, nothing drawn */
+ memcpy(mac_cpu_ram(r.cpu)+0x5000,"\003abc",4);CHECK(set_title(&r,STORAGE,0x5000)==1 && r.window.title[0]==3 && !memcmp(before,mac_cpu_ram(r.cpu)+r.screen_base,sizeof before));
+ mac_cpu_destroy(r.cpu);
+ static const struct{uint32_t src;unsigned len;}bad[]={{0,0},{0x100,3},{MAC_RUNTIME_RAM,0},{0xfffffff0u,0},{MAC_RUNTIME_RAM-4,200},{MAC_RUNTIME_RAM-1,1}};
+ for(unsigned k=0;k<sizeof bad/sizeof*bad;k++){
+  r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);uint8_t old[256];memcpy(old,r.window.title,256);
+  if(bad[k].src<MAC_RUNTIME_RAM && bad[k].src>=0x400)mac_cpu_ram(r.cpu)[bad[k].src]=(uint8_t)bad[k].len;
+  CHECK(set_title(&r,STORAGE,bad[k].src)==-1 && mac_cpu_halted(r.cpu) && !memcmp(old,r.window.title,256));mac_cpu_destroy(r.cpu);
+ }
+ r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);memcpy(mac_cpu_ram(r.cpu)+0x5000,"\001z",2);CHECK(set_title(&r,0x7770,0x5000)==-1);mac_cpu_destroy(r.cpu);   /* not a window */
+ r=fresh();new_args(&r,STORAGE,1);wr(&r,SP+10,2,2);CHECK(mac_window_service(&r,0xaa45)==1);memcpy(mac_cpu_ram(r.cpu)+0x5000,"\001z",2);          /* plainDBox: no bar, text kept */
+ CHECK(set_title(&r,STORAGE,0x5000)==1 && r.window.title[1]=='z');mac_cpu_destroy(r.cpu);
+}
 static void sizing(void) {
  MacRuntime r=fresh();new_args(&r,STORAGE,0);CHECK(mac_window_service(&r,0xaa45)==1);
  uint32_t vis=rd(&r,r.window.handles[2],4),up=rd(&r,r.window.handles[10],4),content=rd(&r,r.window.handles[9],4);
@@ -286,4 +312,4 @@ static void offscreen(void) {
  CHECK(resize(&r,600,470,1)==-1 && r.window.bounds[2]==300 && r.window.bounds[3]==450);mac_cpu_destroy(r.cpu);
  r=fresh();new_args(&r,STORAGE,0);CHECK(mac_window_service(&r,0xaa45)==1);CHECK(resize(&r,600,470,1)==1 && r.window.bounds[2]==510);mac_cpu_destroy(r.cpu);
 }
-int main(void){calc_vis_behind();show_hide_checks();moving();sizing();offscreen();calc_vis();lifecycle();failures();puts("one-window lifecycle, drawing, and update checks passed");}
+int main(void){calc_vis_behind();show_hide_checks();moving();titling();sizing();offscreen();calc_vis();lifecycle();failures();puts("one-window lifecycle, drawing, and update checks passed");}

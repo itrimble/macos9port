@@ -24,6 +24,8 @@ int mac_text_face(MacRuntime *rt, int family, int size, unsigned face, int32_t e
     if (face & ~5u) return fail(rt, "Text style other than plain, bold and underline is unsupported.");
     if (extra & 0xffff) return fail(rt, "SpaceExtra with a fractional part is unsupported.");
     const char *why;
+    /* Size 0 asks for the family's default size. From memory, not from a document I opened: 12 points (the system font's size) is used for every family here. */
+    if (size == 0) size = 12;
     if (mac_font_find(&rt->fork, family, size, 0, &f->s, &why)) return fail(rt, why);
     f->bold = face & 1; f->underline = (face & 4) != 0; f->extra = extra >> 16;
     return 0;

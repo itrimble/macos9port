@@ -219,6 +219,11 @@ static void service_checks(const MacResourceFork *f) {
     CHECK(px(10, 2) == 200 && px(11, 2) == 50 && px(10, 3) == 200);
     mac_cpu_destroy(rt.cpu);
 }
+static void default_size(const MacResourceFork *f) {   /* TextSize(0) asks for the default size: taken as 12, so a family without a 12 point strike names size 12 */
+    rig(f); wrw(PORT + 74, 2, 0);
+    CHECK(string_width("ab") == -1 && mac_cpu_halted(rt.cpu) && strstr(mac_cpu_error(rt.cpu), "size 12") != NULL);
+    rig(f); wrw(PORT + 74, 2, 10); CHECK(string_width("ab") > 0);
+}
 static void refusal_checks(const MacResourceFork *f) {
     for (unsigned k = 0; k < 22; k++) {
         rig(f); unsigned op = 0xa884; int draw = 1; uint32_t sp = SPT;
@@ -263,7 +268,7 @@ int main(void) {
     parse_checks(); lookup_checks();
     { size_t sn = make_strike(), fn = make_fond(); Res list[] = {{FONT_T, 5 * 128 + 10, strike, sn}, {NFNT_T, 2000, strike, sn}, {FOND_T, 5, fond, fn}};
       static uint8_t img2[4096]; MacResourceFork f; char err[200]; size_t total = build_fork(img2, list, 3);
-      CHECK(mac_resource_open(&f, img2, total, err, sizeof err) == 0); service_checks(&f); refusal_checks(&f); }
+      CHECK(mac_resource_open(&f, img2, total, err, sizeof err) == 0); service_checks(&f); refusal_checks(&f); default_size(&f); }
     if (!fails) puts("Font engine checks passed");
     return fails ? 1 : 0;
 }

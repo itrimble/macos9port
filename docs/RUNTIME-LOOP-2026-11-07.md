@@ -510,3 +510,12 @@ the probe, not a window I watched, and I have not listened to any audio.
   icon changed nothing visible and caused no halt; Okay closes it and the title screen comes back. `test_mac_dlgmgr` now expects dialog 130 to open and dispose
   cleanly; `make test` 0; ASan clean; Monkey Island and Monkey Island 2 identical; Castle refreshed. What is **not** shown: whatever the Preferences items draw
   with their procedures (panels, boxes), and the real dialog port (Room Editor's PICT in its dialog is still not shown).
+
+- **Glider PRO's built-in Room Editor opens (headless).** Options > Room Editor (menu drag at 105,9 to the first item) needed two things: `SetWTitle` (`$A91A`;
+  `src/mac_window_title.c`: copies the Pascal string into the window title and redraws a visible titled window's bar; a length that runs off RAM or a bad pointer
+  halts and changes nothing; window record's own titleHandle is not updated) and `TextSize(0)`, the default size (taken as 12 points for every family:
+  **from my memory of the Font Manager, not a document**; in `mac_text_face`). Result in a headless frame at 100 s, no halt: a window titled
+  "Slumberland - No rooms" on a grey field with the text "Nothing to show", and a new "House" menu in the menu bar. Tests: `test_mac_window` (round trip with
+  GetWTitle, redraw, hidden window, plainDBox, six bad strings, a non-window) and `test_mac_text` (size 0 is 12: a family with no 12-point strike names size 12);
+  mutants killed except one equivalent (drawing a hidden window is already a no-op); ASan clean; `make test` 0; Monkey Island and Monkey Island 2 identical;
+  Castle refreshed. Not tried: the House menu (creating a room), saving, or any editing; no house file exists to open.
