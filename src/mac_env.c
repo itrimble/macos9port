@@ -1,5 +1,6 @@
 #include "mac_runtime.h"
 
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
 
@@ -54,6 +55,15 @@ static int find_named(MacRuntime *rt, uint32_t type, uint32_t name_ptr, int16_t 
     return -1;
 }
 
+static MacHandle *by_handle(MacRuntime *rt, uint32_t h) {
+    for (size_t i = 0; i < rt->handle_count; i++)
+        if (rt->handles[i].handle == h && h) return &rt->handles[i];
+    return NULL;
+}
+
+static void put_result16(MacCpu *cpu, uint16_t v) { mac_cpu_write(cpu, mac_cpu_get(cpu, MAC_A7), 2, v); }
+static void put_result32(MacCpu *cpu, uint32_t v) { mac_cpu_write(cpu, mac_cpu_get(cpu, MAC_A7), 4, v); }
+
 static int os_trap(MacRuntime *rt, uint16_t opcode) {
     MacCpu *cpu = rt->cpu;
     uint32_t a0 = mac_cpu_get(cpu, MAC_A0), d0 = mac_cpu_get(cpu, MAC_D0);
@@ -97,6 +107,10 @@ static int os_trap(MacRuntime *rt, uint16_t opcode) {
         return 1;
     case 0x77: mac_cpu_set(cpu, MAC_D0, 0); return 1; /* CountADBs: no ADB devices */
     case 0x98: set_err(cpu, 0); return 1; /* HWPriv: no cache or hardware to manage */
+    case 0x60: /* FSDispatch / HFSDispatch selectors the file service does not implement */
+        if (a0 && !(a0 & 1) && a0 + 18 <= mac_cpu_ram_size(cpu)) mac_cpu_write(cpu, a0 + 16, 2, (uint16_t)-50);
+        set_err(cpu, -50);
+        return 1;
     default: return 0;
     }
 }
@@ -124,6 +138,124 @@ static int toolbox_trap(MacRuntime *rt, uint16_t opcode) {
         mac_cpu_write(cpu, RES_ERR, 2, h ? 0 : (uint16_t)-192);
         return 1;
     }
+    case 0xa9c9: mac_cpu_halt(cpu, "The extension raised a system error (SysError)."); return -1;
+    case 0xa9c6: { /* SecondsToDate(secs D0, DateTimeRec* A0) */
+        time_t t = (time_t)((int64_t)mac_cpu_get(cpu, MAC_D0) - MAC_EPOCH_DELTA);
+        struct tm tm;
+        uint32_t a0 = mac_cpu_get(cpu, MAC_A0);
+        if (!gmtime_r(&t, &tm)) return 1;
+        const int fields[7] = {tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, tm.tm_wday + 1};
+        for (int i = 0; i < 7; i++) if (mac_cpu_write(cpu, a0 + (uint32_t)i * 2, 2, (uint16_t)fields[i])) return -1;
+        return 1;
+    }
+    case 0xa9e1: { /* HandToHand: duplicate the handle in A0 */
+        MacHandle *h = by_handle(rt, mac_cpu_get(cpu, MAC_A0));
+        if (!h) { mac_cpu_set(cpu, MAC_A0, 0); set_err(cpu, -109); return 1; }
+        uint32_t src = h->pointer, size = h->size;
+        mac_cpu_set(cpu, MAC_D0, size);
+        if (mac_memory_service(rt, 0xa122) != 1 || (int32_t)mac_cpu_get(cpu, MAC_D0) < 0) return 1;
+        MacHandle *n = by_handle(rt, mac_cpu_get(cpu, MAC_A0));
+        if (n) memcpy(mac_cpu_ram(cpu) + n->pointer, mac_cpu_ram(cpu) + src, size);
+        set_err(cpu, 0);
+        return 1;
+    }
+    case 0xabff: { /* DebugStr: no debugger, so the message is only logged */
+        uint32_t p = mac_cpu_read(cpu, sp, 4);
+        pop(cpu, 4);
+        if (rt->trace) fprintf(stderr, "DebugStr at %08x\n", p);
+        return 1;
+    }
+    case 0xa80d: { /* Count1Resources(type) -> short */
+        uint32_t type = mac_cpu_read(cpu, sp, 4);
+        uint16_t n = 0;
+        pop(cpu, 4);
+        for (size_t i = 0; i < mac_resource_count(&rt->fork); i++) {
+            MacResource r;
+            if (!mac_resource_at(&rt->fork, i, &r) && r.type == type) n++;
+        }
+        put_result16(cpu, n);
+        return 1;
+    }
+    case 0xa80e: { /* Get1IndResource(type, index) -> Handle */
+        uint32_t type = mac_cpu_read(cpu, sp + 2, 4), want = mac_cpu_read(cpu, sp, 2), seen = 0, h = 0;
+        pop(cpu, 6);
+        for (size_t i = 0; i < mac_resource_count(&rt->fork) && !h; i++) {
+            MacResource r;
+            if (!mac_resource_at(&rt->fork, i, &r) && r.type == type && ++seen == want)
+                h = mac_runtime_resource(rt, type, r.id);
+        }
+        put_result32(cpu, h);
+        mac_cpu_write(cpu, RES_ERR, 2, h ? 0 : (uint16_t)-192);
+        return 1;
+    }
+    case 0xa820: { /* Get1NamedResource(type, name) -> Handle */
+        uint32_t name = mac_cpu_read(cpu, sp, 4), type = mac_cpu_read(cpu, sp + 4, 4);
+        int16_t id;
+        pop(cpu, 8);
+        uint32_t h = find_named(rt, type, name, &id) == 0 ? mac_runtime_resource(rt, type, id) : 0;
+        put_result32(cpu, h);
+        mac_cpu_write(cpu, RES_ERR, 2, h ? 0 : (uint16_t)-192);
+        return 1;
+    }
+    case 0xa81a: pop(cpu, 12); put_result16(cpu, 0xffff); mac_cpu_write(cpu, RES_ERR, 2, (uint16_t)-43); return 1; /* HOpenResFile: no resource files besides the INIT's own */
+    case 0xa81b: pop(cpu, 10); mac_cpu_write(cpu, RES_ERR, 2, (uint16_t)-43); return 1; /* HCreateResFile: ditto */
+    case 0xa823: /* FolderDispatch, selector 0 = FindFolder: no special folders on this volume */
+        if (mac_cpu_get(cpu, MAC_D0) != 0) return 0;
+        pop(cpu, 16);
+        put_result16(cpu, (uint16_t)-43);
+        return 1;
+    case 0xaa1b: case 0xaa1e: pop(cpu, 2); put_result32(cpu, 0); mac_cpu_write(cpu, RES_ERR, 2, (uint16_t)-192); return 1; /* GetCCursor / GetCIcon: not found */
+    case 0xaa1f: pop(cpu, 8); return 1;  /* PlotCIcon: no display at startup */
+    case 0xaa25: pop(cpu, 4); return 1;  /* DisposeCIcon */
+    case 0xa862: case 0xa892: pop(cpu, 4); return 1; /* ForeColor, Line: nothing is drawn at startup */
+    case 0xa8dc: pop(cpu, 8); return 1;  /* CopyRgn: regions are not modified here */
+    case 0xa8e5: pop(cpu, 12); return 1; /* UnionRgn: ditto */
+    case 0xa85d: { /* BitTst(bytePtr, bitNum) -> Boolean */
+        uint32_t base = mac_cpu_read(cpu, sp + 4, 4), bit = mac_cpu_read(cpu, sp, 4);
+        pop(cpu, 8);
+        uint32_t byte = mac_cpu_read(cpu, base + (bit >> 3), 1);
+        mac_cpu_write(cpu, mac_cpu_get(cpu, MAC_A7), 2, (byte & (0x80u >> (bit & 7))) ? 0x0100 : 0);
+        return 1;
+    }
+    case 0xa86b: { /* LoWord(v) -> UInt16 */
+        uint32_t v = mac_cpu_read(cpu, sp, 4);
+        pop(cpu, 4);
+        put_result16(cpu, (uint16_t)v);
+        return 1;
+    }
+    case 0xa805: pop(cpu, 10); put_result16(cpu, 0); return 1; /* SndPlay: no audio device at startup; reports success */
+    case 0xa97c: pop(cpu, 12); put_result32(cpu, 0); return 1; /* GetNewDialog: no Dialog Manager at startup, returns nil */
+    case 0xa895: { /* ShutDown dispatch: 3 = install(proc, flags), 4 = remove(proc) */
+        uint32_t sel = mac_cpu_read(cpu, sp, 2);
+        if (sel != 3 && sel != 4) return 0;
+        pop(cpu, sel == 3 ? 8 : 6);
+        return 1;
+    }
+    case 0xa94b: pop(cpu, 8); return 1;  /* PlotIcon: no display at startup */
+    case 0xa874: { /* GetPort(GrafPtr*) */
+        uint32_t out = mac_cpu_read(cpu, sp, 4);
+        pop(cpu, 4);
+        if (mac_cpu_write(cpu, out, 4, rt->current_port)) return -1;
+        return 1;
+    }
+    case 0xa912: return 1; /* InitWindows: the host owns window state */
+    case 0xa9a7: pop(cpu, 6); return 1;  /* SetResAttrs: attributes are not tracked per handle */
+    case 0xa8a6: { /* EqualRect(r1, r2) -> Boolean */
+        uint32_t a = mac_cpu_read(cpu, sp + 4, 4), b = mac_cpu_read(cpu, sp, 4);
+        int same = 1;
+        pop(cpu, 8);
+        for (uint32_t i = 0; i < 8; i += 2) same &= mac_cpu_read(cpu, a + i, 2) == mac_cpu_read(cpu, b + i, 2);
+        mac_cpu_write(cpu, mac_cpu_get(cpu, MAC_A7), 2, same ? 0x0100 : 0);
+        return 1;
+    }
+    case 0xa817: pop(cpu, 24); return 1; /* CopyMask: nothing is drawn at startup */
+    case 0xabc9: { /* Icon Utilities dispatch: D0 high byte = argument words; PlotIconID-style calls return OSErr */
+        uint32_t d0 = mac_cpu_get(cpu, MAC_D0), words = (d0 >> 8) & 0xff;
+        if ((d0 & 0xff) != 0 || words < 1 || words > 12 || (d0 >> 16) != 0) return 0;
+        pop(cpu, words * 2);
+        put_result16(cpu, 0); /* drawing is skipped at startup; reported as success */
+        return 1;
+    }
     default: return 0;
     }
 }
@@ -137,6 +269,10 @@ int mac_env_implemented(unsigned key) {
     switch (key) {
     case 0x1a: case 0x1b: case 0x28: case 0x36: case 0x20: case 0x5e: case 0x5f: case 0x3b:
     case 0x39: case 0x3d: case 0x3e: case 0x31: case 0x77: case 0x98: return 1;
+    case 0x60: case 0x9c9: case 0x9c6: case 0x9e1: case 0xbff: case 0x80d: case 0x80e: case 0x820: case 0x81a: case 0x81b:
+    case 0x823: case 0xa1b: case 0xa1e: case 0xa1f: case 0xa25: case 0x862: case 0x892: case 0x8dc: case 0x8e5: case 0x85d:
+    case 0x86b: case 0x805: case 0x97c: case 0x895: case 0x94b: case 0x874: case 0x912:
+    case 0x9a7: case 0x8a6: case 0x817: case 0xbc9: return 1;
     case 0x9c8: case 0x99b: case 0x999: case 0x9aa: case 0x9b0: case 0x9ab: case 0x9ba: case 0x9a1: return 1;
     default: return 0;
     }

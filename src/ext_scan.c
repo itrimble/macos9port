@@ -100,6 +100,8 @@ const char *ext_status_label(ExtStatus status) {
     case EXT_FAILED: return "Failed";
     case EXT_MISSING_DEP: return "Needs another extension";
     case EXT_CYCLE: return "Dependency loop";
+    case EXT_UNSUPPORTED: return "Needs PowerPC runtime";
+    case EXT_NO_INIT: return "No startup code";
     default: return "Pending";
     }
 }

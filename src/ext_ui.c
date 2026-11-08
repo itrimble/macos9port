@@ -119,7 +119,7 @@ void ext_manager_render(ExtManager *m, Fb *fb, Rect c) {
         if (e->error[0]) snprintf(status, sizeof status, "%s: %s", ext_status_label(e->status), e->error);
         else snprintf(status, sizeof status, "%s", e->enabled ? "On" : "Off");
         fb_text(fb, c.x + 280, row.y + 3, e->status == EXT_FAILED || e->status == EXT_MISSING_DEP ||
-                e->status == EXT_CYCLE ? fg : dim, status);
+                e->status == EXT_CYCLE || e->status == EXT_UNSUPPORTED ? fg : dim, status);
     }
     fb_unclip(fb);
     int top = m->overlay ? 6 : 4;

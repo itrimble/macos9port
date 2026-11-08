@@ -39,13 +39,36 @@ static const MacResourceFork *host_fork(void) {
     return &fork;
 }
 
+/* A started system already has QuickDraw and a Window Manager port. A runtime
+ * that has not run InitGraf yet gets the same, so extensions that draw icons or
+ * query the port behave as they would at startup. The application's own
+ * InitGraf later replaces these. */
+static void prepare_graphics(MacRuntime *rt) {
+    if (rt->qd_globals) return;
+    MacCpu *cpu = rt->cpu;
+    uint32_t sp = mac_cpu_get(cpu, MAC_A7), a5 = mac_cpu_get(cpu, MAC_A5);
+    if (!a5) a5 = rt->a5;
+    mac_cpu_set(cpu, MAC_A5, a5);
+    mac_cpu_write(cpu, sp - 4, 4, a5 - 8);
+    mac_cpu_set(cpu, MAC_A7, sp - 4);
+    mac_quickdraw_service(rt, 0xa86e);
+    mac_cpu_set(cpu, MAC_A7, sp);
+    mac_toolbox_service(rt, 0xa912);
+    mac_cpu_set(cpu, MAC_A7, sp);
+}
+
 int mac_init_host_create(MacRuntime *rt, char *err, size_t n) {
     const MacResourceFork *fork = host_fork();
     if (!fork) {
         if (err && n) snprintf(err, n, "Could not build the extension host fork.");
         return -1;
     }
-    return mac_runtime_init(rt, fork, err, n);
+    int rc = mac_runtime_init(rt, fork, err, n);
+    if (rc == 0) {
+        /* A started system already has its display and QuickDraw globals. */
+        rt->indexed_requested = 1;
+    }
+    return rc;
 }
 
 typedef struct {
@@ -95,9 +118,10 @@ int mac_init_run(MacRuntime *rt, const MacResourceFork *fork, size_t budget, Mac
     size_t total = mac_resource_count(fork), n = 0;
     for (size_t i = 0; i < total && n < 256; i++) {
         MacResource r;
-        if (mac_resource_at(fork, i, &r) == 0 && r.type == MAC_INIT_TYPE) ids[n++] = r.id;
+        if (mac_resource_at(fork, i, &r) == 0 && r.type == MAC_INIT_TYPE && r.id >= 0 && r.id <= 31) ids[n++] = r.id;
     }
     qsort(ids, n, sizeof ids[0], cmp_id);
+    prepare_graphics(rt);
     static Snapshot snap; /* single execution thread, see mac_cpu.h */
     save(rt, &snap);
     rt->init_guard = 1;
@@ -110,6 +134,11 @@ int mac_init_run(MacRuntime *rt, const MacResourceFork *fork, size_t budget, Mac
         MacResource r;
         if (mac_resource_find(fork, MAC_INIT_TYPE, ids[k], &r) != 0 || r.size < 2 || r.size > 0x100000) {
             result = fail(rep, "INIT resource is empty or too large.");
+            break;
+        }
+        if (r.size >= 2 && r.data[0] == 0xaa && r.data[1] == 0xfe) { /* MixedModeMagic routine descriptor */
+            if (rep) snprintf(rep->error, sizeof rep->error, "%s", "PowerPC code: needs the PEF/CFM runtime.");
+            result = -3;
             break;
         }
         uint32_t code = mac_runtime_alloc(rt, (uint32_t)r.size + 8);
@@ -139,6 +168,8 @@ int mac_init_run(MacRuntime *rt, const MacResourceFork *fork, size_t budget, Mac
         }
         if (rt->init_violation) result = fail(rep, "INIT tried to patch a protected trap.");
         else if (mac_cpu_get(rt->cpu, MAC_PC) != sentinel) result = fail(rep, "INIT did not return within its instruction budget.");
+        else if (mac_cpu_get(rt->cpu, MAC_A7) != sp) /* a correct INIT pops exactly what it pushed */
+            result = fail(rep, "INIT returned with an unbalanced stack (a host call used the wrong argument size).");
         else if (rep) rep->count++;
     }
     rt->init_guard = 0;

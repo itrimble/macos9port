@@ -36,8 +36,8 @@ static int run_entry(MacRuntime *rt, ExtEntry *e, MacInitReport *rep) {
     else {
         rc = mac_init_run(rt, &fork, MAC_INIT_BUDGET, rep);
         if (rc == 0 && rep->count == 0) {
-            snprintf(rep->error, sizeof rep->error, "no INIT resource");
-            rc = -1;
+            snprintf(rep->error, sizeof rep->error, "no startup INIT (IDs 0-31)");
+            rc = -4; /* a patch or support file, not startup code */
         }
     }
     free(bytes); /* INIT code was copied into guest RAM */
@@ -64,6 +64,8 @@ int ext_init_load_all(ExtList *list) {
             continue;
         }
         set_error(e, rep.error[0] ? rep.error : "failed");
+        if (rc == -3) e->status = EXT_UNSUPPORTED;
+        if (rc == -4) e->status = EXT_NO_INIT;
         if (rc == -2) { /* host is dead: rebuild and replay what loaded */
             mac_runtime_destroy(rt);
             if (mac_init_host_create(rt, err, sizeof err) != 0) { free(rt); return loaded_count; }

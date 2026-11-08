@@ -6,8 +6,10 @@
 /* Extension (INIT) execution inside ospi-runtime.
  *
  * Contract (OS999, not a claim of full Macintosh INIT compatibility):
- *  - Every INIT resource of a fork runs once, in ascending ID order, as a
- *    plain subroutine: PC at byte 0, return address on the stack, D0 = 0.
+ *  - Only INIT resources with IDs 0 through 31 are startup code; they run once
+ *    each, in ascending ID order, as a plain subroutine. Higher IDs are patch
+ *    code that a startup INIT installs; running them would corrupt the stack.
+ *    A plain subroutine: PC at byte 0, return address on the stack, D0 = 0.
  *  - D0 on return is ignored. Real INITs do not define a result: of 268 real
  *    INIT forks, 53 left a nonzero D0 and still ran to completion. An INIT
  *    fails only by patching a protected trap, halting the CPU on an

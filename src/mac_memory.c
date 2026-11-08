@@ -57,8 +57,9 @@ static int move_high(MacRuntime *rt, uint32_t address) {
         mac_cpu_halt(cpu, "MoveHHi handle storage is invalid."); return -1;
     }
     if (rt->heap_high && h->pointer >= rt->heap_high) { result(cpu, 0); return 1; }
-    if (h->pointer + amount != rt->heap_next) {
-        mac_cpu_halt(cpu, "MoveHHi nontrailing blocks require heap compaction."); return -1;
+    if (h->pointer + amount != rt->heap_next) { /* MoveHHi is advisory: leave a non-trailing block where it is */
+        result(cpu, 0);
+        return 1;
     }
     uint32_t top = ceiling(rt) & ~UINT32_C(3);
     if (top < amount || top - amount < h->pointer) { result(cpu, -108); return 1; }
@@ -86,11 +87,12 @@ int mac_memory_service(MacRuntime *rt, uint16_t opcode) {
          * Separate system zones and fragmented-heap recovery are unsupported. */
         if (opcode & 0x400) return 0;
         uint32_t free_bytes = available(rt) & ~UINT32_C(3);
+        /* Nothing is moved or purged, so the largest free block is simply what
+         * is left. CompactMem reports it; PurgeMem reports memFullErr if short. */
         if (d0 > free_bytes) {
-            mac_cpu_halt(cpu, call == 0x4c ?
-                "CompactMem requires unsupported heap compaction." :
-                "PurgeMem requires unsupported heap reclamation.");
-            return -1;
+            result(cpu, call == 0x4c ? 0 : -108);
+            if (call == 0x4c) mac_cpu_set(cpu, MAC_D0, free_bytes);
+            return 1;
         }
         result(cpu, 0);
         if (call == 0x4c) {

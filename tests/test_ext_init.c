@@ -53,10 +53,35 @@ static void test_runner(void) {
     mac_runtime_destroy(&rt);
 }
 
+static void test_startup_ids(void) {
+    static MacRuntime rt;
+    MacInitReport rep;
+    uint8_t buf[1024];
+    MacResourceFork fork;
+    char err[96];
+    CHECK(host(&rt) == 0);
+    /* INIT 0 is startup code; INIT 128 is patch code and must never run (here it would loop forever). */
+    const int16_t ids[2] = {0, 128};
+    const uint8_t *codes[2] = {FX_OK, FX_LOOP};
+    const size_t lens[2] = {sizeof FX_OK, sizeof FX_LOOP};
+    size_t size = fx_fork_multi(buf, sizeof buf, 2, ids, codes, lens);
+    CHECK(size && mac_resource_open(&fork, buf, size, err, sizeof err) == 0);
+    CHECK(mac_init_run(&rt, &fork, 500, &rep) == 0 && rep.count == 1);
+    /* A fork with only patch code has no startup INIT. */
+    const int16_t only[1] = {128};
+    const uint8_t *oc[1] = {FX_OK};
+    const size_t ol[1] = {sizeof FX_OK};
+    size = fx_fork_multi(buf, sizeof buf, 1, only, oc, ol);
+    CHECK(size && mac_resource_open(&fork, buf, size, err, sizeof err) == 0);
+    CHECK(mac_init_run(&rt, &fork, 500, &rep) == 0 && rep.count == 0);
+    mac_runtime_destroy(&rt);
+}
+
 static void test_rollback(void) {
     static MacRuntime rt;
     MacInitReport rep;
     CHECK(host(&rt) == 0);
+    CHECK(run_code(&rt, FX_OK, sizeof FX_OK, 1000, &rep) == 0); /* first run prepares graphics; measure after it */
     uint32_t heap = rt.heap_next;
 
     /* Patches one trap, then touches a protected one: both are undone. */
@@ -108,11 +133,15 @@ static void test_loader(void) {
     put("D Gestalt", FX_GESTALT, sizeof FX_GESTALT, "requires A Patcher\n");
     put("E Off", FX_GESTALT, sizeof FX_GESTALT, NULL);
     put("F Empty", FX_OK, sizeof FX_OK, NULL);
+    { uint8_t b[512]; const int16_t id = 128; const uint8_t *c = FX_OK; const size_t l = sizeof FX_OK;
+      char path[300]; size_t sz = fx_fork_multi(b, sizeof b, 1, &id, &c, &l);
+      snprintf(path, sizeof path, "%s/System Folder/Extensions/G Patchfile", root);
+      FILE *pf = fopen(path, "wb"); CHECK(pf && fwrite(b, 1, sz, pf) == sz); if (pf) fclose(pf); }
     snprintf(cmd, sizeof cmd, "%s/System Folder/Extensions/F Empty", root);
     CHECK(fx_write_text(cmd, "not a resource fork") == 0);
 
     static ExtList list;
-    CHECK(ext_scan(&list, root) == 6);
+    CHECK(ext_scan(&list, root) == 7);
     CHECK(ext_set_enabled(&list, "E Off", 0) == 0);
     ext_order(&list);
     CHECK(ext_init_load_all(&list) == 2);
@@ -122,6 +151,7 @@ static void test_loader(void) {
     CHECK(ext_find(&list, "D Gestalt")->status == EXT_LOADED); /* still loads after the host was rebuilt */
     CHECK(ext_find(&list, "E Off")->status == EXT_DISABLED);
     CHECK(ext_find(&list, "F Empty")->status == EXT_FAILED);
+    CHECK(ext_find(&list, "G Patchfile")->status == EXT_NO_INIT); /* only INIT 128: patch code, not startup */
 
     /* Apply the survivors to a live guest: only LOADED extensions run, in order. */
     static MacRuntime rt;
@@ -140,7 +170,7 @@ static void test_loader(void) {
     CHECK(ext_runtime_boot(&rt) == 2);
     CHECK(rt.gestalt_count == 1 && rt.trap_addresses[PATCHED_KEY] != stub(PATCHED_KEY));
     static ExtList check;
-    CHECK(ext_scan(&check, root) == 6 && ext_state_load(&check, root) == 0);
+    CHECK(ext_scan(&check, root) == 7 && ext_state_load(&check, root) == 0);
     CHECK(!check.crash_pending && !ext_find(&check, "E Off")->enabled); /* marker cleared, choice kept */
     mac_runtime_destroy(&rt);
 
@@ -160,6 +190,7 @@ static void test_loader(void) {
 
 int main(void) {
     test_runner();
+    test_startup_ids();
     test_rollback();
     test_loader();
     if (failures) return 1;

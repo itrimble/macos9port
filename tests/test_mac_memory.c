@@ -42,11 +42,12 @@ static void bounded_reclamation(void) {
         CHECK(mac_cpu_read(rt.cpu, handle, 4) == pointer);
         for (unsigned i=0;i<16;i++) CHECK(mac_cpu_read(rt.cpu,pointer+i,1) == 0xa7);
         CHECK(call(&rt, op | 0x400, 0x1234, span) == 0);
-        CHECK(call(&rt, op, 0x1234, span + 1) == -1);
-        CHECK(mac_cpu_halted(rt.cpu));
-        CHECK(strstr(mac_cpu_error(rt.cpu), compact ? "compaction" : "reclamation") != NULL);
+        /* Nothing can be compacted or purged, so an over-large request is advisory:
+         * CompactMem reports the largest free block, PurgeMem reports memFullErr. */
+        CHECK(call(&rt, op, 0x1234, span + 1) == 1);
+        CHECK(!mac_cpu_halted(rt.cpu));
         CHECK(rt.heap_next == next && memcmp(&saved, &rt.handles[0], sizeof saved) == 0);
-        CHECK(mac_cpu_get(rt.cpu, MAC_D0) == span + 1);
+        CHECK(mac_cpu_get(rt.cpu, MAC_D0) == (compact ? span : (uint32_t)-108));
         CHECK(mac_cpu_ram(rt.cpu)[pointer] == 0xa7);
         mac_runtime_destroy(&rt);
     }
@@ -55,7 +56,7 @@ static void bounded_reclamation(void) {
     rt.heap_next = 0xfffc; rt.heap_limit = UINT32_MAX;
     CHECK(call(&rt,0xa04c,0,4) == 1);
     CHECK(mac_cpu_get(rt.cpu,MAC_D0) == 4 && mac_cpu_get(rt.cpu,MAC_A0) == 0xfffc);
-    CHECK(call(&rt,0xa04d,0,5) == -1); /* RAM bounds constrain the report. */
+    CHECK(call(&rt,0xa04d,0,5) == 1 && mac_cpu_get(rt.cpu,MAC_D0) == (uint32_t)-108); /* RAM bounds constrain the report: memFullErr. */
     mac_runtime_destroy(&rt);
 }
 
@@ -135,7 +136,9 @@ static void high_heap(void) {
     CHECK(call(&rt, 0xa022, 0, 16) == 1); h = mac_cpu_get(rt.cpu, MAC_A0);
     CHECK(mac_runtime_alloc(&rt, 4) != 0); /* A later allocation is a barrier. */
     saved_next = rt.heap_next;
-    CHECK(call(&rt, 0xa064, h, 0) == -1 && mac_cpu_halted(rt.cpu));
+    /* MoveHHi is advisory: a block behind a later allocation stays where it is. */
+    CHECK(call(&rt, 0xa064, h, 0) == 1 && !mac_cpu_halted(rt.cpu));
+    error_is(&rt, 0);
     CHECK(!rt.heap_high && rt.heap_next == saved_next);
     mac_runtime_destroy(&rt);
 }

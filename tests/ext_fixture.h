@@ -11,20 +11,36 @@
 static void fx16(uint8_t *p, uint16_t v) { p[0] = (uint8_t)(v >> 8); p[1] = (uint8_t)v; }
 static void fx32(uint8_t *p, uint32_t v) { fx16(p, (uint16_t)(v >> 16)); fx16(p + 2, (uint16_t)v); }
 
-/* One INIT resource (id 128) with `code` as its bytes; returns the fork size. */
-static size_t fx_fork(uint8_t *out, size_t cap, const uint8_t *code, size_t n) {
+/* An INIT fork with `count` resources: ids[i] -> codes[i] (lens[i] bytes). */
+static size_t fx_fork_multi(uint8_t *out, size_t cap, int count, const int16_t *ids,
+                            const uint8_t *const *codes, const size_t *lens) {
     enum { DATA = 256 };
-    size_t datalen = 4 + n, map = DATA + ((datalen + 3) & ~3u) + 4, maplen = 50;
-    if (map + maplen > cap) return 0;
+    size_t datalen = 0, offs[8];
+    for (int i = 0; i < count; i++) { offs[i] = datalen; datalen += 4 + ((lens[i] + 1) & ~(size_t)1); }
+    size_t map = DATA + datalen, maplen = 38 + 12 * (size_t)count;
+    if (count > 8 || map + maplen > cap) return 0;
     memset(out, 0, map + maplen);
     fx32(out, DATA); fx32(out + 4, (uint32_t)map); fx32(out + 8, (uint32_t)datalen); fx32(out + 12, (uint32_t)maplen);
-    fx32(out + DATA, (uint32_t)n);
-    memcpy(out + DATA + 4, code, n);
+    for (int i = 0; i < count; i++) {
+        fx32(out + DATA + offs[i], (uint32_t)lens[i]);
+        memcpy(out + DATA + offs[i] + 4, codes[i], lens[i]);
+    }
     fx16(out + map + 24, 28); fx16(out + map + 26, (uint16_t)maplen);
     fx16(out + map + 28, 0); fx32(out + map + 30, 0x494e4954u); /* INIT */
-    fx16(out + map + 34, 0); fx16(out + map + 36, 10);
-    fx16(out + map + 38, 128); fx16(out + map + 40, 0xffff);
+    fx16(out + map + 34, (uint16_t)(count - 1)); fx16(out + map + 36, 10);
+    for (int i = 0; i < count; i++) {
+        uint8_t *e = out + map + 38 + 12 * i;
+        fx16(e, (uint16_t)ids[i]); fx16(e + 2, 0xffff);
+        e[5] = (uint8_t)(offs[i] >> 16); e[6] = (uint8_t)(offs[i] >> 8); e[7] = (uint8_t)offs[i];
+    }
     return map + maplen;
+}
+
+/* One startup INIT (id 0) with `code` as its bytes; returns the fork size. */
+static size_t fx_fork(uint8_t *out, size_t cap, const uint8_t *code, size_t n) {
+    const int16_t id = 0;
+    const uint8_t *c = code;
+    return fx_fork_multi(out, cap, 1, &id, &c, &n);
 }
 
 static int fx_write(const char *path, const uint8_t *code, size_t n) {
