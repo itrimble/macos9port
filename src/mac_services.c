@@ -25,7 +25,7 @@ static int implemented(unsigned key) {
         case 0x13: case 0x11: case 0x00: case 0x01: case 0x02: case 0x07: case 0x14: case 0x33: case 0x34: return 1;
         case 0x1c: case 0x1d: case 0x1e: case 0x1f: case 0x21: case 0x22:
         case 0x23: case 0x24: case 0x25: case 0x29: case 0x2a: case 0x2d: case 0x2e:
-        case 0x32: case 0x40: case 0x46: case 0x47: case 0x49: case 0x4a:
+        case 0x32: case 0x3b: case 0x40: case 0x46: case 0x47: case 0x49: case 0x4a:
         case 0x4c: case 0x4d: case 0x55: case 0x60: case 0x61: case 0x63: case 0x64: case 0x69: case 0x6a:
         case 0x80: case 0x90: case 0xad: case 0xbd: return 1;
         default: return 0;
@@ -110,6 +110,8 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     }
     int timer = mac_time_service(rt, opcode);
     if (timer) return timer > 0 ? 0 : -1;
+    int delay = mac_delay_service(rt, opcode);
+    if (delay) return delay > 0 ? 0 : -1;
     int double_sound = mac_sound_double_service(rt, opcode);
     if (double_sound) return double_sound > 0 ? 0 : -1;
     int sound = mac_sound_service(rt, opcode);

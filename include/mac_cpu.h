@@ -35,6 +35,8 @@ void mac_cpu_set_trap(MacCpu *cpu, MacCpuTrap trap, void *user);
 size_t mac_cpu_run(MacCpu *cpu, size_t instruction_budget);
 /* Batch execution for the interactive cycle-paced runtime. */
 size_t mac_cpu_run_cycles(MacCpu *cpu, uint64_t cycle_budget);
+/* Ends the current mac_cpu_run/mac_cpu_run_cycles slice early (from a trap callback). Registers are untouched. */
+void mac_cpu_yield(MacCpu *cpu);
 void mac_cpu_halt(MacCpu *cpu, const char *reason);
 int mac_cpu_halted(const MacCpu *cpu);
 const char *mac_cpu_error(const MacCpu *cpu);

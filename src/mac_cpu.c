@@ -16,6 +16,7 @@ struct MacCpu {
     size_t instructions_in_slice;
     int count_instructions;
     int halted;
+    int yielded;
     MacCpuModel model;
     char error[192];
 };
@@ -47,6 +48,12 @@ void mac_cpu_halt(MacCpu *cpu, const char *reason) {
     if (active == cpu) {
         m68k_end_timeslice();
     }
+}
+
+void mac_cpu_yield(MacCpu *cpu) {
+    if (!cpu || cpu->halted) return;
+    cpu->yielded = 1;
+    if (active == cpu) m68k_end_timeslice();
 }
 
 static int valid_access(MacCpu *cpu, uint32_t address, unsigned width) {
@@ -231,7 +238,8 @@ size_t mac_cpu_run(MacCpu *cpu, size_t instruction_budget) {
     active = cpu;
     m68k_set_context(cpu->context);
     size_t attempted = 0;
-    while (attempted < instruction_budget && !cpu->halted) {
+    cpu->yielded = 0;
+    while (attempted < instruction_budget && !cpu->halted && !cpu->yielded) {
         uint32_t pc = mac_cpu_get(cpu, MAC_PC) & 0xffffff;
         mac_cpu_set(cpu, MAC_PC, pc);
         uint16_t opcode = (uint16_t)mac_cpu_read(cpu, pc, 2);
@@ -270,7 +278,8 @@ size_t mac_cpu_run_cycles(MacCpu *cpu, uint64_t cycle_budget) {
     m68k_set_context(cpu->context);
     cpu->instructions_in_slice = 0;
     cpu->count_instructions = 1;
-    while (cycle_budget && !cpu->halted) {
+    cpu->yielded = 0;
+    while (cycle_budget && !cpu->halted && !cpu->yielded) {
         int request = cycle_budget > INT_MAX ? INT_MAX : (int)cycle_budget;
         int used = m68k_execute(request);
         if (used <= 0) break;
