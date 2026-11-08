@@ -1,4 +1,5 @@
 #include "mac_runtime.h"
+#include "mac_rgn.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -13,10 +14,21 @@ static uint32_t create(MacRuntime *rt){mac_cpu_set(rt->cpu,MAC_A7,SP);CHECK(mac_
 static int replace(MacRuntime *rt,uint32_t h,uint32_t r){mac_cpu_set(rt->cpu,MAC_A7,SP);wr(rt,SP,4,r);wr(rt,SP+4,4,h);return mac_regions_service(rt,0xa8df);}
 static int empty(MacRuntime *rt,uint32_t h){mac_cpu_set(rt->cpu,MAC_A7,SP);wr(rt,SP,4,h);return mac_regions_service(rt,0xa8dd);}
 /* SetEmptyRgn ($A8DD): size 10 and a zero bounding box, whatever the region held; one argument, popped. */
-/* SectRgn/UnionRgn/DiffRgn/XorRgn on rectangular regions: exact when the result is a rectangle, a named halt when it is not. */
+/* SectRgn/UnionRgn/DiffRgn/XorRgn on rectangular regions: exact, whether or not the result is one rectangle. */
 typedef struct{int t,l,b,r;}B;
 static void set_box(MacRuntime *rt,uint32_t h,B b){uint32_t p=rd(rt,h,4);wr(rt,p,2,10);wr(rt,p+2,2,(uint16_t)b.t);wr(rt,p+4,2,(uint16_t)b.l);wr(rt,p+6,2,(uint16_t)b.b);wr(rt,p+8,2,(uint16_t)b.r);}
 static B get_box(MacRuntime *rt,uint32_t h){uint32_t p=rd(rt,h,4);return (B){(int16_t)rd(rt,p+2,2),(int16_t)rd(rt,p+4,2),(int16_t)rd(rt,p+6,2),(int16_t)rd(rt,p+8,2)};}
+
+/* Read a guest region back through the engine's own decoder. */
+static int region_of(MacRuntime *rt,uint32_t h,MacRgn *g){
+    const uint8_t *ram=mac_cpu_ram(rt->cpu);uint32_t p=(uint32_t)(ram[h]<<24|ram[h+1]<<16|ram[h+2]<<8|ram[h+3]);
+    unsigned size=(unsigned)(ram[p]<<8|ram[p+1]);const char *why;return mac_rgn_decode(ram+p,size,g,&why);
+}
+static int in_box(B b,int x,int y){return b.b>b.t && b.r>b.l && y>=b.t && y<b.b && x>=b.l && x<b.r;}
+static int oracle(unsigned op,B a,B b,int x,int y){
+    int u=in_box(a,x,y),v=in_box(b,x,y);
+    return op==0xa8e4?(u&&v):op==0xa8e5?(u||v):op==0xa8e6?(u&&!v):(u!=v);
+}
 static int algebra_call(MacRuntime *rt,unsigned op,uint32_t a,uint32_t b,uint32_t d){mac_cpu_set(rt->cpu,MAC_A7,SP);wr(rt,SP,4,d);wr(rt,SP+4,4,b);wr(rt,SP+8,4,a);return mac_regions_service(rt,(uint16_t)op);}
 static void algebra_table(void){
     enum{SECT=0xa8e4,UNION=0xa8e5,DIFF=0xa8e6,XOR=0xa8e7};
@@ -45,14 +57,19 @@ static void algebra_table(void){
         int rc=algebra_call(&rt,c[i].op,a,b,d);
         if(c[i].ok){B g=get_box(&rt,d);CHECK(rc==1 && mac_cpu_get(rt.cpu,MAC_A7)==SP+12 && g.t==c[i].out.t && g.l==c[i].out.l && g.b==c[i].out.b && g.r==c[i].out.r);
             CHECK(get_box(&rt,a).t==c[i].a.t && get_box(&rt,b).t==c[i].b.t);}                      /* sources are untouched */
-        else{const uint8_t *ram=mac_cpu_ram(rt.cpu);uint32_t dp=(uint32_t)(ram[d]<<24|ram[d+1]<<16|ram[d+2]<<8|ram[d+3]);   /* raw RAM: reads fail once halted */
-            CHECK(rc==-1 && mac_cpu_halted(rt.cpu) && ram[dp+3]==7 && ram[dp+9]==7);}               /* a named halt, destination untouched */
+        else{                                                                                      /* a result that is not one rectangle: stored exactly */
+            MacRgn g;mac_rgn_init(&g);
+            CHECK(rc==1 && !mac_cpu_halted(rt.cpu) && mac_cpu_get(rt.cpu,MAC_A7)==SP+12 && region_of(&rt,d,&g)==0 && g.n>1);
+            for(int y=-3;y<35;y++)for(int x=-3;x<35;x++)CHECK(mac_rgn_contains(&g,x,y)==oracle(c[i].op,c[i].a,c[i].b,x,y));
+            mac_rgn_free(&g);}
         mac_cpu_destroy(rt.cpu);
     }
     /* The destination may be one of the sources. */
     {MacRuntime rt=fresh();uint32_t a=create(&rt),b=create(&rt);set_box(&rt,a,(B){0,0,10,10});set_box(&rt,b,(B){5,5,20,20});
      CHECK(algebra_call(&rt,0xa8e4,a,b,a)==1);B g=get_box(&rt,a);CHECK(g.t==5 && g.l==5 && g.b==10 && g.r==10);
-     set_box(&rt,a,(B){0,0,10,10});CHECK(algebra_call(&rt,0xa8e6,a,b,b)==-1 && mac_cpu_halted(rt.cpu));mac_cpu_destroy(rt.cpu);}
+     set_box(&rt,a,(B){0,0,10,10});CHECK(algebra_call(&rt,0xa8e6,a,b,b)==1);                    /* a minus b into b: an L, exactly */
+     {MacRgn g;mac_rgn_init(&g);CHECK(region_of(&rt,b,&g)==0 && g.n==2);for(int y=-2;y<25;y++)for(int x=-2;x<25;x++)CHECK(mac_rgn_contains(&g,x,y)==oracle(0xa8e6,(B){0,0,10,10},(B){5,5,20,20},x,y));mac_rgn_free(&g);}
+     mac_cpu_destroy(rt.cpu);}
     {MacRuntime rt=fresh();uint32_t a=create(&rt),b=create(&rt);set_box(&rt,a,(B){0,0,10,10});set_box(&rt,b,(B){0,5,10,20});
      CHECK(algebra_call(&rt,0xa8e5,a,b,b)==1);B g=get_box(&rt,b);CHECK(g.t==0 && g.l==0 && g.b==10 && g.r==20);mac_cpu_destroy(rt.cpu);}
     /* Bad handles and stack. */
@@ -166,4 +183,95 @@ static void failures(void){
     rt=fresh();mac_cpu_set(rt.cpu,MAC_A7,MAC_RUNTIME_RAM-6);
     CHECK(mac_regions_service(&rt,0xa8df)==-1);mac_cpu_destroy(rt.cpu);
 }
-int main(void){queries();algebra_table();set_empty();lifecycle();failures();puts("rectangular region ownership checks passed");}
+
+/* Complex regions through every call, growth and capacity, and hostile records. */
+static void complex_regions(void){
+    /* An L and a staircase built with the real calls, then queried and edited. */
+    MacRuntime rt=fresh();uint32_t a=create(&rt),b=create(&rt),c=create(&rt),d=create(&rt);
+    set_box(&rt,a,(B){0,0,10,10});set_box(&rt,b,(B){0,5,5,20});
+    CHECK(algebra_call(&rt,0xa8e5,a,b,c)==1);                                         /* union of two overlapping boxes: a stepped shape */
+    MacRgn g;mac_rgn_init(&g);CHECK(region_of(&rt,c,&g)==0 && g.n==2);
+    uint32_t p=rd(&rt,c,4);CHECK(rd(&rt,p,2)>10 && (int16_t)rd(&rt,p+2,2)==0 && (int16_t)rd(&rt,p+4,2)==0 && (int16_t)rd(&rt,p+6,2)==10 && (int16_t)rd(&rt,p+8,2)==20);   /* size word and bounding box */
+    /* PtInRgn / RectInRgn / EqualRgn / EmptyRgn on it */
+    #define PTC(v,h) (mac_cpu_set(rt.cpu,MAC_A7,SP),wr(&rt,SP,4,c),wr(&rt,SP+4,2,(uint16_t)(v)),wr(&rt,SP+6,2,(uint16_t)(h)),mac_regions_service(&rt,0xa8e8)==1 && mac_cpu_get(rt.cpu,MAC_A7)==SP+8 ? bool_at(&rt,SP+8) : -1)
+    CHECK(PTC(2,15)==1 && PTC(7,15)==0 && PTC(7,3)==1 && PTC(2,25)==0 && PTC(5,5)==1 && PTC(5,12)==0);
+    #define RIC(t,l,b2,r2) (wr(&rt,R,2,(uint16_t)(t)),wr(&rt,R+2,2,(uint16_t)(l)),wr(&rt,R+4,2,(uint16_t)(b2)),wr(&rt,R+6,2,(uint16_t)(r2)),mac_cpu_set(rt.cpu,MAC_A7,SP),wr(&rt,SP,4,c),wr(&rt,SP+4,4,R),mac_regions_service(&rt,0xa8e9)==1 ? bool_at(&rt,SP+8) : -1)
+    CHECK(RIC(6,12,9,18)==0 && RIC(4,12,9,18)==1 && RIC(0,0,1,1)==1 && RIC(10,0,12,5)==0);   /* inside the notch, touching it, the corner, below */
+    mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,4,c);wr(&rt,SP+4,4,c);CHECK(mac_regions_service(&rt,0xa8e3)==1 && bool_at(&rt,SP+8)==1);        /* EqualRgn with itself */
+    CHECK(algebra_call(&rt,0xa8e5,b,a,d)==1);mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,4,d);wr(&rt,SP+4,4,c);CHECK(mac_regions_service(&rt,0xa8e3)==1 && bool_at(&rt,SP+8)==1);   /* union commutes: equal */
+    mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,4,a);wr(&rt,SP+4,4,c);CHECK(mac_regions_service(&rt,0xa8e3)==1 && bool_at(&rt,SP+8)==0);        /* differs from a box */
+    mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,4,c);wr(&rt,SP+4,2,0xdead);CHECK(mac_regions_service(&rt,0xa8e2)==1 && bool_at(&rt,SP+4)==0 && mac_cpu_get(rt.cpu,MAC_A7)==SP+4);   /* EmptyRgn */
+    /* OffsetRgn moves every part; InsetRgn on a non-rectangle is a named halt that leaves it alone */
+    CHECK(two_ints(&rt,0xa8e0,c,3,-2)==1 && mac_cpu_get(rt.cpu,MAC_A7)==SP+8);
+    mac_rgn_free(&g);mac_rgn_init(&g);CHECK(region_of(&rt,c,&g)==0 && g.n==2 && mac_rgn_contains(&g,18,-2) && !mac_rgn_contains(&g,18,3) && mac_rgn_contains(&g,3,0) && !mac_rgn_contains(&g,2,0));
+    {uint32_t pc=rd(&rt,c,4);unsigned sz=rd(&rt,pc,2);uint8_t save[256];memcpy(save,mac_cpu_ram(rt.cpu)+pc,sz);
+     CHECK(two_ints(&rt,0xa8e1,c,1,1)==-1 && mac_cpu_halted(rt.cpu) && !memcmp(save,mac_cpu_ram(rt.cpu)+pc,sz));}   /* refused, record untouched (raw RAM: reads fail once halted) */
+    mac_rgn_free(&g);mac_cpu_destroy(rt.cpu);
+    /* CopyRgn and SetRectRgn */
+    rt=fresh();a=create(&rt);b=create(&rt);c=create(&rt);set_box(&rt,a,(B){0,0,10,10});set_box(&rt,b,(B){5,5,20,20});algebra_call(&rt,0xa8e6,a,b,c);   /* c is an L */
+    mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,4,b);wr(&rt,SP+4,4,c);CHECK(mac_regions_service(&rt,0xa8dc)==1 && mac_cpu_get(rt.cpu,MAC_A7)==SP+8);   /* CopyRgn(c, b) */
+    {MacRgn x,y;mac_rgn_init(&x);mac_rgn_init(&y);CHECK(region_of(&rt,c,&x)==0 && region_of(&rt,b,&y)==0 && mac_rgn_equal(&x,&y) && x.n==2);mac_rgn_free(&x);mac_rgn_free(&y);}
+    mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,4,b);wr(&rt,SP+4,4,a);CHECK(mac_regions_service(&rt,0xa8dc)==1);          /* copying a box over an L shrinks it back to a box */
+    CHECK(get_box(&rt,b).t==0 && get_box(&rt,b).r==10 && rd(&rt,rd(&rt,b,4),2)==10);
+    mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,2,(uint16_t)40);wr(&rt,SP+2,2,(uint16_t)30);wr(&rt,SP+4,2,(uint16_t)20);wr(&rt,SP+6,2,(uint16_t)10);wr(&rt,SP+8,4,b);   /* SetRectRgn(b, left 10, top 20, right 30, bottom 40) */
+    CHECK(mac_regions_service(&rt,0xa8de)==1 && mac_cpu_get(rt.cpu,MAC_A7)==SP+12);{B g2=get_box(&rt,b);CHECK(g2.t==20 && g2.l==10 && g2.b==40 && g2.r==30);}
+    mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,2,5);wr(&rt,SP+2,2,5);wr(&rt,SP+4,2,9);wr(&rt,SP+6,2,9);wr(&rt,SP+8,4,b);CHECK(mac_regions_service(&rt,0xa8de)==1);{B g2=get_box(&rt,b);CHECK(g2.t==0 && g2.l==0 && g2.b==0 && g2.r==0);}   /* an inverted rectangle is empty */
+    mac_cpu_destroy(rt.cpu);
+    /* Capacity: a region alternating between simple and complex reuses its block (no heap leak after the first growth). */
+    rt=fresh();a=create(&rt);b=create(&rt);c=create(&rt);set_box(&rt,a,(B){0,0,10,10});set_box(&rt,b,(B){5,5,20,20});
+    CHECK(algebra_call(&rt,0xa8e5,a,b,c)==1);uint32_t heap=rt.heap_next;
+    for(int i=0;i<50;i++){set_box(&rt,c,(B){0,0,10,10});mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,4,c);wr(&rt,SP+4,4,a);mac_regions_service(&rt,0xa8dc);CHECK(algebra_call(&rt,0xa8e5,a,b,c)==1);}
+    CHECK(rt.heap_next==heap);mac_cpu_destroy(rt.cpu);
+    /* A locked handle is not grown. */
+    rt=fresh();a=create(&rt);b=create(&rt);c=create(&rt);set_box(&rt,a,(B){0,0,10,10});set_box(&rt,b,(B){5,5,20,20});
+    for(size_t i=0;i<rt.handle_count;i++)if(rt.handles[i].handle==c)rt.handles[i].state|=0x80;
+    CHECK(algebra_call(&rt,0xa8e5,a,b,c)==-1 && mac_cpu_halted(rt.cpu));mac_cpu_destroy(rt.cpu);
+    /* Hostile records: each is refused by name and leaves the destination alone. */
+    for(unsigned k=0;k<5;k++){
+        rt=fresh();a=create(&rt);b=create(&rt);c=create(&rt);set_box(&rt,a,(B){0,0,10,10});set_box(&rt,b,(B){5,5,20,20});algebra_call(&rt,0xa8e5,a,b,c);   /* c is complex */
+        uint32_t pc=rd(&rt,c,4);
+        if(k==0)wr(&rt,pc,2,(uint16_t)(rd(&rt,pc,2)+2));                                   /* rgnSize larger than the handle */
+        if(k==1)wr(&rt,pc+10,2,0x7fff);                                                    /* the first scan line is the terminator, with data after it */
+        if(k==2)wr(&rt,pc,2,9);                                                            /* rgnSize below the header */
+        if(k==3)wr(&rt,pc,2,0xffff);                                                       /* a huge odd size */
+        if(k==4){for(size_t i=0;i<rt.handle_count;i++)if(rt.handles[i].handle==c)rt.handles[i].size=4;}   /* the table says the handle is only 4 bytes */
+        int rc=algebra_call(&rt,0xa8e4,c,a,a);
+        CHECK(rc==-1 && mac_cpu_halted(rt.cpu));mac_cpu_destroy(rt.cpu);
+    }
+}
+
+/* Gaps the first round left: records that look valid but outrun their handle, results too complex to store, bad pointers, ownership. */
+static void more_checks(void){
+    /* A well-formed L encoding that is longer than the handle it sits in (the handle's real size is 10): refused, not read past its end. */
+    MacRuntime rt=fresh();uint32_t a=create(&rt),c=create(&rt);set_box(&rt,a,(B){0,0,10,10});
+    static const uint8_t L[]={0x00,0x24,0,0,0,0,0,4,0,4, 0,0,0,0,0,4,0x7f,0xff, 0,2,0,2,0,4,0x7f,0xff, 0,4,0,0,0,2,0x7f,0xff, 0x7f,0xff};
+    memcpy(mac_cpu_ram(rt.cpu)+rd(&rt,c,4),L,sizeof L);
+    CHECK(algebra_call(&rt,0xa8e4,c,a,a)==-1 && mac_cpu_halted(rt.cpu));mac_cpu_destroy(rt.cpu);
+    /* The same record in a handle that really is that big is fine: grow c by a union first, then overwrite. */
+    /* A result needing more than 256 rectangles in one row cannot be stored: a named halt that says why. */
+    rt=fresh();a=create(&rt);uint32_t b=create(&rt);c=create(&rt);int failed=-1;
+    for(int i=0;i<300 && failed<0;i++){set_box(&rt,b,(B){0,i*2,1,i*2+1});if(algebra_call(&rt,0xa8e5,c,b,c)!=1)failed=i;}
+    CHECK(failed==256 && mac_cpu_halted(rt.cpu) && strstr(mac_cpu_error(rt.cpu),"too complex"));mac_cpu_destroy(rt.cpu);
+    /* RectInRgn with a rectangle pointer that runs off RAM. */
+    rt=fresh();a=create(&rt);set_box(&rt,a,(B){0,0,10,10});
+    mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,4,a);wr(&rt,SP+4,4,(uint32_t)mac_cpu_ram_size(rt.cpu)-4);CHECK(mac_regions_service(&rt,0xa8e9)==-1 && mac_cpu_halted(rt.cpu));mac_cpu_destroy(rt.cpu);
+    /* DisposeRgn refuses a region that belongs to a port or a window. */
+    rt=fresh();a=create(&rt);set_box(&rt,a,(B){0,0,10,10});
+    for(size_t i=0;i<rt.handle_count;i++)if(rt.handles[i].handle==a)rt.handles[i].type=0x43505254;
+    mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,4,a);CHECK(mac_regions_service(&rt,0xa8d9)==-1 && mac_cpu_halted(rt.cpu));mac_cpu_destroy(rt.cpu);
+    /* A port's pattern handle shares its type and is not a region, whatever it holds. */
+    rt=fresh();a=create(&rt);set_box(&rt,a,(B){0,0,10,10});
+    for(size_t i=0;i<rt.handle_count;i++)if(rt.handles[i].handle==a)rt.handles[i].type=0x43505254;
+    wr(&rt,rd(&rt,a,4),2,0);mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,4,a);wr(&rt,SP+4,2,0);CHECK(mac_regions_service(&rt,0xa8e2)==-1 && mac_cpu_halted(rt.cpu));mac_cpu_destroy(rt.cpu);
+    /* mac_region_box_algebra: rectangles only; a result that is not one rectangle returns 0. */
+    {int out[4];const int A[4]={0,0,10,10},Bx[4]={0,10,10,20},Cx[4]={0,11,10,20},D[4]={5,5,20,20},E2[4]={2,2,8,8};
+     CHECK(mac_region_box_algebra(0xa8e5,A,Bx,out)==1 && out[0]==0 && out[1]==0 && out[2]==10 && out[3]==20);          /* touching: one box */
+     CHECK(mac_region_box_algebra(0xa8e5,A,Cx,out)==0);                                                                  /* a gap: two boxes */
+     CHECK(mac_region_box_algebra(0xa8e4,A,D,out)==1 && out[0]==5 && out[1]==5 && out[2]==10 && out[3]==10);           /* intersection */
+     CHECK(mac_region_box_algebra(0xa8e6,A,E2,out)==0);                                                                  /* a hole */
+     CHECK(mac_region_box_algebra(0xa8e6,A,Bx,out)==1 && out[0]==0 && out[1]==0 && out[2]==10 && out[3]==10);          /* disjoint: unchanged */
+     CHECK(mac_region_box_algebra(0xa8e7,A,A,out)==1 && out[0]==0 && out[1]==0 && out[2]==0 && out[3]==0);             /* xor with itself: empty */
+     CHECK(mac_region_box_algebra(0xa8e7,A,Bx,out)==1 && out[3]==20);                                                    /* xor of touching boxes */
+     CHECK(mac_region_box_algebra(0xa8e6,A,D,out)==0);}                                                                  /* an L */
+}
+int main(void){complex_regions();more_checks();queries();algebra_table();set_empty();lifecycle();failures();puts("rectangular region ownership checks passed");}
