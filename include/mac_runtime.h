@@ -113,6 +113,7 @@ typedef struct {
     unsigned window_count;
     int exited;
     int trace;
+    uint32_t appfork_mark; /* file mark of the application resource fork opened for direct reads (mac_appfork.c) */
     struct MacAlertState *alert; /* native alert dialog (mac_alert.c) */
     struct MacSfState *stdfile; uint32_t stdfile_pb; /* native Standard File dialog (mac_stdfile.c) */
     struct { int active; MacGuestDone done; void *ctx; uint32_t sp, resume_pc, result_bytes; } guest; /* mac_guestcall.c */
@@ -185,6 +186,8 @@ int mac_guest_call(MacRuntime *rt, uint32_t routine, const uint8_t *args, unsign
                    unsigned result_bytes, MacGuestDone done, void *ctx);
 int mac_guest_return(MacRuntime *rt); /* trap handler hook: the routine returned to the call stub */
 int mac_delay_service(MacRuntime *rt, uint16_t opcode); /* Time Manager _Delay, $A03B */
+void mac_appfork_publish(MacRuntime *rt); /* CurApRefNum, CurMap, TopMapHndl */
+int mac_appfork_service(MacRuntime *rt, uint16_t opcode); /* PBRead/PBGetEOF on the application resource file */
 int mac_dialog_next_event(MacRuntime *rt, MacEvent *out); /* next mouse/key event for a modal dialog */
 int mac_alert_service(MacRuntime *rt, uint16_t opcode); /* Alert, StopAlert, NoteAlert, CautionAlert: $A985..$A988 */
 void mac_alert_destroy(MacRuntime *rt);

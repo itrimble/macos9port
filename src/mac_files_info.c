@@ -89,6 +89,17 @@ int mac_files_entries(MacRuntime *rt, MacFileEntry *out, unsigned max, unsigned 
     return 0;
 }
 
+/* PBHGetFInfo ($A20C): the same lookup and indexed listing as PBGetFInfo on this single-directory volume. Only the volume
+ * root can be named, either as directory ID 2 or as 0 (the default directory); ioDirID (offset 48) is an input and is left
+ * as the caller set it, where PBGetFInfo would store a file number there. */
+int mac_files_hget_info(MacRuntime *rt, uint32_t pb) {
+    uint32_t dir = mac_cpu_read(rt->cpu, pb + 48, 4);
+    if (dir != 0 && dir != 2) return -120; /* dirNFErr */
+    int error = mac_files_get_info(rt, pb);
+    mac_cpu_write(rt->cpu, pb + 48, 4, dir);
+    return error;
+}
+
 int mac_files_get_info(MacRuntime *rt, uint32_t pb) {
     MacCpu *cpu = rt->cpu;
     FileState *s = rt->file_state;

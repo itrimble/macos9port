@@ -340,7 +340,7 @@ static unsigned block_size(unsigned base, int wd, unsigned selector) {
     switch (base) {
     case 0xa011: case 0xa012: return 32;
     case 0xa013: case 0xa014: case 0xa015: return 24;
-    case 0xa00c: case 0xa00d: return 80;
+    case 0xa00c: case 0xa00d: case 0xa20c: return 80;
     case 0xa209: return 52;
     case 0xa207: return 122;
     case 0xa260: return wd && selector == 9 ? 104 : 52;
@@ -355,7 +355,7 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode) {
     case 0xa000: case 0xa001: case 0xa002: case 0xa003: case 0xa008: case 0xa009:
     case 0xa00b: case 0xa00c: case 0xa00d: case 0xa011: case 0xa012: case 0xa013:
     case 0xa014: case 0xa015: case 0xa018: case 0xa044: case 0xa207: case 0xa209:
-    case 0xa060: case 0xa260: break;
+    case 0xa060: case 0xa20c: case 0xa260: break;
     default: return 0;
     }
     if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1;
@@ -388,6 +388,7 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode) {
     case 0xa209: return result(cpu, pb, mac_files_delete(rt, pb, 1));
     case 0xa00b: return result(cpu, pb, mac_files_rename(rt, pb));
     case 0xa00c: return result(cpu, pb, mac_files_get_info(rt, pb));
+    case 0xa20c: return result(cpu, pb, mac_files_hget_info(rt, pb));
     case 0xa00d: return result(cpu, pb, mac_files_set_info(rt, pb));
     default: break;
     }

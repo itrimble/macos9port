@@ -132,6 +132,7 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
     /* Process-owned low-memory globals needed before the first Toolbox call. */
     mac_cpu_write(rt->cpu, 0x904, 4, rt->a5); /* CurrentA5 */
     mac_cpu_write(rt->cpu, 0x908, 4, rt->a5 - below); /* CurStackBase: below A5 globals */
+    mac_appfork_publish(rt); /* CurApRefNum, CurMap and TopMapHndl for code that reads its own resource file directly */
     mac_cpu_write(rt->cpu, 0x934, 2, offset); /* CurJTOffset */
     mac_cpu_write(rt->cpu, 0x15a, 2, MAC_PROFILE_SYSTEM_VERSION); /* Guest compatibility profile, not host OS. */
     mac_cpu_write(rt->cpu, 0x12f, 1, 2); /* 68020 */

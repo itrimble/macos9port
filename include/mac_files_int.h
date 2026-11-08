@@ -65,6 +65,7 @@ int mac_files_write(MacRuntime *rt, uint32_t pb, GuestFile *f);
 int mac_files_set_eof(MacRuntime *rt, uint32_t pb, GuestFile *f);
 int mac_files_set_fpos(MacRuntime *rt, uint32_t pb, GuestFile *f, int query);
 int mac_files_get_info(MacRuntime *rt, uint32_t pb);
+int mac_files_hget_info(MacRuntime *rt, uint32_t pb);
 int mac_files_set_info(MacRuntime *rt, uint32_t pb);
 int mac_files_set_vol(MacRuntime *rt, uint32_t pb);
 #endif

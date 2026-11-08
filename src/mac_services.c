@@ -157,6 +157,8 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (system) return system > 0 ? 0 : -1;
     int geometry = mac_geometry_service(rt, opcode);
     if (geometry) return geometry > 0 ? 0 : -1;
+    int appfork = mac_appfork_service(rt, opcode);
+    if (appfork) return appfork > 0 ? 0 : -1;
     int system_file = mac_system_volume_service(rt, rt->system_volume, opcode);
     if (system_file) return system_file > 0 ? 0 : -1;
     int file = mac_file_service(rt, opcode);
