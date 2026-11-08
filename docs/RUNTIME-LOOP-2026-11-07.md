@@ -519,3 +519,13 @@ the probe, not a window I watched, and I have not listened to any audio.
   GetWTitle, redraw, hidden window, plainDBox, six bad strings, a non-window) and `test_mac_text` (size 0 is 12: a family with no 12-point strike names size 12);
   mutants killed except one equivalent (drawing a hidden window is already a no-op); ASan clean; `make test` 0; Monkey Island and Monkey Island 2 identical;
   Castle refreshed. Not tried: the House menu (creating a room), saving, or any editing; no house file exists to open.
+
+- **Glider PRO's editor: House menu, New House, and the next real subsystem (headless).** The editor's **House** menu: New House? (Cmd-N), Save House (dimmed), House
+  Info? / Room Info? / Object Info? (dimmed), Cut / Copy / Paste / Delete Room and Duplicate Object (dimmed), Bring To Front, Send To Back, Go To Room?, Map Window,
+  Tools Window, Coordinate Window. **New House?** shows our native Standard Put File dialog ("Name for New House:", "Save in: OS Pi Data", "Untitled House"). Clicking
+  **Save** makes `FSpCreate` succeed (a 0-byte file "Untitled House" appears in the `--saves` overlay), then the game calls **`$A20A` (HOpenRF, open the new file's
+  resource fork)** and the runtime halts: `unhandled A-line trap a20a`. A Glider PRO house is a resource file; saving one needs **writable resource forks** on the
+  save overlay (CreateResFile/HCreateResFile, open for writing, AddResource/WriteResource/ChangedResource/UpdateResFile/CloseResFile, and reading them back with
+  OpenResFile for Load House). Today resource forks are read-only exports of the application volume (`mac_resource_files.c`: "No writeback"). That is the next piece
+  of real work for the Glider PRO loop (create a house, save, reload, New Game); it is a Resource Manager writer plus overlay storage for the fork (a sidecar
+  `<name>.rsrc` file under `--saves`, written atomically), and I did not start it in this pass.
