@@ -43,6 +43,7 @@ R04 and G02. Items stay unchecked.
 | `f25ae66` | `noGrowDocProc` (procID 4): the zoomNoGrow title bar without a zoom box (no zoom hit, spareFlag 0); the title-bar height rule shared in one helper instead of six copies. Menu Manager `SetItem` `$A947`: literal text replacement, key/mark/style/enable kept, header width rebuilt; empty text halts. Other procIDs and custom WDEFs still halt | `test_mac_window_nogrow`, `test_mac_menu_setitem` |
 | `acfe6f8` | PICT decoder reads version-1 streams (single-byte opcodes, BitsRect `0x90` and PackBitsRect `0x98` with a plain 1-bit BitMap) and shares one scale-and-paint helper with version 2. `DrawPicture` can draw into a basic GrafPort whose bitmap is not the screen, using an exact black/white palette: a picture with any other colour halts with a named message rather than being thresholded. `UnloadSeg` `$A9F1` validates a jump-table routine address and leaves the segment resident (the call is only a purgeability hint) | `test_mac_pict_v1`, `test_mac_unloadseg` |
 | `c93f5ea` | `mac_guest_call`: a native trap service can call a guest Pascal routine and resume afterwards. It builds `[return address = native stub of key 0xFE][arguments][result slot]` below the trap's stack, jumps to the routine, and recognises the routine's `RTS` into that stub, then restores A7 and PC and runs a completion callback that may chain the next call. Nested calls, odd or low targets, a missing stack, and unbalanced returns halt with a named message. First consumer will be Standard File's filter procedure and Room Editor's WDEF. Not covered: a call started through a guest-patched trap vector (the stub path), which only has a guard | `test_mac_guestcall` |
+| (next commit) | `mac_ditl`: bounded `DLOG` and `DITL` parsers (item kinds user, help, button, check, radio, control, static, edit, icon, PICT; disabled bit; even padding; exact-consumption rules; at most 40 items). Run over every `DLOG`/`DITL` in six real apps (Room Editor, Glider Edit, Glider 4.10, Glider PRO, Monkey Island, Castle of Dr. Brain; 26+25+16+82+8+18 resources) with a throwaway harness outside the repo; that run found the Help Manager item kind (`0x01`, 4 bytes) that the synthetic test had not covered. No runtime caller yet | `test_mac_ditl` |
 
 ## Compatibility profile decision
 
@@ -56,7 +57,7 @@ off and no Help menu exists; Gestalt `help`, `stdf`, `evnt` remain unanswered.
 ## Evidence at `507c06b`
 
 - `BUILDFLEET_LOCAL=1 make test-memory` exit 0; `BUILDFLEET_LOCAL=1 make test` exit 0 with 127
-  test binaries and no failure line (132 at `bf35f9b`, 134 at `f25ae66`, 136 at `acfe6f8`, 137 with guest calls). No source or test file reaches 500 lines.
+  test binaries and no failure line (132 at `bf35f9b`, 134 at `f25ae66`, 136 at `acfe6f8`, 137 with guest calls, 138 with the DITL parser). No source or test file reaches 500 lines.
 - Every new test file was mutation-checked (deliberate breakage, rebuild with a forced object
   refresh, confirm a test fails). Weak cases found that way were fixed: the pixel-depth and
   trailing-bytes cases, a source-span off-by-one in Pack7, and one redundant read-only check
