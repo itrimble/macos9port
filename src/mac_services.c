@@ -38,7 +38,7 @@ static int implemented(unsigned key) {
     case 0xa8f6:
     case 0xa997: case 0xa994: case 0xa998: case 0xa99a: case 0xa9a4:
     case 0xaa52:
-    case 0xa861: case 0xa887: case 0xa888: case 0xa889: case 0xa88a: case 0xaa91: case 0xaa92: case 0xaa93: case 0xaa94: case 0xaa95: case 0xaa96: case 0xaa9a: case 0xaaa2:
+    case 0xa861: case 0xa883: case 0xa884: case 0xa885: case 0xa886: case 0xa887: case 0xa888: case 0xa889: case 0xa88a: case 0xa88b: case 0xa88c: case 0xa88d: case 0xa88e: case 0xaa91: case 0xaa92: case 0xaa93: case 0xaa94: case 0xaa95: case 0xaa96: case 0xaa9a: case 0xaaa2:
     case 0xa931: case 0xa932: case 0xa933: case 0xa934: case 0xa935: case 0xa936: case 0xa93c: case 0xa9c0:
     case 0xa939: case 0xa93a: case 0xa945: case 0xa947: case 0xa949: case 0xa94d:
     case 0xa950: case 0xa9bf: case 0xa9bc:
@@ -205,6 +205,8 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (random) return random > 0 ? 0 : -1;
     int text_state = mac_text_state_service(rt, opcode);
     if (text_state) return text_state > 0 ? 0 : -1;
+    int text = mac_text_service(rt, opcode);
+    if (text) return text > 0 ? 0 : -1;
     if (opcode == 0xa9f4) {
         rt->exited = 1;
         mac_cpu_halt(cpu, "Guest called ExitToShell.");
