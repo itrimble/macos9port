@@ -141,6 +141,12 @@ screen black and the real run cannot show the colour work. The unit tests carry 
    decide whether it is a small answer or a driver subsystem. Palette activation is done; a windowed run
    and screenshot are still owed once it reaches its loop.
 2. Glider PRO: a hierarchical file system for `PBDirCreate` (HFSDispatch selector 6) and its siblings.
-3. Standard File (Pack3), shared by Room Editor and Glider Edit: a UI contract, design before code.
-   Then Room Editor's custom WDEF mechanism (guest callbacks from the Window Manager) as its own design.
+3. Standard File (Pack3) and Room Editor's window definition share two missing mechanisms; build them first:
+   (a) a way to call guest code from inside a trap and resume afterwards. The CPU callback may not run the CPU
+   re-entrantly, so this is a return-trampoline state machine (push a frame, set PC to the guest routine, resume
+   when it returns to a native stub); (b) a Dialog Manager that draws `DITL` items. Room Editor's request, decoded
+   from its stack at the halt, is `SFPGetFile` with `dialogID` 256 (the app has its own `DLOG`/`DITL` 256), a
+   non-nil file-filter procedure (an address in its jump table), `numTypes` -1 and no dialog hook, so it needs both.
+   Host files carry no Finder type unless the guest set one, so a typed filter honestly matches nothing.
+   A canned "Cancel" reply is not an acceptable shortcut: it would invent a user action.
 4. Exercise compaction with a real fragmenting program, or a purpose-built guest.
