@@ -33,6 +33,15 @@ int main(int argc, char **argv) {
     CHECK(desktop_asset_draw(&fb, 0, 0, "system_folder"));
     CHECK(desktop_asset_draw(&fb, 0, 0, "application"));
     CHECK(desktop_asset_draw(&fb, 0, 0, "document"));
+    /* The real Quake III icon (red, from the GPL source's quake3.gif) is in the pack. */
+    memset(pixels, 0, sizeof pixels);
+    CHECK(desktop_asset_draw(&fb, 0, 0, "quake3"));
+    int red = 0, drawn = 0;
+    for (int i = 0; i < 64 * 64; i++) {
+        uint32_t c = pixels[i]; if (!c) continue;
+        drawn++; if (((c >> 16) & 255) > ((c >> 8) & 255) + 40) red++;
+    }
+    CHECK(drawn > 60 && red > drawn / 3);
     CHECK(!desktop_asset_draw(NULL, 0, 0, "folder"));
     desktop_assets_reset();
     printf("desktop assets: %s\n", failures ? "FAILED" : "ok");

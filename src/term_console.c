@@ -74,7 +74,17 @@ static int cmd_help(TermVt *vt) {
         "  sound preview <id>        Preview a system sound (startup, alert, menu)\r\n"
         "  open <target>             Open a folder, document, or application\r\n"
         "  clear                     Clear the console screen\r\n"
+        "  shutdown                  Shut down OS999 (same as Special > Shut Down)\r\n"
+        "  restart                   Restart OS999 (same as Special > Restart)\r\n"
         "  quit / exit               Close this console window\r\n");
+    return 0;
+}
+
+/* Shut Down and Restart act on the whole desktop, so they go through the same commands as the menu. */
+static int cmd_power(TermConsole *con, TermVt *vt, int restart) {
+    if (!con->session) { con_write(vt, "No desktop session is available.\r\n"); return -1; }
+    con_write(vt, restart ? "Restarting OS999...\r\n" : "Shutting down OS999...\r\n");
+    session_command(con->session, restart ? CMD_RESTART_DO : CMD_SHUTDOWN);
     return 0;
 }
 
@@ -312,6 +322,8 @@ int term_console_exec(TermConsole *con, TermVt *vt, const char *cmd_line) {
     if (!strcmp(p, "quit") || !strcmp(p, "exit")) { con->close_requested = 1; return 0; }
     if (strcmp(p, "help") == 0 || strcmp(p, "?") == 0) rc = cmd_help(vt);
     else if (strcmp(p, "about") == 0) rc = cmd_about(con, vt);
+    else if (!strcmp(p, "shutdown") || !strcmp(p, "shut down")) rc = cmd_power(con, vt, 0);
+    else if (!strcmp(p, "restart") || !strcmp(p, "reboot")) rc = cmd_power(con, vt, 1);
     else if (strcmp(p, "clear") == 0) {
         con_write(vt, "\x1b[2J\x1b[H");
         rc = 0;

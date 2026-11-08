@@ -149,6 +149,7 @@ int main(void) {
         CHECK(s->menu==0);
         CHECK(!strcmp(menu_at(0,0)->label,"About This Mac") && menu_at(0,0)->cmd==CMD_ABOUT);
         CHECK(action(0,CMD_MENU_PANELS) && action(0,CMD_TERMINAL_CONSOLE) && action(0,CMD_BROWSER));
+        CHECK(action(0,CMD_SHUTDOWN)); /* the OS999 menu itself has Shut Down */
         CHECK(action(4,CMD_SHUTDOWN));
         session_up(s,mark.x+mark.w/2,mark.y+mark.h/2);
         session_key(s,27,0);CHECK(s->menu==-1);

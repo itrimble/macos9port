@@ -22,7 +22,8 @@ static MenuItem k_pi[] = {
     ITEM("Tailscale", CMD_TAILSCALE), ITEM("Terminal", CMD_TERMINAL_SHELL), ITEM("OS999 Console", CMD_TERMINAL_CONSOLE),
     KEY("Chromium Browser", CMD_BROWSER, "Cmd-B", 'b'), ITEM("OS999 Amp (Winamp)...", CMD_MEDIA_PLAYER),
     ITEM("Quake III Arena", CMD_QUAKE3),
-    ITEM("Quake III Arena Demo", CMD_QUAKE3_DEMO),
+    ITEM("Quake III Arena Demo", CMD_QUAKE3_DEMO), SEP,
+    ITEM("Shut Down", CMD_SHUTDOWN),
 };
 static MenuItem k_file[] = {
     KEY("New Folder", CMD_NEW_FOLDER, "Cmd-N", 'n'),

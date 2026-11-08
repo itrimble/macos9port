@@ -27,6 +27,23 @@ int main(void) {
     atomic_store(&surface->frame_lock, 0);
     assert(native_surface_push((RuntimeBridgeInput){.kind=RUNTIME_BRIDGE_KEY_DOWN,.message='w'}));
     assert(surface->events[0].kind == OS999Q_KEY_SYMBOL && surface->events[0].a == 'w');
+    /* Motion sends the pointer's absolute position (for the menu cursor), then the relative step. */
+    unsigned at = atomic_load(&surface->input_write);
+    assert(native_surface_push((RuntimeBridgeInput){.kind=RUNTIME_BRIDGE_MOTION,.x=100,.y=50}));
+    assert(atomic_load(&surface->input_write) == at + 2);
+    assert(surface->events[at % OS999Q_EVENTS].kind == OS999Q_MOUSE_ABS &&
+           surface->events[at % OS999Q_EVENTS].a == 100 && surface->events[at % OS999Q_EVENTS].b == 50);
+    assert(surface->events[(at + 1) % OS999Q_EVENTS].kind == OS999Q_MOUSE);
+    /* A click lands where the pointer is. */
+    at = atomic_load(&surface->input_write);
+    assert(native_surface_push((RuntimeBridgeInput){.kind=RUNTIME_BRIDGE_BUTTON_DOWN,.x=300,.y=200}));
+    assert(surface->events[at % OS999Q_EVENTS].kind == OS999Q_MOUSE_ABS &&
+           surface->events[at % OS999Q_EVENTS].a == 300 && surface->events[at % OS999Q_EVENTS].b == 200);
+    assert(surface->events[(at + 1) % OS999Q_EVENTS].kind == OS999Q_BUTTON);
+    /* Outside the frame there is no absolute position to send. */
+    at = atomic_load(&surface->input_write);
+    assert(native_surface_push((RuntimeBridgeInput){.kind=RUNTIME_BRIDGE_MOTION,.x=700,.y=50}));
+    assert(atomic_load(&surface->input_write) == at + 1 && surface->events[at % OS999Q_EVENTS].kind == OS999Q_MOUSE);
     assert(native_surface_push((RuntimeBridgeInput){.kind=RUNTIME_BRIDGE_FOCUS_LOST}));
     assert(!atomic_load(&surface->focus) && atomic_load(&surface->reset_input));
     free(surface); surface = NULL;

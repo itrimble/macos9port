@@ -11,11 +11,11 @@ from multiprocessing import Pool
 import numpy as np
 from PIL import Image
 from scipy.ndimage import gaussian_filter, binary_fill_holes
-import set_a, set_b, cursors
+import set_a, set_b, set_c, cursors
 from core import Icon
 from hires import render_hd, downsample, scale2x
 
-REG = {**set_a.REG, **set_b.REG}
+REG = {**set_a.REG, **set_b.REG, **set_c.REG}
 SIZES = [64, 128, 256, 512, 1024]
 SET_SIZES = {'@2x': 64, '@4x': 128}
 

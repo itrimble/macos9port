@@ -9,10 +9,10 @@ import numpy as np
 from PIL import Image
 from scipy.ndimage import binary_fill_holes
 from core import Icon, PAL, PAL_INDEX
-import set_a, set_b, cursors
+import set_a, set_b, set_c, cursors
 
 SIZES = [16, 32, 64, 128, 256, 512, 1024]
-REG = {**set_a.REG, **set_b.REG}
+REG = {**set_a.REG, **set_b.REG, **set_c.REG}
 
 
 def render(name):

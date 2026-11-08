@@ -255,6 +255,14 @@ static void test_console_commands_and_line_editing(void) {
     CHECK(s->win[s->nwin - 1].kind == WIN_TEXT);
     CHECK(strcmp(s->win[s->nwin - 1].title, "Read Me") == 0);
 
+    /* shutdown and restart act on the desktop, like the menu commands. */
+    CHECK(term_console_exec(&con, &vt, "help") == 0 && vt_contains_str(&vt, "shutdown") == 1);
+    s->quit = 0;
+    CHECK(term_console_exec(&con, &vt, "shutdown") == 0);
+    CHECK(s->quit == 1 && vt_contains_str(&vt, "Shutting down") == 1);
+    s->quit = 0;
+    CHECK(term_console_exec(&con, &vt, "restart") == 0);
+    CHECK(!s->quit && s->nwin == 1 && !strcmp(s->win[0].rel, "")); /* windows closed, Finder root reopened */
     /* Line editing: type "themx\x7fe set Blueberry\r" */
     const char *typed = "themx\x7f" "e set Blueberry\r";
     term_console_input(&con, &vt, typed, strlen(typed));

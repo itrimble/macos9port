@@ -23,6 +23,13 @@ int main(void) {
     check(ITEM_APPLICATION, "StuffIt Expander Notes", "Applications", "application");
     check(ITEM_APPLICATION, "SimpleText.app", "Applications", "text_editor");
     check(ITEM_APPLICATION, "MacSurf", "Applications", "web_browser");
+    /* Built-in applications get their own artwork, not the generic application icon. */
+    check(ITEM_APPLICATION, "Web Browser", "Applications", "web_browser");
+    check(ITEM_APPLICATION, "OS999 Amp", "Applications", "music_player");
+    check(ITEM_APPLICATION, "OS999 Console", "Applications", "terminal");
+    check(ITEM_APPLICATION, "Tailscale", "Applications", "network");
+    check(ITEM_APPLICATION, "Tailscale", "Utilities", "network");
+    check(ITEM_APPLICATION, "Quake III Arena", "Applications", "quake3");
     check(ITEM_APPLICATION, "Monkey Island", "Applications", "application");
     check(ITEM_APPLICATION, "Sound", "System Folder/Control Panels", "control_panel");
     check(ITEM_FILE, "intro.MOV", "Applications/Game", "movie_document");

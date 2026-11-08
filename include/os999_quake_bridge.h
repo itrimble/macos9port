@@ -11,7 +11,10 @@
 #define OS999Q_WIDTH 640u
 #define OS999Q_HEIGHT 480u
 #define OS999Q_EVENTS 256u
-enum { OS999Q_KEY = 1, OS999Q_MOUSE, OS999Q_BUTTON, OS999Q_WHEEL, OS999Q_KEY_SYMBOL };
+/* OS999Q_MOUSE carries relative motion (a, b) for looking around. OS999Q_MOUSE_ABS carries the pointer's
+ * position inside the frame (a = x, b = y) so a menu cursor can sit exactly under it. Older engines
+ * ignore kinds they do not know. */
+enum { OS999Q_KEY = 1, OS999Q_MOUSE, OS999Q_BUTTON, OS999Q_WHEEL, OS999Q_KEY_SYMBOL, OS999Q_MOUSE_ABS };
 typedef struct { uint32_t kind; int32_t a, b, c; } Os999QuakeEvent;
 typedef struct {
     uint32_t magic, version, bytes, width, height;

@@ -247,6 +247,9 @@
   },
   "pi_logo": {
    "category": "logo"
+  },
+  "quake3": {
+   "category": "app"
   }
  },
  "cursors": {

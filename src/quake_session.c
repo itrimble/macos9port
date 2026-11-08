@@ -69,6 +69,14 @@ static int quake_read(uint32_t *pixels, size_t capacity, int *width, int *height
     return 1;
 }
 
+/* Tell the engine where the pointer is inside the frame; ignored while it is outside. */
+static void quake_pointer_abs(int x, int y) {
+    if (!surface || x < 0 || y < 0 || x >= (int)OS999Q_WIDTH || y >= (int)OS999Q_HEIGHT) return;
+    Os999QuakeEvent at = {0};
+    at.kind = OS999Q_MOUSE_ABS; at.a = x; at.b = y;
+    os999q_push(surface, at);
+}
+
 static int quake_input(RuntimeBridgeInput input) {
     if (!surface) return 0;
     if (input.kind == RUNTIME_BRIDGE_FOCUS_LOST) {
@@ -81,11 +89,13 @@ static int quake_input(RuntimeBridgeInput input) {
         event.kind = OS999Q_KEY_SYMBOL; event.a = input.message;
         event.b = input.kind == RUNTIME_BRIDGE_KEY_DOWN;
     } else if (input.kind == RUNTIME_BRIDGE_MOTION) {
+        quake_pointer_abs(input.x, input.y);
         event.kind = OS999Q_MOUSE;
         event.a = pointer_valid ? input.x - last_x : 0;
         event.b = pointer_valid ? input.y - last_y : 0;
         last_x = input.x; last_y = input.y; pointer_valid = 1;
     } else if (input.kind == RUNTIME_BRIDGE_BUTTON_DOWN || input.kind == RUNTIME_BRIDGE_BUTTON_UP) {
+        quake_pointer_abs(input.x, input.y); /* a click lands where the pointer is */
         event.kind = OS999Q_BUTTON; event.a = 1;
         event.b = input.kind == RUNTIME_BRIDGE_BUTTON_DOWN;
         last_x = input.x; last_y = input.y; pointer_valid = 1;

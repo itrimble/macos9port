@@ -419,8 +419,11 @@ int main(int argc, char **argv) {
             } else if (ev.type == SDL_WINDOWEVENT &&
                        ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
                 session_key_release(s, 0);
+                /* The host window lost key focus (a screenshot tool, Cmd-Tab, a notification). Release
+                 * the guest's keys and pointer, but keep it the frontmost OS999 app: clearing guest_focus
+                 * here sent a running game behind the Finder windows. */
                 if (guest_focus) native_surface_push((RuntimeBridgeInput){.kind=RUNTIME_BRIDGE_FOCUS_LOST});
-                guest_focus = guest_mouse_capture = s->app_switch_tab = 0; s->down = s->drag = s->switcher.gesture = s->switcher.tear_armed = 0;
+                guest_mouse_capture = s->app_switch_tab = 0; s->down = s->drag = s->switcher.gesture = s->switcher.tear_armed = 0;
             }
         }
         if (finder_apps_sync(s, native_surface_active(), native_surface_title(), &guest_focus)) {
