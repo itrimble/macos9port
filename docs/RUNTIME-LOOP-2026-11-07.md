@@ -38,7 +38,8 @@ R04 and G02. Items stay unchecked.
 | `2040404` | Palette activation on the 8-bit main device: SetPalette on a visible frontmost window, ShowWindow of a window that has a palette, ActivatePalette `$AA94`; tolerant and courteous usages, 8-bit inhibit bits; unsupported usages refused before any change | `test_mac_palette_activation`, `test_mac_palette_manager` |
 | `b95dc4d` (merged `29edb96`) | Apple Event Manager handler table (`$A816`): AEInstallEventHandler, AERemoveEventHandler, AEGetEventHandler, AESet/GetInteractionAllowed; handlers are recorded, never called. Built by a separate agent in its own worktree and verified here | `test_mac_appleevents` |
 | `473e9be` | PICT decoder accepts 1, 2, 4 and 8-bit indexed PackBitsRect PixMaps (Glider 4.10's `PICT 140` is 4-bit); padding bits are not treated as colour | `test_mac_pict_depths` |
-| (this commit) | GetClip, SetClip and ClipRect work on colour ports (clipRgn is at port+28 in both port kinds); SetPortBits `$A875` for basic ports | `test_mac_raster`, `test_mac_setportbits` |
+| `b7c6d9f` | GetClip, SetClip and ClipRect work on colour ports (clipRgn is at port+28 in both port kinds); SetPortBits `$A875` for basic ports | `test_mac_raster`, `test_mac_setportbits` |
+| `301f8aa` (merged `bf35f9b`) | `_Delay` `$A03B`: waits on the runtime's tick counter by rewinding the trap and yielding the CPU slice, so it is virtual time headless and real time windowed (windowed not observed). Built by a separate agent; register convention (A0 in, D0 out) came from a search excerpt, not an opened page | `test_mac_delay` |
 
 ## Compatibility profile decision
 
@@ -52,7 +53,7 @@ off and no Help menu exists; Gestalt `help`, `stdf`, `evnt` remain unanswered.
 ## Evidence at `507c06b`
 
 - `BUILDFLEET_LOCAL=1 make test-memory` exit 0; `BUILDFLEET_LOCAL=1 make test` exit 0 with 127
-  test binaries and no failure line (131 at the SetPortBits commit). No source or test file reaches 500 lines.
+  test binaries and no failure line (132 at `bf35f9b`). No source or test file reaches 500 lines.
 - Every new test file was mutation-checked (deliberate breakage, rebuild with a forced object
   refresh, confirm a test fails). Weak cases found that way were fixed: the pixel-depth and
   trailing-bytes cases, a source-span off-by-one in Pack7, and one redundant read-only check
@@ -71,9 +72,9 @@ None of these has reached its main loop. "Traps" is the count before the halt.
 
 | App | Traps | Stops at | What it is |
 | --- | --- | --- | --- |
-| Glider 4.10 | 1249 | `A204` | a Device Manager `Control` (PBControlImmed) on driver reference number -4, csCode 2, csParam 3; which driver that is was not confirmed from a source I could open, so it is unimplemented, not guessed |
+| Glider 4.10 | 1249 | `A204` | a Device Manager `Control` (PBControlImmed) on driver reference number -4, csCode 2, csParam 3, reached from library glue. Glider's source calls `GetSoundVol`/`SetSoundVol`, which are glue in MPW, so that is the likely cause; I did not find a source that confirms it, so it is unimplemented, not guessed |
 | Room Editor 1.06 | 148 | GetNewCWindow | custom window definition (WDEF 10, "Tools" palette) and `noGrowDocProc` |
-| Glider PRO 1.1.2 | 124 | `A03B` | `_Delay` (Time Manager); its five Apple Event startup calls now succeed |
+| Glider PRO 1.1.2 | 143 | `A260` | `PBDirCreate` (HFSDispatch selector 6) to create a "Preferences" folder; the file system has one flat directory, so this needs a hierarchy, not a one-off |
 | Glider Edit 1.1.1 | 36 | Gestalt `stdf` | Standard File dialogs; `GetNewMBar` was exercised only with `stdf` faked locally, not committed |
 
 The window-colour change cleared Glider 4.10's `wctb 128` (content, frame and text black;
