@@ -119,7 +119,7 @@ typedef struct {
     struct MacRgnRec *rgn_rec;   /* OpenRgn..CloseRgn recording in progress (mac_regions.c) */
     struct MacMenuSel *menusel;  /* MenuSelect tracking in progress (mac_menuselect.c) */
     int16_t menu_hilite;         /* ID of the menu whose title is highlighted, 0 for none */
-    struct MacPutState *stdput; struct MacDlgMgr *dlgmgr; /* bounded Dialog Manager (mac_dlgmgr.c) */ struct MacSfState *stdfile; uint32_t stdfile_pb; /* native Standard File dialog (mac_stdfile.c) */
+    struct MacPutState *stdput; struct MacDlgMgr *dlgmgr; struct MacScrap *scrap; /* bounded Dialog Manager (mac_dlgmgr.c) */ struct MacSfState *stdfile; uint32_t stdfile_pb; /* native Standard File dialog (mac_stdfile.c) */
     struct { int active; MacGuestDone done; void *ctx; uint32_t sp, resume_pc, result_bytes; } guest; /* mac_guestcall.c */
     struct { int active; uint32_t deadline, pc, sp; } delay; /* _Delay in progress (mac_delay.c); host memory only */
     MacAppleEvents appleevents; /* Apple Event Manager handler tables, host memory only (mac_appleevents.c) */
@@ -196,6 +196,8 @@ int mac_appfork_service(MacRuntime *rt, uint16_t opcode); /* PBRead/PBGetEOF on 
 int mac_dialog_next_event(MacRuntime *rt, MacEvent *out); /* next mouse/key event for a modal dialog */
 int mac_alert_service(MacRuntime *rt, uint16_t opcode); /* Alert, StopAlert, NoteAlert, CautionAlert: $A985..$A988 */
 void mac_alert_destroy(MacRuntime *rt);
+int mac_resload_service(MacRuntime *rt, uint16_t opcode); /* SetResLoad $A99B (mac_resload.c) */
+void mac_scrap_destroy(MacRuntime *rt); /* mac_scrap.c */
 void mac_rgn_record_observe(MacRuntime *rt, uint16_t opcode); /* called before every trap: records outline calls while a region is open */
 void mac_rgn_record_destroy(MacRuntime *rt);
 int mac_menuselect_service(MacRuntime *rt, uint16_t opcode);

@@ -415,3 +415,16 @@ the probe, not a window I watched, and I have not listened to any audio.
   `make test` 0; Monkey Island and Monkey Island 2 identical). **Next halt:** `$A800` with D0 = `022C0018` (a Sound Manager dispatch selector I
   cannot name from memory; the existing double-buffer service answers only `00200008`). Before implementing it I need the selector table from
   Apple's Sound Manager documentation (curl a PDF; Firecrawl is out of credits); I did not open one this iteration, so I am not guessing.
+
+- **Glider PRO: Sound Manager volume, Scrap Manager, SetResLoad (headless, after the preferences box).** I downloaded Apple's *Sound Manager* PDF
+  and read the volume section: `GetDefaultOutputVolume(VAR level)` is `_SoundDispatch` selector `$022C0024`, `SetDefaultOutputVolume(level)` is
+  `$02300024`, the level is a long of two 0-$0100 words. Glider PRO uses the same routine numbers with the low word `$0018` (`022C0018`,
+  `02300018`); I did not find why, and I decoded its call site (one VAR long, an OSErr result, the low word divided by 36 and clamped to 7) to
+  confirm it is the getter, so `src/mac_sound_volume.c` answers both low words alike: Get reports `$01000100` (full volume, no system volume is
+  modelled), Set is accepted and ignored. Next halt `$A9FD` = **GetScrap** (signature from the opened MPW listing): `src/mac_scrap.c` is a small
+  host-side scrap (ZeroScrap, PutScrap, GetScrap; 8 types, 64 KB each) where GetScrap of an absent type returns noTypeErr (-102, from my memory)
+  and GetScrap of a present type halts by name (it would have to resize the destination handle). Then `$A99B` = **SetResLoad**: accepted and
+  ignored (`src/mac_resload.c`; resources are always loaded here, a stated difference). Tests: `test_mac_sound_volume`, `test_mac_scrap` (corrupt
+  pointers, odd/short stacks, bounded tables; mutants killed except two that are equivalent because a later memory write halts anyway), ASan
+  clean, `make test` 0, Monkey Island and Monkey Island 2 identical, Castle refreshed. **Next halt:** `Monochrome drawing into the indexed
+  screen is unsupported` (a 1-bit drawing path into the 8-bit screen); not started.
