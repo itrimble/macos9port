@@ -209,9 +209,11 @@ static int animate_palette(MacRuntime*r,uint32_t sp){
     if(!valid(r,sp,14))return fail(r,"AnimatePalette stack exceeds guest RAM.");
     int length=(int16_t)rd(r,sp,2),entry=(int16_t)rd(r,sp+2,2),first=(int16_t)rd(r,sp+4,2);
     uint32_t table=rd(r,sp+6,4);
-    MacWindowState*w=mac_window_find(r,rd(r,sp+10,4));
+    uint32_t target=rd(r,sp+10,4);
+    if(!target)target=mac_window_front(r); /* NIL: the frontmost window (Castle of Dr. Brain passes NIL; the meaning is not documented here, so this is an interpretation) */
+    MacWindowState*w=target?mac_window_find(r,target):NULL;
     if(!w)return fail(r,"AnimatePalette requires a registered window.");
-    if(!w->palette_handle)return fail(r,"AnimatePalette needs a window that has a palette.");
+    if(!w->palette_handle){mac_cpu_set(r->cpu,MAC_A7,sp+14);return 1;} /* no palette, so no animated entries: nothing to change (an interpretation, not verified) */
     if(r->palette_active!=w->palette_handle)return fail(r,"AnimatePalette needs the window's palette to be the active one.");
     MacHandle*m=palette(r,w->palette_handle);
     if(!m)return fail(r,"Window palette association is invalid.");

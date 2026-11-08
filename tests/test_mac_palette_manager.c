@@ -154,8 +154,22 @@ static void animate(void){
  CHECK(animate_call(&r,window,ANIM_CT,0,4,4)==1 && r.palette[7]==dev(0x4400,0x8800,0xcc00));
  CHECK(animate_call(&r,window,ANIM_CT,3,7,1)==1 && r.palette[7]==dev(0x4400,0x8800,0xcc00));
  mac_cpu_destroy(r.cpu);
+
+ /* A window without a palette has no animated entries: the call changes nothing and pops its arguments. A NIL window means the
+  * frontmost window; with no window at all it halts. */
+ {MacRuntime q=animate_rig(&window,&palette);uint32_t before[256];memcpy(before,q.palette,sizeof before);
+  mac_window_find(&q,window)->palette_handle=0;
+  CHECK(animate_call(&q,window,ANIM_CT,0,2,3)==1 && mac_cpu_get(q.cpu,MAC_A7)==0x800e && !mac_cpu_halted(q.cpu) && !memcmp(before,q.palette,sizeof before));
+  mac_window_find(&q,window)->palette_handle=palette;
+  CHECK(animate_call(&q,0,ANIM_CT,0,2,2)==1 && q.palette[2]==dev(0x1100,0x2200,0x3300) && q.palette[3]==dev(0x2200,0x4400,0x6600));   /* NIL = the frontmost window */
+  mac_cpu_destroy(q.cpu);}
+ {MacRuntime q=animate_rig(&window,&palette);              /* NIL with no window at all */
+  mac_cpu_set(q.cpu,MAC_A7,0x8000);wr(&q,0x8000,4,window);CHECK(mac_window_service(&q,0xa92d)==1 && !mac_window_front(&q));
+  CHECK(animate_call(&q,0,ANIM_CT,0,2,2)==-1 && mac_cpu_halted(q.cpu));
+  mac_cpu_destroy(q.cpu);}
  /* Refusals halt and change nothing, including the entries that came before the bad one. */
  for(unsigned k=0;k<12;k++){
+  if(k==7)continue;                                                   /* (a window without a palette is a no-op, below) */
   MacRuntime q=animate_rig(&window,&palette);uint32_t before[256];memcpy(before,q.palette,sizeof before);uint32_t table=ANIM_CT;int idx=0,ent=2,len=3;uint32_t win=window;
   if(k==0)wr(&q,rd(&q,palette,4)+16+4*16+6,2,10);                    /* entry 4 is not animated (usage 10) */
   if(k==1)q.palette_active=0;                                         /* the palette is not the active one */
@@ -164,7 +178,6 @@ static void animate(void){
   if(k==4){ent=6;len=3;wr(&q,rd(&q,palette,4)+16+8*16+6,2,14);}      /* past the palette (6+3 > 8), where the next bytes look animated */
   if(k==5)table=0x6000;                                               /* not an owned handle */
   if(k==6){idx=2;len=3;}                                              /* past the color table (2+3 > 4) */
-  if(k==7)mac_window_find(&q,window)->palette_handle=0;               /* the window has no palette */
   if(k==8)ent=-1;
   if(k==9)idx=-1;
   if(k==10)q.handles[q.handle_count-1].size=8+2*8;                    /* a truncated color table */
