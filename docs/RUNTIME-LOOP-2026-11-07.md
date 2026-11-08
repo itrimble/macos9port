@@ -454,3 +454,15 @@ the probe, not a window I watched, and I have not listened to any audio.
   in HandToHand (the size cap and the odd-handle test are shadowed by later checks); ASan clean; `make test` 0; Monkey Island and Monkey Island 2
   identical; Castle refreshed. **Next halt:** `PICT header requires matching version2 fixed bounds (opcode 0c00, byte 40)`: a PICT whose version-2
   header carries bounds that do not match the picture frame; not examined yet.
+
+- **Glider PRO: extended version 2 PICT header, and a bigger handle table (headless).** Its PICT 1997 is an *extended version 2* picture (Version
+  -2); the decoder only knew version 2 (Version -1 with fixed bounds). I downloaded Apple's *Imaging With QuickDraw* appendix A and read the
+  header section and Listing A-5: after `$0C00` come 24 bytes: Version `$FFFE`, a reserved word, best horizontal and vertical resolution as
+  Fixed, the optimal source rectangle, a reserved long (the real file has four reserved bytes there although the listing shows two). It now
+  decodes these when both resolutions are 72 dpi (other resolutions halt by name: no scaling by dpi), the reserved fields are zero and the
+  source rectangle is not empty; the picture frame is what is drawn (the source rectangle, which in the document's own example differs from the
+  frame, is not used). Tests: `test_mac_picture` with a truncation sweep, nine malformed headers, a second HeaderOp; seven mutants killed;
+  ASan clean. Next halt: `No handles for color port`: the 512-entry guest handle table was full (Glider PRO loads hundreds of `snd ` resources
+  and OpenCPort needs eight slots); `MAC_RUNTIME_HANDLES` is now 4096 (every user of it takes the macro; `make test` 0, Monkey Island and Monkey
+  Island 2 identical, Castle refreshed). **Next halt:** `NewCWindow requires initialized 640x480 indexed display and bounded content
+  rectangle`: the app opens a window whose rectangle falls outside our 640x480 limits (negative origin, off-screen, or too small); not examined yet.

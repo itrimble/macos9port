@@ -10,7 +10,7 @@ typedef int (*MacGuestDone)(void *rt, void *ctx, uint32_t result);
 
 #define MAC_CODE_TYPE UINT32_C(0x434f4445)
 #define MAC_RUNTIME_RAM (16u * 1024u * 1024u)
-#define MAC_RUNTIME_HANDLES 512
+#define MAC_RUNTIME_HANDLES 4096
 /* Guest compatibility profile (Ian, 2026-11-07): the virtual machine presents itself as a Mac II-class
  * computer (68020, indexed Color QuickDraw, no FPU) running System 7.0. It is an identity for applications
  * that gate on SysEnvirons/Gestalt, not a claim that every System 7 service exists: unsupported traps and

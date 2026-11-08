@@ -153,10 +153,19 @@ int mac_pict_decode(const uint8_t *data,size_t size,unsigned width,unsigned heig
         if(op==0xff){if(!header || r.pos!=r.size){r.error="PICT end marker or trailing bytes are invalid.";goto bad;}if(error&&n)*error=0;return 0;}
         if(op==0x0c00){
             p=take(&r,24);if(!p)goto bad;
-            if(header || u32(p)!=UINT32_MAX || (int32_t)u32(p+4)!=(int64_t)frame.l*65536 ||
-               (int32_t)u32(p+8)!=(int64_t)frame.t*65536 || (int32_t)u32(p+12)!=(int64_t)frame.r*65536 ||
-               (int32_t)u32(p+16)!=(int64_t)frame.b*65536 || u32(p+20)){
-                r.error="PICT header requires matching version2 fixed bounds.";goto bad;}
+            if(header){r.error="PICT header requires matching version2 fixed bounds.";goto bad;}
+            if(u32(p)==UINT32_MAX){   /* version 2: Version -1, then the picture frame as four Fixed values, then a reserved long */
+                if((int32_t)u32(p+4)!=(int64_t)frame.l*65536 || (int32_t)u32(p+8)!=(int64_t)frame.t*65536 ||
+                   (int32_t)u32(p+12)!=(int64_t)frame.r*65536 || (int32_t)u32(p+16)!=(int64_t)frame.b*65536 || u32(p+20)){
+                    r.error="PICT header requires matching version2 fixed bounds.";goto bad;}
+            } else {                  /* extended version 2 (Apple's Imaging With QuickDraw, Appendix A, Listing A-5): Version -2, a reserved word, the best
+                                       * horizontal and vertical resolution as Fixed, the optimal source rectangle, a reserved long. Only 72 dpi pictures are
+                                       * drawn; the source rectangle is not used (the picture frame is) but must not be empty. */
+                if(u16(p)!=0xfffe || u16(p+2) || u32(p+20)){r.error="PICT extended version 2 header is malformed.";goto bad;}
+                if(u32(p+4)!=0x00480000u || u32(p+8)!=0x00480000u){r.error="PICT extended version 2 resolutions other than 72 dpi are unsupported.";goto bad;}
+                Box s=box(p+12);
+                if(s.t>=s.b || s.l>=s.r){r.error="PICT extended version 2 source rectangle is empty.";goto bad;}
+            }
             header=1;
         }else if(!header){r.error="PICT opcode precedes its HeaderOp.";goto bad;}
         else if(op==0 || op==0x1e)continue;

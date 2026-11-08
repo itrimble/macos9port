@@ -12,6 +12,11 @@ static void lng(Writer*w,uint32_t v){word(w,v>>16);word(w,v);}
 static void rect(Writer*w,int t,int l,int b,int r){word(w,t);word(w,l);word(w,b);word(w,r);}
 static void align(Writer*w){if(w->n&1)byte(w,0);}
 static void begin(Writer*w,unsigned width,unsigned height){memset(w,0,sizeof *w);word(w,0);rect(w,0,0,height,width);word(w,0x11);word(w,0x2ff);word(w,0xc00);lng(w,UINT32_MAX);lng(w,0);lng(w,0);lng(w,width<<16);lng(w,height<<16);lng(w,0);}
+/* An extended version 2 header (Apple's Imaging With QuickDraw, Appendix A, Listing A-5): Version -2, reserved, resolutions as Fixed, source rectangle, reserved long. */
+static void begin_ext(Writer*w,unsigned width,unsigned height,uint32_t hres,uint32_t vres,int t,int l,int b,int r,unsigned version,unsigned reserved,uint32_t reserved2){
+ memset(w,0,sizeof *w);word(w,0);rect(w,0,0,height,width);word(w,0x11);word(w,0x2ff);word(w,0xc00);
+ word(w,version);word(w,reserved);lng(w,hres);lng(w,vres);rect(w,t,l,b,r);lng(w,reserved2);
+}
 static void band(Writer*w,unsigned width,unsigned top,unsigned height,int repeat,int sparse){
  align(w);word(w,0x98);word(w,0x8000|width);rect(w,top,0,top+height,width);
  word(w,0);word(w,0);lng(w,0);lng(w,72u<<16);lng(w,72u<<16);
@@ -41,6 +46,25 @@ static void decoder(void){
  begin(&w,256,1);band(&w,256,0,1,1,0);end(&w);CHECK(!mac_pict_decode(w.b,w.n,256,1,&p,&i,error,sizeof error));CHECK(i.pixels[127]==10&&i.pixels[128]==20);mac_pict_destroy(&i);
  begin(&w,4,1);band(&w,4,0,1,0,0);end(&w);CHECK(!mac_pict_decode(w.b,w.n,4,1,&p,&i,error,sizeof error));CHECK(i.pixels[0]==10&&i.pixels[3]==20);mac_pict_destroy(&i);
  w.b[w.n-1]=0xfe;CHECK(mac_pict_decode(w.b,w.n,4,1,&p,&i,error,sizeof error)==-1);
+}
+static void extended_header(void){
+ Writer w;MacPictPalette p=colors();MacPictImage i;char error[160];
+ begin_ext(&w,8,2,0x480000,0x480000,2,2,110,170,0xfffe,0,0);band(&w,8,0,1,0,0);band(&w,8,1,1,1,0);end(&w);
+ CHECK(!mac_pict_decode(w.b,w.n,8,2,&p,&i,error,sizeof error));
+ for(unsigned y=0;y<2;y++)for(unsigned x=0;x<8;x++)CHECK(i.covered[y*8+x]&&i.pixels[y*8+x]==(y==0&&x<4?10:20));mac_pict_destroy(&i);   /* drawn with the picture frame, source rectangle ignored */
+ for(size_t n=0;n<w.n;n++){CHECK(mac_pict_decode(w.b,n,8,2,&p,&i,error,sizeof error)==-1);CHECK(!i.pixels&&!i.covered);}
+ static const struct{uint32_t h,v;int t,l,b,r;unsigned ver,res;uint32_t res2;const char*why;}bad[]={
+  {0x900000,0x480000,0,0,2,8,0xfffe,0,0,"72 dpi"},{0x480000,0x900000,0,0,2,8,0xfffe,0,0,"72 dpi"},{0x480001,0x480000,0,0,2,8,0xfffe,0,0,"72 dpi"},
+  {0x480000,0x480000,2,0,2,8,0xfffe,0,0,"empty"},{0x480000,0x480000,0,5,2,5,0xfffe,0,0,"empty"},
+  {0x480000,0x480000,0,0,2,8,0xfffe,1,0,"malformed"},{0x480000,0x480000,0,0,2,8,0xfffe,0,1,"malformed"},{0x480000,0x480000,0,0,2,8,0xfffd,0,0,"malformed"},
+  {0x480000,0x480000,0,0,2,8,0x7ffe,0,0,"malformed"}};
+ for(unsigned k=0;k<sizeof bad/sizeof*bad;k++){
+  begin_ext(&w,8,2,bad[k].h,bad[k].v,bad[k].t,bad[k].l,bad[k].b,bad[k].r,bad[k].ver,bad[k].res,bad[k].res2);band(&w,8,0,1,0,0);band(&w,8,1,1,1,0);end(&w);
+  CHECK(mac_pict_decode(w.b,w.n,8,2,&p,&i,error,sizeof error)==-1 && strstr(error,bad[k].why)!=NULL && !i.pixels);
+ }
+ begin_ext(&w,8,2,0x480000,0x480000,0,0,2,8,0xfffe,0,0);                                   /* a second HeaderOp is refused */
+ word(&w,0xc00);word(&w,0xfffe);word(&w,0);lng(&w,0x480000);lng(&w,0x480000);rect(&w,0,0,2,8);lng(&w,0);end(&w);
+ CHECK(mac_pict_decode(w.b,w.n,8,2,&p,&i,error,sizeof error)==-1);
 }
 static void wr(MacRuntime*r,uint32_t p,unsigned n,uint32_t v){CHECK(!mac_cpu_write(r->cpu,p,n,v));}
 static void rectangle(MacRuntime*r,uint32_t p,int t,int l,int b,int x){wr(r,p,2,t);wr(r,p+2,2,l);wr(r,p+4,2,b);wr(r,p+6,2,x);}
@@ -89,4 +113,4 @@ static void screen_palette(void){
  mac_cpu_set(r.cpu,MAC_A7,0x8000);CHECK(mac_picture_service(&r,0xa8f6)==1);
  CHECK(mac_cpu_ram(r.cpu)[r.screen_base+40*640+50]!=10);mac_cpu_destroy(r.cpu);
 }
-int main(void){decoder();runtime();screen_palette();puts("PICT indexed playback: ok");return 0;}
+int main(void){decoder();extended_header();runtime();screen_palette();puts("PICT indexed playback: ok");return 0;}
