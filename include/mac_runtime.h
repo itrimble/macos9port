@@ -189,6 +189,11 @@ int mac_raster_service(MacRuntime *rt, uint16_t opcode);
 int mac_system_service(MacRuntime *rt, uint16_t opcode);
 int mac_geometry_service(MacRuntime *rt, uint16_t opcode);
 int mac_files_root(MacRuntime *rt, const char *directory);
+/* One entry of the merged guest volume listing (data files plus committed saves): host regular files only, sorted by
+ * name (byte order), the Finder info the guest has set (zero when none; nothing is invented from the name). */
+typedef struct { char name[256]; uint32_t type, creator; uint16_t flags; } MacFileEntry;
+/* Fill up to `max` entries and set *count. Returns 0, or a File Manager error (-35 no volume, -36 I/O, -50 too many). */
+int mac_files_entries(MacRuntime *rt, MacFileEntry *out, unsigned max, unsigned *count);
 void mac_files_destroy(MacRuntime *rt);
 /* Mount a distinct writable save directory as an overlay on the data volume,
  * bounded by file-count and byte quotas. Without it the volume is read-only. */

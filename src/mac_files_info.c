@@ -61,6 +61,34 @@ static int listing(const FileState *s, char (**out)[256], unsigned *count) {
     return 0;
 }
 
+int mac_files_entries(MacRuntime *rt, MacFileEntry *out, unsigned max, unsigned *count) {
+    FileState *s = rt->file_state;
+    *count = 0;
+    if (!s) return -35;
+    char (*names)[256];
+    unsigned total;
+    int error = listing(s, &names, &total);
+    if (error) return error;
+    if (total > max) { free(names); return -50; }
+    for (unsigned i = 0; i < total; i++) {
+        int kind = mac_files_classify(s, names[i]);
+        if (kind != FILE_SAVE && kind != FILE_DATA) continue;
+        int fd = mac_files_open_regular(kind == FILE_SAVE ? s->saves : s->directory, names[i], O_RDONLY);
+        if (fd < 0) continue; /* vanished or unreadable between listing and open: not offered */
+        uint8_t info[16] = {0};
+        mac_files_finder_get(fd, info);
+        close(fd);
+        MacFileEntry *e = &out[*count];
+        memcpy(e->name, names[i], sizeof e->name);
+        e->type = (uint32_t)info[0] << 24 | (uint32_t)info[1] << 16 | (uint32_t)info[2] << 8 | info[3];
+        e->creator = (uint32_t)info[4] << 24 | (uint32_t)info[5] << 16 | (uint32_t)info[6] << 8 | info[7];
+        e->flags = (uint16_t)(info[8] << 8 | info[9]);
+        (*count)++;
+    }
+    free(names);
+    return 0;
+}
+
 int mac_files_get_info(MacRuntime *rt, uint32_t pb) {
     MacCpu *cpu = rt->cpu;
     FileState *s = rt->file_state;
