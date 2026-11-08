@@ -113,6 +113,26 @@ static void set_point_checks(void) {
         free(saved); mac_cpu_destroy(rt.cpu);
     }
 }
+/* AddPt / SubPt: dst := dst +/- src per coordinate, modulo 2^16; the source is by value, the destination by address; refusals pop nothing and write nothing. */
+static void addsub_checks(void) {
+    const struct { unsigned op; uint32_t dst, src, want; } c[] = {
+        {0xa87e, 0x00100020, 0x00030004, 0x00130024}, {0xa87f, 0x00100020, 0x00030004, 0x000d001c},
+        {0xa87f, 0x00000000, 0x00010001, 0xffffffff}, {0xa87e, 0x7fff7fff, 0x00010001, 0x80008000}, {0xa87e, 0xffffffff, 0x00010002, 0x00000001}};
+    for (unsigned i = 0; i < 5; i++) {
+        MacRuntime rt = fresh(); mac_cpu_set(rt.cpu, MAC_A7, SP);
+        mac_cpu_write(rt.cpu, SP, 4, RECT); mac_cpu_write(rt.cpu, SP + 4, 4, c[i].src); mac_cpu_write(rt.cpu, RECT, 4, c[i].dst);
+        CHECK(mac_geometry_service(&rt, (uint16_t)c[i].op) == 1 && mac_cpu_read(rt.cpu, RECT, 4) == c[i].want && mac_cpu_get(rt.cpu, MAC_A7) == SP + 8);
+        mac_cpu_destroy(rt.cpu);
+    }
+    const uint32_t bad[] = {0, RECT + 1, RAM - 2, UINT32_MAX};
+    for (unsigned i = 0; i < 4; i++) {
+        MacRuntime rt = fresh(); mac_cpu_write(rt.cpu, SP, 4, bad[i]); mac_cpu_write(rt.cpu, SP + 4, 4, 0x00010001);
+        CHECK(mac_geometry_service(&rt, 0xa87f) == -1 && mac_cpu_get(rt.cpu, MAC_A7) == SP);
+        mac_cpu_destroy(rt.cpu);
+    }
+    {   MacRuntime rt = fresh(); mac_cpu_set(rt.cpu, MAC_A7, RAM - 4); CHECK(mac_geometry_service(&rt, 0xa87e) == -1); mac_cpu_destroy(rt.cpu); }
+    {   MacRuntime rt = fresh(); CHECK(mac_geometry_service(&rt, 0xa87d) == 0 && mac_geometry_service(&rt, 0xa881) == 0); mac_cpu_destroy(rt.cpu); }
+}
 /* EqualRect: every edge must match (two empty rectangles with different edges are different). */
 static int equal_rect(MacRuntime *r,const int16_t a[4],const int16_t b[4]){
     for(unsigned i=0;i<4;i++){mac_cpu_write(r->cpu,RECT+i*2,2,(uint16_t)a[i]);mac_cpu_write(r->cpu,RECT+8+i*2,2,(uint16_t)b[i]);}
@@ -170,6 +190,7 @@ static void unions(void) {
 }
 
 int main(void) {
+    addsub_checks();
     equal_checks();
     intersections();
     unions();

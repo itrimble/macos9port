@@ -13,7 +13,7 @@ static int valid(MacCpu *cpu, uint32_t address, size_t size) {
  * passed by value (vertical, horizontal); rectangles are passed by address.
  * Bounds enclose pixels: top/left inclusive, bottom/right exclusive. */
 int mac_geometry_service(MacRuntime *rt, uint16_t opcode) {
-    if (opcode != 0xa8aa && opcode != 0xa8ab && opcode != 0xa8ad && opcode != 0xa8a8 && opcode != 0xa880 && opcode != 0xa8a6) return 0;
+    if (opcode != 0xa8aa && opcode != 0xa8ab && opcode != 0xa8ad && opcode != 0xa8a8 && opcode != 0xa880 && opcode != 0xa8a6 && opcode != 0xa87e && opcode != 0xa87f) return 0;
     MacCpu *cpu = rt->cpu;
     if (mac_cpu_halted(cpu)) return -1;
     uint32_t sp = mac_cpu_get(cpu, MAC_A7);
@@ -46,6 +46,19 @@ int mac_geometry_service(MacRuntime *rt, uint16_t opcode) {
         }
         for(unsigned i=0;i<4;i++)mac_cpu_write(cpu,dst+2*i,2,(uint16_t)edges[i]);
         mac_cpu_set(cpu,MAC_A7,sp+12);return 1;
+    }
+    if (opcode == 0xa87e || opcode == 0xa87f) { /* AddPt(src: Point; VAR dst: Point) / SubPt(src; VAR dst): dst := dst +/- src, each coordinate modulo 2^16.
+        * Stack: dst pointer, then src (v, h words). */
+        if (!valid(cpu, sp, 8)) return -1;
+        uint32_t dst = mac_cpu_read(cpu, sp, 4), src = mac_cpu_read(cpu, sp + 4, 4);
+        if (!dst) { mac_cpu_halt(cpu, "AddPt/SubPt requires a non-NIL destination point."); return -1; }
+        if (!valid(cpu, dst, 4)) return -1;
+        uint32_t d = mac_cpu_read(cpu, dst, 4);
+        int sign = opcode == 0xa87e ? 1 : -1;
+        uint16_t v = (uint16_t)((d >> 16) + (uint32_t)sign * (src >> 16)), h = (uint16_t)((d & 0xffff) + (uint32_t)sign * (src & 0xffff));
+        mac_cpu_write(cpu, dst, 4, (uint32_t)v << 16 | h);
+        mac_cpu_set(cpu, MAC_A7, sp + 8);
+        return 1;
     }
     if (opcode == 0xa880) { /* SetPt(VAR pt; h,v), Pascal reverse order.
         * https://dev.os9.ca/techpubs/mac/QuickDraw/QuickDraw-57.html */
