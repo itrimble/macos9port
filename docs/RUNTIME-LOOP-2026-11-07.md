@@ -376,3 +376,11 @@ the probe, not a window I watched, and I have not listened to any audio.
   Monkey Island 2 identical, Castle refreshed. Next halt (headless): that window's procID is 160, a **custom floating-window WDEF**
   (`Only standard zoomNoGrow, noGrowDocProc, plainDBox and dBoxProc windows ... custom WDEFs are unsupported`). Running a guest WDEF (or
   providing a floating-window frame ourselves, which the editor may rely on for hit-testing) is a real subsystem; not started.
+
+- **Decision on Room Editor's tools window (procID 160).** I listed the app's resource types: it carries a **WDEF** resource, so this is a guest
+  window definition. Running one means calling its draw/hit-test/calc-region/grow messages from the Window Manager, a real subsystem; I did not
+  start it and the halt stays. The same app also needs more than one visible window (document plus tools palette), as Castle's Hide Desktop does
+  (`Showing a second visible window requires unsupported compositing`, `mac_window.c`). So **multi-window compositing** (z-order, per-window
+  clipping, update regions through the existing PaintBehind/CalcVisBehind pieces) is the shared blocker for both; that is the next piece to
+  scope. Glider 4.10 again: a headless run with mouse sweeps and the keys A, S, Z, X, comma, period, space and the up/down arrows (held one
+  at a time, released) changed frames but I could not tie any of it to glider motion, so its controls are still unidentified.
