@@ -137,11 +137,10 @@ screen black and the real run cannot show the colour work. The unit tests carry 
 
 ## Next reproducible steps
 
-1. Palette Manager activation (SetPalette/ActivatePalette on a visible window) for Glider 4.10: a design
-   for how palettes map onto the device's colour table, then a windowed run and screenshot once it
-   reaches its loop.
-2. Glider PRO: `_Delay` (a separate agent is on it). Glider 4.10: identify the Device Manager call on refnum -4
-   from a public source, then decide whether it is a small answer or a driver subsystem.
+1. Glider 4.10: identify the Device Manager call on refnum -4 (csCode 2) from a public source, then
+   decide whether it is a small answer or a driver subsystem. Palette activation is done; a windowed run
+   and screenshot are still owed once it reaches its loop.
+2. Glider PRO: a hierarchical file system for `PBDirCreate` (HFSDispatch selector 6) and its siblings.
 3. Standard File (Pack3), shared by Room Editor and Glider Edit: a UI contract, design before code.
    Then Room Editor's custom WDEF mechanism (guest callbacks from the Window Manager) as its own design.
-5. Exercise compaction with a real fragmenting program, or a purpose-built guest.
+4. Exercise compaction with a real fragmenting program, or a purpose-built guest.
