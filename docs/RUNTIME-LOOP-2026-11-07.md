@@ -6,7 +6,7 @@ R04 and G02. Items stay unchecked.
 
 ## Scope and revision
 
-- Branch `feature/memory-integration`, code head `6923cd5`, cut from `main` `a14d464`. `main` is
+- Branch `feature/memory-integration`, code head `29edb96`, cut from `main` `a14d464`. `main` is
   untouched and nothing is pushed.
 - Host: Apple silicon (arm64), macOS 26.6.2 (Darwin 25.6.0), Apple clang 21.0.0.
 - Builds and tests ran locally with `BUILDFLEET_LOCAL=1` per the project override.
@@ -35,6 +35,8 @@ R04 and G02. Items stay unchecked.
 | `507c06b` | Window colour tables (`wctb`) for GetNewCWindow | `test_mac_window_colors` |
 | `00d65f1` | SetOrigin `$A878` (translates bounds or pmBounds, portRect and visRgn, not the clip); fixes LocalToGlobal/GlobalToLocal, which read the wrong port offsets with the wrong signs | `test_mac_setorigin`, `test_mac_quickdraw` |
 | `6923cd5` | GetNewPalette `$AA92` from a `pltt` resource; NewPalette's allocator shared | `test_mac_getnewpalette` |
+| `2040404` | Palette activation on the 8-bit main device: SetPalette on a visible frontmost window, ShowWindow of a window that has a palette, ActivatePalette `$AA94`; tolerant and courteous usages, 8-bit inhibit bits; unsupported usages refused before any change | `test_mac_palette_activation`, `test_mac_palette_manager` |
+| `b95dc4d` (merged `29edb96`) | Apple Event Manager handler table (`$A816`): AEInstallEventHandler, AERemoveEventHandler, AEGetEventHandler, AESet/GetInteractionAllowed; handlers are recorded, never called. Built by a separate agent in its own worktree and verified here | `test_mac_appleevents` |
 
 ## Compatibility profile decision
 
@@ -48,7 +50,7 @@ off and no Help menu exists; Gestalt `help`, `stdf`, `evnt` remain unanswered.
 ## Evidence at `507c06b`
 
 - `BUILDFLEET_LOCAL=1 make test-memory` exit 0; `BUILDFLEET_LOCAL=1 make test` exit 0 with 127
-  test binaries and no failure line. No source or test file reaches 500 lines.
+  test binaries and no failure line (129 at `29edb96`). No source or test file reaches 500 lines.
 - Every new test file was mutation-checked (deliberate breakage, rebuild with a forced object
   refresh, confirm a test fails). Weak cases found that way were fixed: the pixel-depth and
   trailing-bytes cases, a source-span off-by-one in Pack7, and one redundant read-only check
@@ -67,9 +69,9 @@ None of these has reached its main loop. "Traps" is the count before the halt.
 
 | App | Traps | Stops at | What it is |
 | --- | --- | --- | --- |
-| Glider 4.10 | 508 | `SetPalette` | an existing deliberate halt: SetPalette on a visible window needs Palette Manager activation (which colours the screen shows) |
+| Glider 4.10 | 514 | PICT decoder | a `PICT` whose PackBitsRect PixMap is 4 bits per pixel (`pixelSize 4`); the decoder accepts only 8-bit, default-packed PixMaps |
 | Room Editor 1.06 | 148 | GetNewCWindow | custom window definition (WDEF 10, "Tools" palette) and `noGrowDocProc` |
-| Glider PRO 1.1.2 | 88 | `A816` | Apple Event Manager; the app installs four handlers and sets interaction |
+| Glider PRO 1.1.2 | 124 | `A03B` | `_Delay` (Time Manager); its five Apple Event startup calls now succeed |
 | Glider Edit 1.1.1 | 36 | Gestalt `stdf` | Standard File dialogs; `GetNewMBar` was exercised only with `stdf` faked locally, not committed |
 
 The window-colour change cleared Glider 4.10's `wctb 128` (content, frame and text black;
@@ -87,6 +89,13 @@ screen black and the real run cannot show the colour work. The unit tests carry 
 - **SetOrigin and the clip region:** two public sources agree it does not move the clipRgn.
 - **`pltt` layout** verified against all three real palettes in the test apps (exactly
   `16 + 16*count` bytes); their header and private slots hold junk, which is deliberately not copied.
+- **Palette activation refused its own old test:** the test that pinned "ShowWindow of a window with a
+  palette halts" used a palette whose entries have usage 14 (animated and explicit bits). Activation
+  correctly refuses that, so the test's expectation survived but its stated reason was wrong; it now
+  pins the true reason. A first draft of ShowWindow showed the window before refusing; validation now runs
+  first so a refused palette leaves the window hidden.
+- **Real palette data:** Glider 4.10's palette is 16 `pmTolerant` entries with tolerance 0; Castle of
+  Dr. Brain's mixes in explicit entries (usage `0x0a`), which activation refuses.
 - **A mutation harness blind spot:** a mutant that crashes prints no failure line. Mutation runs now
   also look at the exit status; the unbounded-palette mutant was caught by a stack-smash abort.
 
@@ -107,9 +116,14 @@ screen black and the real run cannot show the colour work. The unit tests carry 
   Glider Edit never reached an FSp call, so they are tested only with hand-built frames.
 - SetResInfo cannot change an ID. Resource edits persist only for the application fork.
 - GetNewCWindow does not yet create and attach the palette that the Window Manager is documented to
-  build from a `pltt` with the window's ID. SetPalette on a visible window halts (activation is not
-  implemented), so no palette ever changes the screen's colours. Complex (non-rectangular) regions
-  are unsupported, so SetOrigin halts on one.
+  build from a `pltt` with the window's ID. Palette activation covers the single 8-bit device and
+  `pmCourteous` / `pmTolerant` entries only (tolerance is treated as satisfied by the exact colour; no
+  tolerance metric is applied); dithered, animated and explicit entries, deactivation on close or
+  window change, and update events beyond invalidating the window are not implemented. Complex
+  (non-rectangular) regions are unsupported, so SetOrigin halts on one.
+- Apple Events: handlers are recorded and never called (nothing sends an event). Descriptors,
+  AEProcessAppleEvent, replies and Gestalt `evnt` are absent. The wildcard lookup order, the missing-handler
+  error for Remove and the table capacity (64) are conventions, not taken from the interface text.
 - Subsystems that are entirely absent: custom WDEFs, SetOrigin, Apple Events, Standard File,
   pop-up and hierarchical menu drawing, balloon help, GWorlds backed by handles.
 
@@ -118,8 +132,7 @@ screen black and the real run cannot show the colour work. The unit tests carry 
 1. Palette Manager activation (SetPalette/ActivatePalette on a visible window) for Glider 4.10: a design
    for how palettes map onto the device's colour table, then a windowed run and screenshot once it
    reaches its loop.
-2. Apple Event Manager, record-only subset first (install, remove, get handler, interaction
-   level), with a test that every selector's word count matches the public declaration.
+2. Glider PRO: `_Delay` and whatever follows. Glider 4.10: the PICT decoder for 4-bit PixMaps.
 3. Room Editor: `noGrowDocProc`, then the custom WDEF mechanism (guest callbacks from the
    Window Manager) as its own design.
 4. Standard File for Glider Edit: a UI contract, design before code.
