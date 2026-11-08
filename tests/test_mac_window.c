@@ -23,6 +23,41 @@ static void new_args(MacRuntime *rt,uint32_t storage,int visible) {
     wr(rt,0x4100,2,40);wr(rt,0x4102,2,50);wr(rt,0x4104,2,300);wr(rt,0x4106,2,450);
 }
 static int call(MacRuntime *rt,uint16_t op,uint32_t w){mac_cpu_set(rt->cpu,MAC_A7,SP);wr(rt,SP,4,w);return mac_window_service(rt,op);}
+static int show_hide(MacRuntime *rt,uint32_t w,int show){
+    mac_cpu_set(rt->cpu,MAC_A7,SP);wr(rt,SP,2,show?0x0100:0);wr(rt,SP+2,4,w);return mac_window_service(rt,0xa908);
+}
+/* ShowHide ($A908): changes visibility like ShowWindow/HideWindow, but never activates the window or queues an event. */
+static void show_hide_checks(void) {
+    MacRuntime rt=fresh();new_args(&rt,STORAGE,0);CHECK(mac_window_service(&rt,0xaa45)==1);
+    CHECK(rd(&rt,STORAGE+110,1)==0 && mac_cpu_ram(rt.cpu)[rt.screen_base+20*640+49]==77 && rt.event_count==0);
+    CHECK(show_hide(&rt,STORAGE,1)==1 && mac_cpu_get(rt.cpu,MAC_A7)==SP+6);
+    CHECK(rd(&rt,STORAGE+110,1)==1 && rd(&rt,STORAGE+111,1)==0);                       /* visible, not active */
+    CHECK(mac_cpu_ram(rt.cpu)[rt.screen_base+20*640+49]==255 && rt.event_count==0);    /* frame drawn, no activate event */
+    CHECK(show_hide(&rt,STORAGE,1)==1 && rd(&rt,STORAGE+110,1)==1 && rt.event_count==0); /* showing a shown window changes nothing */
+    CHECK(show_hide(&rt,STORAGE,0)==1 && rd(&rt,STORAGE+110,1)==0);
+    CHECK(mac_cpu_ram(rt.cpu)[rt.screen_base+20*640+49]==77 && rt.event_count==0);     /* backdrop restored, still no event */
+    CHECK(show_hide(&rt,STORAGE,0)==1 && rd(&rt,STORAGE+110,1)==0);
+    /* The flag is a Boolean byte: any nonzero high byte shows. ShowWindow, by contrast, activates and queues an event. */
+    mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,2,0x0200);wr(&rt,SP+2,4,STORAGE);CHECK(mac_window_service(&rt,0xa908)==1 && rd(&rt,STORAGE+110,1)==1);
+    CHECK(show_hide(&rt,STORAGE,0)==1);
+    CHECK(call(&rt,0xa915,STORAGE)==1 && rd(&rt,STORAGE+111,1)==1 && rt.event_count==1);
+    /* The Boolean is the high byte of its word: garbage in the low byte does not make a hide into a show. */
+    CHECK(show_hide(&rt,STORAGE,1)==1 && rd(&rt,STORAGE+110,1)==1);
+    mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,2,0x0001);wr(&rt,SP+2,4,STORAGE);CHECK(mac_window_service(&rt,0xa908)==1 && rd(&rt,STORAGE+110,1)==0);
+    /* Not inside BeginUpdate. */
+    CHECK(show_hide(&rt,STORAGE,1)==1 && call(&rt,0xa922,STORAGE)==1);
+    CHECK(show_hide(&rt,STORAGE,0)==-1 && mac_cpu_halted(rt.cpu));
+    mac_cpu_destroy(rt.cpu);
+    /* A second window cannot be shown over a visible one (no compositing yet). */
+    rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);
+    new_args(&rt,STORAGE+0x400,0);CHECK(mac_window_service(&rt,0xaa45)==1);
+    CHECK(show_hide(&rt,STORAGE+0x400,1)==-1 && mac_cpu_halted(rt.cpu));
+    mac_cpu_destroy(rt.cpu);
+    /* An unknown window halts before anything changes. */
+    rt=fresh();new_args(&rt,STORAGE,0);CHECK(mac_window_service(&rt,0xaa45)==1);
+    CHECK(show_hide(&rt,STORAGE+0x400,0)==-1 && mac_cpu_halted(rt.cpu));
+    mac_cpu_destroy(rt.cpu);
+}
 static void lifecycle(void) {
     MacRuntime rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);
     CHECK(rt.window.address==STORAGE && rd(&rt,SP+26,4)==STORAGE && mac_cpu_get(rt.cpu,MAC_A7)==SP+26);
@@ -165,4 +200,4 @@ static void moving(void) {
   CHECK(move_to(&r,-1,141,0)==-1 && r.window.bounds[1]==128);mac_cpu_destroy(r.cpu);
  }
 }
-int main(void){moving();sizing();calc_vis();lifecycle();failures();puts("one-window lifecycle, drawing, and update checks passed");}
+int main(void){show_hide_checks();moving();sizing();calc_vis();lifecycle();failures();puts("one-window lifecycle, drawing, and update checks passed");}

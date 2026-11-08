@@ -74,7 +74,7 @@ static void restore_background(MacRuntime *rt) {
     uint8_t *ram=mac_cpu_ram(rt->cpu);
     for(int y=t;y<b;y++)memcpy(ram+rt->screen_base+y*640+l,ram+w->backdrop+y*640+l,(size_t)(r-l));
 }
-static void visibility(MacRuntime *rt,int show) {
+static void visibility(MacRuntime *rt,int show,int notify) {
     MacWindowState *w=&rt->window;
     if(w->visible==show)return;
     if(!show)restore_background(rt);
@@ -83,7 +83,8 @@ static void visibility(MacRuntime *rt,int show) {
     int t=w->bounds[0],l=w->bounds[1],b=w->bounds[2],r=w->bounds[3];
     rect(rt,region(rt,w->handles[2])+2,0,0,show?b-t:0,show?r-l:0);
     rect(rt,region(rt,w->handles[10])+2,show?t:0,show?l:0,show?b:0,show?r:0);
-    activate(rt,show);if(show)mac_window_draw(rt,1);
+    if(notify)activate(rt,show);
+    if(show)mac_window_draw(rt,1);
 }
 static int create_window(MacRuntime *rt,uint32_t sp) {
     if(!valid(rt,sp,30,1))return fail(rt,"NewCWindow stack is invalid.");
@@ -174,7 +175,7 @@ static int create_window(MacRuntime *rt,uint32_t sp) {
      * dataHandle is a genuine 16-byte WStateData (user/standard rectangles). */
     wr(rt,storage+130,4,fresh.handles[12]);wr(rt,storage+134,4,fresh.handles[11]);wr(rt,storage+138,2,title[0]*8u);
     wr(rt,storage+152,4,refcon);wr(rt,storage+68,2,1); /* application font */
-    mac_window_publish(rt,behind==UINT32_MAX);visibility(rt,visible);
+    mac_window_publish(rt,behind==UINT32_MAX);visibility(rt,visible,1);
     wr(rt,sp+26,4,storage);wr(rt,0x220,2,0);mac_cpu_set(rt->cpu,MAC_A7,sp+26);return 1;
 }
 int mac_window_update_event(MacRuntime *rt,uint16_t mask,MacEvent *out) {
@@ -368,6 +369,7 @@ int mac_window_service(MacRuntime *rt,uint16_t opcode) {
     case 0xa924:args=0;result=4;break;
     case 0xa922:case 0xa923:case 0xa915:case 0xa916:case 0xa91f:case 0xa920:
     case 0xa909:case 0xa92d:case 0xa914:args=4;break;
+    case 0xa908:args=6;break;
     case 0xa917:args=4;result=4;break;
     case 0xa80a:args=4;result=2;break;
     case 0xa918:case 0xa919:case 0xa90d:args=8;break;
@@ -392,7 +394,7 @@ int mac_window_service(MacRuntime *rt,uint16_t opcode) {
         int hit=front?mac_window_hit(rt,(int16_t)rd(rt,sp+6,2),(int16_t)rd(rt,sp+4,2)):0;
         wr(rt,out,4,hit?rt->window.address:0);wr(rt,sp+8,2,(unsigned)hit);mac_cpu_set(rt->cpu,MAC_A7,sp+8);return 1;
     }
-    uint32_t address=rd(rt,sp+((opcode==0xa91d || opcode==0xa91b)?6:opcode==0xa918 || opcode==0xa919?4:0),4);
+    uint32_t address=rd(rt,sp+((opcode==0xa91d || opcode==0xa91b)?6:opcode==0xa918 || opcode==0xa919?4:opcode==0xa908?2:0),4);
     if(!mac_window_select(rt,address) || !window_valid(rt))return fail(rt,"Window call requires the live registered window and valid owned records.");
     if(opcode==0xa91d)return size_window(rt,sp);
     if(opcode==0xa91b)return move_window(rt,sp);
@@ -439,7 +441,14 @@ int mac_window_service(MacRuntime *rt,uint16_t opcode) {
         uint32_t front=mac_window_front(rt);
         if(show && front && front!=w->address)return fail(rt,"Showing a second visible window requires unsupported compositing.");
         if(w->active!=show && rt->event_count>=64)return fail(rt,"Window activation event queue is full.");
-        visibility(rt,show);if(show && w->palette_handle && mac_palette_activate(rt,w))return -1;
+        visibility(rt,show,1);if(show && w->palette_handle && mac_palette_activate(rt,w))return -1;
+    } else if(opcode==0xa908) { /* ShowHide(window, showFlag): visibility only; the window is neither activated nor reordered */
+        if(w->updating)return fail(rt,"Window visibility cannot change inside BeginUpdate.");
+        int show=rd(rt,sp,1)!=0;
+        if(show && mac_palette_check(rt,w))return -1;
+        uint32_t front=mac_window_front(rt);
+        if(show && front && front!=w->address)return fail(rt,"Showing a second visible window requires unsupported compositing.");
+        visibility(rt,show,0);
     } else if(opcode==0xa91f || opcode==0xa920) {
         if(opcode==0xa920 && !w->visible)mac_window_to_front(rt,w->address);
         if(w->visible){
