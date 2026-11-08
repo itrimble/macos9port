@@ -63,6 +63,12 @@ int mac_files_create_name(MacRuntime *rt, const char *name);
 int mac_files_delete_name(MacRuntime *rt, const char *name);
 int mac_files_rename_names(MacRuntime *rt, const char *from, const char *to);
 int mac_files_open_name(MacRuntime *rt, const char *name, unsigned permission, int *ref);
+int mac_files_get_volume(MacRuntime *rt, uint32_t pb);
+int mac_files_set_vol(MacRuntime *rt, uint32_t pb);
+int mac_files_hvol(MacRuntime *rt, uint32_t pb, int get); /* PBHGetVol / PBHSetVol (mac_files_hvol.c) */
+int mac_files_open_rf(MacRuntime *rt, uint32_t pb);
+int mac_files_crf_service(MacRuntime *rt, uint16_t opcode); /* CreateResFile $A9B1 (mac_files_crf.c) */
+void mac_files_empty_fork(uint8_t out[286]); /* PBOpenRF / PBHOpenRF (mac_files_rf.c) */
 int mac_files_write(MacRuntime *rt, uint32_t pb, GuestFile *f);
 int mac_files_set_eof(MacRuntime *rt, uint32_t pb, GuestFile *f);
 int mac_files_set_fpos(MacRuntime *rt, uint32_t pb, GuestFile *f, int query);

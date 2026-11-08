@@ -72,7 +72,7 @@ static int result(MacCpu *cpu, uint32_t pb, int error) {
 
 /* This virtual volume is precisely the explicitly mounted app-data directory,
  * not a host disk. Its stable reference never grants access to other paths. */
-static int get_volume(MacRuntime *rt, uint32_t pb) {
+int mac_files_get_volume(MacRuntime *rt, uint32_t pb) {
     static const char name[] = "OS Pi Data";
     if (!rt->file_state) return -35;
     uint32_t p = mac_cpu_read(rt->cpu, pb + 18, 4);
@@ -98,7 +98,7 @@ static int working_directory(MacRuntime *rt, uint32_t pb) {
         return volume <= -16384 ? -51 : -35;
     if (index != 0) return -51; /* No non-root working directories are open. */
     /* get_volume validates the optional name output before any mutation. */
-    int error = get_volume(rt, pb);
+    int error = mac_files_get_volume(rt, pb);
     if (error) return error;
     mac_cpu_write(cpu, pb + 28, 4, 0); /* Root has no working-directory process owner. */
     mac_cpu_write(cpu, pb + 32, 2, 0xffff);
@@ -342,7 +342,7 @@ static unsigned block_size(unsigned base, int wd, unsigned selector) {
     case 0xa013: case 0xa014: case 0xa015: return 24;
     case 0xa00c: case 0xa00d: case 0xa20c: return 80;
     case 0xa007: return 64;
-    case 0xa209: return 52;
+    case 0xa209: case 0xa214: case 0xa215: case 0xa00a: case 0xa20a: return 52;
     case 0xa207: return 122;
     case 0xa260: return wd && selector == 9 ? 104 : 52;
     default: return PB_BYTES;
@@ -356,7 +356,7 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode) {
     case 0xa000: case 0xa001: case 0xa002: case 0xa003: case 0xa007: case 0xa008: case 0xa009:
     case 0xa00b: case 0xa00c: case 0xa00d: case 0xa011: case 0xa012: case 0xa013:
     case 0xa014: case 0xa015: case 0xa018: case 0xa044: case 0xa207: case 0xa209:
-    case 0xa060: case 0xa20c: case 0xa260: break;
+    case 0xa060: case 0xa20c: case 0xa260: case 0xa00a: case 0xa20a: case 0xa214: case 0xa215: break;
     default: return 0;
     }
     if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1;
@@ -386,9 +386,11 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode) {
                                mac_cpu_read(cpu,pb+48,4), mac_cpu_read(cpu,pb+18,4), error);
         return result(cpu, pb, error);
     }
-    case 0xa014: return result(cpu, pb, get_volume(rt, pb));
+    case 0xa014: return result(cpu, pb, mac_files_get_volume(rt, pb));
+    case 0xa214: case 0xa215: return result(cpu, pb, mac_files_hvol(rt, pb, base == 0xa214)); /* PBHGetVol, PBHSetVol */
     case 0xa015: return result(cpu, pb, mac_files_set_vol(rt, pb));
     case 0xa000: case 0xa060: return result(cpu, pb, open_file(rt, pb)); /* PBOpen, and PBOpenDF (data fork) */
+    case 0xa00a: case 0xa20a: return result(cpu, pb, mac_files_open_rf(rt, pb)); /* PBOpenRF, PBHOpenRF: the .rsrc sidecar */
     case 0xa008: return result(cpu, pb, mac_files_create(rt, pb));
     case 0xa009: return result(cpu, pb, mac_files_delete(rt, pb, 0));
     case 0xa209: return result(cpu, pb, mac_files_delete(rt, pb, 1));

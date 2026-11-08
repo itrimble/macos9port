@@ -529,3 +529,15 @@ the probe, not a window I watched, and I have not listened to any audio.
   OpenResFile for Load House). Today resource forks are read-only exports of the application volume (`mac_resource_files.c`: "No writeback"). That is the next piece
   of real work for the Glider PRO loop (create a house, save, reload, New Game); it is a Resource Manager writer plus overlay storage for the fork (a sidecar
   `<name>.rsrc` file under `--saves`, written atomically), and I did not start it in this pass.
+
+- **Glider PRO: New House saves further (headless): resource-fork sidecars, CreateResFile, HGetVol, CmpString, ResolveAliasFile.** Following the New House > Save click the
+  game now gets through: **PBHOpenRF/PBOpenRF** (`src/mac_files_rf.c`: a file's resource fork is its `<name>.rsrc` sidecar; created empty on first open on the save overlay, then an
+  ordinary file with the data fork's one-writer rule, staging and quota; on the application volume only an existing export opens, read-only; names over 26 characters
+  cannot have a fork), **PBHGetVol/PBHSetVol** (`mac_files_hvol.c`: the one volume, root directory 2), **CreateResFile** (`mac_files_crf.c`: writes an empty resource fork,
+  256-byte header + 30-byte map, from my memory of the format; the test round-trips it through this project's own parser; a fork with bytes is left alone with ResErr
+  -49), **CmpString** (`mac_cmpstring.c`: ASCII case folding only; the diacritic option is not modelled; semantics from memory), and **AliasDispatch ResolveAliasFile**
+  (`mac_alias.c`: an existing file resolves to itself, a missing one is -43; other alias selectors halt). `make test` 0; ASan clean on `test_mac_files_rf` and
+  `test_mac_files`; 14 mutants killed, one equivalent; Monkey Island and Monkey Island 2 identical; Castle refreshed. **Next halt:** `HighLevelFSDispatch selector 13 (FSpOpenResFile)`:
+  opening the new house as a *Resource Manager* file. The overlay now has `Untitled House` (0 bytes) and `Untitled House.rsrc` (286 bytes, an empty valid fork). What is left is a
+  **writable Resource Manager**: FSpOpenResFile/OpenResFile of overlay forks, AddResource/WriteResource/ChangedResource/UpdateResFile/CloseResFile with a map serializer (today
+  resource files are read-only exports). That is the next large piece; not started.

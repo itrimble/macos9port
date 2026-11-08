@@ -196,6 +196,9 @@ int mac_appfork_service(MacRuntime *rt, uint16_t opcode); /* PBRead/PBGetEOF on 
 int mac_dialog_next_event(MacRuntime *rt, MacEvent *out); /* next mouse/key event for a modal dialog */
 int mac_alert_service(MacRuntime *rt, uint16_t opcode); /* Alert, StopAlert, NoteAlert, CautionAlert: $A985..$A988 */
 void mac_alert_destroy(MacRuntime *rt);
+int mac_alias_service(MacRuntime *rt, uint16_t opcode); /* AliasDispatch $A823 (mac_alias.c) */
+int mac_cmpstring_service(MacRuntime *rt, uint16_t opcode); /* CmpString $A03C (mac_cmpstring.c) */
+int mac_files_crf_service(MacRuntime *rt, uint16_t opcode); /* CreateResFile $A9B1 (mac_files_crf.c) */
 int mac_colorindex_service(MacRuntime *rt, uint16_t opcode); /* Index2Color $AA34, Color2Index $AA33 (mac_colorindex.c) */
 int mac_handcopy_service(MacRuntime *rt, uint16_t opcode); /* HandToHand $A9E1, PtrToHand $A9E3 (mac_handcopy.c) */
 int mac_resload_service(MacRuntime *rt, uint16_t opcode); /* SetResLoad $A99B (mac_resload.c) */

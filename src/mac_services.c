@@ -25,7 +25,7 @@ static int implemented(unsigned key) {
     if (key < 0x800) {
         switch (key) {
         case 0x58: case 0x59: case 0x5a: return 1;
-        case 0x13: case 0x11: case 0x00: case 0x01: case 0x02: case 0x07: case 0x14: case 0x33: case 0x34: return 1;
+        case 0x13: case 0x11: case 0x00: case 0x01: case 0x02: case 0x07: case 0x0a: case 0x14: case 0x15: case 0x3c: case 0x33: case 0x34: return 1;
         case 0x1c: case 0x1d: case 0x1e: case 0x1f: case 0x21: case 0x22: case 0x28:
         case 0x23: case 0x24: case 0x25: case 0x29: case 0x2a: case 0x2d: case 0x2e: case 0x2f:
         case 0x32: case 0x3b: case 0x40: case 0x46: case 0x47: case 0x49: case 0x4a:
@@ -37,7 +37,7 @@ static int implemented(unsigned key) {
     switch (0xa000 | key) {
     case 0xa800:
     case 0xa801: case 0xa803: case 0xa804: case 0xa807:
-    case 0xa9eb: case 0xa9ee: case 0xa830: case 0xa816: case 0xa9fc: case 0xa9fd: case 0xa9fe: case 0xa99b: case 0xa9e1: case 0xa9e3:
+    case 0xa9eb: case 0xa9ee: case 0xa830: case 0xa816: case 0xa9fc: case 0xa9fd: case 0xa9fe: case 0xa99b: case 0xa9e1: case 0xa9e3: case 0xa9b1: case 0xa823:
     case 0xa8f6:
     case 0xa997: case 0xa994: case 0xa998: case 0xa99a: case 0xa9a4:
     case 0xaa52:
@@ -130,6 +130,12 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (timer) return timer > 0 ? 0 : -1;
     int delay = mac_delay_service(rt, opcode);
     if (delay) return delay > 0 ? 0 : -1;
+    int alias = mac_alias_service(rt, opcode);
+    if (alias) return alias > 0 ? 0 : -1;
+    int cmp = mac_cmpstring_service(rt, opcode);
+    if (cmp) return cmp > 0 ? 0 : -1;
+    int crf = mac_files_crf_service(rt, opcode);
+    if (crf) return crf > 0 ? 0 : -1;
     int colorindex = mac_colorindex_service(rt, opcode);
     if (colorindex) return colorindex > 0 ? 0 : -1;
     int handcopy = mac_handcopy_service(rt, opcode);
