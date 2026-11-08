@@ -1,22 +1,15 @@
 #include "draw.h"
 #include "ospi.h"
+#include "typeface_discovery.h"
 
-#include <ctype.h>
-#include <dirent.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 
 #ifdef OSPI_FREETYPE
 #include <ft2build.h>
 #include FT_FREETYPE_H
-#if defined(__APPLE__)
-#include <mach-o/dyld.h>
-#else
-#include <unistd.h>
-#endif
 #endif
 
 enum { GLYPHS = 128 + 384 };   /* ASCII, then a tagged cache for everything else */
@@ -47,74 +40,8 @@ static FaceSlot g_startup;
 static FaceSlot g_startup_small;
 static char g_label[64] = "font8x8";
 static int g_ready;
-
-static int font_file(const char *name) {
-    static const char *exts[] = {".ttf", ".otf", ".ttc", ".pfa", ".pfb", ".dfont", NULL};
-    size_t n = strlen(name);
-    for (int i = 0; exts[i]; i++) {
-        size_t e = strlen(exts[i]);
-        if (n > e && strcasecmp(name + n - e, exts[i]) == 0) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static int name_has(const char *file, const char *token) {
-    size_t n = strlen(file);
-    size_t m = strlen(token);
-    if (m == 0 || m > n) {
-        return 0;
-    }
-    for (size_t i = 0; i + m <= n; i++) {
-        size_t j = 0;
-        while (j < m && tolower((unsigned char)file[i + j]) == tolower((unsigned char)token[j])) {
-            j++;
-        }
-        if (j == m) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-static int scan_dir(const char *dir, const char *token, char *out, size_t n) {
-    if (!dir || !dir[0]) {
-        return 0;
-    }
-    DIR *d = opendir(dir);
-    if (!d) {
-        return 0;
-    }
-    struct dirent *de;
-    while ((de = readdir(d)) != NULL) {
-        if (de->d_name[0] == '.' || !font_file(de->d_name)) {
-            continue;
-        }
-        if (token && !name_has(de->d_name, token)) {
-            continue;
-        }
-        if (strchr(de->d_name, '/')) {
-            continue;
-        }
-        if (snprintf(out, n, "%s/%s", dir, de->d_name) >= (int)n) {
-            continue;
-        }
-        closedir(d);
-        return 1;
-    }
-    closedir(d);
-    return 0;
-}
-
-static int find_named(const char *token, char *out, size_t n, const char **dirs, int nd) {
-    for (int i = 0; i < nd; i++) {
-        if (scan_dir(dirs[i], token, out, n)) {
-            return 1;
-        }
-    }
-    return 0;
-}
+static TypefacePathFilter g_filter;
+static void *g_filter_context;
 
 static void blit_rows(Fb *fb, int x, int y, uint32_t color, const uint8_t *rows) {
     for (int row = 0; row < 8; row++) {
@@ -141,37 +68,6 @@ static int ensure_lib(void) {
         return 1;
     }
     return FT_Init_FreeType(&g_lib) == 0;
-}
-
-static void exe_fonts(char *out) {
-    out[0] = 0;
-    char buf[PATH_MAX];
-#if defined(__APPLE__)
-    uint32_t sz = sizeof buf;
-    if (_NSGetExecutablePath(buf, &sz) != 0) {
-        return;
-    }
-#else
-    ssize_t k = readlink("/proc/self/exe", buf, sizeof buf - 1);
-    if (k < 0) {
-        return;
-    }
-    buf[k] = 0;
-#endif
-    char real[PATH_MAX];
-    if (!realpath(buf, real)) {
-        return;
-    }
-    char *slash = strrchr(real, '/');
-    if (!slash) {
-        return;
-    }
-    *slash = 0;
-    char rel[PATH_MAX];
-    snprintf(rel, sizeof rel, "%s/../Resources/Fonts", real);
-    if (!realpath(rel, out)) {
-        out[0] = 0;
-    }
 }
 
 static int slot_of(unsigned cp) {
@@ -294,7 +190,19 @@ static int load_face(FaceSlot *slot, const char *path, int px, int primary) {
     }
     return 1;
 }
+
+static void release_face(FaceSlot *slot) {
+    if (!slot) return;
+    for (int i = 0; i < GLYPHS; i++) free(slot->glyph[i].alpha);
+    if (slot->face) FT_Done_Face(slot->face);
+    memset(slot, 0, sizeof *slot);
+}
 #endif
+
+void typeface_set_path_filter(int (*filter)(const char *, void *), void *context) {
+    g_filter = filter;
+    g_filter_context = context;
+}
 
 int typeface_probe(const char *path) {
 #ifdef OSPI_FREETYPE
@@ -323,7 +231,7 @@ int typeface_init(const char *root) {
     char vol_sys[OSPI_PATH];
     char vol_fonts[OSPI_PATH];
     char home_fonts[PATH_MAX];
-    exe_fonts(bundled);
+    typeface_executable_fonts(bundled, sizeof bundled);
     vol_sys[0] = 0;
     vol_fonts[0] = 0;
     home_fonts[0] = 0;
@@ -348,18 +256,18 @@ int typeface_init(const char *root) {
     char ui_path[PATH_MAX];
     ui_path[0] = 0;
     for (int i = 0; i < 4 && !ui_path[0]; i++) {
-        find_named(prefer[i], ui_path, sizeof ui_path, dirs, nd);
+        typeface_find_named(prefer[i], ui_path, sizeof ui_path, dirs, nd, g_filter, g_filter_context);
     }
     if (!ui_path[0]) {
         const char *local[] = {vol_sys, vol_fonts, bundled, "fonts"};
-        find_named(NULL, ui_path, sizeof ui_path, local, 4);
+        typeface_find_named(NULL, ui_path, sizeof ui_path, local, 4, g_filter, g_filter_context);
     }
     if (!load_face(&g_ui, ui_path, 12, 1)) {
         return 0;
     }
     char body_path[PATH_MAX];
     body_path[0] = 0;
-    find_named("Geneva", body_path, sizeof body_path, dirs, nd);
+    typeface_find_named("Geneva", body_path, sizeof body_path, dirs, nd, g_filter, g_filter_context);
     if (!(body_path[0] && strcmp(body_path, g_ui.path) != 0 && load_face(&g_body, body_path, 12, 0))) {
         g_body.shared = 1;
     } else if (g_body.face && g_body.face->family_name && g_body.face->family_name[0]) {
@@ -371,8 +279,8 @@ int typeface_init(const char *root) {
      * system-provided proprietary face. Separate sizes keep desktop metrics. */
     const char *startup_dirs[] = {bundled, "fonts"};
     char startup_path[PATH_MAX] = {0};
-    if (find_named("ChicagoFLF", startup_path, sizeof startup_path,
-                   startup_dirs, 2)) {
+    if (typeface_find_named("ChicagoFLF", startup_path, sizeof startup_path,
+                            startup_dirs, 2, NULL, NULL)) {
         load_face(&g_startup, startup_path, 38, 0);
         load_face(&g_startup_small, startup_path, 18, 0);
     }
@@ -381,6 +289,35 @@ int typeface_init(const char *root) {
     (void)root;
 #endif
     return 0;
+}
+
+int typeface_reload(const char *root) {
+#ifdef OSPI_FREETYPE
+    if (!g_ready) { typeface_init(root); return g_ready; }
+    FaceSlot old_ui = g_ui, old_body = g_body, old_startup = g_startup;
+    FaceSlot old_startup_small = g_startup_small;
+    char old_label[sizeof g_label];
+    snprintf(old_label, sizeof old_label, "%s", g_label);
+    memset(&g_ui, 0, sizeof g_ui); memset(&g_body, 0, sizeof g_body);
+    memset(&g_startup, 0, sizeof g_startup); memset(&g_startup_small, 0, sizeof g_startup_small);
+    snprintf(g_label, sizeof g_label, "font8x8");
+    g_ready = 0;
+    typeface_init(root);
+    if (!g_ready) {
+        release_face(&g_ui); release_face(&g_body);
+        release_face(&g_startup); release_face(&g_startup_small);
+        g_ui = old_ui; g_body = old_body; g_startup = old_startup;
+        g_startup_small = old_startup_small; g_ready = 1;
+        snprintf(g_label, sizeof g_label, "%s", old_label);
+        return 0;
+    }
+    release_face(&old_ui); release_face(&old_body);
+    release_face(&old_startup); release_face(&old_startup_small);
+    return 1;
+#else
+    (void)root;
+    return 0;
+#endif
 }
 
 int typeface_ready(void) { return g_ready; }

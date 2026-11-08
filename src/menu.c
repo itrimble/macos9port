@@ -68,7 +68,8 @@ static MenuItem k_labels[] = {
 };
 static MenuItem k_panels[] = {
     ITEM("Open Control Panels", CMD_CONTROL_PANELS), SEP,
-    ITEM("Appearance", CMD_APPEARANCE_DESKTOP), ITEM("Finder Preferences", CMD_PREFERENCES),
+    ITEM("Appearance", CMD_APPEARANCE_DESKTOP), ITEM("Font Book 999", CMD_FONT_BOOK),
+    ITEM("Finder Preferences", CMD_PREFERENCES),
 };
 static MenuItem k_recent[2][18];
 static char recent_labels[16][OSPI_PATH];
@@ -113,7 +114,7 @@ static void update_items(Session *s, MenuItem *items, int count) {
         case CMD_MENU_LABELS: case CMD_EDIT_LABELS: yes = 1; break;
         case CMD_MENU_PANELS: case CMD_MENU_RECENT_APPS: case CMD_MENU_RECENT_DOCS: yes = 1; break;
         case CMD_NEW_FOLDER: yes = !w || !w->search_results; break;
-        case CMD_ABOUT: case CMD_CONTROL_PANELS: case CMD_APPEARANCE_DESKTOP: case CMD_INSTALL:
+        case CMD_ABOUT: case CMD_CONTROL_PANELS: case CMD_APPEARANCE_DESKTOP: case CMD_FONT_BOOK: case CMD_INSTALL:
         case CMD_QUIT: case CMD_SHUTDOWN: case CMD_STARTUP_PREVIEW:
         case CMD_HELP: case CMD_HELP_KEYS: case CMD_HELP_STATUS: yes = 1; break;
         case CMD_STARTUP_TOGGLE: yes = 1; checked = s->host_startup_enabled; break;

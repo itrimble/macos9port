@@ -16,6 +16,8 @@
 #include "term.h"
 #include "finder_state.h"
 #include "finder_popup.h"
+#include "font_book.h"
+#include "font_book_window.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -92,7 +94,9 @@ Session *session_create(const char *root) {
     desktop_theme_init(wallpaper_preference);
     int selected = desktop_wallpaper_current();
     menu_wallpaper_page(selected >= 0 ? selected / WALLPAPERS_PER_PAGE : 0);
-    typeface_init(s->root);
+    if (font_book_session_init(s, "fonts", "assets/dashboard") != 0)
+        fprintf(stderr, "OS999: Font Book catalog could not be initialized.\n");
+    if (typeface_ready()) typeface_reload(s->root); else typeface_init(s->root);
     s->ram = host_ram();
     snprintf(s->arch, sizeof s->arch, "%s", host_arch());
     volume_free_bytes(s->root, &s->free_bytes);
@@ -115,6 +119,7 @@ void session_destroy(Session *s) {
         for (int i = 0; i < s->nwin; i++) {
             if (s->win[i].kind == WIN_TERMINAL) terminal_window_close(s, &s->win[i]);
             movie_window_release(&s->win[i]);
+            font_book_window_release(&s->win[i]);
             free(s->win[i].expanded_items);
             free(s->win[i].expanded_text);
         }
@@ -124,6 +129,7 @@ void session_destroy(Session *s) {
     context_close(); appearance_panel_close();
     if (g_media_hooks && g_media_hooks->quit) g_media_hooks->quit(s);
     else if (g_media_hooks && g_media_hooks->close) g_media_hooks->close();
+    font_book_session_shutdown(s);
     desktop_theme_shutdown(); desktop_wallpaper_shutdown(); if (s) { free(s->expanded_undo); free(s->clipboard_large_in); free(s->clipboard_large_out); } free(s);
 }
 

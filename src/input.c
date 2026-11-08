@@ -15,6 +15,7 @@
 #include "appearance_panel.h"
 #include "desktop_context.h"
 #include "movie_window.h"
+#include "font_book_window.h"
 #include "finder_edit.h"
 #include "ospi.h"
 #include "session_int.h"
@@ -29,6 +30,7 @@ void session_wheel(Session *s, int dy) {
         return;
     }
     Window *w = &s->win[s->nwin - 1];
+    if (w->kind == WIN_FONT_BOOK && font_book_window_wheel(w, dy)) return;
     if (w->collapsed) {
         return;
     }
@@ -207,6 +209,9 @@ void session_down(Session *s, int x, int y, int clicks) {
                 return;
             }
             finder_selection_press(s, w, -1);
+        }
+        if (!w->collapsed && w->kind == WIN_FONT_BOOK && rect_has(lay.content, x, y)) {
+            font_book_window_down(s, w, &lay, x, y); s->press_zone = Z_CONTENT; return;
         }
         if (!w->collapsed && w->kind == WIN_TERMINAL) {
             terminal_down(s, w, &lay, x, y, clicks);
@@ -422,6 +427,7 @@ void session_key(Session *s, int key, int mods) {
         return;
     }
     if (finder_edit_key(s, key, mods)) return;
+    if (s->menu < 0 && s->nwin && font_book_window_key(s, &s->win[s->nwin - 1], key, mods)) return;
     if (key >= 'A' && key <= 'Z') key += 'a' - 'A';
     if (context_key(s, key, mods)) return;
     if (menu_navigation_key(s, key, mods)) return;

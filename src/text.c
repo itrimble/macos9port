@@ -1,6 +1,20 @@
 #include "draw.h"
+#include "ospi.h"
+#include "text_system.h"
 
 #include <stddef.h>
+#include <string.h>
+
+static int utf8_advance(const char *text, size_t available) {
+    const unsigned char *s = (const unsigned char *)text;
+    if (!available) return 0;
+    int need = s[0] < 0x80 ? 1 : s[0] >= 0xc2 && s[0] <= 0xdf ? 2 :
+               s[0] >= 0xe0 && s[0] <= 0xef ? 3 :
+               s[0] >= 0xf0 && s[0] <= 0xf4 ? 4 : 0;
+    if (!need || (size_t)need > available) return 0;
+    for (int i = 1; i < need; i++) if ((s[i] & 0xc0u) != 0x80u) return 0;
+    return need;
+}
 
 static int take_line(const char *s, int max_w, int *draw_n, int *advance) {
     if (*s == '\n') {
@@ -10,29 +24,35 @@ static int take_line(const char *s, int max_w, int *draw_n, int *advance) {
     }
     int bytes = 0;
     int width = 0;
-    int last_space = -1;
+    int last_break = -1;
     int limit = max_w < 8 ? 8 : max_w;
+    size_t span = strcspn(s, "\n");
+    if (span >= OSPI_TEXT) span = OSPI_TEXT - 1;
+    uint8_t breaks[OSPI_TEXT];
+    int modern_breaks = span && text_system_breaks(s, span, breaks) == 0;
     while (s[bytes] && s[bytes] != '\n') {
-        int adv = 0;
+        int adv = utf8_advance(s + bytes, span - (size_t)bytes);
+        int legacy_adv = 0;
         int px = 0;
-        if (!typeface_next(1, s + bytes, &adv, &px) || adv <= 0) {
-            break;
-        }
-        if (width + px > limit && bytes > 0) {
-            break;
-        }
-        if (s[bytes] == ' ') {
-            last_space = bytes;
-        }
+        int legacy = typeface_next(1, s + bytes, &legacy_adv, &px);
+        if (!adv) adv = legacy ? legacy_adv : 0;
+        if (adv <= 0) break;
+        if (!legacy || legacy_adv != adv) px = 8;
+        int start = bytes;
+        int modern_width = text_system_width(s, (size_t)(bytes + adv));
+        int candidate_width = modern_width >= 0 ? modern_width : width + px;
+        if (candidate_width > limit && bytes > 0) break;
         bytes += adv;
-        width += px;
+        width = candidate_width;
+        if ((modern_breaks && (size_t)start < span && breaks[start]) || s[start] == ' ')
+            last_break = bytes;
     }
     if (bytes == 0) {
         return 0;
     }
-    if (s[bytes] && s[bytes] != '\n' && last_space > 0) {
-        *draw_n = last_space;
-        *advance = last_space + 1;
+    if (s[bytes] && s[bytes] != '\n' && last_break > 0) {
+        *draw_n = last_break;
+        *advance = last_break;
         return 1;
     }
     *draw_n = bytes;
@@ -71,7 +91,8 @@ void text_draw(void *fb_ptr, int x, int y, int max_w, uint32_t color, const char
             break;
         }
         if (draw_n > 0 && cy + line_height > top) {
-            fb_text_n(fb, x, cy, color, p, draw_n);
+            if (!text_system_draw(fb, x, cy, color, p, (size_t)draw_n))
+                fb_text_n(fb, x, cy, color, p, draw_n);
         }
         p += adv;
         cy += line_height;

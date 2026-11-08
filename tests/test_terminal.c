@@ -364,7 +364,10 @@ static void test_utilities_launcher_and_login_zsh(void) {
     CHECK(volume_builtin_terminal(vol, "Applications/Utilities/Terminal"));
     CHECK(!volume_builtin_terminal(vol, "Documents/Terminal"));
     Item items[8]; int count = volume_list(vol, "Applications/Utilities", items, 8);
-    CHECK(count == 2 && items[0].kind == ITEM_APPLICATION);
+    CHECK(count == 3);
+    CHECK(items[0].kind == ITEM_APPLICATION && !strcmp(items[0].name, "Font Book 999"));
+    CHECK(items[1].kind == ITEM_APPLICATION && !strcmp(items[1].name, "Tailscale"));
+    CHECK(items[2].kind == ITEM_APPLICATION && !strcmp(items[2].name, "Terminal"));
     CHECK(volume_builtin_tailnet(vol, "Applications/Utilities/Tailscale"));
     /* Isolate zsh startup from user configuration while testing rc loading. */
     if (access("/bin/zsh", X_OK)) return;

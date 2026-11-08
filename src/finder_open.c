@@ -5,6 +5,7 @@
 #include "term.h"
 #include "finder_files.h"
 #include "native_launch.h"
+#include "font_book_window.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -59,6 +60,7 @@ void open_item(Session *s, Window *w, int index) {
     }
     if (volume_builtin_tailnet(s->root, rel)) { terminal_tailnet_open(s); return; }
     if (volume_builtin_terminal(s->root, rel)) { terminal_open(s, TERM_MODE_SHELL); return; }
+    if (volume_builtin_font_book(s->root, rel)) { font_book_window_open(s); return; }
     if (session_is_sit(window_items(w)[index].name)) {
         session_open_sit(s, rel);
         return;

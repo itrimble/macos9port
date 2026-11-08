@@ -24,6 +24,7 @@ static const struct {
      "archive formats use a legacy launcher.\n"},
     {"Applications/Utilities/Tailscale", "OS999-BUILTIN:tailscale:1\n"},
     {"Applications/Utilities/Terminal", "OS999-BUILTIN:terminal:1\n"},
+    {"Applications/Utilities/Font Book 999", "OS999-BUILTIN:font-book:1\n"},
     {"Documents/Notes",
      "Notes live here as plain text.\n\n"
      "Double-click a document to read it.\n"},
@@ -142,6 +143,13 @@ int volume_builtin_tailnet(const char *root, const char *rel) {
     char body[64];
     return volume_read(root, rel, body, sizeof body) == 0 &&
            !strcmp(body, "OS999-BUILTIN:tailscale:1\n");
+}
+
+int volume_builtin_font_book(const char *root, const char *rel) {
+    if (!rel || strcmp(rel, "Applications/Utilities/Font Book 999")) return 0;
+    char body[64];
+    return volume_read(root, rel, body, sizeof body) == 0 &&
+           !strcmp(body, "OS999-BUILTIN:font-book:1\n");
 }
 
 int volume_seed(const char *root) {
@@ -268,7 +276,8 @@ static int list_items(const char *root, const char *rel, Item **buffer, int max,
             int fn = rel && rel[0] ? snprintf(file_rel, sizeof file_rel, "%s/%s", rel, de->d_name)
                                    : snprintf(file_rel, sizeof file_rel, "%s", de->d_name);
             int builtin = fn > 0 && (size_t)fn < sizeof file_rel && S_ISREG(st.st_mode) &&
-                          (volume_builtin_terminal(root, file_rel) || volume_builtin_tailnet(root, file_rel));
+                          (volume_builtin_terminal(root, file_rel) || volume_builtin_tailnet(root, file_rel) ||
+                           volume_builtin_font_book(root, file_rel));
             items[n].kind = builtin || (S_ISREG(st.st_mode) && mac_icon_application_at(fd, de->d_name, &items[n])) ?
                             ITEM_APPLICATION : ITEM_FILE;
         }

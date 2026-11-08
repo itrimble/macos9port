@@ -45,8 +45,8 @@ build/test_platform_sandbox_audit: build/runtime/mac_cpu.o build/runtime/mac_res
 test: build/test_appearance build/test_mac_containers build/test_mac_writable_files build/test_mac_controls_textedit build/test_mac_quickdraw_accel build/test_desktop_themes build/test_mac_perf_audio_gates build/test_mac_fuzz_soak build/test_platform_sandbox_audit $(PHASE_STANDALONE_TESTS)
 
 
-build/test_appearance_panel: src/appearance_panel.c tests/test_appearance_panel.c $(HDRS)
-	$(CC) $(CFLAGS) -o $@ src/appearance_panel.c src/draw.c src/font.c src/geom.c src/menu.c src/text.c src/typeface.c src/typeface_metrics.c tests/test_appearance_panel.c $(FT_LIBS) -lm
+build/test_appearance_panel: src/appearance_panel.c tests/test_appearance_panel.c $(TEXT_RENDER_SRC) $(HDRS)
+	$(CC) $(CFLAGS) -o $@ src/appearance_panel.c src/draw.c src/font.c src/geom.c src/menu.c $(TEXT_RENDER_SRC) tests/test_appearance_panel.c $(FT_LIBS) -lm
 
 test: build/test_appearance_panel
 
@@ -92,8 +92,8 @@ build/test_menu_integration: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test
 test: build/test_menu_integration
 
 
-build/test_folder_navigation: src/folder_navigation.c src/geom.c src/font.c src/draw.c src/text.c src/typeface.c src/typeface_metrics.c src/menu.c src/desktop_theme.c src/desktop_wallpaper.c tests/test_folder_navigation.c $(HDRS)
-	$(CC) $(CFLAGS) -o $@ src/folder_navigation.c src/geom.c src/font.c src/draw.c src/text.c src/typeface.c src/typeface_metrics.c src/menu.c src/desktop_theme.c src/desktop_wallpaper.c tests/test_folder_navigation.c $(FT_LIBS) -lm
+build/test_folder_navigation: src/folder_navigation.c src/geom.c src/font.c src/draw.c $(TEXT_RENDER_SRC) src/menu.c src/desktop_theme.c src/desktop_wallpaper.c tests/test_folder_navigation.c $(HDRS)
+	$(CC) $(CFLAGS) -o $@ src/folder_navigation.c src/geom.c src/font.c src/draw.c $(TEXT_RENDER_SRC) src/menu.c src/desktop_theme.c src/desktop_wallpaper.c tests/test_folder_navigation.c $(FT_LIBS) -lm
 
 test: build/test_folder_navigation
 

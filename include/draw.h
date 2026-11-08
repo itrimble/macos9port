@@ -42,6 +42,8 @@ int fb_text_width_n(const char *s, int nbytes);
 void fb_desktop(Fb *fb);
 
 int typeface_init(const char *root);
+int typeface_reload(const char *root);
+void typeface_set_path_filter(int (*filter)(const char *path, void *context), void *context);
 int typeface_ready(void);
 int typeface_startup_ready(void);
 const char *typeface_label(void);
