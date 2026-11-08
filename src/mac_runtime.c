@@ -169,6 +169,7 @@ int mac_runtime_load_segment(MacRuntime *rt, int16_t id) {
 void mac_runtime_destroy(MacRuntime *rt) {
     if (!rt) return;
     mac_heap_detach(rt);
+    mac_resname_destroy(rt);
     mac_time_destroy(rt);
     mac_sound_destroy(rt);
     mac_resource_chain_destroy(rt);

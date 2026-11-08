@@ -193,7 +193,52 @@ static void loaded_resource_guards(void) {
     mac_runtime_destroy(&rt);
 }
 
+static void res_info(MacRuntime *rt, uint32_t h, uint32_t name_at) {
+    start(rt); lng(rt, 0, name_at); lng(rt, 4, name_at + 0x100); lng(rt, 8, name_at + 0x110); lng(rt, 12, h);
+    CHECK(mac_resource_service(rt, 0xa9a8) == 1);
+}
+static int set_info(MacRuntime *rt, uint32_t h, int16_t id, uint32_t name) {
+    start(rt); lng(rt, 0, name); word(rt, 4, (uint16_t)id); lng(rt, 6, h);
+    int served = mac_resource_service(rt, 0xa9a9);
+    if (served == 1) CHECK(mac_cpu_get(rt->cpu, MAC_A7) == SP + 10);
+    return served;
+}
+
+static void set_res_info(void) {
+    uint8_t bytes[END]; MacRuntime rt;
+    CHECK(setup(&rt, bytes, 0x20) == 0);
+    uint32_t h = get(&rt, 0xa9a0, TEXT, 128); CHECK(h != 0);
+    const uint8_t oz[] = {2, 'o', 'z'};
+    memcpy(mac_cpu_ram(rt.cpu) + 0x1000, oz, sizeof oz);
+    res_info(&rt, h, 0x1200);
+    CHECK(mac_cpu_read(rt.cpu, 0x1200, 1) == 4 && memcmp(mac_cpu_ram(rt.cpu) + 0x1201, "Name", 4) == 0);
+    CHECK(set_info(&rt, h, 128, 0x1000) == 1 && error(&rt) == 0);        /* rename at the same ID */
+    res_info(&rt, h, 0x1200);
+    CHECK(mac_cpu_read(rt.cpu, 0x1200, 1) == 2 && memcmp(mac_cpu_ram(rt.cpu) + 0x1201, "oz", 2) == 0);
+    memset(mac_cpu_ram(rt.cpu) + 0x1000, 0xee, 3);                       /* guest edits its copy afterwards */
+    res_info(&rt, h, 0x1200);
+    CHECK(memcmp(mac_cpu_ram(rt.cpu) + 0x1201, "oz", 2) == 0);           /* stored name is unaffected */
+    mac_cpu_ram(rt.cpu)[0x1000] = 0;                                     /* empty name clears to empty */
+    CHECK(set_info(&rt, h, 128, 0x1000) == 1 && error(&rt) == 0);
+    res_info(&rt, h, 0x1200); CHECK(mac_cpu_read(rt.cpu, 0x1200, 1) == 0);
+    CHECK(set_info(&rt, 0x3000, 128, 0x1000) == 1 && error(&rt) == -192);   /* not a resource handle */
+    CHECK(set_info(&rt, h, 129, 0x1000) == -1 && mac_cpu_halted(rt.cpu));    /* ID change: loud, not faked */
+    mac_runtime_destroy(&rt);
+
+    CHECK(setup(&rt, bytes, 0x28) == 0);                                  /* resProtected */
+    h = get(&rt, 0xa9a0, TEXT, 128);
+    CHECK(set_info(&rt, h, 128, 0x1000) == 1 && error(&rt) == -198);
+    mac_runtime_destroy(&rt);
+
+    CHECK(setup(&rt, bytes, 0x20) == 0);
+    h = get(&rt, 0xa9a0, TEXT, 128);
+    mac_cpu_write(rt.cpu, 0xff80, 1, 200);                                /* length runs past RAM */
+    CHECK(set_info(&rt, h, 128, 0xff80) == -1);
+    mac_runtime_destroy(&rt);
+}
+
 int main(void) {
+    set_res_info();
     pictures();
     loaded_resource_guards();
     normal(); failures();

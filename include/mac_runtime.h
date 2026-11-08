@@ -37,6 +37,7 @@ typedef struct {
 } MacWindowState;
 
 typedef struct MacHeapBridge MacHeapBridge;
+struct MacResNames;
 
 typedef struct {
     MacCpu *cpu;
@@ -73,6 +74,7 @@ typedef struct {
     uint32_t vbl_tasks[32], vbl_last_tick, vbl_due[32];
     unsigned vbl_count, vbl_due_count, vbl_due_cursor;
     int vbl_active;
+    struct MacResNames *res_names; /* SetResInfo name overrides (host memory) */
     MacHeapBridge *heap_bridge; /* protected heap over [lo,hi) of guest RAM; NULL = legacy bump only */
     MacHandle handles[MAC_RUNTIME_HANDLES];
     size_t handle_count;
@@ -97,6 +99,10 @@ int mac_memory_service(MacRuntime *rt, uint16_t opcode);
 void mac_memory_result(MacCpu *cpu, int16_t err);
 /* Protected heap (os999_heap) over guest RAM [lo,hi); hi must lie within guest RAM.
  * The legacy bump allocator must not use that window. Detach is idempotent. */
+/* Name overrides for resources renamed by SetResInfo (Pascal strings, length byte first). */
+int mac_resname_set(MacRuntime *rt, uint32_t handle, const uint8_t *pascal);
+const uint8_t *mac_resname_get(const MacRuntime *rt, uint32_t handle);
+void mac_resname_destroy(MacRuntime *rt);
 int mac_heap_attach(MacRuntime *rt, uint32_t lo, uint32_t hi);
 void mac_heap_detach(MacRuntime *rt);
 int mac_heap_owns(const MacRuntime *rt, uint32_t address);
