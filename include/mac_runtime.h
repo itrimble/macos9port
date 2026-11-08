@@ -41,6 +41,11 @@ typedef struct {
     uint16_t palette_updates;
     uint8_t title[256];
     int visible, active, updating, owns_storage;
+    /* 'wctb' overrides applied at creation. Bit n of color_set: part n is overridden (0 content-region background,
+     * 1 window frame, 2 title text); color_rgb[n] holds its 16-bit RGB, matched to the nearest palette entry at draw
+     * time so palette changes (e.g. the gray mode) stay correct. Zero = the native default colors. */
+    uint8_t color_set;
+    uint16_t color_rgb[3][3];
 } MacWindowState;
 
 typedef struct MacHeapBridge MacHeapBridge;
