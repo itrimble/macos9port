@@ -198,7 +198,47 @@ static int get_new_palette(MacRuntime*r,uint32_t sp){
     wr(r,0xa60,2,(uint16_t)err);
     wr(r,sp+2,4,h);mac_cpu_set(r->cpu,MAC_A7,sp+2);return 1;
 }
+/* AnimatePalette(window, srcCTab, srcIndex, dstEntry, dstLength) ($AA9A): the colors of srcCTab entries srcIndex.. replace the
+ * device colors of the window palette's entries dstEntry.., at once, with no redraw. Stack from SP: dstLength, dstEntry,
+ * srcIndex, srcCTab (4), window (4). Only animated entries can change; an entry that is not animated halts by name rather than
+ * being skipped or changed (the interface text here does not say which). The device index of an entry is the one activation
+ * chose (palette_map), which for the explicit and animated entries Castle of Dr. Brain uses is the entry's own index. The
+ * palette's stored colors are left as they are, so activating the palette again restores them: an interpretation, not verified
+ * on real hardware. The window's palette must be the active one. Everything is checked before the first device entry changes. */
+static int animate_palette(MacRuntime*r,uint32_t sp){
+    if(!valid(r,sp,14))return fail(r,"AnimatePalette stack exceeds guest RAM.");
+    int length=(int16_t)rd(r,sp,2),entry=(int16_t)rd(r,sp+2,2),first=(int16_t)rd(r,sp+4,2);
+    uint32_t table=rd(r,sp+6,4);
+    MacWindowState*w=mac_window_find(r,rd(r,sp+10,4));
+    if(!w)return fail(r,"AnimatePalette requires a registered window.");
+    if(!w->palette_handle)return fail(r,"AnimatePalette needs a window that has a palette.");
+    if(r->palette_active!=w->palette_handle)return fail(r,"AnimatePalette needs the window's palette to be the active one.");
+    MacHandle*m=palette(r,w->palette_handle);
+    if(!m)return fail(r,"Window palette association is invalid.");
+    if(length<0 || entry<0 || first<0)return fail(r,"AnimatePalette has a negative index or length.");
+    unsigned n=rd(r,m->pointer,2);
+    if((unsigned)entry+(unsigned)length>n)return fail(r,"AnimatePalette entries exceed the window's palette.");
+    if(length==0){mac_cpu_set(r->cpu,MAC_A7,sp+14);return 1;}
+    MacHandle*t=owned(r,table,8);
+    if(!t)return fail(r,"AnimatePalette source color table is not a valid owned handle.");
+    unsigned last=rd(r,t->pointer+6,2),have=last==65535?0:last+1;
+    if(have>256 || t->size<8+have*8 || (unsigned)first+(unsigned)length>have)return fail(r,"AnimatePalette source entries exceed the color table.");
+    for(int k=0;k<length;k++){
+        uint32_t usage=rd(r,m->pointer+16+16*(entry+k)+6,2);
+        if(!(usage&4))return fail(r,"AnimatePalette on an entry that is not animated is unsupported.");
+    }
+    for(int k=0;k<length;k++){
+        uint32_t c=t->pointer+10+8*(first+k);
+        if(mac_color_set_entry(r,r->palette_map[entry+k],(uint16_t)rd(r,c,2),(uint16_t)rd(r,c+2,2),(uint16_t)rd(r,c+4,2)))
+            return fail(r,"AnimatePalette could not write a device entry.");
+    }
+    mac_cpu_set(r->cpu,MAC_A7,sp+14);return 1;
+}
 int mac_palette_manager_service(MacRuntime *r,uint16_t opcode){
+    if(opcode==0xaa9a){
+        if(mac_cpu_halted(r->cpu))return -1;
+        return animate_palette(r,mac_cpu_get(r->cpu,MAC_A7));
+    }
     if(opcode==0xaaa2){
         if(mac_cpu_halted(r->cpu))return -1;
         return palette_dispatch(r);

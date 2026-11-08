@@ -115,4 +115,66 @@ static void palette_dispatch(void){
  CHECK(mac_palette_manager_service(&r,0xaaa2)==-1 && mac_cpu_halted(r.cpu));
  mac_cpu_destroy(r.cpu);
 }
-int main(void){palette_dispatch();dispatched();successful();failure();associations();puts("mac palette manager object and association tests passed");return 0;}
+/* AnimatePalette ($AA9A). A visible window whose 8-entry palette is explicit and animated (usage 14, as Castle of Dr. Brain's is),
+ * activated; a 4-entry source color table at handle 0x5200. */
+#define ANIM_CT 0x5200u
+static uint32_t dev(unsigned r,unsigned g,unsigned b){return (uint32_t)(r>>8)<<16|(uint32_t)(g>>8)<<8|(b>>8);}
+static MacRuntime animate_rig(uint32_t*window,uint32_t*palette){
+ MacRuntime r=fresh();r.qd_globals=0x7000;CHECK(mac_color_init(&r)==1);
+ mac_cpu_set(r.cpu,MAC_A7,0x8000);CHECK(mac_toolbox_service(&r,0xa912)==1);
+ uint32_t sp=0x8000;wr(&r,0x4000,4,0x00280032);wr(&r,0x4004,4,0x012c01c2);wr(&r,0x4100,1,0);
+ wr(&r,sp,4,0);wr(&r,sp+4,2,0);wr(&r,sp+6,4,0xffffffff);wr(&r,sp+10,2,2);wr(&r,sp+12,2,0x0100);
+ wr(&r,sp+14,4,0x4100);wr(&r,sp+18,4,0x4000);wr(&r,sp+22,4,0);mac_cpu_set(r.cpu,MAC_A7,sp);
+ CHECK(mac_window_service(&r,0xaa45)==1);*window=rd(&r,sp+26,4);
+ CHECK(create(&r,8,0)==1);*palette=rd(&r,0x800a,4);
+ MacWindowState*w=mac_window_find(&r,*window);CHECK(w && w->visible);w->palette_handle=*palette;
+ CHECK(mac_palette_activate(&r,w)==0 && r.palette_active==*palette);
+ wr(&r,ANIM_CT,4,ANIM_CT+0x100);wr(&r,ANIM_CT+0x100+6,2,3);          /* four entries */
+ for(unsigned i=0;i<4;i++){uint32_t e=ANIM_CT+0x100+8+i*8;wr(&r,e,2,i);wr(&r,e+2,2,0x1100*(i+1));wr(&r,e+4,2,0x2200*(i+1));wr(&r,e+6,2,0x3300*(i+1)&0xffff);}
+ r.handles[r.handle_count++]=(MacHandle){.handle=ANIM_CT,.pointer=ANIM_CT+0x100,.size=8+4*8};
+ return r;
+}
+static int animate_call(MacRuntime*r,uint32_t window,uint32_t table,int index,int entry,int length){
+ mac_cpu_set(r->cpu,MAC_A7,0x8000);wr(r,0x8000,2,(uint16_t)length);wr(r,0x8002,2,(uint16_t)entry);wr(r,0x8004,2,(uint16_t)index);wr(r,0x8006,4,table);wr(r,0x800a,4,window);
+ return mac_palette_manager_service(r,0xaa9a);
+}
+static void animate(void){
+ uint32_t window,palette;MacRuntime r=animate_rig(&window,&palette);uint32_t saved[256];memcpy(saved,r.palette,sizeof saved);
+ uint32_t stored[8];for(unsigned i=0;i<8;i++)stored[i]=rd(&r,rd(&r,palette,4)+16+i*16,4);
+ /* Two entries from source entry 1: device entries 3 and 4 take the colors; nothing else on the device changes. */
+ CHECK(animate_call(&r,window,ANIM_CT,1,3,2)==1 && mac_cpu_get(r.cpu,MAC_A7)==0x800e && !mac_cpu_halted(r.cpu));
+ CHECK(r.palette[3]==dev(0x2200,0x4400,0x6600) && r.palette[4]==dev(0x3300,0x6600,0x9900));
+ for(unsigned i=0;i<256;i++)if(i!=3 && i!=4)CHECK(r.palette[i]==saved[i]);
+ {uint32_t ct=rd(&r,r.screen_colors,4);CHECK(rd(&r,ct+10+3*8,2)==0x2200 && rd(&r,ct+12+3*8,2)==0x4400 && rd(&r,ct+14+3*8,2)==0x6600);}   /* the device color table itself */
+ for(unsigned i=0;i<8;i++)CHECK(rd(&r,rd(&r,palette,4)+16+i*16,4)==stored[i]);          /* the palette's own colors are not rewritten */
+ /* The device index is the one activation chose. */
+ r.palette_map[5]=40;CHECK(animate_call(&r,window,ANIM_CT,0,5,1)==1 && r.palette[40]==dev(0x1100,0x2200,0x3300) && r.palette[5]==saved[5]);
+ /* A zero length does nothing and pops; the whole table and the whole palette are reachable. */
+ memcpy(saved,r.palette,sizeof saved);CHECK(animate_call(&r,window,ANIM_CT,0,0,0)==1 && mac_cpu_get(r.cpu,MAC_A7)==0x800e && !memcmp(saved,r.palette,sizeof saved));
+ CHECK(animate_call(&r,window,ANIM_CT,0,4,4)==1 && r.palette[7]==dev(0x4400,0x8800,0xcc00));
+ CHECK(animate_call(&r,window,ANIM_CT,3,7,1)==1 && r.palette[7]==dev(0x4400,0x8800,0xcc00));
+ mac_cpu_destroy(r.cpu);
+ /* Refusals halt and change nothing, including the entries that came before the bad one. */
+ for(unsigned k=0;k<12;k++){
+  MacRuntime q=animate_rig(&window,&palette);uint32_t before[256];memcpy(before,q.palette,sizeof before);uint32_t table=ANIM_CT;int idx=0,ent=2,len=3;uint32_t win=window;
+  if(k==0)wr(&q,rd(&q,palette,4)+16+4*16+6,2,10);                    /* entry 4 is not animated (usage 10) */
+  if(k==1)q.palette_active=0;                                         /* the palette is not the active one */
+  if(k==2)win=0x1234;                                                 /* not a window */
+  if(k==3)len=-1;
+  if(k==4){ent=6;len=3;wr(&q,rd(&q,palette,4)+16+8*16+6,2,14);}      /* past the palette (6+3 > 8), where the next bytes look animated */
+  if(k==5)table=0x6000;                                               /* not an owned handle */
+  if(k==6){idx=2;len=3;}                                              /* past the color table (2+3 > 4) */
+  if(k==7)mac_window_find(&q,window)->palette_handle=0;               /* the window has no palette */
+  if(k==8)ent=-1;
+  if(k==9)idx=-1;
+  if(k==10)q.handles[q.handle_count-1].size=8+2*8;                    /* a truncated color table */
+  int rc;
+  if(k==11){mac_cpu_set(q.cpu,MAC_A7,(uint32_t)mac_cpu_ram_size(q.cpu)-6);rc=mac_palette_manager_service(&q,0xaa9a);}
+  else rc=animate_call(&q,win,table,idx,ent,len);
+  CHECK(rc==-1 && mac_cpu_halted(q.cpu) && !memcmp(before,q.palette,sizeof before));
+  if(k==4)CHECK(strstr(mac_cpu_error(q.cpu),"exceed")!=NULL);
+  if(k==11)CHECK(strstr(mac_cpu_error(q.cpu),"stack")!=NULL);
+  mac_cpu_destroy(q.cpu);
+ }
+}
+int main(void){animate();palette_dispatch();dispatched();successful();failure();associations();puts("mac palette manager object and association tests passed");return 0;}
