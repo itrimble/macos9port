@@ -331,10 +331,10 @@ int mac_files_create_name(MacRuntime *rt, const char *name) {
 
 int mac_files_create(MacRuntime *rt, uint32_t pb) {
     char name[256];
-    int error = mac_files_read_name(rt->cpu, mac_cpu_read(rt->cpu, pb + 18, 4), name, sizeof name);
+    int error = mac_files_pb_name(rt, pb, mac_cpu_read(rt->cpu, pb + 18, 4), name, sizeof name);
     if (error) return error;
     if (!rt->file_state) return -35;
-    if ((error = mac_files_volume_ok(rt->cpu, pb))) return error;
+    if ((error = mac_files_volume_ok_rt(rt, pb))) return error;
     return mac_files_create_name(rt, name);
 }
 
@@ -350,10 +350,10 @@ int mac_files_delete_name(MacRuntime *rt, const char *name) {
 
 int mac_files_delete(MacRuntime *rt, uint32_t pb, int hfs) {
     char name[256];
-    int error = mac_files_read_name(rt->cpu, mac_cpu_read(rt->cpu, pb + 18, 4), name, sizeof name);
+    int error = mac_files_pb_name(rt, pb, mac_cpu_read(rt->cpu, pb + 18, 4), name, sizeof name);
     if (error) return error;
     if (!rt->file_state) return -35;
-    if ((error = mac_files_volume_ok(rt->cpu, pb))) return error;
+    if ((error = mac_files_volume_ok_rt(rt, pb))) return error;
     if (hfs) {
         uint32_t directory = mac_cpu_read(rt->cpu, pb + 48, 4);
         if (directory != 0 && directory != 2) return -120;
@@ -375,11 +375,11 @@ int mac_files_rename_names(MacRuntime *rt, const char *from, const char *to) {
 
 int mac_files_rename(MacRuntime *rt, uint32_t pb) {
     char from[256], to[256];
-    int error = mac_files_read_name(rt->cpu, mac_cpu_read(rt->cpu, pb + 18, 4), from, sizeof from);
+    int error = mac_files_pb_name(rt, pb, mac_cpu_read(rt->cpu, pb + 18, 4), from, sizeof from);
     if (error) return error;
     if (!rt->file_state) return -35;
-    if ((error = mac_files_volume_ok(rt->cpu, pb))) return error;
-    if ((error = mac_files_read_name(rt->cpu, mac_cpu_read(rt->cpu, pb + 28, 4), to, sizeof to))) return error;
+    if ((error = mac_files_volume_ok_rt(rt, pb))) return error;
+    if ((error = mac_files_pb_name(rt, pb, mac_cpu_read(rt->cpu, pb + 28, 4), to, sizeof to))) return error;
     return mac_files_rename_names(rt, from, to);
 }
 

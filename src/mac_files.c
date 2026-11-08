@@ -151,7 +151,8 @@ static int root_info(MacRuntime *rt, uint32_t pb) {
     FileState *s = rt->file_state;
     if (!s) return -35;
     int volume = (int16_t)mac_cpu_read(cpu,pb+22,2);
-    if (volume != 0 && volume != -1) return -35;
+    if (volume != 0 && volume != -1 && !(volume == -2 && rt->system_volume && (int16_t)mac_cpu_read(cpu,pb+28,2) >= 0)) return -35;   /* -2: the System volume's folders are this flat namespace too */
+    if ((int16_t)mac_cpu_read(cpu,pb+28,2) == 0 && mac_files_folder_info(rt,pb)) return 0;   /* a folder made by DirCreate */
     if ((int16_t)mac_cpu_read(cpu,pb+28,2) >= 0) {   /* PBGetCatInfo by index (1..n) or by name: the files of the single directory, as PBHGetFInfo lists them */
         int found = mac_files_hget_info(rt,pb);
         if (!found) mac_cpu_write(cpu,pb+100,4,2);   /* ioFlParID: every file's parent is the volume root (directory ID 2); Glider hands it to FSMakeFSSpec */
@@ -231,9 +232,9 @@ static int open_file(MacRuntime *rt, uint32_t pb) {
     int volume = (int16_t)mac_cpu_read(cpu, pb + 22, 2);
     unsigned permission = mac_cpu_read(cpu, pb + 27, 1);
     char name[256];
-    int error = mac_files_read_name(cpu, mac_cpu_read(cpu, pb + 18, 4), name, sizeof name);
+    int error = mac_files_pb_name(rt, pb, mac_cpu_read(cpu, pb + 18, 4), name, sizeof name);
     if (error) return error;
-    if (!rt->file_state || (volume != 0 && volume != -1)) return -35; /* nsvErr */
+    if (!rt->file_state || (volume != 0 && volume != -1 && mac_files_volume_ok_rt(rt, pb))) return -35; /* nsvErr */
     int ref;
     if ((error = mac_files_open_name(rt, name, permission, &ref))) return error;
     mac_cpu_write(cpu, pb + 24, 2, (uint16_t)ref);
@@ -367,11 +368,12 @@ static int file_service(MacRuntime *rt, uint16_t opcode) {
     MacCpu *cpu = rt->cpu;
     int wd = base == 0xa260;
     unsigned selector = mac_cpu_get(cpu, MAC_D0) & 0xffff;
-    if (wd && selector == 6) {   /* DirCreate: this volume has no folders (flat namespace), which wrgVolTypErr (-123, "not an HFS volume") says; nothing is created */
+    if (wd && selector == 6) {   /* DirCreate: the approximated folder model (mac_files_dircreate.c) */
         uint32_t q = mac_cpu_get(cpu, MAC_A0);
-        if (!(q & 1) && valid(cpu, q, 52)) return result(cpu, q, -123);
+        if (!(q & 1) && valid(cpu, q, 52)) return result(cpu, q, mac_files_dir_create(rt, q));
     }
-    if (wd && selector != 7 && selector != 9 && selector != 0x30) return 0;
+    if (wd && selector != 1 && selector != 2 && selector != 7 && selector != 9 && selector != 0x30) return 0;
+    if (wd && (selector == 1 || selector == 2) && !mac_files_wd_ours(rt, selector, mac_cpu_read(cpu, mac_cpu_get(cpu, MAC_A0) + 48, 4), (int16_t)mac_cpu_read(cpu, mac_cpu_get(cpu, MAC_A0) + 22, 2))) return 0;   /* not one of ours: another service's */
     if (base == 0xa060 && selector != 0x1a) return 0; /* _FSDispatch: only PBOpenDF so far */
     uint32_t pb = mac_cpu_get(cpu, MAC_A0);
     if ((pb & 1) || !valid(cpu, pb, block_size(base, wd, selector))) {
@@ -384,7 +386,7 @@ static int file_service(MacRuntime *rt, uint16_t opcode) {
     case 0xa007: return result(cpu, pb, mac_volume_info_basic(rt, pb, state ? state->directory : -1));
     case 0xa207: return result(cpu, pb, mac_volume_info(rt, pb, state ? state->directory : -1));
     case 0xa260: {
-        int error = selector == 0x30 ? mac_files_get_volparms(rt,pb) : selector == 9 ? root_info(rt,pb) : working_directory(rt,pb);
+        int error = selector == 0x30 ? mac_files_get_volparms(rt,pb) : selector == 9 ? root_info(rt,pb) : selector == 1 || selector == 2 || (selector == 7 && mac_files_wd_folder((int16_t)mac_cpu_read(cpu,pb+22,2))) ? mac_files_wd(rt,pb,selector) : working_directory(rt,pb);
         if (rt->trace) fprintf(stderr, "hfs-dispatch selector=%u volume=%d index=%d dirid=%u name-ptr=%08x error=%d\n",
                                selector, (int16_t)mac_cpu_read(cpu,pb+22,2), (int16_t)mac_cpu_read(cpu,pb+28,2),
                                mac_cpu_read(cpu,pb+48,4), mac_cpu_read(cpu,pb+18,4), error);

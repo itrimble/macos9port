@@ -30,7 +30,7 @@ typedef struct {
 } Spec;
 /* Folders are not real directories: FSpDirCreate hands out an ID from 3 to 66 derived from the folder's name (so it is the same on every launch and needs no table),
  * and a file whose parent is such an ID lives in the one flat namespace under the prefix "d<id>-". Folders cannot nest and are never listed or looked up themselves. */
-enum { FOLDER_FIRST = 3, FOLDER_LAST = 66 };
+enum { FOLDER_FIRST = FOLDER_ID_FIRST, FOLDER_LAST = FOLDER_ID_LAST };
 static int dir_ok(uint32_t d) { return d == ROOT_DIR_ID || (d >= FOLDER_FIRST && d <= FOLDER_LAST); }
 static void set_host(Spec *s, uint32_t dir) {
     s->dir = dir;
@@ -84,7 +84,7 @@ static void write_spec(MacCpu *cpu, uint32_t p, int root, const char *name, uint
 
 /* The volumes a spec may name: the default volume (0), the startup volume (-1) and, when the runtime has its authored System volume, vRefNum -2: its folders
  * (System Folder, Preferences, a program's own folder there) are all the same flat namespace as the rest, which is an approximation. */
-static int vol_ok(const MacRuntime *rt, int vref) { return vref == 0 || vref == -1 || (vref == -2 && rt->system_volume); }
+static int vol_ok(const MacRuntime *rt, int vref) { return vref == 0 || vref == -1 || (vref == -2 && rt->system_volume) || mac_files_wd_folder(vref) != 0; }
 
 /* Decode and validate a guest FSSpec. Never reads outside guest RAM. */
 static int read_spec_ex(MacRuntime *rt, uint32_t p, Spec *out, int folder) {
@@ -124,7 +124,7 @@ static int make_spec(MacRuntime *rt, int vref, uint32_t dir, const char *path, s
         if (!vol_ok(rt, vref)) return -35;
         if (dir != 0 && !dir_ok(dir)) return -120;
         if (n && path[0] == ':') rest = path + 1;
-        eff = dir ? dir : ROOT_DIR_ID;
+        eff = dir ? dir : mac_files_wd_folder(vref) ? mac_files_wd_folder(vref) : ROOT_DIR_ID;
     }
     n -= (size_t)(rest - path);
     out->root = 0;
@@ -301,8 +301,7 @@ static int deferred(MacRuntime *rt, unsigned selector, uint32_t sp) {
         if (spec.root || exists(s, &spec) == 0) return -48;   /* dupFNErr: the name is taken by a file (or is the volume) */
         if (!ram_ok(cpu, out, 4, 1)) return -50;
         if (spec.dir != ROOT_DIR_ID) return -120;                       /* folders do not nest */
-        uint32_t h = 2166136261u; for (const char *c = spec.name; *c; c++) h = (h ^ (uint8_t)*c) * 16777619u;
-        mac_cpu_write(cpu, out, 4, FOLDER_FIRST + h % (FOLDER_LAST - FOLDER_FIRST + 1));
+        mac_cpu_write(cpu, out, 4, mac_files_folder_id(spec.name));
         return 0;
     }
     return unsupported(rt, selector,

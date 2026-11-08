@@ -69,6 +69,61 @@ int main(void) {
         CHECK(seen >= 2 && found_root && !found_folder); }
     CHECK(mac_files_in_folder("d3-x") && mac_files_in_folder("d66-x") && !mac_files_in_folder("d-x") && !mac_files_in_folder("d123-x") && !mac_files_in_folder("dx3-x") && !mac_files_in_folder("data"));
     snprintf(host, sizeof host, "d%u-%s", id, "Slumberland"); CHECK(host_size(saves, host) < 0);
+    /* PBDirCreate (HFSDispatch 6): the same folders. ioNamePtr +18, ioVRefNum +22, ioDirID +48 in (parent) and out (the new folder's ID). */
+    {   const char *nm = "Preferences"; pstr(&rt, NAMEBUF, nm);
+        #define DIRCREATE(vref, parent, ptr) (memset(mac_cpu_ram(rt.cpu) + PB, 0, 128), w32(&rt, PB + 18, (ptr)), w16(&rt, PB + 22, (uint16_t)(vref)), w32(&rt, PB + 48, (parent)), \
+            mac_cpu_set(rt.cpu, MAC_A0, PB), mac_cpu_set(rt.cpu, MAC_D0, 6), mac_file_service(&rt, 0xa260), (int16_t)mac_cpu_read(rt.cpu, PB + 16, 2))
+        CHECK(DIRCREATE(-2, 2, NAMEBUF) == 0 && mac_cpu_read(rt.cpu, PB + 48, 4) == mac_files_folder_id("Preferences") && mac_cpu_read(rt.cpu, PB + 48, 4) >= 3 && mac_cpu_read(rt.cpu, PB + 48, 4) <= 66);
+        uint32_t pid = mac_cpu_read(rt.cpu, PB + 48, 4);
+        CHECK(DIRCREATE(0, 0, NAMEBUF) == 0 && mac_cpu_read(rt.cpu, PB + 48, 4) == pid);                       /* default volume, parent 0 = root; same ID again */
+        spec_of(&rt, SPEC, -1, pid, "Prefs file"); CHECK(create(&rt, SPEC, 0x74747874, 0x54455854) == 0 && make(&rt, -1, pid, "Prefs file", SPEC2) == 0);   /* the ID is usable as a parent */
+        CHECK(DIRCREATE(5, 2, NAMEBUF) == -35 && DIRCREATE(-2, 3, NAMEBUF) == -120 && DIRCREATE(-2, 99, NAMEBUF) == -120);
+        pstr(&rt, NAMEBUF, "Game Data"); CHECK(DIRCREATE(-1, 2, NAMEBUF) == -48);                                  /* a file holds the name */
+        pstr(&rt, NAMEBUF, "bad:name"); CHECK(DIRCREATE(-1, 2, NAMEBUF) == -37);
+        pstr(&rt, NAMEBUF, "a/b"); CHECK(DIRCREATE(-1, 2, NAMEBUF) == -37);
+        pstr(&rt, NAMEBUF, ""); CHECK(DIRCREATE(-1, 2, NAMEBUF) == -37);
+        pstr(&rt, NAMEBUF, "this folder name is far too long!"); CHECK(DIRCREATE(-1, 2, NAMEBUF) == -37);
+        pstr(&rt, NAMEBUF, "G-PRO Scores \xc4"); CHECK(DIRCREATE(-2, 2, NAMEBUF) == 0);                          /* Mac Roman characters are fine in a folder name */
+        CHECK(DIRCREATE(-1, 2, 0) == -50 && DIRCREATE(-1, 2, 0x1000000 - 2) == -50);                              /* bad name pointers */
+        mac_cpu_ram(rt.cpu)[NAMEBUF] = 200; CHECK(DIRCREATE(-1, 2, NAMEBUF) == -37 || DIRCREATE(-1, 2, NAMEBUF) == -50);   /* a length byte that is no name */
+        MacRuntime bare = fresh(); bare.system_volume = NULL; CHECK(mac_files_root(&bare, data) == 0); pstr(&bare, NAMEBUF, "x"); w32(&bare, PB + 18, NAMEBUF);
+        mac_cpu_set(bare.cpu, MAC_A0, PB); mac_cpu_set(bare.cpu, MAC_D0, 6); w16(&bare, PB + 22, 0xfffe); CHECK(mac_file_service(&bare, 0xa260) == 1 && (int16_t)mac_cpu_read(bare.cpu, PB + 16, 2) == -46);   /* no overlay */
+        mac_cpu_destroy(bare.cpu);
+        /* PBGetCatInfo by name of a made folder: a directory record; a file of the name wins; an unmade folder is not found. */
+        #define PBCALL(op, sel, vref, parent, ptr) (memset(mac_cpu_ram(rt.cpu) + PB, 0, 128), w32(&rt, PB + 18, (ptr)), w16(&rt, PB + 22, (uint16_t)(vref)), w32(&rt, PB + 48, (parent)), \
+            mac_cpu_set(rt.cpu, MAC_A0, PB), mac_cpu_set(rt.cpu, MAC_D0, (sel)), mac_file_service(&rt, (op)), (int16_t)mac_cpu_read(rt.cpu, PB + 16, 2))
+        pstr(&rt, NAMEBUF, "Preferences");
+        CHECK(PBCALL(0xa260, 9, -2, 0, NAMEBUF) == 0 && mac_cpu_read(rt.cpu, PB + 30, 1) == 0x10 && mac_cpu_read(rt.cpu, PB + 48, 4) == pid && mac_cpu_read(rt.cpu, PB + 100, 4) == 2);
+        CHECK(PBCALL(0xa260, 9, -1, 2, NAMEBUF) == 0 && mac_cpu_read(rt.cpu, PB + 30, 1) == 0x10);
+        pstr(&rt, NAMEBUF, "Never made"); CHECK(PBCALL(0xa260, 9, -2, 0, NAMEBUF) == -43);
+        pstr(&rt, NAMEBUF, "Game Data"); CHECK(PBCALL(0xa260, 9, -2, 0, NAMEBUF) == 0 && mac_cpu_read(rt.cpu, PB + 30, 1) != 0x10);   /* a file */
+        pstr(&rt, NAMEBUF, "Preferences"); CHECK(PBCALL(0xa260, 9, -2, 33, NAMEBUF) != 0 || mac_cpu_read(rt.cpu, PB + 30, 1) != 0x10);   /* another parent: not this folder */
+        pstr(&rt, NAMEBUF, "Both"); CHECK(DIRCREATE(-2, 2, NAMEBUF) == 0 && PBCALL(0xa260, 9, -2, 0, NAMEBUF) == 0 && mac_cpu_read(rt.cpu, PB + 30, 1) == 0x10);
+        CHECK(PBCALL(0xa008, 0, 0, 0, NAMEBUF) == 0 && PBCALL(0xa260, 9, -2, 0, NAMEBUF) == 0 && mac_cpu_read(rt.cpu, PB + 30, 1) != 0x10);   /* a file made later with the folder's name wins the lookup */
+        /* Working directories: PBOpenWD (1) gives -(100 + id), PBGetWDInfo (7) and PBCloseWD (2) take it back; unmade folders and bad IDs are refused. */
+        w32(&rt, PB + 28, 0);
+        CHECK(PBCALL(0xa260, 1, -2, pid, 0) == 0 && (int16_t)mac_cpu_read(rt.cpu, PB + 22, 2) == -(int)(100 + pid));
+        int wdref = (int16_t)mac_cpu_read(rt.cpu, PB + 22, 2);
+        CHECK(PBCALL(0xa260, 7, wdref, 0, 0) == 0 && mac_cpu_read(rt.cpu, PB + 48, 4) == pid);
+        CHECK(PBCALL(0xa260, 2, wdref, 0, 0) == 0);
+        { uint32_t other = pid == 3 ? 4 : 3; CHECK(PBCALL(0xa260, 1, -2, other, 0) == -120 && PBCALL(0xa260, 7, -(int)(100 + other), 0, 0) == -51); }
+                CHECK(PBCALL(0xa260, 1, 5, pid, 0) == -35);
+        PBCALL(0xa260, 1, -2, 100, 0); mac_cpu_set(rt.cpu, MAC_A0, PB); mac_cpu_set(rt.cpu, MAC_D0, 1); CHECK(mac_file_service(&rt, 0xa260) == 0);   /* an ID that is no folder is not ours: another service answers */
+        /* Files through the WD reference: created, found, opened in the folder (host name d<id>-name), not in the root; an unmade WD is an unknown volume. */
+        pstr(&rt, NAMEBUF, "Glider Prefs");
+        CHECK(PBCALL(0xa008, 0, wdref, 0, NAMEBUF) == 0);
+        char hn[48]; snprintf(hn, sizeof hn, "d%u-Glider Prefs", pid);
+        CHECK(host_size(saves, hn) == 0 && host_size(saves, "Glider Prefs") < 0);
+        CHECK(PBCALL(0xa000, 0, wdref, 0, NAMEBUF) == 0 && (int16_t)mac_cpu_read(rt.cpu, PB + 24, 2) >= 128);
+        int wref = (int16_t)mac_cpu_read(rt.cpu, PB + 24, 2); CHECK(pb_call(&rt, 0xa001, wref, 0, 0, 0) == 0);
+        CHECK(PBCALL(0xa000, 0, 0, 0, NAMEBUF) == -43);                                                         /* not in the root */
+        CHECK(PBCALL(0xa008, 0, -(int)(100 + (pid == 3 ? 4 : 3)), 0, NAMEBUF) == -35);                           /* a WD that was never opened */
+        CHECK(make(&rt, wdref, 0, "Glider Prefs", SPEC) == 0 && spec_is(&rt, SPEC, -1, pid, "Glider Prefs"));       /* FSMakeFSSpec with the WD reference: the name is in the folder */
+        CHECK(make(&rt, -(int)(100 + (pid == 3 ? 4 : 3)), 0, "Glider Prefs", SPEC) == -43);   /* a WD range value of an unmade folder: just not found */
+        CHECK(PBCALL(0xa009, 0, wdref, 0, NAMEBUF) == 0 && host_size(saves, hn) < 0);                           /* delete inside the folder */
+        #undef PBCALL
+        #undef DIRCREATE
+    }
     mac_cpu_destroy(rt.cpu);
     printf("FSSpec folders: %s\n", failures ? "FAILED" : "ok");
     return failures != 0;

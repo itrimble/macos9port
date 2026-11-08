@@ -124,10 +124,10 @@ int main(void) {
     CHECK(mac_cpu_read(rt.cpu,PB+48,4)==0x12345678);
     CHECK(wd(&rt,0,0,0,0,1)==-50);
     mac_cpu_set(rt.cpu,MAC_D0,8); CHECK(mac_file_service(&rt,0xa260)==0);
-    /* DirCreate (selector 6): the volume has no folders; refused with wrgVolTypErr and nothing appears on the host */
+    /* DirCreate (selector 6): without a save overlay no folder can be made (wPrErr -46); with one see test_mac_fsspec_folders; nothing ever appears on the host */
     memcpy(mac_cpu_ram(rt.cpu)+0x300,"\005Prefs",6);put(&rt,18,4,0x300);put(&rt,22,2,0);put(&rt,48,4,0);mac_cpu_set(rt.cpu,MAC_D0,6);
-    CHECK(call(&rt,0xa260)==-123);{char made[1024];snprintf(made,sizeof made,"%s/Prefs",root);CHECK(access(made,F_OK)!=0);}
-    put(&rt,22,2,0);mac_cpu_set(rt.cpu,MAC_D0,6);CHECK(call(&rt,0xa260)==-123);                                   /* again: still refused, still nothing */
+    CHECK(call(&rt,0xa260)==-46);{char made[1024];snprintf(made,sizeof made,"%s/Prefs",root);CHECK(access(made,F_OK)!=0);}
+    put(&rt,22,2,0);mac_cpu_set(rt.cpu,MAC_D0,6);CHECK(call(&rt,0xa260)==-46);                                   /* again: still refused, still nothing */
     struct stat root_st;CHECK(stat(root,&root_st)==0);
     CHECK(cat(&rt,-1,-1,2,NAME)==0);
     CHECK(mac_cpu_read(rt.cpu,PB+30,1)==0x10);
