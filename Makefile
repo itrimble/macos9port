@@ -97,7 +97,7 @@ RUNTIME += src/mac_numconv.c src/mac_help.c src/mac_appleevents.c
 RUNTIME += src/mac_sound.c src/mac_sound_render.c
 RUNTIME += src/mac_sound_double.c
 RUNTIME += src/mac_sound_resample.c
-RUNTIME += src/mac_time.c src/mac_delay.c src/mac_guestcall.c src/mac_ditl.c src/mac_stdfile_list.c src/mac_window_inval.c src/mac_random.c src/mac_text_state.c src/mac_font.c src/mac_text.c src/mac_textedit.c src/mac_appfork.c src/mac_dialog_draw.c src/mac_alert.c src/mac_stdfile.c src/mac_stdfile_draw.c
+RUNTIME += src/mac_time.c src/mac_delay.c src/mac_guestcall.c src/mac_ditl.c src/mac_stdfile_list.c src/mac_window_inval.c src/mac_random.c src/mac_text_state.c src/mac_font.c src/mac_text.c src/mac_textedit.c src/mac_rgn.c src/mac_appfork.c src/mac_dialog_draw.c src/mac_alert.c src/mac_stdfile.c src/mac_stdfile_draw.c
 RUNTIME += src/mac_files_write.c src/mac_files_info.c src/mac_fsspec.c
 RUNTIME_HDRS += include/mac_files_int.h
 RUNTIME_HDRS += include/mac_time.h
@@ -352,6 +352,8 @@ build/test_mac_text: $(RUNTIME_OBJ) tests/test_mac_text.c $(RUNTIME_HDRS) $(CPUO
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_text.c $(CPUOBJ) -lm -o $@
 build/test_mac_textedit: $(RUNTIME_OBJ) tests/test_mac_textedit.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_textedit.c $(CPUOBJ) -lm -o $@
+build/test_mac_rgn: $(RUNTIME_OBJ) tests/test_mac_rgn.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_rgn.c $(CPUOBJ) -lm -o $@
 build/test_mac_window_inval: $(RUNTIME_OBJ) tests/test_mac_window_inval.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_window_inval.c $(CPUOBJ) -lm -o $@
 build/test_mac_menu_setitem: $(RUNTIME_OBJ) tests/test_mac_menu_setitem.c $(RUNTIME_HDRS) $(CPUOBJ)
@@ -384,7 +386,7 @@ build/test_mac_system_volume: $(RUNTIME_OBJ) tests/test_mac_system_volume.c $(RU
 build/test_mac_regions: $(RUNTIME_OBJ) tests/test_mac_regions.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_regions.c $(CPUOBJ) -lm -o $@
 
-test: build/test_mac_menu_records build/test_mac_multi_window build/test_mac_window_resource build/test_mac_paintbehind build/test_mac_menu build/test_mac_drive_queue build/test_mac_reservation build/test_mac_color_pen build/test_mac_system_volume build/test_mac_regions build/test_mac_window build/test_mac_window_nogrow build/test_mac_clock_globals build/test_mac_random build/test_mac_supervisor build/test_mac_text_state build/test_mac_text build/test_mac_textedit build/test_mac_window_inval build/test_mac_menu_setitem build/test_mac_volume build/test_mac_pixels build/test_mac_pixmap build/test_mac_vbl
+test: build/test_mac_menu_records build/test_mac_multi_window build/test_mac_window_resource build/test_mac_paintbehind build/test_mac_menu build/test_mac_drive_queue build/test_mac_reservation build/test_mac_color_pen build/test_mac_system_volume build/test_mac_regions build/test_mac_window build/test_mac_window_nogrow build/test_mac_clock_globals build/test_mac_random build/test_mac_supervisor build/test_mac_text_state build/test_mac_text build/test_mac_textedit build/test_mac_rgn build/test_mac_window_inval build/test_mac_menu_setitem build/test_mac_volume build/test_mac_pixels build/test_mac_pixmap build/test_mac_vbl
 
 build/test_mac_video_config: $(RUNTIME_OBJ) tests/test_mac_video_config.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_video_config.c $(CPUOBJ) -lm -o $@
@@ -544,6 +546,7 @@ test: build/test_os999_startup build/test_ospi build/test_archive_install build/
 	./build/test_mac_text_state
 	./build/test_mac_text
 	./build/test_mac_textedit
+	./build/test_mac_rgn
 	./build/test_mac_window_inval
 	./build/test_mac_regions
 	./build/test_mac_system_volume
