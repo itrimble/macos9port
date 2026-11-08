@@ -2,6 +2,7 @@
 
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -12,7 +13,7 @@ static int fails;
 #define PG ((size_t)sysconf(_SC_PAGESIZE))
 
 static Os999Space *make(size_t init, size_t chunk, size_t max, size_t handles) {
-    Os999Config c = {init, chunk, max, handles};
+    Os999Config c = {.initial_commit = init, .grow_chunk = chunk, .max_bytes = max, .max_handles = handles};
     Os999Space *s = os999_space_create(&c);
     CHECK(s != NULL);
     return s;
@@ -76,8 +77,8 @@ static void limits(void) {
     CHECK(os999_new_handle(h, 8, &hs[4]) == OS999_OK);
     os999_space_destroy(s);
 
-    CHECK(os999_space_create(&(Os999Config){PG * 8, PG, PG * 4, 0}) == NULL);  /* init > max */
-    CHECK(os999_space_create(&(Os999Config){0, 0, 0, 0}) == NULL);
+    CHECK(os999_space_create(&(Os999Config){.initial_commit = PG * 8, .grow_chunk = PG, .max_bytes = PG * 4}) == NULL);  /* init > max */
+    CHECK(os999_space_create(&(Os999Config){0}) == NULL);
 }
 
 static void auto_grow(void) {
@@ -308,6 +309,44 @@ static void hardware_fault(void) {
     os999_space_destroy(s);
 }
 
+static struct { uint32_t handle, addr; int calls; } moved;
+static void on_move(void *u, uint32_t handle, uint32_t addr) { (void)u; moved.handle = handle; moved.addr = addr; moved.calls++; }
+
+static void external_memory(void) {
+    enum { SIZE = 64 * 1024, GB = 0x400000 };
+    uint8_t *ram = calloc(SIZE + 64, 1);
+    CHECK(ram != NULL); if (!ram) return;
+    for (int i = 0; i < 64; i++) ram[SIZE + i] = 0xee;            /* canary past the region */
+    Os999Config c = {.initial_commit = 4096, .grow_chunk = 4096, .ext_base = ram, .ext_size = SIZE,
+                     .guest_base = GB, .on_move = on_move};
+    size_t spaces0 = os999_live_spaces(), reserved0 = os999_reserved_bytes();
+    Os999Space *s = os999_space_create(&c);
+    CHECK(s != NULL); if (!s) { free(ram); return; }
+    CHECK(os999_reserved_bytes() == reserved0);                   /* nothing mapped by us */
+    Os999Heap *h = os999_space_heap(s);
+    uint32_t a, b, addr, sz;
+    CHECK(os999_new_handle(h, 100, &a) == OS999_OK && os999_new_handle(h, 100, &b) == OS999_OK);
+    CHECK(os999_deref(h, a, &addr) == OS999_OK && addr == GB);
+    fill(s, addr, 100, 5);
+    CHECK(ram[0] == 5 && ram[99] == (uint8_t)(5 + 99));           /* lives in caller memory */
+    uint32_t p; CHECK(os999_new_ptr(h, 50, &p) == OS999_OK);
+    CHECK(os999_ptr_size(h, p, &sz) == OS999_OK && sz == 50);
+    CHECK(os999_ptr_size(h, p + 8, &sz) == OS999_ERR_NILHANDLE);
+    CHECK(os999_ptr_size(h, GB - 1, &sz) == OS999_ERR_NILHANDLE);
+    CHECK(os999_dispose_handle(h, a) == OS999_OK);
+    memset(&moved, 0, sizeof moved);
+    CHECK(os999_compact_step(h, SIZE_MAX) > 0);                   /* b slides down, callback fires */
+    CHECK(moved.calls == 1 && moved.handle == b && moved.addr == GB);
+    Os999Stats st; os999_heap_stats(h, &st);
+    CHECK(st.largest_alloc == SIZE - (p - GB) - 56);              /* tail after pinned p, incl. uncommitted */
+    CHECK(os999_new_handle(h, SIZE, &a) == OS999_ERR_MEMFULL);    /* ceiling is the region */
+    CHECK(os999_translate(s, GB + SIZE, 1, 0) == NULL);           /* region end is a fault */
+    for (int i = 0; i < 64; i++) CHECK(ram[SIZE + i] == 0xee);    /* never wrote past it */
+    os999_space_destroy(s);
+    CHECK(os999_live_spaces() == spaces0);
+    free(ram);
+}
+
 static uint32_t rng = 12345;
 static uint32_t rnd(void) { return rng = rng * 1664525u + 1013904223u; }
 
@@ -352,7 +391,7 @@ static void stress(void) {
 int main(void) {
     size_t spaces0 = os999_live_spaces(), bytes0 = os999_reserved_bytes();
     basics(); limits(); auto_grow(); boundaries(); handles(); resize_and_lock();
-    defragmentation(); fault_containment(); hardware_fault(); stress();
+    defragmentation(); external_memory(); fault_containment(); hardware_fault(); stress();
     CHECK(os999_live_spaces() == spaces0 && os999_reserved_bytes() == bytes0);
     if (fails) { fprintf(stderr, "%d failure(s)\n", fails); return 1; }
     puts("os999 heap: all checks passed");

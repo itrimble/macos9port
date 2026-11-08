@@ -84,6 +84,10 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
     rt->jump_size = length;
     rt->heap_next = 0x100000;
     rt->heap_limit = 0x700000;
+    /* Upper half of the old fixed heap becomes the auto-growing protected heap;
+     * the bump allocator keeps [0x100000, 0x400000) for runtime-internal records. */
+    if (mac_heap_attach(rt, 0x400000, 0x700000)) return fail(rt, err, n, "Could not create the protected guest heap.");
+    rt->heap_limit = 0x400000;
     rt->stack_base = rt->a5 - below;
     rt->screen_base = 0xe00000;
     rt->screen_width = 640;
@@ -122,7 +126,7 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
     mac_cpu_write(rt->cpu, 0x15a, 2, 0x0607); /* Guest compatibility profile, not host OS. */
     mac_cpu_write(rt->cpu, 0x12f, 1, 2); /* 68020 */
     mac_cpu_write(rt->cpu, 0x108, 4, 0x800000); /* Guest MemTop */
-    mac_cpu_write(rt->cpu, 0x130, 4, rt->heap_limit); /* ApplLimit */
+    mac_cpu_write(rt->cpu, 0x130, 4, rt->heap_bridge ? 0x700000 : rt->heap_limit); /* ApplLimit */
     rt->system_volume = mac_system_volume_create(rt);
     if (!rt->system_volume) return fail(rt, err, n, "Could not create authored System volume.");
     if (mac_drive_mount(rt, 2, 1)) return fail(rt, err, n, "Could not mount authored System drive.");
@@ -156,6 +160,7 @@ int mac_runtime_load_segment(MacRuntime *rt, int16_t id) {
 
 void mac_runtime_destroy(MacRuntime *rt) {
     if (!rt) return;
+    mac_heap_detach(rt);
     mac_time_destroy(rt);
     mac_sound_destroy(rt);
     mac_resource_chain_destroy(rt);

@@ -21,6 +21,8 @@ static void result(MacCpu *cpu, int16_t err) {
     mac_cpu_set(cpu, MAC_SR, sr | (err < 0 ? 8u : err == 0 ? 4u : 0u));
 }
 
+void mac_memory_result(MacCpu *cpu, int16_t err) { result(cpu, err); }
+
 static MacHandle *slot(MacRuntime *rt) {
     for (size_t i = 0; i < rt->handle_count; i++)
         if (!rt->handles[i].handle && !rt->handles[i].pointer) return &rt->handles[i];
@@ -75,6 +77,7 @@ static int move_high(MacRuntime *rt, uint32_t address) {
 
 int mac_memory_service(MacRuntime *rt, uint16_t opcode) {
     if (opcode >= 0xa800) return 0;
+    if (rt->heap_bridge) { int served = mac_heap_service(rt, opcode); if (served) return served; }
     MacCpu *cpu = rt->cpu;
     uint32_t a0 = mac_cpu_get(cpu, MAC_A0), d0 = mac_cpu_get(cpu, MAC_D0);
     unsigned call = opcode & 0xff;

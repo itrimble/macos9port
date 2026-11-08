@@ -36,6 +36,8 @@ typedef struct {
     int visible, active, updating, owns_storage;
 } MacWindowState;
 
+typedef struct MacHeapBridge MacHeapBridge;
+
 typedef struct {
     MacCpu *cpu;
     MacResourceFork fork;
@@ -71,6 +73,7 @@ typedef struct {
     uint32_t vbl_tasks[32], vbl_last_tick, vbl_due[32];
     unsigned vbl_count, vbl_due_count, vbl_due_cursor;
     int vbl_active;
+    MacHeapBridge *heap_bridge; /* protected heap over [lo,hi) of guest RAM; NULL = legacy bump only */
     MacHandle handles[MAC_RUNTIME_HANDLES];
     size_t handle_count;
     MacWindowState window;
@@ -91,6 +94,13 @@ uint32_t mac_runtime_alloc(MacRuntime *rt, uint32_t size);
 uint32_t mac_runtime_resource(MacRuntime *rt, uint32_t type, int16_t id);
 int mac_runtime_trap(MacCpu *cpu, uint16_t opcode, uint32_t pc, void *user);
 int mac_memory_service(MacRuntime *rt, uint16_t opcode);
+void mac_memory_result(MacCpu *cpu, int16_t err);
+/* Protected heap (os999_heap) over guest RAM [lo,hi); hi must lie within guest RAM.
+ * The legacy bump allocator must not use that window. Detach is idempotent. */
+int mac_heap_attach(MacRuntime *rt, uint32_t lo, uint32_t hi);
+void mac_heap_detach(MacRuntime *rt);
+int mac_heap_owns(const MacRuntime *rt, uint32_t address);
+int mac_heap_service(MacRuntime *rt, uint16_t opcode);
 int mac_resource_service(MacRuntime *rt, uint16_t opcode);
 int mac_runtime_load_segment(MacRuntime *rt, int16_t id);
 void mac_traps_init(MacRuntime *rt);

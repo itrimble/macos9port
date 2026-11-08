@@ -24,6 +24,10 @@ struct Os999Heap {
     uint32_t *order, *freelist; /* order: live entry indices sorted by offset */
     size_t ecount, ecap, nlive, nfree;
     size_t compactions, grows;
+    uint32_t guest_base;
+    int external;
+    void (*on_move)(void *, uint32_t, uint32_t);
+    void *on_move_user;
 };
 
 struct Os999Space {
@@ -50,34 +54,43 @@ Os999Config os999_default_config(void) {
 
 Os999Space *os999_space_create(const Os999Config *cfg_in) {
     Os999Config cfg = cfg_in ? *cfg_in : os999_default_config();
-    size_t pg = page_size();
-    if (!cfg.max_bytes || cfg.max_bytes > UINT32_MAX - OS999_GUEST_BASE) return NULL;
+    int ext = cfg.ext_base != NULL;
+    size_t pg = ext ? ALIGN : page_size();
+    uint32_t gb = cfg.guest_base ? cfg.guest_base : OS999_GUEST_BASE;
+    if (ext) cfg.max_bytes = cfg.ext_size;
+    if (!cfg.max_bytes || cfg.max_bytes > UINT32_MAX - gb) return NULL;
     if (!cfg.grow_chunk) cfg.grow_chunk = 64 * 1024;
     cfg.grow_chunk = round_up(cfg.grow_chunk, pg);
     size_t max = cfg.max_bytes / pg * pg;
     size_t init = round_up(cfg.initial_commit ? cfg.initial_commit : cfg.grow_chunk, pg);
+    if (ext && init > max) init = max;
     if (!max || init > max) return NULL;
     size_t maxh = cfg.max_handles ? cfg.max_handles : 65536;
     if (maxh > HARD_MAX_HANDLES) maxh = HARD_MAX_HANDLES;
 
     Os999Space *s = calloc(1, sizeof *s);
     if (!s) return NULL;
-    void *m = mmap(NULL, max, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
-    if (m == MAP_FAILED) { free(s); return NULL; }
-    if (mprotect(m, init, PROT_READ | PROT_WRITE) != 0) { munmap(m, max); free(s); return NULL; }
+    void *m = cfg.ext_base;
+    if (!ext) {
+        m = mmap(NULL, max, PROT_NONE, MAP_PRIVATE | MAP_ANON, -1, 0);
+        if (m == MAP_FAILED) { free(s); return NULL; }
+        if (mprotect(m, init, PROT_READ | PROT_WRITE) != 0) { munmap(m, max); free(s); return NULL; }
+    }
     s->heap = (Os999Heap){.base = m, .committed = init, .max_bytes = max,
-                          .grow_chunk = cfg.grow_chunk, .max_handles = maxh};
+                          .grow_chunk = cfg.grow_chunk, .max_handles = maxh,
+                          .guest_base = gb, .external = ext,
+                          .on_move = cfg.on_move, .on_move_user = cfg.on_move_user};
     s->state = OS999_SPACE_ALIVE;
-    s->reserved = max;
+    s->reserved = ext ? 0 : max;
     __atomic_add_fetch(&g_live_spaces, 1, __ATOMIC_RELAXED);
-    __atomic_add_fetch(&g_reserved, max, __ATOMIC_RELAXED);
+    __atomic_add_fetch(&g_reserved, s->reserved, __ATOMIC_RELAXED);
     return s;
 }
 
 void os999_space_terminate(Os999Space *s) {
     if (!s || !s->heap.base) return;
     Os999Heap *h = &s->heap;
-    munmap(h->base, h->max_bytes);
+    if (!h->external) munmap(h->base, h->max_bytes);
     free(h->e); free(h->order); free(h->freelist);
     *h = (Os999Heap){0}; /* base == NULL: every heap call now reports DEAD */
     if (s->state == OS999_SPACE_ALIVE) s->state = OS999_SPACE_TERMINATED;
@@ -142,13 +155,20 @@ static int grow(Os999Heap *h, uint32_t alen) {
     size_t target = round_up(need, h->grow_chunk);
     if (target > h->max_bytes) target = h->max_bytes;
     if (target <= h->committed) return 1;
-    if (mprotect(h->base + h->committed, target - h->committed, PROT_READ | PROT_WRITE) != 0) return 0;
+    if (!h->external &&
+        mprotect(h->base + h->committed, target - h->committed, PROT_READ | PROT_WRITE) != 0) return 0;
     h->committed = target;
     h->grows++;
     return 1;
 }
 
 static void zero(Os999Heap *h, size_t from, size_t to) { if (to > from) memset(h->base + from, 0, to - from); }
+
+static void notify_move(Os999Heap *h, const Entry *e) {
+    if (h->on_move && !e->fixed)
+        h->on_move(h->on_move_user, ((uint32_t)e->gen << IDX_BITS) | (uint32_t)((e - h->e) + 1),
+                   h->guest_base + e->off);
+}
 
 size_t os999_compact_step(Os999Heap *h, size_t budget) {
     if (!h || !h->base) return 0;
@@ -161,6 +181,7 @@ size_t os999_compact_step(Os999Heap *h, size_t budget) {
             memmove(h->base + prev, h->base + old, e->alen);
             zero(h, (size_t)prev + e->alen > old ? (size_t)prev + e->alen : old, (size_t)old + e->alen);
             e->off = prev;
+            notify_move(h, e);
             moved += e->alen;
             if (moved >= budget) break;
         }
@@ -213,6 +234,7 @@ static int new_block(Os999Heap *h, uint32_t size, int fixed, uint32_t *idx_out) 
     }
     rc = reserve(h, alen, &off, &pos);
     if (rc) { h->e[idx].used = 0; h->freelist[h->nfree++] = idx; return rc; }
+    zero(h, off, (size_t)off + alen); /* never trust free space: a guest may write through stale pointers */
     Entry *e = &h->e[idx];
     *e = (Entry){.off = off, .size = size, .alen = alen, .gen = e->gen, .used = 1, .fixed = (uint8_t)fixed};
     memmove(&h->order[pos + 1], &h->order[pos], (h->nlive - pos) * sizeof *h->order);
@@ -255,7 +277,7 @@ int os999_deref(const Os999Heap *h, uint32_t handle, uint32_t *address) {
     if (!h || !h->base) return OS999_ERR_DEAD;
     const Entry *e = lookup_handle(h, handle);
     if (!e) return OS999_ERR_NILHANDLE;
-    *address = OS999_GUEST_BASE + e->off;
+    *address = h->guest_base + e->off;
     return OS999_OK;
 }
 
@@ -297,13 +319,18 @@ int os999_set_handle_size(Os999Heap *h, uint32_t handle, uint32_t size) {
     }
     size_t pos = lower_bound(h, e->off);
     uint32_t limit = pos + 1 < h->nlive ? h->e[h->order[pos + 1]].off : (uint32_t)h->committed;
-    if (limit - e->off >= alen) { e->alen = alen; e->size = size; return OS999_OK; } /* extend in place */
+    if (limit - e->off >= alen) { /* extend in place */
+        zero(h, (size_t)e->off + e->alen, (size_t)e->off + alen);
+        e->alen = alen; e->size = size;
+        return OS999_OK;
+    }
     if (e->locked) return OS999_ERR_LOCKED;      /* a locked block must not move */
     uint32_t off; size_t npos;
     rc = reserve(h, alen, &off, &npos);          /* may compact: re-fetch e after */
     if (rc) return rc;
     e = &h->e[idx];
     size_t opos = lower_bound(h, e->off);
+    zero(h, off, (size_t)off + alen);
     memcpy(h->base + off, h->base + e->off, e->size < size ? e->size : size);
     zero(h, e->off, (size_t)e->off + e->alen);
     memmove(&h->order[opos], &h->order[opos + 1], (h->nlive - opos - 1) * sizeof *h->order);
@@ -313,6 +340,7 @@ int os999_set_handle_size(Os999Heap *h, uint32_t handle, uint32_t size) {
     h->order[npos] = idx;
     h->nlive++;
     e->off = off; e->alen = alen; e->size = size;
+    notify_move(h, e);
     return OS999_OK;
 }
 
@@ -320,19 +348,30 @@ int os999_new_ptr(Os999Heap *h, uint32_t size, uint32_t *address) {
     uint32_t idx;
     int rc = new_block(h, size, 1, &idx);
     if (rc) { if (address) *address = 0; return rc; }
-    *address = OS999_GUEST_BASE + h->e[idx].off;
+    *address = h->guest_base + h->e[idx].off;
     return OS999_OK;
 }
 
 int os999_dispose_ptr(Os999Heap *h, uint32_t address) {
     if (!h || !h->base) return OS999_ERR_DEAD;
-    if (address < OS999_GUEST_BASE) return OS999_ERR_NILHANDLE;
-    uint32_t off = address - OS999_GUEST_BASE;
+    if (address < h->guest_base) return OS999_ERR_NILHANDLE;
+    uint32_t off = address - h->guest_base;
     size_t pos = lower_bound(h, off);
     if (pos >= h->nlive) return OS999_ERR_NILHANDLE;
     Entry *e = &h->e[h->order[pos]];
     if (e->off != off || !e->fixed) return OS999_ERR_NILHANDLE;
     free_block(h, h->order[pos]);
+    return OS999_OK;
+}
+
+int os999_ptr_size(const Os999Heap *h, uint32_t address, uint32_t *size) {
+    if (!h || !h->base) return OS999_ERR_DEAD;
+    if (address < h->guest_base) return OS999_ERR_NILHANDLE;
+    size_t pos = lower_bound(h, address - h->guest_base);
+    if (pos >= h->nlive) return OS999_ERR_NILHANDLE;
+    const Entry *e = &h->e[h->order[pos]];
+    if (e->off != address - h->guest_base || !e->fixed) return OS999_ERR_NILHANDLE;
+    *size = e->size;
     return OS999_OK;
 }
 
@@ -350,6 +389,17 @@ void os999_heap_stats(const Os999Heap *h, Os999Stats *o) {
     }
     if (h->committed - prev > o->largest_free) o->largest_free = h->committed - prev;
     o->committed = h->committed; o->max_bytes = h->max_bytes;
+    {
+        size_t tail = h->committed - prev, interior = 0;
+        uint32_t pv = 0;
+        for (size_t i = 0; i < h->nlive; i++) {
+            const Entry *e = &h->e[h->order[i]];
+            if (e->off - pv > interior) interior = e->off - pv;
+            pv = e->off + e->alen;
+        }
+        tail += h->max_bytes - h->committed;
+        o->largest_alloc = tail > interior ? tail : interior;
+    }
     o->free_total = h->committed - o->used; o->live_blocks = h->nlive;
     o->compactions = h->compactions; o->grows = h->grows;
 }
@@ -381,17 +431,17 @@ static uint8_t *fault(Os999Space *s, Os999FaultKind k, uint32_t a, uint32_t len,
 uint8_t *os999_translate(Os999Space *s, uint32_t addr, uint32_t len, int write) {
     if (!s || s->state != OS999_SPACE_ALIVE) return NULL;
     Os999Heap *h = &s->heap;
-    if (addr < OS999_GUEST_BASE || (uint64_t)(addr - OS999_GUEST_BASE) + len > h->committed)
+    if (addr < h->guest_base || (uint64_t)(addr - h->guest_base) + len > h->committed)
         return fault(s, OS999_FAULT_UNMAPPED, addr, len, write);
-    return h->base + (addr - OS999_GUEST_BASE);
+    return h->base + (addr - h->guest_base);
 }
 
 uint8_t *os999_translate_block(Os999Space *s, uint32_t addr, uint32_t len, int write) {
     if (!s || s->state != OS999_SPACE_ALIVE) return NULL;
     Os999Heap *h = &s->heap;
-    if (addr < OS999_GUEST_BASE || (uint64_t)(addr - OS999_GUEST_BASE) + len > h->committed)
+    if (addr < h->guest_base || (uint64_t)(addr - h->guest_base) + len > h->committed)
         return fault(s, OS999_FAULT_UNMAPPED, addr, len, write);
-    uint32_t off = addr - OS999_GUEST_BASE;
+    uint32_t off = addr - h->guest_base;
     size_t pos = lower_bound(h, off);
     if (pos == h->nlive || h->e[h->order[pos]].off != off) {
         if (!pos) return fault(s, OS999_FAULT_OUT_OF_BLOCK, addr, len, write);

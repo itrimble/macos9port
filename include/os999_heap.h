@@ -35,6 +35,14 @@ typedef struct {
     size_t grow_chunk;     /* commit granularity, rounded to host page size */
     size_t max_bytes;      /* hard ceiling for this space (the "partition") */
     size_t max_handles;    /* cap on live blocks; 0 = default */
+    /* Optional: manage caller-owned memory (e.g. guest RAM) instead of a private
+     * mapping. ext_size is the ceiling; the heap "commits" within it. */
+    uint8_t *ext_base;
+    size_t ext_size;
+    uint32_t guest_base;   /* guest address of arena offset 0; 0 = OS999_GUEST_BASE */
+    /* Called after a relocatable block is moved by compaction or resizing. */
+    void (*on_move)(void *user, uint32_t handle, uint32_t new_address);
+    void *on_move_user;
 } Os999Config;
 
 typedef struct {
@@ -73,6 +81,7 @@ int os999_unlock(Os999Heap *h, uint32_t handle);
 /* Non-relocatable blocks, addressed directly. */
 int os999_new_ptr(Os999Heap *h, uint32_t size, uint32_t *address);
 int os999_dispose_ptr(Os999Heap *h, uint32_t address);
+int os999_ptr_size(const Os999Heap *h, uint32_t address, uint32_t *size);
 
 /* Defragmentation: slide unlocked blocks down, at most ~budget bytes moved per
  * call (at least one block when work exists). Returns bytes moved; 0 = done. */
@@ -80,6 +89,7 @@ size_t os999_compact_step(Os999Heap *h, size_t budget);
 
 typedef struct {
     size_t committed, max_bytes, used, free_total, largest_free, live_blocks;
+    size_t largest_alloc; /* biggest request that succeeds without compaction (incl. growth) */
     size_t compactions, grows;
 } Os999Stats;
 void os999_heap_stats(const Os999Heap *h, Os999Stats *out);
