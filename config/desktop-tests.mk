@@ -249,3 +249,19 @@ build/test_quake_surface: $(STORAGE_A) src/application_probe.c include/applicati
 test-quake-surface: build/test_quake_surface
 	./build/test_quake_surface
 test: test-quake-surface
+
+# Desktop PAN backend; UI wiring is owned by the combined integration.
+DESKTOP_BT_SRC := src/desktop_guestnet.c src/desktop_bluetooth.c src/desktop_bt_none.c
+DESKTOP_BT_HDR := include/desktop_guestnet.h include/desktop_bluetooth.h
+build/test_desktop_guestnet build/test_desktop_bluetooth: build/test_desktop_%: tests/test_desktop_%.c $(DESKTOP_BT_SRC) $(DESKTOP_BT_HDR) $(NET_OUT)/libos999net.a $(BT_OUT)/libos999bt.a
+	$(CC) $(CFLAGS) -Inet/include -Ibluetooth/include -o $@ $< $(DESKTOP_BT_SRC) $(BT_OUT)/libos999bt.a $(NET_OUT)/libos999net.a $(GUEST_NET_LIBS)
+
+build/test_desktop_pan_guest: tests/test_desktop_pan_guest.c src/desktop_guestnet.c include/desktop_guestnet.h $(BT_SIM_SRC) $(BT_SIM_HDR) $(BT_OUT)/libos999bt.a $(NET_OUT)/libos999net.a
+	$(CC) $(CFLAGS) $(BT_INC) -o $@ tests/test_desktop_pan_guest.c src/desktop_guestnet.c $(BT_SIM_SRC) $(BT_OUT)/libos999bt.a $(NET_OUT)/libos999net.a $(GUEST_NET_LIBS)
+
+.PHONY: test-desktop-pan
+test-desktop-pan: build/test_desktop_guestnet build/test_desktop_bluetooth build/test_desktop_pan_guest
+	./build/test_desktop_guestnet
+	./build/test_desktop_bluetooth
+	./build/test_desktop_pan_guest
+test: test-desktop-pan

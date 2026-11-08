@@ -108,6 +108,16 @@ static int nonblock(int fd) {
 
 int gn_broker_set_pan(GnBroker *b, GnPan *pan) {
     if (!b) return GN_EINVAL;
+    if (b->pan != pan) {
+        for (size_t i = 0; i < b->lim.max_conns; i++) {
+            GnConn *c = &b->c[i];
+            if (!c->tcp) continue;
+            gn_pan_tcp_free(c->tcp);
+            c->tcp = NULL;
+            c->state = GN_S_FAILED;
+            c->error = GN_ECLOSED;
+        }
+    }
     b->pan = pan;
     return GN_OK;
 }

@@ -159,6 +159,8 @@ typedef struct {
 } GnGuestCall;
 
 GnMacTcp *gn_mactcp_new(GnBroker *b, GnResolver *r, uint32_t our_ip);
+/* Update the guest-visible link address; zero clears it on detach. */
+void gn_mactcp_set_addr(GnMacTcp *m, uint32_t ip, uint32_t netmask);
 void gn_mactcp_free(GnMacTcp *m);
 /* Handle one _Control call to .IPP. Writes ioResult (1 = in progress for
  * async calls). Sync calls that must wait return 1; the caller then
