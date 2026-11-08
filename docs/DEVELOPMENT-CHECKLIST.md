@@ -149,9 +149,10 @@ See [the preserved baseline](DEVELOPMENT-BASELINE.md). Newer acceptance evidence
   6 Nov: real-time runs starved VBL/Time Manager tasks (service budget below
   the pollers' minimum); fixed in `mac_runtime_run_cycles`, regression in
   `test_mac_vbl`. MI1 cutscene pace now matches the deterministic probe. See
-  [the 6 November loop record](RUNTIME-LOOP-2026-11-06.md).
+  [the 6 November loop record](RUNTIME-LOOP-2026-11-06.md). 7 Nov: protected heap,
+  resource edits, menus, Help/Pack7/FSSpec traps: [the 7 November record](RUNTIME-LOOP-2026-11-07.md).
 - [ ] R04 Implement color QuickDraw, palettes, clipping, regions, CopyBits,
-  offscreen buffers, fonts, and direct framebuffer writes used by target games.
+  offscreen buffers, fonts, and direct framebuffer writes used by target games. 7 Nov: colour cursors (1-bit fallback), gray mode, window colour tables; see [record](RUNTIME-LOOP-2026-11-07.md).
 - [ ] R05 Implement Sound Manager behavior, mixing, timing, callbacks, and
   independent media decoding. Test synchronization and resource cleanup.
   For the MI1 SCUMM Bar opening, record a fresh note trace and correlate it
@@ -322,7 +323,7 @@ See [the preserved baseline](DEVELOPMENT-BASELINE.md). Newer acceptance evidence
 - [ ] G01 Agree a reproducible gameplay route for each game: startup, menus,
   scene changes, interactions, audio, save, quit, relaunch, and restore.
 - [ ] G02 Run original Macintosh executables through our runtime. ScummVM,
-  ports, remakes, and external emulators do not satisfy this gate.
+  ports, remakes, and external emulators do not satisfy this gate. 7 Nov: four Glider-family apps run headless to a halt, none to gameplay; see [record](RUNTIME-LOOP-2026-11-07.md).
 - [ ] G03 Implement GPU-backed rendering for supported guest drawing operations;
   demonstrate which work runs on the GPU. Uploading a CPU-rendered framebuffer
   alone does not establish full guest graphics acceleration.
