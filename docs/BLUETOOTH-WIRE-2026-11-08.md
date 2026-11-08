@@ -33,8 +33,9 @@ suppresses callbacks. The source compiles against the installed SDK. Eight
 contract checks use only invalid inputs and empty lifecycle objects: no inquiry,
 controller query, pairing or device connection occurs in those tests.
 
-The desktop manager is still linked to the no-radio stub; connecting this wrapper
-to the desktop and completing protocol capabilities need separate integration.
+The subsequent [desktop driver increment](BLUETOOTH-DESKTOP-DRIVER-2026-11-08.md)
+links the macOS production backend. Shared host/menu hooks and remaining protocol
+capabilities are still separate acceptance gates.
 The active Control Panels producer and candidate checkout were not modified.
 No physical peer or real classic-program networking acceptance is claimed.
 

@@ -23,7 +23,7 @@ static int panif_tx(void *ctx, const void *frame, size_t len) {
     BtPanIf *p = ctx;
     if (!p || !p->pan) return GN_EIO;
     int rc = bt_pan_send(p->pan, p->id, frame, len);
-    return rc == BT_OK ? GN_OK : GN_EIO;
+    return rc == (int)len ? GN_OK : GN_EIO;
 }
 
 BtPanIf *bt_panif_new(BtPan *pan, int id, uint32_t local_ip, uint32_t netmask, const uint8_t mac[6]) {

@@ -510,3 +510,8 @@ lifetime are corrected with independent wire vectors. macOS wrapper completion,
 pipe initialization and cancellation are compile/contract checked. See
 [wire recovery evidence and explicit unsupported capabilities](BLUETOOTH-WIRE-2026-11-08.md).
 No physical peer, desktop radio wiring or classic runtime hook acceptance yet.
+
+Bluetooth driver follow-up: production source manifest now links the macOS
+backend; 31 fake-IOBluetooth-boundary checks cover real driver negotiation and
+teardown. Integration owns shared host/menu hooks; no usable panel or physical
+peer acceptance is claimed. [Driver handoff](BLUETOOTH-DESKTOP-DRIVER-2026-11-08.md).

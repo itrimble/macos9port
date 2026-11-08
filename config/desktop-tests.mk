@@ -265,3 +265,11 @@ test-desktop-pan: build/test_desktop_guestnet build/test_desktop_bluetooth build
 	./build/test_desktop_bluetooth
 	./build/test_desktop_pan_guest
 test: test-desktop-pan
+
+# Production driver exercised at a fake IOBluetooth boundary (no hardware).
+build/test_desktop_bt_driver: tests/test_desktop_bt_driver.c src/desktop_bt_darwin.c src/desktop_bluetooth.c src/desktop_guestnet.c $(DESKTOP_BT_HDR) $(BT_OUT)/libos999bt.a $(NET_OUT)/libos999net.a
+	$(CC) $(CFLAGS) $(BT_INC) -o $@ tests/test_desktop_bt_driver.c src/desktop_bt_darwin.c src/desktop_bluetooth.c src/desktop_guestnet.c $(BT_OUT)/libos999bt.a $(NET_OUT)/libos999net.a $(GUEST_NET_LIBS)
+.PHONY: test-desktop-bt-driver
+test-desktop-bt-driver: build/test_desktop_bt_driver
+	./build/test_desktop_bt_driver
+test: test-desktop-bt-driver

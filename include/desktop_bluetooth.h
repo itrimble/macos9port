@@ -84,5 +84,6 @@ const char *desktop_bt_unavailable_reason(void);
 
 /* The drivers themselves. */
 const DesktopBtDriverOps *desktop_bt_none_ops(void);
+const DesktopBtDriverOps *desktop_bt_darwin_ops(void);
 
 #endif

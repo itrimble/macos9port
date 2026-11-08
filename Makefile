@@ -58,9 +58,10 @@ build/browser_overlay_mac.o: src/browser_overlay_mac.m $(BROWSER_HDRS) include/o
 else
 BROWSER_OVERLAY := src/browser_overlay_linux.c
 endif
-build/ospi: $(SHORTCUT_HOST) include/desktop_shortcuts.h $(PRINT_HOST) $(CORE) $(STORAGE_A) $(AUDIO_SRC) src/winamp_skin.c src/media_player_panel.c src/os999_startup.c src/main.c src/desktop_guest.c src/desktop_host.c src/desktop_sound.c $(HDRS) $(AUDIO_HDRS) include/winamp_skin.h include/media_player_panel.h include/os999_startup.h include/desktop_guest.h include/desktop_host.h include/desktop_sound.h $(BROWSER_SRC) $(BROWSER_OVERLAY) $(BROWSER_HDRS)
+include config/desktop-bluetooth.mk
+build/ospi: $(DESKTOP_BT_APP_SRC) $(DESKTOP_BT_APP_HDR) $(DESKTOP_BT_APP_HOST) $(DESKTOP_BT_APP_ARCHIVES) $(SHORTCUT_HOST) include/desktop_shortcuts.h $(PRINT_HOST) $(CORE) $(STORAGE_A) $(AUDIO_SRC) src/winamp_skin.c src/media_player_panel.c src/os999_startup.c src/main.c src/desktop_guest.c src/desktop_host.c src/desktop_sound.c $(HDRS) $(AUDIO_HDRS) include/winamp_skin.h include/media_player_panel.h include/os999_startup.h include/desktop_guest.h include/desktop_host.h include/desktop_sound.h $(BROWSER_SRC) $(BROWSER_OVERLAY) $(BROWSER_HDRS)
 	mkdir -p build
-	$(CC) $(CFLAGS) $(SDL_CFLAGS) $(FFMPEG_CFLAGS) -o $@ $(SHORTCUT_HOST) $(PRINT_HOST) $(CORE) $(STORAGE_LINK) $(AUDIO_SRC) src/winamp_skin.c src/media_player_panel.c src/os999_startup.c src/main.c src/desktop_guest.c src/desktop_host.c src/desktop_sound.c $(BROWSER_SRC) $(BROWSER_OVERLAY) $(SDL_LIBS) $(FFMPEG_LIBS) $(FT_LIBS) $(BROWSER_LIBS) -pthread -lm $(NET_LIBS)
+	$(CC) $(CFLAGS) $(DESKTOP_BT_APP_INC) $(SDL_CFLAGS) $(FFMPEG_CFLAGS) -o $@ $(DESKTOP_BT_APP_SRC) $(DESKTOP_BT_APP_HOST) $(SHORTCUT_HOST) $(PRINT_HOST) $(CORE) $(STORAGE_LINK) $(AUDIO_SRC) src/winamp_skin.c src/media_player_panel.c src/os999_startup.c src/main.c src/desktop_guest.c src/desktop_host.c src/desktop_sound.c $(BROWSER_SRC) $(BROWSER_OVERLAY) $(SDL_LIBS) $(FFMPEG_LIBS) $(FT_LIBS) $(BROWSER_LIBS) -pthread -lm $(NET_LIBS) $(DESKTOP_BT_APP_ARCHIVES) $(DESKTOP_BT_APP_LIBS)
 
 build/test_os999_startup: src/os999_startup.c src/font.c tests/test_os999_startup.c include/os999_startup.h include/draw.h
 	mkdir -p build
