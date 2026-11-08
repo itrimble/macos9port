@@ -77,6 +77,7 @@ typedef struct {
     uint32_t palette[256];
     int16_t qd_error;
     uint32_t ticks;
+    uint32_t clock_base; /* seconds since 1 Jan 1904 at tick 0; 0 = take the host clock on first use */
     uint64_t clock_us;
     struct MacTimeState *time_manager;
     uint8_t keys[16]; /* Current supported host virtual-key state, independent of queue. */
@@ -125,6 +126,7 @@ typedef struct {
  * runtime, not a sandbox or a claim of complete Macintosh compatibility. */
 int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, size_t n);
 void mac_runtime_destroy(MacRuntime *rt);
+void mac_clock_publish(MacRuntime *rt); /* low-memory Ticks ($16A) and Time ($20C) from rt->ticks */
 size_t mac_runtime_run(MacRuntime *rt, size_t instructions);
 size_t mac_runtime_run_cycles(MacRuntime *rt, uint64_t cycles);
 uint32_t mac_runtime_alloc(MacRuntime *rt, uint32_t size);

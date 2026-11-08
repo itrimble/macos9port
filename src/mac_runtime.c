@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 /* Independently implemented from the CODE resource/jump-table format described
  * by W. E. Woody, comp.sys.mac.misc, 17 March 1991 ("CODE 0"). No ROM loaded.
@@ -186,8 +187,20 @@ void mac_runtime_destroy(MacRuntime *rt) {
     rt->cpu = NULL;
 }
 
+/* Many classic programs read the low-memory clock globals directly instead of calling TickCount or GetDateTime: Ticks ($16A,
+ * a long, 60 per second since startup) and Time ($20C, a long, seconds since 1 Jan 1904). Sierra's SCI interpreter reads Ticks
+ * for every tick-based wait and Time for its seconds, and sat forever in a room while both stayed zero. They follow rt->ticks,
+ * which the host advances once per 1/60 s; Time is a base plus whole elapsed seconds. */
+void mac_clock_publish(MacRuntime *rt) {
+    if (!rt || !rt->cpu) return;
+    if (!rt->clock_base) rt->clock_base = (uint32_t)((uint64_t)time(NULL) + 2082844800ull);
+    mac_cpu_write(rt->cpu, 0x16a, 4, rt->ticks);
+    mac_cpu_write(rt->cpu, 0x20c, 4, rt->clock_base + rt->ticks / 60);
+}
+
 size_t mac_runtime_run(MacRuntime *rt, size_t instructions) {
     if (!rt || !rt->cpu) return 0;
+    mac_clock_publish(rt);
     size_t ran = mac_time_poll(rt, instructions);
     if (ran < instructions && !mac_cpu_halted(rt->cpu))
         ran += mac_vbl_poll(rt, instructions - ran);
@@ -199,6 +212,7 @@ size_t mac_runtime_run(MacRuntime *rt, size_t instructions) {
 
 size_t mac_runtime_run_cycles(MacRuntime *rt, uint64_t cycles) {
     if (!rt || !rt->cpu || !cycles || mac_cpu_halted(rt->cpu)) return 0;
+    mac_clock_publish(rt);
     uint64_t cycle_start = mac_cpu_cycles(rt->cpu);
     /* VBL and Time Manager polls refuse budgets under 10,000 instructions so a
      * callback can always complete. Real-time slices are often 1-2 ms (16-32k
