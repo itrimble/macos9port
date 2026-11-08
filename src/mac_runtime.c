@@ -126,10 +126,14 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
     }
     if (mac_runtime_load_segment(rt, (int16_t)be16(zero.data + 20)))
         return fail(rt, err, n, "Could not load startup CODE segment.");
+    /* Classic Mac OS runs application code in supervisor mode, and ordinary programs use privileged instructions: heap code
+     * brackets critical sections with MOVE SR,-(A7) and ORI #$0200,SR. In user mode those raise a privilege violation (an empty
+     * vector sent Castle of Dr. Brain to address 0 with A7 = $FFFFFFF8). The test checks that A7 is intact after this, in either order
+     * of the two stores (I expected the stack pointer to be swapped by the mode change; it is not, with this CPU wrapper). */
+    mac_cpu_set(rt->cpu, MAC_SR, 0x2000);
     mac_cpu_set(rt->cpu, MAC_A5, rt->a5);
     mac_cpu_set(rt->cpu, MAC_A7, rt->a5 - below);
     mac_cpu_set(rt->cpu, MAC_PC, rt->jump_table + 2);
-    mac_cpu_set(rt->cpu, MAC_SR, 0);
     /* Process-owned low-memory globals needed before the first Toolbox call. */
     mac_cpu_write(rt->cpu, 0x904, 4, rt->a5); /* CurrentA5 */
     mac_cpu_write(rt->cpu, 0x908, 4, rt->a5 - below); /* CurStackBase: below A5 globals */
