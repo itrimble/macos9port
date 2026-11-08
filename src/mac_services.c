@@ -42,7 +42,7 @@ static int implemented(unsigned key) {
     case 0xa931: case 0xa932: case 0xa933: case 0xa934: case 0xa935: case 0xa936: case 0xa93c: case 0xa9c0:
     case 0xa939: case 0xa93a: case 0xa945: case 0xa947: case 0xa949: case 0xa94d:
     case 0xa950: case 0xa9bf: case 0xa9bc:
-    case 0xa9f0: case 0xa9f4: case 0xa9a0: case 0xa81f: case 0xa99d:
+    case 0xa9f0: case 0xa9f1: case 0xa9f4: case 0xa9a0: case 0xa81f: case 0xa99d:
     case 0xa99c: case 0xa9a5: case 0xa9a6: case 0xa9a8: case 0xa9af:
     case 0xa9a2: case 0xa9a3: case 0xa992: case 0xa970: case 0xa971:
     case 0xa976: case 0xa860: case 0xa975: case 0xa972: case 0xa974: case 0xa86e: case 0xa870: case 0xa871: case 0xa878:
@@ -106,6 +106,17 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
         }
         mac_cpu_set(cpu, MAC_A7, sp + 2);
         mac_cpu_set(cpu, MAC_PC, continuation ? continuation - 6 : pc - 4);
+        return 0;
+    }
+    if (opcode == 0xa9f1) { /* UnloadSeg(routineAddr): a purgeability hint. Segments here stay resident, which the
+                             * contract allows; a later call through the jump table keeps working unchanged. */
+        uint32_t sp = mac_cpu_get(cpu, MAC_A7), address = mac_cpu_read(cpu, sp, 4);
+        uint32_t delta = address - rt->jump_table - 2; /* routine addresses are jump-table entry + 2 */
+        if (address < rt->jump_table + 2 || delta >= rt->jump_size || (delta & 7)) {
+            mac_cpu_halt(cpu, "UnloadSeg requires the address of a jump-table routine entry.");
+            return -1;
+        }
+        mac_cpu_set(cpu, MAC_A7, sp + 4);
         return 0;
     }
     int timer = mac_time_service(rt, opcode);
