@@ -103,7 +103,7 @@ None of these has reached its main loop. "Traps" is the count before the halt.
 | Glider 4.10 | 1249 | `A204` | a Device Manager `Control` (PBControlImmed) on driver reference number -4, csCode 2, csParam 3, reached from library glue. Glider's source calls `GetSoundVol`/`SetSoundVol`, which are glue in MPW, so that is the likely cause; I did not find a source that confirms it, so it is unimplemented, not guessed |
 | Room Editor 1.06 | (dialog) | `GetNewDialog` `A97C` | with scripted input (probe, headless): Standard File, open a file, then its own alert (witch icon, "Okay" button; clicking Okay dismisses it), then it calls `GetNewDialog`, so it needs the real Dialog Manager (dialog records, `ModalDialog`, item access). Headless frames of the dialog and the alert were viewed. WIND 128 (procID 160, the app\'s own WDEF 10) is still ahead |
 | Glider PRO 1.1.2 | 143 | `A260` | `PBDirCreate` (HFSDispatch selector 6) to create a "Preferences" folder; the file system has one flat directory, so this needs a hierarchy, not a one-off |
-| Glider Edit 1.1.1 | 36 | halts at `DialogDispatch` (`AA68`, selector `$0203`) after opening a house | headless frames, 9 Nov 2026: menu bar, File > Open... dialog (empty for the Glider PRO houses we have: this old editor asks for type `gliH`, ours are `GLhs`). With a copy of a PRO house retyped `gliH` it opens the file (FSpOpenDF, PBRead), then needed `PurgeSpace` (`A162`), SANE `FSUBX` and `FX2S`, and finally shows its own error dialog through `ParamText`, `GetStdFilterProc` (`AA68`, `$0203`: my reading, from the call sequence) and `GetNewDialog`. Next is the real Dialog Manager. Note the file was the wrong format, so this is an error path, not a normal open |
+| Glider Edit 1.1.1 | 36 | idles at its menu bar after an error dialog | headless frames, 9 Nov 2026: with the new Dialog Manager, opening a (wrong-format) copy of a PRO house retyped `gliH` shows the editor's own box, *The house "Test" is locked.* (ParamText filled in; "locked" because the data volume is read-only without `--saves`), OK dismisses it and the editor returns to its menu bar. I have not seen a house open successfully: the only houses available are the wrong format |
 
 The window-colour change cleared Glider 4.10's `wctb 128` (content, frame and text black;
 parts 3 and 4 are documented as reserved). A pixel dump of the screen at the halt is entirely
@@ -240,6 +240,17 @@ the probe, not a window I watched, and I have not listened to any audio.
   sticky bit of a division quotient, which only matters for an exact tie I could not construct). After that the app reads the file and
   shows an error dialog of its own (the file is the wrong format), which needs `GetStdFilterProc` and `GetNewDialog`: the real Dialog
   Manager is the next piece.
+- **A bounded Dialog Manager (`src/mac_dlgmgr.c`, headless frames):** `GetNewDialog`, `ModalDialog`, `DrawDialog`, `CloseDialog`,
+  `DisposeDialog`, `GetDItem`, `GetIText`, `SetIText`, `SelIText`, `ErrorSound`, `IsDialogEvent`, `DialogSelect`, and `DialogDispatch`
+  selectors `$0203` (`GetStdFilterProc`), `$0304`, `$0305`, `$0306` (default item, cancel item, cursor tracking; these selectors are my reading
+  of the call sequences, not from a listing I opened). A DialogPtr is only a name for a host record: the guest's copy of the record, its
+  item handles' master pointers and its strings are never trusted (a test repoints a handle and checks the write still goes to the host's
+  block). Open dialogs make `FrontWindow` and `SetPort` answer for them, so an application's own event loop works; the window regions
+  are real region handles. `GetStdFilterProc` hands out a guest-callable stub, so an app that calls the standard filter works. Drawn with
+  our own 8x8 chrome; ^0 to ^3 expand from ParamText; no user items, control items, hidden dialogs, `NewDialog`, `SetDItem`, filter
+  procedures of the app's own, or more than four open dialogs (all halt by name). 20 of 21 mutants killed after eight added checks; the
+  survivor cannot change an outcome (a text-capacity bound the Pascal length byte already enforces). Glider Edit's error box is the first
+  real user: its own `ModalDialog`-style loop (`FrontWindow`, `WaitNextEvent`, `IsDialogEvent`, `DialogSelect`) now runs to the OK button.
 - **Parity:** Monkey Island and Monkey Island 2 are byte-identical to the previous baseline; `make test` exits 0; ASan on Castle (90 s with
   the menu script) and on the new and touched menu, window and utility tests reports nothing.
 

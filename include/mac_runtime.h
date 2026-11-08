@@ -119,7 +119,7 @@ typedef struct {
     struct MacRgnRec *rgn_rec;   /* OpenRgn..CloseRgn recording in progress (mac_regions.c) */
     struct MacMenuSel *menusel;  /* MenuSelect tracking in progress (mac_menuselect.c) */
     int16_t menu_hilite;         /* ID of the menu whose title is highlighted, 0 for none */
-    struct MacPutState *stdput; struct MacSfState *stdfile; uint32_t stdfile_pb; /* native Standard File dialog (mac_stdfile.c) */
+    struct MacPutState *stdput; struct MacDlgMgr *dlgmgr; /* bounded Dialog Manager (mac_dlgmgr.c) */ struct MacSfState *stdfile; uint32_t stdfile_pb; /* native Standard File dialog (mac_stdfile.c) */
     struct { int active; MacGuestDone done; void *ctx; uint32_t sp, resume_pc, result_bytes; } guest; /* mac_guestcall.c */
     struct { int active; uint32_t deadline, pc, sp; } delay; /* _Delay in progress (mac_delay.c); host memory only */
     MacAppleEvents appleevents; /* Apple Event Manager handler tables, host memory only (mac_appleevents.c) */
@@ -206,6 +206,8 @@ int mac_stdfile_service(MacRuntime *rt, uint16_t opcode); /* Pack3 Standard File
 void mac_stdfile_destroy(MacRuntime *rt);
 int mac_stdput_service(MacRuntime *rt, uint32_t sp, uint32_t pc, int spec); /* Pack3 selectors 1 (SFPutFile) and 5 (StandardPutFile), mac_stdput.c */
 void mac_stdput_destroy(MacRuntime *rt);
+int mac_dlgmgr_service(MacRuntime *rt, uint16_t opcode); /* GetNewDialog, ModalDialog and friends (mac_dlgmgr.c) */
+void mac_dlgmgr_destroy(MacRuntime *rt);
 int mac_menu_service(MacRuntime *rt, uint16_t opcode);
 int mac_toolbox_service(MacRuntime *rt, uint16_t opcode);
 int mac_raster_service(MacRuntime *rt, uint16_t opcode);
