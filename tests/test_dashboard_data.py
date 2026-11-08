@@ -30,6 +30,16 @@ class EvidenceTests(unittest.TestCase):
             path.write_text('- [x] V01 Accepted\n')
             self.assertNotEqual(before['revision'], collect(root, root / 'state')['revision'])
 
+    def test_split_checklists_preserve_multiletter_ids(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'first.md').write_text('- [ ] V01 Existing gate\n')
+            (root / 'second.md').write_text('- [ ] CC01 Guest scheduling\n  Evidence pending\n')
+            rows = checklist(root, {'checklists':['first.md','second.md']})
+            self.assertEqual([row['id'] for row in rows], ['V01','CC01'])
+            self.assertEqual(rows[1]['component'], 'Classic compatibility')
+            self.assertIn('Evidence pending', rows[1]['detail'])
+
     def test_manual_validation_visible_without_queue_admission(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -38,7 +38,7 @@ def checklist(repo, configuration):
         lines = path.read_text().splitlines()
         current = None
         for number, line in enumerate(lines, 1):
-            match = re.match(r'^- \[([ xX])\] ([A-Z]\d+)\s+(.*)', line)
+            match = re.match(r'^- \[([ xX])\] ([A-Z]+\d+)\s+(.*)', line)
             if match:
                 code, title = match[2], match[3]
                 override = configuration.get('task_evidence', {}).get(code, {})
@@ -46,7 +46,7 @@ def checklist(repo, configuration):
                 if state not in STATES or (state == 'verified' and match[1].lower() != 'x'):
                     state = 'pending'
                 current = {'id': code, 'title': title, 'detail': title,
-                           'component': GROUPS.get(code[0], 'Other'), 'status': state,
+                           'component': 'Classic compatibility' if code.startswith('CC') else GROUPS.get(code[0], 'Other'), 'status': state,
                            'source': relative, 'line': number, 'evidence': override.get('evidence', ''),
                            'basis': 'Checklist acceptance' if state == 'verified' else 'Open acceptance gate'}
                 tasks.append(current)
