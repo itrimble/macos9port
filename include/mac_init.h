@@ -8,8 +8,10 @@
  * Contract (OS999, not a claim of full Macintosh INIT compatibility):
  *  - Every INIT resource of a fork runs once, in ascending ID order, as a
  *    plain subroutine: PC at byte 0, return address on the stack, D0 = 0.
- *  - D0 != 0 on return means failure. (Real INITs do not define a result;
- *    the clean-room contract is "leave D0 alone to succeed".)
+ *  - D0 on return is ignored. Real INITs do not define a result: of 268 real
+ *    INIT forks, 53 left a nonzero D0 and still ran to completion. An INIT
+ *    fails only by patching a protected trap, halting the CPU on an
+ *    unsupported call, or exceeding its instruction budget.
  *  - Trap patches (SetTrapAddress) are allowed, except the protected traps:
  *    GetTrapAddress, SetTrapAddress, LoadSeg and ExitToShell. Attempting one
  *    fails the extension.

@@ -46,7 +46,7 @@ static void test_runner(void) {
     CHECK(rt.gestalt_count == 0);
     CHECK(run_code(&rt, FX_GESTALT, sizeof FX_GESTALT, 1000, &rep) == 0);
     CHECK(rt.gestalt_count == 1 && rt.gestalt_sel[0] == 0x74657374u);
-    CHECK(run_code(&rt, FX_GESTALT, sizeof FX_GESTALT, 1000, &rep) == -1); /* dup selector -> D0 != 0 */
+    CHECK(run_code(&rt, FX_GESTALT, sizeof FX_GESTALT, 1000, &rep) == 0); /* dup selector: error code in D0, nothing added */
     CHECK(rt.gestalt_count == 1);
     CHECK(mac_gestalt_set(&rt, 0x73797376u, 1, 0) == -1); /* 'sysv' is built in */
     CHECK(mac_gestalt_set(&rt, 0x61626364u, 77, 0) == 0);
@@ -59,14 +59,15 @@ static void test_rollback(void) {
     CHECK(host(&rt) == 0);
     uint32_t heap = rt.heap_next;
 
-    CHECK(run_code(&rt, FX_PATCH_THEN_FAIL, sizeof FX_PATCH_THEN_FAIL, 1000, &rep) == -1);
-    CHECK(strstr(rep.error, "nonzero") != NULL);
-    CHECK(rt.trap_addresses[PATCHED_KEY] == stub(PATCHED_KEY)); /* patch rolled back */
-    CHECK(rt.heap_next == heap);
-
+    /* Patches one trap, then touches a protected one: both are undone. */
     CHECK(run_code(&rt, FX_PATCH_PROTECTED, sizeof FX_PATCH_PROTECTED, 1000, &rep) == -1);
     CHECK(strstr(rep.error, "protected") != NULL);
+    CHECK(rt.trap_addresses[PATCHED_KEY] == stub(PATCHED_KEY)); /* first patch rolled back */
     CHECK(rt.trap_addresses[0x9f0] == stub(0x9f0)); /* LoadSeg untouched */
+    CHECK(rt.heap_next == heap);
+
+    /* D0 is not a status: real INITs leave junk there. */
+    CHECK(run_code(&rt, FX_JUNK_D0, sizeof FX_JUNK_D0, 1000, &rep) == 0 && rep.count == 1);
 
     CHECK(run_code(&rt, FX_LOOP, sizeof FX_LOOP, 500, &rep) == -1);
     CHECK(strstr(rep.error, "budget") != NULL);
@@ -96,7 +97,7 @@ static void test_loader(void) {
     snprintf(cmd, sizeof cmd, "mkdir -p '%s/System Folder/Extensions'", root);
     CHECK(system(cmd) == 0);
     put("A Patcher", FX_PATCH, sizeof FX_PATCH, NULL);
-    put("B Bad", FX_NONZERO, sizeof FX_NONZERO, NULL);
+    put("B Bad", FX_LOOP, sizeof FX_LOOP, NULL);
     put("C Crasher", FX_HALT, sizeof FX_HALT, NULL);
     put("D Gestalt", FX_GESTALT, sizeof FX_GESTALT, "requires A Patcher\n");
     put("E Off", FX_GESTALT, sizeof FX_GESTALT, NULL);
@@ -110,7 +111,7 @@ static void test_loader(void) {
     ext_order(&list);
     CHECK(ext_init_load_all(&list) == 2);
     CHECK(ext_find(&list, "A Patcher")->status == EXT_LOADED);
-    CHECK(ext_find(&list, "B Bad")->status == EXT_FAILED && strstr(ext_find(&list, "B Bad")->error, "nonzero"));
+    CHECK(ext_find(&list, "B Bad")->status == EXT_FAILED && strstr(ext_find(&list, "B Bad")->error, "budget"));
     CHECK(ext_find(&list, "C Crasher")->status == EXT_FAILED);
     CHECK(ext_find(&list, "D Gestalt")->status == EXT_LOADED); /* still loads after the host was rebuilt */
     CHECK(ext_find(&list, "E Off")->status == EXT_DISABLED);

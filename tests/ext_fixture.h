@@ -45,18 +45,17 @@ static __attribute__((unused)) int fx_write_text(const char *path, const char *t
 
 /* ---- INIT programs ---- */
 static const uint8_t FX_OK[] = {0x4e, 0x75};                                  /* RTS */
-static const uint8_t FX_NONZERO[] = {0x70, 0x01, 0x4e, 0x75};                 /* MOVEQ #1,D0 ; RTS */
 static const uint8_t FX_LOOP[] = {0x60, 0xfe};                                /* BRA.S * */
 static const uint8_t FX_HALT[] = {0xa8, 0x9d, 0x4e, 0x75};                    /* unsupported trap */
 /* LEA 12(PC),A0 ; MOVE.W #$a9a0,D0 ; SetTrapAddress ; MOVEQ #0,D0 ; RTS ; handler: RTS */
 static const uint8_t FX_PATCH[] = {0x41, 0xfa, 0x00, 0x0c, 0x30, 0x3c, 0xa9, 0xa0, 0xa0, 0x47,
                                    0x70, 0x00, 0x4e, 0x75, 0x4e, 0x75};
-/* Same patch, then MOVEQ #1,D0 so the extension fails after patching. */
-static const uint8_t FX_PATCH_THEN_FAIL[] = {0x41, 0xfa, 0x00, 0x0c, 0x30, 0x3c, 0xa9, 0xa0, 0xa0, 0x47,
-                                             0x70, 0x01, 0x4e, 0x75, 0x4e, 0x75};
-/* Tries to patch LoadSeg ($a9f0), which is protected, then returns 0. */
-static const uint8_t FX_PATCH_PROTECTED[] = {0x41, 0xfa, 0x00, 0x0c, 0x30, 0x3c, 0xa9, 0xf0, 0xa0, 0x47,
-                                             0x70, 0x00, 0x4e, 0x75, 0x4e, 0x75};
+/* Patches $a9a0, then tries LoadSeg ($a9f0), which is protected: the extension must roll back. */
+static const uint8_t FX_PATCH_PROTECTED[] = {0x41, 0xfa, 0x00, 0x14, 0x30, 0x3c, 0xa9, 0xa0, 0xa0, 0x47,
+                                             0x30, 0x3c, 0xa9, 0xf0, 0xa0, 0x47, 0x70, 0x00, 0x4e, 0x75,
+                                             0x4e, 0x75};
+/* Leaves junk in D0 (MOVEQ #1) like real INITs do; must still load. */
+static const uint8_t FX_JUNK_D0[] = {0x70, 0x01, 0x4e, 0x75};
 /* MOVE.L #'test',D0 ; SUBA.L A0,A0 ; NewGestalt ; RTS */
 static const uint8_t FX_GESTALT[] = {0x20, 0x3c, 't', 'e', 's', 't', 0x91, 0xc8, 0xa3, 0xad, 0x4e, 0x75};
 #endif

@@ -135,7 +135,6 @@ int mac_init_run(MacRuntime *rt, const MacResourceFork *fork, size_t budget, Mac
         }
         if (rt->init_violation) result = fail(rep, "INIT tried to patch a protected trap.");
         else if (mac_cpu_get(rt->cpu, MAC_PC) != sentinel) result = fail(rep, "INIT did not return within its instruction budget.");
-        else if (mac_cpu_get(rt->cpu, MAC_D0) != 0) result = fail(rep, "INIT returned a nonzero result.");
         else if (rep) rep->count++;
     }
     rt->init_guard = 0;
