@@ -57,4 +57,40 @@ static void dispatched(void){
  CHECK(!mac_cpu_halted(r.cpu) && rd(&r,0x800a,4) && mac_cpu_get(r.cpu,MAC_A7)==0x800a);
  mac_cpu_destroy(r.cpu);
 }
-int main(void){dispatched();successful();failure();associations();puts("mac palette manager object and association tests passed");return 0;}
+/* _PaletteDispatch: HasDepth ($0A14) and SetDepth ($0A13). Arguments are pushed in Pascal order, so from the
+ * top of stack: flags, whichFlags, depth, gd (10 bytes), then the 2-byte function result above them. */
+static uint16_t depth_call(MacRuntime*r,uint16_t selector,uint32_t gd,int depth,unsigned which,unsigned flags){
+ mac_cpu_set(r->cpu,MAC_A7,0x8000);mac_cpu_set(r->cpu,MAC_D0,selector);
+ wr(r,0x8000,2,flags);wr(r,0x8002,2,which);wr(r,0x8004,2,(uint16_t)depth);wr(r,0x8006,4,gd);wr(r,0x800a,2,0xbeef);
+ CHECK(mac_palette_manager_service(r,0xaaa2)==1);
+ CHECK(mac_cpu_get(r->cpu,MAC_A7)==0x800a);
+ return (uint16_t)rd(r,0x800a,2);
+}
+static void palette_dispatch(void){
+ MacRuntime r=fresh();CHECK(mac_color_init(&r)==1);uint32_t gd=r.main_device;CHECK(gd && r.screen_depth==8);
+ /* HasDepth: only the single indexed color mode exists. */
+ CHECK(depth_call(&r,0x0a14,gd,8,1,1)==1);          /* 8-bit color: available */
+ CHECK(depth_call(&r,0x0a14,gd,8,0,0)==1);          /* device type not constrained */
+ CHECK(depth_call(&r,0x0a14,gd,1,1,0)==0);          /* Glider PRO's exact query: 1-bit monochrome */
+ CHECK(depth_call(&r,0x0a14,gd,8,1,0)==0);          /* 8-bit but asked to be monochrome */
+ CHECK(depth_call(&r,0x0a14,gd,4,1,1)==0 && depth_call(&r,0x0a14,gd,32,1,1)==0 && depth_call(&r,0x0a14,gd,-8,1,1)==0);
+ CHECK(depth_call(&r,0x0a14,gd,8,2,2)==0);          /* undefined flag bits are not claimed */
+ CHECK(depth_call(&r,0x0a14,0,8,1,1)==0 && depth_call(&r,0x0a14,gd+4,8,1,1)==0);   /* not the main device */
+ /* SetDepth: the current mode is a no-op success; anything else fails and changes nothing. */
+ CHECK(depth_call(&r,0x0a13,gd,8,1,1)==0);
+ CHECK(depth_call(&r,0x0a13,gd,1,1,0)==(uint16_t)-50 && r.screen_depth==8);
+ CHECK(depth_call(&r,0x0a13,0,8,1,1)==(uint16_t)-50);
+ CHECK(!mac_cpu_halted(r.cpu));
+ /* Unknown routines and malformed argument sizes halt naming the selector; nothing is fabricated. */
+ mac_cpu_set(r.cpu,MAC_A7,0x8000);mac_cpu_set(r.cpu,MAC_D0,0x0415);
+ CHECK(mac_palette_manager_service(&r,0xaaa2)==-1 && mac_cpu_halted(r.cpu));
+ CHECK(strstr(mac_cpu_error(r.cpu),"0x0415")!=NULL);
+ mac_cpu_destroy(r.cpu);
+ r=fresh();mac_color_init(&r);mac_cpu_set(r.cpu,MAC_A7,0x8000);mac_cpu_set(r.cpu,MAC_D0,0x0814);   /* HasDepth, wrong size */
+ CHECK(mac_palette_manager_service(&r,0xaaa2)==-1 && mac_cpu_halted(r.cpu));
+ mac_cpu_destroy(r.cpu);
+ r=fresh();mac_color_init(&r);mac_cpu_set(r.cpu,MAC_A7,(uint32_t)mac_cpu_ram_size(r.cpu)-4);mac_cpu_set(r.cpu,MAC_D0,0x0a14);  /* stack runs off RAM */
+ CHECK(mac_palette_manager_service(&r,0xaaa2)==-1 && mac_cpu_halted(r.cpu));
+ mac_cpu_destroy(r.cpu);
+}
+int main(void){palette_dispatch();dispatched();successful();failure();associations();puts("mac palette manager object and association tests passed");return 0;}

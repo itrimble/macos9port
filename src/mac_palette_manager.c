@@ -1,4 +1,5 @@
 #include "mac_runtime.h"
+#include <stdio.h>
 #include <string.h>
 
 /* Independent public Palette/ColorInfo layout and NewPalette contract:
@@ -52,7 +53,37 @@ static int association(MacRuntime*r,uint16_t opcode,uint32_t sp){
     w->palette_handle=h;w->palette_updates=rd(r,sp,1)?0xe000:0xc000;
     mac_cpu_set(r->cpu,MAC_A7,sp+10);return 1;
 }
+/* _PaletteDispatch ($AAA2): the selector is the low word of D0, high byte = argument bytes, low byte = routine
+ * (e.g. $0A14 = HasDepth, $0A13 = SetDepth; declaration pairs in the public MPW interface files). The only
+ * display mode is the main device's 8-bit indexed color depth, so a depth request succeeds only for exactly that
+ * mode. whichFlags selects which device-type bits to compare (bit 0 = gdDevType: 1 color, 0 monochrome). */
+static int palette_dispatch(MacRuntime *r){
+    uint32_t sel=mac_cpu_get(r->cpu,MAC_D0)&0xffff,sp=mac_cpu_get(r->cpu,MAC_A7);
+    unsigned routine=sel&0xff,args=sel>>8;
+    if((routine!=0x13 && routine!=0x14) || args!=10){
+        static char message[80];
+        snprintf(message,sizeof message,"PaletteDispatch selector 0x%04x is unsupported.",(unsigned)sel);
+        return fail(r,message);
+    }
+    if(!valid(r,sp,12))return fail(r,"PaletteDispatch stack exceeds guest RAM.");
+    uint32_t flags=rd(r,sp,2),which=rd(r,sp+2,2),depth=rd(r,sp+4,2),gd=rd(r,sp+6,4);
+    int supported=gd && gd==r->main_device && r->screen_depth==depth;
+    if(supported){
+        uint32_t device=rd(r,gd,4);
+        uint32_t device_flags=device && valid(r,device,62)?rd(r,device+20,2):0;
+        if(which&~1u)supported=0;                                  /* only gdDevType is defined here */
+        else if((which&1) && ((flags^device_flags)&1))supported=0; /* wrong device type for this mode */
+    }
+    if(routine==0x14)wr(r,sp+10,2,supported?1:0);                  /* HasDepth: nonzero when available */
+    else wr(r,sp+10,2,supported?0:(uint16_t)-50);                  /* SetDepth: noErr for the current mode, else paramErr */
+    mac_cpu_set(r->cpu,MAC_A7,sp+10);
+    return 1;
+}
 int mac_palette_manager_service(MacRuntime *r,uint16_t opcode){
+    if(opcode==0xaaa2){
+        if(mac_cpu_halted(r->cpu))return -1;
+        return palette_dispatch(r);
+    }
     if(opcode!=0xaa91 && opcode!=0xaa93 && opcode!=0xaa95 && opcode!=0xaa96)return 0;
     if(mac_cpu_halted(r->cpu))return -1;
     uint32_t sp=mac_cpu_get(r->cpu,MAC_A7);
