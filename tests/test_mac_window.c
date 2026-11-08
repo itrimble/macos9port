@@ -165,7 +165,12 @@ static void sizing(void) {
  CHECK(rd(&r,content+6,2)==238 && rd(&r,content+8,2)==434 && rd(&r,vis+6,4)==0 && rd(&r,up+6,4)==0);
  CHECK(r.current_port==port && r.heap_next==heap && r.event_count==events && mac_cpu_ram(r.cpu)[r.screen_base+100*640+100]==77);
  CHECK(resize(&r,0,0,1)==1 && r.window.bounds[2]==238);
- CHECK(resize(&r,600,470,0)==-1 && r.window.bounds[2]==238);mac_cpu_destroy(r.cpu);
+ mac_cpu_destroy(r.cpu);
+ for(unsigned k=0;k<6;k++) {                                  /* larger than the screen, or smaller than the minimum: refused atomically */
+  r=fresh();new_args(&r,STORAGE,0);CHECK(mac_window_service(&r,0xaa45)==1);
+  CHECK(resize(&r,k==0?700:k==1?600:k==2?63:k==3?100:k==4?641:640,k==0?470:k==1?490:k==2?100:k==3?31:k==4?100:481,0)==-1 && mac_cpu_halted(r.cpu) && r.window.bounds[2]==300 && r.window.bounds[3]==450);
+  mac_cpu_destroy(r.cpu);
+ }
  r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
  mac_cpu_ram(r.cpu)[r.screen_base+100*640+100]=42;
  CHECK(resize(&r,450,300,1)==1);up=rd(&r,r.window.handles[10],4);
@@ -200,4 +205,29 @@ static void moving(void) {
   CHECK(move_to(&r,-1,141,0)==-1 && r.window.bounds[1]==128);mac_cpu_destroy(r.cpu);
  }
 }
-int main(void){show_hide_checks();moving();sizing();calc_vis();lifecycle();failures();puts("one-window lifecycle, drawing, and update checks passed");}
+/* A window may extend past the bottom or right edge of the screen while it is sized (a game can size first and move after). Nothing may
+ * be written outside the screen buffer; moving it back on-screen keeps the on-screen pixels and starts the rest as paper. */
+static void offscreen(void) {
+ MacRuntime r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
+ uint8_t *ram=mac_cpu_ram(r.cpu);uint32_t after=r.screen_base+640*480;
+ unsigned light=0,max=0;for(unsigned i=0;i<256;i++){uint32_t c=r.palette[i];unsigned v=((c>>16)&255)+((c>>8)&255)+(c&255);if(v>=max){max=v;light=i;}}
+ CHECK(light!=77 && light!=42);
+ memset(ram+after,0x6b,0x40000);ram[r.screen_base+100*640+100]=42;
+ CHECK(resize(&r,590,440,0)==1 && r.window.bounds[2]==480 && r.window.bounds[3]==640);                 /* exactly on-screen */
+ CHECK(resize(&r,600,470,0)==1 && r.window.bounds[2]==510 && r.window.bounds[3]==650);                 /* past the bottom and right edges */
+ for(unsigned i=0;i<0x40000;i++)if(ram[after+i]!=0x6b){CHECK(0);break;}
+ CHECK(ram[r.screen_base+100*640+100]==42);
+ CHECK(move_to(&r,0,10,0)==1 && r.window.bounds[0]==10 && r.window.bounds[1]==0 && r.window.bounds[2]==480 && r.window.bounds[3]==600);
+ for(unsigned i=0;i<0x40000;i++)if(ram[after+i]!=0x6b){CHECK(0);break;}
+ CHECK(ram[r.screen_base+70*640+50]==42);                                                              /* the on-screen pixel moved with the window */
+ CHECK(ram[r.screen_base+460*640+100]==light && ram[r.screen_base+200*640+595]==light);               /* what was off-screen starts as paper */
+ mac_cpu_destroy(r.cpu);
+ /* moving a window that is off-screen to another off-screen place is still refused, atomically */
+ r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);CHECK(resize(&r,600,470,0)==1);
+ CHECK(move_to(&r,0,30,0)==-1 && r.window.bounds[0]==40 && r.window.bounds[2]==510);mac_cpu_destroy(r.cpu);
+ /* growing a visible off-screen window with updating on is refused, atomically; with updating off, or hidden, it works */
+ r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
+ CHECK(resize(&r,600,470,1)==-1 && r.window.bounds[2]==300 && r.window.bounds[3]==450);mac_cpu_destroy(r.cpu);
+ r=fresh();new_args(&r,STORAGE,0);CHECK(mac_window_service(&r,0xaa45)==1);CHECK(resize(&r,600,470,1)==1 && r.window.bounds[2]==510);mac_cpu_destroy(r.cpu);
+}
+int main(void){show_hide_checks();moving();sizing();offscreen();calc_vis();lifecycle();failures();puts("one-window lifecycle, drawing, and update checks passed");}

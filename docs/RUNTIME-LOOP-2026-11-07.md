@@ -209,8 +209,17 @@ the probe, not a window I watched, and I have not listened to any audio.
   read-only volume doing its job. In a second run on that directory **File > Restore Game?** lists `AB`; selecting it and pressing Open
   closes the dialog, the game's icon bar appears and nothing halts. I saved at the very start of the room, so this does not show that
   game state comes back. Mutation checks on the Save dialog: 13 of 13 killed (one needed a placement test added).
-- **Still open:** Options > Large Window and Hide Desktop both halt in `SizeWindow exceeds supported content dimensions`; Restart and Quit
-  run without a halt but I have not looked at what they do.
+- **Large Window and Quit (headless frames):** Large Window needed `SizeWindow` to accept a window that extends past the bottom or right
+  edge (the game sizes 640x400 at top 140, then moves it). A window may now be up to 640x480 and sit partly off-screen; every pixel loop
+  clips to the screen, nothing is written past the screen buffer (tested with a sentinel), and `MoveWindow` carries only the on-screen
+  pixels and starts the rest as paper. Growing an off-screen visible window with `updating` = TRUE still halts, because the update region
+  could not name the off-screen part; moving a window to another off-screen place still halts. After the fix the game fills the screen
+  with the room and its icon bar (eye, hand, ..., help). **Quit** shows the game's own "Quit for now / Keep" box, and Quit for now ends
+  with `Guest called ExitToShell` and a clean exit. Restart shows no visible change that I have identified. **Hide Desktop** now halts
+  one step later, `Showing a second visible window requires unsupported compositing`: it opens a second, full-screen window, and the
+  runtime still shows one window at a time. Mutation checks on the window change: 6 of 8 killed after one added boundary test; one
+  survivor is equivalent in effect (a snapshot copy of the full width whose extra bytes are never pasted), one was the boundary case now
+  covered.
 - **Parity:** Monkey Island and Monkey Island 2 are byte-identical to the previous baseline; `make test` exits 0; ASan on Castle (90 s with
   the menu script) and on the new and touched menu, window and utility tests reports nothing.
 

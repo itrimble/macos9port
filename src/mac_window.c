@@ -280,7 +280,11 @@ static int size_window(MacRuntime *rt,uint32_t sp) {
     if(!width && !height){mac_cpu_set(rt->cpu,MAC_A7,sp+10);return 1;}
     if(w->updating || !mac_window_registry_valid(rt))return fail(rt,"SizeWindow requires stable owned window geometry.");
     int t=w->bounds[0],l=w->bounds[1],old_b=w->bounds[2],old_r=w->bounds[3],b=t+height,r=l+width;
-    if(width<64 || height<32 || b>480 || r>640)return fail(rt,"SizeWindow exceeds supported content dimensions.");
+    if(width<64 || height<32 || width>640 || height>480)return fail(rt,"SizeWindow exceeds supported content dimensions.");
+    /* A window may be sized so that part of it lies below or right of the screen (a game can size first and move after); every pixel
+     * loop below and in MoveWindow clips to the screen. The update region cannot name the off-screen part, so growing an off-screen
+     * window with updating = TRUE is refused rather than losing it. */
+    if((b>480 || r>640) && updating && w->visible)return fail(rt,"SizeWindow with updating on a window that extends off-screen is unsupported.");
     int local_t=(int16_t)rd(rt,w->address+16,2),local_l=(int16_t)rd(rt,w->address+18,2);
     if(local_t+height>INT16_MAX || local_l+width>INT16_MAX)return fail(rt,"SizeWindow local dimensions overflow signed words.");
     if(w->visible && mac_window_front(rt)!=w->address)return fail(rt,"SizeWindow requires the single visible window.");
@@ -312,7 +316,7 @@ static int size_window(MacRuntime *rt,uint32_t sp) {
          * overlapping guest image; redraw authored chrome after geometry. */
         for(int y=top<0?0:top;y<old_b+frame && y<480;y++)for(int x=l-frame<0?0:l-frame;x<old_r+frame && x<640;x++)
             if(y<t || y>=b || x<l || x>=r)ram[rt->screen_base+y*640+x]=ram[w->backdrop+y*640+x];
-        for(int y=t;y<b;y++)for(int x=l;x<r;x++)if(y>=old_b || x>=old_r)ram[rt->screen_base+y*640+x]=(uint8_t)light;
+        for(int y=t;y<b && y<480;y++)for(int x=l;x<r && x<640;x++)if(y>=old_b || x>=old_r)ram[rt->screen_base+y*640+x]=(uint8_t)light;
     }
     w->bounds[2]=(int16_t)b;w->bounds[3]=(int16_t)r;
     rect(rt,w->address+16,local_t,local_l,local_t+height,local_l+width);
@@ -346,10 +350,12 @@ static int move_window(MacRuntime *rt,uint32_t sp) {
         if(edges[j][0]>=edges[j][2] || edges[j][1]>=edges[j][3]){memset(edges[j],0,sizeof edges[j]);continue;}
         for(unsigned i=0;i<4;i++){edges[j][i]+=i&1?dx:dy;if(edges[j][i]<INT16_MIN || edges[j][i]>INT16_MAX)return fail(rt,"MoveWindow region coordinates overflow signed words.");}
     }
-    uint8_t *pixels=NULL,*ram=mac_cpu_ram(rt->cpu);
+    uint8_t *pixels=NULL,*ram=mac_cpu_ram(rt->cpu);int copy_h=height,copy_w=width;
     if(w->visible) {
-        pixels=malloc((size_t)width*height);if(!pixels)return fail(rt,"MoveWindow cannot allocate pixel snapshot.");
-        for(int y=0;y<height;y++)memcpy(pixels+y*width,ram+rt->screen_base+(w->bounds[0]+y)*640+w->bounds[1],(size_t)width);
+        pixels=calloc((size_t)width*height,1);if(!pixels)return fail(rt,"MoveWindow cannot allocate pixel snapshot.");
+        /* Only the part of the window that is on the screen has pixels to carry along. */
+        if(w->bounds[0]+height>480)copy_h=480-w->bounds[0];if(w->bounds[1]+width>640)copy_w=640-w->bounds[1];
+        for(int y=0;y<copy_h;y++)memcpy(pixels+y*width,ram+rt->screen_base+(w->bounds[0]+y)*640+w->bounds[1],(size_t)copy_w);
         restore_background(rt);memcpy(ram+w->backdrop,ram+rt->screen_base,307200);
     }
     w->bounds[0]=(int16_t)top;w->bounds[1]=(int16_t)left;w->bounds[2]=(int16_t)(top+height);w->bounds[3]=(int16_t)(left+width);
@@ -358,7 +364,14 @@ static int move_window(MacRuntime *rt,uint32_t sp) {
     rect(rt,rd(rt,w->handles[12],4),top,left,top+height,left+width);
     if(front){mac_window_to_front(rt,w->address);activate(rt,1);}
     mac_window_draw(rt,0);
-    if(pixels){for(int y=0;y<height;y++)memcpy(ram+rt->screen_base+(top+y)*640+left,pixels+y*width,(size_t)width);free(pixels);}
+    if(pixels){
+        if(copy_h<height || copy_w<width) {      /* part of the window was off-screen: its pixels never existed, so the content starts out paper */
+            unsigned light=0,max=0;for(unsigned i=0;i<256;i++){uint32_t c=rt->palette[i];unsigned v=((c>>16)&255)+((c>>8)&255)+(c&255);if(v>=max){max=v;light=i;}}
+            for(int y=0;y<height;y++)memset(ram+rt->screen_base+(top+y)*640+left,(int)light,(size_t)width);
+        }
+        for(int y=0;y<copy_h;y++)memcpy(ram+rt->screen_base+(top+y)*640+left,pixels+y*width,(size_t)copy_w);free(pixels);
+        if(copy_h<height || copy_w<width)mac_window_draw(rt,0);   /* the chrome over the paper fill */
+    }
     mac_cpu_set(rt->cpu,MAC_A7,sp+10);return 1;
 }
 int mac_window_service(MacRuntime *rt,uint16_t opcode) {
