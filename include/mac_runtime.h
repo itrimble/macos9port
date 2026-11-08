@@ -49,6 +49,16 @@ typedef struct {
 } MacWindowState;
 
 typedef struct MacHeapBridge MacHeapBridge;
+
+/* Apple Event Manager state ($A816). Handlers are only RECORDED; nothing in this runtime sends an Apple Event, so
+ * none is ever called. Two separate tables (application and system) of bounded size, then the interaction level. */
+#define MAC_AE_HANDLERS 64
+typedef struct { uint32_t event_class, event_id, handler, refcon; } MacAeHandler;
+typedef struct {
+    MacAeHandler app[MAC_AE_HANDLERS], sys[MAC_AE_HANDLERS];
+    unsigned app_count, sys_count;
+    uint8_t level, level_set; /* AEInteractAllowed 0..2; level_set == 0 means never set (reported as the default) */
+} MacAppleEvents;
 struct MacResEdits;
 
 typedef struct {
@@ -98,6 +108,7 @@ typedef struct {
     unsigned window_count;
     int exited;
     int trace;
+    MacAppleEvents appleevents; /* Apple Event Manager handler tables, host memory only (mac_appleevents.c) */
 } MacRuntime;
 
 /* The fork's backing bytes must outlive the runtime. This is a development
@@ -155,6 +166,10 @@ int mac_picture_service(MacRuntime *rt, uint16_t opcode);
 int mac_sane_service(MacRuntime *rt, uint16_t opcode);
 int mac_numconv_service(MacRuntime *rt, uint16_t opcode);
 int mac_help_service(MacRuntime *rt, uint16_t opcode); /* Help Manager dispatch, $A830 */
+int mac_appleevents_service(MacRuntime *rt, uint16_t opcode); /* Apple Event Manager handler tables, $A816 */
+/* Host-side lookup for a future dispatcher (application table, then system table; exact, class+'****', '****'+id,
+ * '****'+'****'). Returns 1 and fills the outputs on a hit, 0 otherwise. Nothing in the runtime calls it yet. */
+int mac_ae_find_handler(const MacRuntime *rt, uint32_t event_class, uint32_t event_id, uint32_t *handler, uint32_t *refcon);
 int mac_menu_service(MacRuntime *rt, uint16_t opcode);
 int mac_toolbox_service(MacRuntime *rt, uint16_t opcode);
 int mac_raster_service(MacRuntime *rt, uint16_t opcode);

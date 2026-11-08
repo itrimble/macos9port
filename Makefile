@@ -93,7 +93,7 @@ RUNTIME_HDRS := include/folder_navigation.h src/runtime_video_pixels.h src/runti
 RUNTIME += src/mac_resource_catalog.c src/mac_resource_files.c
 RUNTIME += src/mac_pict_decode.c src/mac_picture.c
 RUNTIME += src/mac_sane.c
-RUNTIME += src/mac_numconv.c src/mac_help.c
+RUNTIME += src/mac_numconv.c src/mac_help.c src/mac_appleevents.c
 RUNTIME += src/mac_sound.c src/mac_sound_render.c
 RUNTIME += src/mac_sound_double.c
 RUNTIME += src/mac_sound_resample.c
@@ -134,6 +134,9 @@ test: build/test_mac_sane
 build/test_mac_help: $(RUNTIME_OBJ) tests/test_mac_help.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_help.c $(CPUOBJ) -lm -o $@
 
+build/test_mac_appleevents: $(RUNTIME_OBJ) tests/test_mac_appleevents.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_appleevents.c $(CPUOBJ) -lm -o $@
+
 build/test_mac_window_colors: $(RUNTIME_OBJ) tests/test_mac_window_colors.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_window_colors.c $(CPUOBJ) -lm -o $@
 
@@ -146,7 +149,7 @@ build/test_mac_getnewpalette: $(RUNTIME_OBJ) tests/test_mac_getnewpalette.c $(RU
 build/test_mac_numconv: $(RUNTIME_OBJ) tests/test_mac_numconv.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_numconv.c $(CPUOBJ) -lm -o $@
 
-test: build/test_mac_numconv build/test_mac_help build/test_mac_window_colors build/test_mac_setorigin build/test_mac_getnewpalette
+test: build/test_mac_numconv build/test_mac_help build/test_mac_appleevents build/test_mac_window_colors build/test_mac_setorigin build/test_mac_getnewpalette
 
 build/test_mac_sound: $(RUNTIME_OBJ) tests/test_mac_sound.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sound.c $(CPUOBJ) -lm -o $@
@@ -432,6 +435,7 @@ test: build/test_os999_startup build/test_ospi build/test_archive_install build/
 	./build/test_mac_sane
 	./build/test_mac_numconv
 	./build/test_mac_help
+	./build/test_mac_appleevents
 	./build/test_mac_window_colors
 	./build/test_mac_setorigin
 	./build/test_mac_getnewpalette
