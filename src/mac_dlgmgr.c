@@ -158,7 +158,7 @@ static int get_new_dialog(MacRuntime *rt, uint32_t sp) {
     if (w < 16 || h < 16 || w > 640 || h > 480) return fail(rt, "The dialog size is unsupported.");
     for (unsigned k = 0; k < list.count; k++) {
         const MacDitlItem *it = &list.items[k];
-        if (it->kind == MAC_ITEM_USER) return fail(rt, "Dialog user items are unsupported.");
+        /* a user item (type 0) is accepted but its draw procedure is never called: it stays blank; if enabled it still counts as a hit */
         if (it->kind == MAC_ITEM_CONTROL) return fail(rt, "Dialog control items are unsupported.");
         if (it->kind != MAC_ITEM_HELP && (it->right <= it->left || it->bottom <= it->top)) return fail(rt, "A dialog item has an empty rectangle.");
     }

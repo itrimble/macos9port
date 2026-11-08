@@ -137,8 +137,11 @@ static void creating(void) {
     CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0x40000, 0, &rc); CHECK(rc == 1 && d == 0x40000 && raw(&g.rt, d + 108, 2) == 2); mac_runtime_destroy(&g.rt);
     CHECK(rig_open(&g) == 0); d = get_new(&g, 999, 0, 0xffffffffu, &rc); CHECK(rc == 1 && d == 0 && screen_all_back(&g)); mac_runtime_destroy(&g.rt);
     CHECK(rig_open(&g) == 0); d = get_new(&g, 135, 0, 0xffffffffu, &rc); CHECK(rc == 1 && d); {const uint8_t *sc = mac_cpu_ram(g.rt.cpu) + g.rt.screen_base; CHECK(sc[479 * 640 + 600] != BACK && sc[400 * 640 + 639] != BACK);} mac_runtime_destroy(&g.rt);
+    /* a dialog whose item list has a user item (type 0) opens; the item's draw procedure is never called, so it stays blank, and the dialog disposes cleanly */
+    CHECK(rig_open(&g) == 0); d = get_new(&g, 130, 0, 0xffffffffu, &rc); CHECK(rc == 1 && d != 0 && !screen_all_back(&g));
+    wr(&g.rt, SP, 4, d); CHECK(trap(&g, 0xa983, SP) == 1 && screen_all_back(&g)); mac_runtime_destroy(&g.rt);
     /* refusals: nothing is allocated and the guest halts */
-    static const struct { int id; uint32_t storage, behind; } bad[] = { {130,0,0xffffffffu}, {131,0,0xffffffffu}, {133,0,0xffffffffu}, {134,0,0xffffffffu}, {136,0,0xffffffffu},
+    static const struct { int id; uint32_t storage, behind; } bad[] = { {131,0,0xffffffffu}, {133,0,0xffffffffu}, {134,0,0xffffffffu}, {136,0,0xffffffffu},
         {128,0,0x50000}, {128,0x40001,0}, {128,0xfffffff0u,0} };
     for (unsigned k = 0; k < sizeof bad / sizeof *bad; k++) {
         CHECK(rig_open(&g) == 0); d = get_new(&g, bad[k].id, bad[k].storage, bad[k].behind, &rc);

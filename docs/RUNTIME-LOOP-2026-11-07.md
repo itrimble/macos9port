@@ -500,3 +500,13 @@ the probe, not a window I watched, and I have not listened to any audio.
   Choosing **Preferences?** halts: `Dialog user items are unsupported.` The Preferences dialog draws custom items with guest procedures (DITL user
   items); running them needs a dialog GrafPort that guest drawing can target, and dialogs here have none (they are painted from their item lists; see the
   parked "real dialog GrafPort" item, which this and Room Editor's PICT item both need). That is the next real subsystem; not started in this pass.
+
+- **Dialog user items accepted (inert), Glider PRO Preferences opens.** I scoped a real dialog GrafPort (a colour port per dialog whose PixMap is the screen, user-item
+  draw procedures called through `mac_guest_call`, the native repaint in the modal loop re-running them) and decided it is too large for one safe step: the
+  modal loop repaints the whole dialog from its item list on every pass, which would erase anything the guest draws, so real drawing needs a dirty-flag repaint
+  design and a rewrite of the swallow logic, in a file that is at the size limit. The smallest honest slice: a DITL **user item** (type 0) no longer halts
+  `GetNewDialog`; it is accepted, **never drawn and its draw procedure never called**, and if enabled it still counts as a hit like any other item. Headless result:
+  Options > Preferences? now opens a dialog (four icons: an eye, an ear, a hand and a brain-like shape, with "All Defaults" and "Okay"); a click on the first
+  icon changed nothing visible and caused no halt; Okay closes it and the title screen comes back. `test_mac_dlgmgr` now expects dialog 130 to open and dispose
+  cleanly; `make test` 0; ASan clean; Monkey Island and Monkey Island 2 identical; Castle refreshed. What is **not** shown: whatever the Preferences items draw
+  with their procedures (panels, boxes), and the real dialog port (Room Editor's PICT in its dialog is still not shown).
