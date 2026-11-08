@@ -15,6 +15,7 @@ void mac_window_hilite(MacRuntime *rt, MacWindowState *w, int on); /* HiliteWind
 int mac_window_set_title(MacRuntime *rt, MacWindowState *w, uint32_t src); /* SetWTitle (mac_window_title.c) */
 void mac_window_draw_clipped(MacRuntime *rt,const int16_t clip[4]);
 int mac_window_hit(MacRuntime *rt, int x, int y);
+int mac_window_hit_test(MacRuntime *rt, int h, int v);   /* FindWindow over all visible windows, front to back; leaves the hit window selected */
 int mac_window_registry_valid(MacRuntime *rt);
 int mac_window_select(MacRuntime *rt,uint32_t address);
 int mac_window_park(MacRuntime *rt);

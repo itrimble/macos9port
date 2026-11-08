@@ -420,7 +420,7 @@ int mac_window_service(MacRuntime *rt,uint16_t opcode) {
         if(front && !window_valid(rt))return fail(rt,"FindWindow has invalid owned window records.");
         int mbar=(int)rd(rt,0xbaa,2),vv=(int16_t)rd(rt,sp+4,2);                    /* a point in the menu bar is inMenuBar (1), with no window, before any window is asked */
         if(mbar>0 && vv>=0 && vv<mbar){wr(rt,out,4,0);wr(rt,sp+8,2,1);mac_cpu_set(rt->cpu,MAC_A7,sp+8);return 1;}
-        int hit=front?mac_window_hit(rt,(int16_t)rd(rt,sp+6,2),(int16_t)rd(rt,sp+4,2)):0;
+        int hit=front?mac_window_hit_test(rt,(int16_t)rd(rt,sp+6,2),(int16_t)rd(rt,sp+4,2)):0;
         wr(rt,out,4,hit?rt->window.address:0);wr(rt,sp+8,2,(unsigned)hit);mac_cpu_set(rt->cpu,MAC_A7,sp+8);return 1;
     }
     uint32_t address=rd(rt,sp+((opcode==0xa91d || opcode==0xa91b)?6:opcode==0xa918 || opcode==0xa919 || opcode==0xa91a || opcode==0xa90a?4:(opcode==0xa908||opcode==0xa91c)?2:0),4);

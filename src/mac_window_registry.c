@@ -70,3 +70,18 @@ int mac_window_registry_valid(MacRuntime *rt) {
     }
     return 1;
 }
+/* FindWindow's search: the visible windows from front to back, the first whose structure holds the point (the part code from mac_window_hit). That window is left
+ * selected, so rt->window is the window FindWindow reports; with no hit the front window is selected again and 0 is returned. */
+int mac_window_hit_test(MacRuntime *rt,int h,int v) {
+    uint32_t front=mac_window_front(rt);
+    for(unsigned i=0;i<rt->window_count;i++) {
+        MacWindowState *w=mac_window_find(rt,rt->window_order[i]);
+        if(!w || !w->visible)continue;
+        uint32_t address=w->address;
+        if(!mac_window_select(rt,address))continue;
+        int hit=mac_window_hit(rt,h,v);
+        if(hit)return hit;
+    }
+    if(front)mac_window_select(rt,front);
+    return 0;
+}

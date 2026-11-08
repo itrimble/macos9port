@@ -232,7 +232,7 @@ static int set_item(MacRuntime*r,uint32_t sp){
 }
 int mac_menu_records_service(MacRuntime*r,uint16_t op){
     unsigned args=0,result=0;
-    switch(op){case 0xa931:args=6;result=4;break;case 0xa947:case 0xa941:case 0xa946:case 0xa84e:case 0xa943:case 0xa93f:args=10;break;case 0xa933:case 0xa945:case 0xa94d:args=8;break;
+    switch(op){case 0xa931:args=6;result=4;break;case 0xa947:case 0xa941:case 0xa946:case 0xa84e:case 0xa943:case 0xa93f:args=10;break;case 0xa933:case 0xa945:case 0xa94d:case 0xa942:case 0xa944:case 0xa84f:case 0xa940:args=8;break;
     case 0xa939:case 0xa93a:case 0xa935:args=6;break;case 0xa932:case 0xa93c:case 0xa948:args=4;break;case 0xa936:args=2;break;
     case 0xa934:args=0;break;
     case 0xa9bf:case 0xa9c0:args=2;result=4;break;case 0xaa64:args=4;result=4;break;case 0xa950:args=4;result=2;break;case 0xa949:args=2;result=4;break;default:return 0;}
@@ -260,6 +260,16 @@ int mac_menu_records_service(MacRuntime*r,uint16_t op){
         if(!out||!valid(r,out,1+n))return fail(r,"GetItem destination is invalid.");
         wr(r,out,1,n);if(n)memcpy(mac_cpu_ram(r->cpu)+out+1,b+p+1,n);
         mac_cpu_set(r->cpu,MAC_A7,sp+10);return 1;
+    }
+    if(op==0xa942||op==0xa944||op==0xa84f||op==0xa940){   /* SetItemStyle / SetItemMark / SetItemCmd / SetItemIcon (menu, item, byte): the byte is the first of the pushed word; an item outside the menu is ignored */
+        unsigned count;MacHandle*m=mac_menu_record(r,rd(r,sp+4,4),&count);int item=(int16_t)rd(r,sp+2,2);
+        if(!m)return fail(r,"SetItemStyle/Mark/Cmd/Icon menu is invalid.");
+        if(item>=1 && (unsigned)item<=count){
+            const uint8_t*b=mac_cpu_ram(r->cpu)+m->pointer;size_t p=15u+b[14];
+            for(int i=1;i<item;i++)p+=b[p]+5u;
+            wr(r,m->pointer+p+b[p]+(op==0xa942?4:op==0xa944?3:op==0xa84f?2:1),1,rd(r,sp,1));
+        }
+        mac_cpu_set(r->cpu,MAC_A7,sp+8);return 1;
     }
     if(op==0xa93f){   /* GetItemIcon(menu, item, VAR iconIndex: INTEGER): the icon byte as an integer (the 2-byte size is from memory of Inside Macintosh) */
         unsigned count;MacHandle*m=menu_record_x(r,rd(r,sp+6,4),&count,1);uint32_t out=rd(r,sp,4);int item=(int16_t)rd(r,sp+4,2);

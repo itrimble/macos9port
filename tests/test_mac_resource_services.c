@@ -101,6 +101,7 @@ static void normal(void) {
     CHECK(one(&rt, 0xa9a6, h, 2) == 0x24 && error(&rt) == 0);
     CHECK(one(&rt, 0xa99c, TEXT, 2) == 1);
     CHECK(one(&rt, 0xa99c, 0x41414141, 2) == 0 && error(&rt) == 0);
+    CHECK(one(&rt, 0xa80d, TEXT, 2) == 1 && one(&rt, 0xa80d, 0x41414141, 2) == 0 && error(&rt) == 0);   /* Count1Resources: the current file only (one file here) */
     CHECK(get(&rt, 0xa99d, TEXT, 1) == h);
     CHECK(get(&rt, 0xa99d, TEXT, 0) == 0 && error(&rt) == -192);
     CHECK(get(&rt, 0xa99d, TEXT, 2) == 0 && error(&rt) == -192);

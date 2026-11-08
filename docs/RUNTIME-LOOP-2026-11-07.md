@@ -595,3 +595,16 @@ the probe, not a window I watched, and I have not listened to any audio.
   House menu opens (New House, Save House, House/Room/Object Info, Cut/Copy/Clear/Duplicate, Bring To Front, Go To Room, window toggles); it has **no "New Room"**. A scripted double-click on a Map
   cell did nothing visible: not yet understood (double-click timing under scripting, or the Map window's click handling). The run no longer halts: it idles in the event loop. Not checked: that the
   editor window overlaps are right, text positions, or any window in a real session.
+
+- **FindWindow sees every window; Glider PRO creates a room (headless).** Root cause of the dead Map window: `FindWindow` tested only the FRONT window, so a click on any window behind it
+  (the Map window behind the main one) came back as "nothing" and the app did nothing. New `mac_window_hit_test` (registry file) walks the visible windows front to back, returns the first
+  hit part and leaves that window selected (no hit: the front window is selected again). With it, the scripted double-click on a Map cell opens Glider's own alert "Do you wish to create a
+  New Room at this location?" (Cancel / Create; frame seen). Then the New Room path needed: **PtrAndHand** ($A9EF; A0 ptr, A1 handle, D0 count; via SetHandleSize; source copied aside;
+  resource, code, forged, purged and locked handles refused; register interface from memory), **SetItemStyle/Mark/Cmd/Icon** ($A942, $A944, $A84F, $A940), **Count1Resources** ($A80D,
+  current file only). Tests: FindWindow across two and three windows (front, back, title bars, none, menu bar, hidden), PtrAndHand (13 cases), the Set* calls including out-of-range items
+  and bytes after the block, Count1Resources. Surviving mutants: hidden-window skip (mac_window_hit already refuses hidden windows), and in PtrAndHand the zero-count early return, the
+  16 MB sum guard and the grown-pointer recheck (each also caught by a later check). ASan clean; `make test` 0; MI and MI2 identical; Castle refreshed.
+  **Next halt (headless):** after Create, Glider opens its Room Info dialog (DLOG 1003, 19 items) and the Dialog Manager halts with "Dialog control items are unsupported": the DITL has a
+  **control item (type 7, CNTL 128 = the CDEF pop-up)**, two PICT items, user items and edit text. The native dialogs have no real GrafPort, so a CDEF control cannot draw in one; this is the
+  parked "real dialog GrafPort" step and is now on the critical path (creating a room, then Save House). The idle loop of the editor runs ~2.6M instructions per virtual second in the probe;
+  whether the windowed desktop burns a core there was NOT checked.

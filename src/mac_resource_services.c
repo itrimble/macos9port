@@ -160,7 +160,7 @@ int mac_resource_service(MacRuntime *rt, uint16_t opcode) {
     case 0xa9a0: case 0xa81f: case 0xa99d: args = 6; width = 4; break;
     case 0xa9bc: args = 2; width = 4; break; /* GetPicture(picID): GetResource(PICT,id). */
     case 0xa9a5: case 0xa821: args = 4; width = 4; break; /* SizeResource; MaxSizeRsrc answers the same (an assumption: no slack in our resource files) */
-    case 0xa9a6: case 0xa99c: args = 4; width = 2; break;
+    case 0xa9a6: case 0xa99c: case 0xa80d: args = 4; width = 2; break;   /* Count1Resources ($A80D): the current resource file only */
     case 0xa9a2: case 0xa9a3: case 0xa992: args = 4; break;
     case 0xa9a8: args = 16; break;
     case 0xa9a9: args = 10; break;
@@ -190,8 +190,8 @@ int mac_resource_service(MacRuntime *rt, uint16_t opcode) {
         return result(rt, sp, 0, 2, error, (int16_t)error);
     }
     uint32_t value = mac_cpu_read(rt->cpu, sp, 4);
-    if (opcode == 0xa99c) {
-        uint32_t count = mac_resource_chain_count(rt,value,0);
+    if (opcode == 0xa99c || opcode == 0xa80d) {
+        uint32_t count = mac_resource_chain_count(rt,value,opcode == 0xa80d);
         return result(rt, sp, 4, 2, count, 0);
     }
     MacResource r;

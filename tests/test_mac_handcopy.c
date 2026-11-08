@@ -19,7 +19,40 @@ static uint32_t new_handle(MacRuntime *r, uint32_t size, const char *fill) {
 static int h2h(MacRuntime *r, uint32_t h) { mac_cpu_set(r->cpu, MAC_A0, h); mac_cpu_set(r->cpu, MAC_D0, 0x12345678); return mac_handcopy_service(r, 0xa9e1); }
 static int p2h(MacRuntime *r, uint32_t p, uint32_t n) { mac_cpu_set(r->cpu, MAC_A0, p); mac_cpu_set(r->cpu, MAC_D0, n); return mac_handcopy_service(r, 0xa9e3); }
 static int32_t err(MacRuntime *r) { return (int32_t)mac_cpu_get(r->cpu, MAC_D0); }
+static int pah(MacRuntime *r, uint32_t p, uint32_t h, uint32_t n) { mac_cpu_set(r->cpu, MAC_A0, p); mac_cpu_set(r->cpu, MAC_A1, h); mac_cpu_set(r->cpu, MAC_D0, n); return mac_handcopy_service(r, 0xa9ef); }
+static uint32_t hsize(MacRuntime *r, uint32_t h) { mac_cpu_set(r->cpu, MAC_A0, h); mac_cpu_set(r->cpu, MAC_D0, 0); CHECK(mac_memory_service(r, 0xa025) == 1); return mac_cpu_get(r->cpu, MAC_D0); }
+/* PtrAndHand: A0 = pointer, A1 = handle, D0 = count; the bytes are appended to the handle's block. */
+static void ptr_and_hand(void) {
+    MacRuntime r = fresh(); uint32_t h = new_handle(&r, 5, "hello");
+    memcpy(mac_cpu_ram(r.cpu) + 0x3000, "WORLD!!", 7);
+    CHECK(pah(&r, 0x3000, h, 6) == 1 && err(&r) == 0 && rd(&r, 0x220, 2) == 0 && (mac_cpu_get(r.cpu, MAC_SR) & 15) == 4);
+    CHECK(mac_cpu_get(r.cpu, MAC_A0) == 0x3000 && mac_cpu_get(r.cpu, MAC_A1) == h);
+    CHECK(hsize(&r, h) == 11 && !memcmp(mac_cpu_ram(r.cpu) + rd(&r, h, 4), "helloWORLD!", 11));
+    CHECK(pah(&r, 0x3000, h, 0) == 1 && err(&r) == 0 && hsize(&r, h) == 11);                            /* zero bytes: nothing changes, the source is not even looked at */
+    CHECK(pah(&r, 0, h, 0) == 1 && err(&r) == 0);
+    {   uint32_t e = new_handle(&r, 0, NULL); CHECK(pah(&r, 0x3000, e, 3) == 1 && err(&r) == 0 && hsize(&r, e) == 3 && !memcmp(mac_cpu_ram(r.cpu) + rd(&r, e, 4), "WOR", 3)); }   /* onto an empty handle */
+    {   uint32_t sp = rd(&r, h, 4); CHECK(pah(&r, sp, h, 3) == 1 && err(&r) == 0 && hsize(&r, h) == 14 && !memcmp(mac_cpu_ram(r.cpu) + rd(&r, h, 4) + 11, "hel", 3)); }   /* the source is the handle's own block */
+    /* errors append nothing */
+    CHECK(pah(&r, 0x3000, 0, 3) == 1 && err(&r) == -109);                                                 /* nil handle */
+    CHECK(pah(&r, 0x3000, h + 1, 3) == 1 && err(&r) == -109);                                             /* odd */
+    CHECK(pah(&r, 0x3000, 0x3000, 3) == 1 && err(&r) == -109);                                            /* not in the handle table */
+    CHECK(pah(&r, 0xfffff0, h, 64) == 1 && err(&r) == -111 && hsize(&r, h) == 14);                         /* source beyond RAM */
+    CHECK(pah(&r, 0x3000, h, 0x2000000) == 1 && err(&r) == -111 && hsize(&r, h) == 14);                    /* absurd count */
+    CHECK(pah(&r, 0x3000, h, 0xffffffffu) == 1 && err(&r) == -111);
+    {   uint32_t master = rd(&r, h, 4); mac_cpu_write(r.cpu, h, 4, master + 16); CHECK(pah(&r, 0x3000, h, 3) == 1 && err(&r) == -111); mac_cpu_write(r.cpu, h, 4, 0); CHECK(pah(&r, 0x3000, h, 3) == 1 && err(&r) == -111); mac_cpu_write(r.cpu, h, 4, master); }   /* moved or purged master pointer */
+    CHECK(hsize(&r, h) == 14);
+    for (unsigned k = 0; k < 2; k++) {                                                                        /* resource and loaded-code handles are not extended */
+        for (size_t i = 0; i < r.handle_count; i++) if (r.handles[i].handle == h) { if (k) r.handles[i].loaded_code = 1; else r.handles[i].resource = 1; }
+        CHECK(pah(&r, 0x3000, h, 3) == 1 && err(&r) == -111);
+        for (size_t i = 0; i < r.handle_count; i++) if (r.handles[i].handle == h) { r.handles[i].loaded_code = 0; r.handles[i].resource = 0; }
+    }
+    CHECK(pah(&r, 0x3000, h, 1) == 1 && err(&r) == 0 && hsize(&r, h) == 15);
+    {   uint32_t l = new_handle(&r, 4, "lock"); mac_cpu_set(r.cpu, MAC_A0, l); CHECK(mac_memory_service(&r, 0xa029) == 1);                 /* HLock: SetHandleSize refuses, nothing is appended */
+        CHECK(pah(&r, 0x3000, l, 4) == 1 && err(&r) != 0 && hsize(&r, l) == 4 && !memcmp(mac_cpu_ram(r.cpu) + rd(&r, l, 4), "lock", 4)); }
+    mac_cpu_destroy(r.cpu);
+}
 int main(void) {
+    ptr_and_hand();
     MacRuntime r = fresh();
     uint32_t h = new_handle(&r, 5, "hello");
     CHECK(mac_handcopy_service(&r, 0xa9e2) == 0 && mac_handcopy_service(&r, 0xa9e0) == 0 && mac_handcopy_service(&r, 0xa122) == 0);   /* neighbours are not ours */
