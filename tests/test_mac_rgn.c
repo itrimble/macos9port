@@ -214,8 +214,36 @@ static void band_cap_checks(void) {
     CHECK(failed_at == MAC_RGN_MAX_RECTS && acc.n == MAC_RGN_MAX_RECTS && r.n == 0 && why && strstr(why, "too many"));
     mac_rgn_free(&acc); mac_rgn_free(&one); mac_rgn_free(&r);
 }
+
+/* Filling from outlines: the vertical edges of an arbitrary pixel set (every pixel boundary where a row changes) must give back that
+ * set, and an unclosed outline must be refused. */
+static void vedge_checks(void) {
+    for (int iter = 0; iter < 1500; iter++) {
+        Pix pa; random_pix(&pa);
+        static int e[N * N][3]; int n = 0;
+        for (int y = LO; y < HI; y++) for (int x = LO; x <= HI; x++) {
+            int in = x < HI && pa.p[y - LO][x - LO], left = x > LO && pa.p[y - LO][x - 1 - LO];
+            if (in != left) { e[n][0] = x; e[n][1] = y; e[n][2] = y + 1; n++; }
+        }
+        MacRgn g; mac_rgn_init(&g); const char *why;
+        CHECK(mac_rgn_from_vedges(&g, (const int (*)[3])e, n, &why) == 0 && same_pixels(&g, &pa) && encodes_like(&g, &pa));
+        /* the same set from a shuffled edge list */
+        for (int i = n - 1; i > 0; i--) { int j = (int)(rnd() % (unsigned)(i + 1)); int t0 = e[i][0], t1 = e[i][1], t2 = e[i][2]; e[i][0] = e[j][0]; e[i][1] = e[j][1]; e[i][2] = e[j][2]; e[j][0] = t0; e[j][1] = t1; e[j][2] = t2; }
+        MacRgn g2; mac_rgn_init(&g2); CHECK(mac_rgn_from_vedges(&g2, (const int (*)[3])e, n, &why) == 0 && mac_rgn_equal(&g, &g2));
+        mac_rgn_free(&g); mac_rgn_free(&g2);
+    }
+    { int one[1][3] = {{3, 0, 5}}; MacRgn g; mac_rgn_init(&g); const char *why;
+      CHECK(mac_rgn_from_vedges(&g, (const int (*)[3])one, 1, &why) == -1 && why && strstr(why, "not closed") && g.n == 0);          /* a single edge cannot close */
+      int none[1][3] = {{0, 0, 0}}; CHECK(mac_rgn_from_vedges(&g, (const int (*)[3])none, 0, &why) == 0 && g.n == 0);                 /* nothing: empty */
+      int bad[2][3] = {{0, 5, 5}, {4, 9, 3}}; CHECK(mac_rgn_from_vedges(&g, (const int (*)[3])bad, 2, &why) == 0 && g.n == 0);        /* degenerate edges are ignored */
+      CHECK(mac_rgn_from_vedges(&g, (const int (*)[3])none, -1, &why) == -1 && mac_rgn_from_vedges(&g, (const int (*)[3])none, 9000, &why) == -1);
+      mac_rgn_free(&g); }
+    /* an outline within an outline is a hole (even-odd) */
+    { int ring[4][3] = {{0, 0, 10}, {10, 0, 10}, {3, 3, 7}, {7, 3, 7}}; MacRgn g; mac_rgn_init(&g); const char *why;
+      CHECK(mac_rgn_from_vedges(&g, (const int (*)[3])ring, 4, &why) == 0 && mac_rgn_contains(&g, 1, 1) && !mac_rgn_contains(&g, 5, 5) && mac_rgn_contains(&g, 5, 8) && g.n == 4); mac_rgn_free(&g); }
+}
 int main(void) {
-    oracle_checks(); untrusted_checks(); rect_query_checks(); band_cap_checks(); byte_checks(); limit_checks();
+    oracle_checks(); vedge_checks(); untrusted_checks(); rect_query_checks(); band_cap_checks(); byte_checks(); limit_checks();
     if (!fails) puts("Region engine checks passed");
     return fails ? 1 : 0;
 }

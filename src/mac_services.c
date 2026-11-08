@@ -11,6 +11,7 @@ static unsigned trap_key(uint16_t opcode) {
 }
 
 static uint32_t native_stub(unsigned key) { return 0x2000u + key * 8; }
+uint32_t mac_native_stub(unsigned key) { return native_stub(key); } /* the guest-callable address of a trap's stub */
 
 static unsigned requested_key(uint16_t instruction, uint16_t requested) {
     if (instruction & 0x200)
@@ -38,7 +39,7 @@ static int implemented(unsigned key) {
     case 0xa8f6:
     case 0xa997: case 0xa994: case 0xa998: case 0xa99a: case 0xa9a4:
     case 0xaa52:
-    case 0xa861: case 0xa83d: case 0xa9cb: case 0xa9cc: case 0xa9cd: case 0xa9cf: case 0xa9d1: case 0xa9d2: case 0xa9d3: case 0xa9d4: case 0xa9d8: case 0xa9d9: case 0xa9da: case 0xa9dc: case 0xa9df: case 0xa883: case 0xa884: case 0xa885: case 0xa886: case 0xa887: case 0xa888: case 0xa889: case 0xa88a: case 0xa88b: case 0xa88c: case 0xa88d: case 0xa88e: case 0xaa91: case 0xaa92: case 0xaa93: case 0xaa94: case 0xaa95: case 0xaa96: case 0xaa9a: case 0xaaa2:
+    case 0xa861: case 0xaa4e: case 0xaa97: case 0xaa98: case 0xa83d: case 0xa9cb: case 0xa9cc: case 0xa9cd: case 0xa9cf: case 0xa9d1: case 0xa9d2: case 0xa9d3: case 0xa9d4: case 0xa9d8: case 0xa9d9: case 0xa9da: case 0xa9dc: case 0xa9df: case 0xa883: case 0xa884: case 0xa885: case 0xa886: case 0xa887: case 0xa888: case 0xa889: case 0xa88a: case 0xa88b: case 0xa88c: case 0xa88d: case 0xa88e: case 0xaa91: case 0xaa92: case 0xaa93: case 0xaa94: case 0xaa95: case 0xaa96: case 0xaa9a: case 0xaaa2:
     case 0xa931: case 0xa932: case 0xa933: case 0xa934: case 0xa935: case 0xa936: case 0xa93c: case 0xa9c0:
     case 0xa939: case 0xa93a: case 0xa945: case 0xa947: case 0xa949: case 0xa94d:
     case 0xa950: case 0xa9bf: case 0xa9bc:
@@ -54,7 +55,7 @@ static int implemented(unsigned key) {
     case 0xa8a1: case 0xa8a2: case 0xa8a3: case 0xa8a4: case 0xa8a5:
     case 0xa89c: case 0xa896: case 0xa897: case 0xa89e: case 0xa8ad:
     case 0xa9b9: case 0xa851: case 0xa852: case 0xa853: case 0xa856: case 0xa98b:
-    case 0xa8df: case 0xa8dd: case 0xa8d8: case 0xa8d9: case 0xa8e0: case 0xa8e1: case 0xa8e2: case 0xa8e3: case 0xa8e4: case 0xa8e5: case 0xa8e6: case 0xa8e7: case 0xa8e8: case 0xa8e9:
+    case 0xa8df: case 0xa8dd: case 0xa8d8: case 0xa8d9: case 0xa8da: case 0xa8db: case 0xa8dc: case 0xa8de: case 0xa8e0: case 0xa8e1: case 0xa8e2: case 0xa8e3: case 0xa8e4: case 0xa8e5: case 0xa8e6: case 0xa8e7: case 0xa8e8: case 0xa8e9:
     case 0xa908: case 0xa927: case 0xa928: case 0xa929: case 0xa92a: case 0xa91b: case 0xa91d: case 0xa909: case 0xaa46: case 0xa90d: case 0xaa45: case 0xa924: case 0xa922: case 0xa923: case 0xa915:
     case 0xa916: case 0xa91f: case 0xa920: case 0xa92d: case 0xa914:
     case 0xa917: case 0xa918: case 0xa919: case 0xa92c: case 0xa80a:
@@ -119,6 +120,7 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
         mac_cpu_set(cpu, MAC_A7, sp + 4);
         return 0;
     }
+    mac_rgn_record_observe(rt, opcode);
     int timer = mac_time_service(rt, opcode);
     if (timer) return timer > 0 ? 0 : -1;
     int delay = mac_delay_service(rt, opcode);
@@ -207,6 +209,8 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (text_state) return text_state > 0 ? 0 : -1;
     int text = mac_text_service(rt, opcode);
     if (text) return text > 0 ? 0 : -1;
+    int stdprocs = mac_stdprocs_service(rt, opcode);
+    if (stdprocs) return stdprocs > 0 ? 0 : -1;
     int textedit = mac_textedit_service(rt, opcode);
     if (textedit) return textedit > 0 ? 0 : -1;
     if (opcode == 0xa9f4) {

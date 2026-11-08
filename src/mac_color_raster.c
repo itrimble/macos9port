@@ -65,7 +65,8 @@ static int rgb(MacRuntime *rt,uint32_t port,uint32_t arg,int back) {
     for(unsigned k=0;k<3;k++)wr(rt,port+(back?42:36)+k*2,2,rgb[k]);
     wr(rt,port+(back?84:80),4,index);return 1;
 }
-static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op) {
+/* preset: when not NULL the rectangle to paint (the call is PaintRect, op $A8A2), instead of one read from the stack. */
+static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op,const Box *preset) {
     uint32_t pm;
     if(handle(rt,rd(rt,port+2,4),50,&pm)<0)return -1;
     unsigned row=rd(rt,pm+4,2);
@@ -85,8 +86,9 @@ static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op) {
         if(region(rt,rd(rt,port+off,4),&rg)<0)return -1;
         clip=intersect(clip,rg);
     }
-    uint32_t arg=rd(rt,sp,4);
-    if(box(rt,op==0xa8a5?rd(rt,sp+4,4):arg,&b)<0)return -1;
+    uint32_t arg=preset?0:rd(rt,sp,4);
+    if(preset)b=*preset;
+    else if(box(rt,op==0xa8a5?rd(rt,sp+4,4):arg,&b)<0)return -1;
     unsigned fg=rd(rt,port+80,4),bg=rd(rt,port+84,4);
     if(fg>255 || bg>255)return fail(rt,"Color indices exceed 8-bit palette.");
     int mode=(op==0xa8a1 || op==0xa8a2)?(int)rd(rt,port+56,2):8;
@@ -117,6 +119,11 @@ static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op) {
     }
     return 1;
 }
+/* Paint a rectangle in the port's pen pattern and mode, clipped like PaintRect (used for pen strokes). */
+int mac_color_paint_box(MacRuntime *rt,uint32_t port,int t,int l,int b,int r) {
+    Box x={t,l,b,r};
+    return draw(rt,port,0,0xa8a2,&x);
+}
 int mac_color_raster_service(MacRuntime *rt,uint16_t opcode) {
     if((opcode<0xa8a1 || opcode>0xa8a5) && opcode!=0xaa14 && opcode!=0xaa15)return 0;
     if(!rt || !rt->cpu || mac_cpu_halted(rt->cpu))return -1;
@@ -126,7 +133,7 @@ int mac_color_raster_service(MacRuntime *rt,uint16_t opcode) {
     if((rd(rt,port+6,2)&0xc000)!=0xc000)return 0;
     uint32_t sp=mac_cpu_get(rt->cpu,MAC_A7);unsigned args=opcode==0xa8a5?8:4;
     if(valid(rt,sp,args,1)<0)return -1;
-    int rc=opcode==0xaa14 || opcode==0xaa15?rgb(rt,port,rd(rt,sp,4),opcode==0xaa15):draw(rt,port,sp,opcode);
+    int rc=opcode==0xaa14 || opcode==0xaa15?rgb(rt,port,rd(rt,sp,4),opcode==0xaa15):draw(rt,port,sp,opcode,NULL);
     if(rc>0)mac_cpu_set(rt->cpu,MAC_A7,sp+args);
     return rc;
 }

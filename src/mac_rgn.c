@@ -219,3 +219,32 @@ void mac_rgn_bbox(const MacRgn *g, MacRect *r) {
 }
 int mac_rgn_equal(const MacRgn *a, const MacRgn *b) { return a->n == b->n && (a->n == 0 || !memcmp(a->r, b->r, (size_t)a->n * sizeof *a->r)); }
 void mac_rgn_offset(MacRgn *g, int dh, int dv) { for (int i = 0; i < g->n; i++) { g->r[i].t += dv; g->r[i].b += dv; g->r[i].l += dh; g->r[i].r += dh; } }
+
+int mac_rgn_from_vedges(MacRgn *g, const int (*e)[3], int n, const char **why) {
+    *why = NULL; g->n = 0;
+    if (n < 0 || n > 4 * MAC_RGN_MAX_RECTS) { *why = "Outline has too many edges."; return -1; }
+    int *ys = malloc(sizeof(int) * (size_t)(2 * n + 1)), ny = 0;
+    if (!ys) { *why = "Region fill ran out of memory."; return -1; }
+    for (int i = 0; i < n; i++) { if (e[i][1] >= e[i][2]) continue; ys[ny++] = e[i][1]; ys[ny++] = e[i][2]; }
+    qsort(ys, (size_t)ny, sizeof *ys, cmp_int);
+    Builder bd; builder_init(&bd, g);
+    int rc = 0;
+    for (int k = 0; k + 1 < ny && !rc; k++) {
+        if (ys[k] == ys[k + 1]) continue;
+        int xs[2 * MAC_RGN_MAX_RECTS + 2], nx = 0, iv[MAC_RGN_MAX_RECTS][2], m = 0;
+        for (int i = 0; i < n; i++) {
+            if (e[i][1] < e[i][2] && e[i][1] <= ys[k] && e[i][2] >= ys[k + 1]) {
+                if (nx >= 2 * MAC_RGN_MAX_RECTS) { *why = "Outline has too many edges on one scan line."; rc = -1; break; }
+                xs[nx++] = e[i][0];
+            }
+        }
+        if (rc) break;
+        if (nx & 1) { *why = "Outline is not closed (a scan line crosses an odd number of edges)."; rc = -1; break; }
+        qsort(xs, (size_t)nx, sizeof *xs, cmp_int);
+        for (int i = 0; i + 1 < nx; i += 2) { if (xs[i] < xs[i + 1]) { iv[m][0] = xs[i]; iv[m][1] = xs[i + 1]; m++; } }
+        if (m && add_band(&bd, ys[k], ys[k + 1], (const int (*)[2])iv, m)) { *why = "Region has too many rectangles."; rc = -1; }
+    }
+    free(ys);
+    if (rc) g->n = 0;
+    return rc;
+}

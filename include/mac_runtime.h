@@ -116,6 +116,7 @@ typedef struct {
     int trace;
     uint32_t appfork_mark; /* file mark of the application resource fork opened for direct reads (mac_appfork.c) */
     struct MacAlertState *alert; /* native alert dialog (mac_alert.c) */
+    struct MacRgnRec *rgn_rec;   /* OpenRgn..CloseRgn recording in progress (mac_regions.c) */
     struct MacSfState *stdfile; uint32_t stdfile_pb; /* native Standard File dialog (mac_stdfile.c) */
     struct { int active; MacGuestDone done; void *ctx; uint32_t sp, resume_pc, result_bytes; } guest; /* mac_guestcall.c */
     struct { int active; uint32_t deadline, pc, sp; } delay; /* _Delay in progress (mac_delay.c); host memory only */
@@ -193,6 +194,8 @@ int mac_appfork_service(MacRuntime *rt, uint16_t opcode); /* PBRead/PBGetEOF on 
 int mac_dialog_next_event(MacRuntime *rt, MacEvent *out); /* next mouse/key event for a modal dialog */
 int mac_alert_service(MacRuntime *rt, uint16_t opcode); /* Alert, StopAlert, NoteAlert, CautionAlert: $A985..$A988 */
 void mac_alert_destroy(MacRuntime *rt);
+void mac_rgn_record_observe(MacRuntime *rt, uint16_t opcode); /* called before every trap: records outline calls while a region is open */
+void mac_rgn_record_destroy(MacRuntime *rt);
 int mac_region_box_algebra(unsigned op, const int a[4], const int b[4], int out[4]); /* rectangle algebra, mac_regions.c */
 int mac_window_inval_service(MacRuntime *rt, uint16_t opcode); /* InvalRect/InvalRgn/ValidRect/ValidRgn, $A927..$A92A */
 int mac_stdfile_service(MacRuntime *rt, uint16_t opcode); /* Pack3 Standard File, $A9EA */
@@ -216,6 +219,8 @@ int mac_volume_blocks(int directory_fd, uint32_t *blocks);
 int mac_random_service(MacRuntime *rt, uint16_t opcode);
 int mac_text_state_service(MacRuntime *rt, uint16_t opcode);
 int mac_text_service(MacRuntime *rt, uint16_t opcode);
+int mac_stdprocs_service(MacRuntime *rt, uint16_t opcode);
+uint32_t mac_native_stub(unsigned key);
 int mac_textedit_service(MacRuntime *rt, uint16_t opcode);
 int mac_volume_info(MacRuntime *rt, uint32_t pb, int directory_fd);
 int mac_volume_info_basic(MacRuntime *rt, uint32_t pb, int directory_fd); /* PBGetVInfo: only the 64-byte volumeParam */
@@ -226,6 +231,7 @@ int mac_color_init(MacRuntime *rt);
 int mac_color_set_gray(MacRuntime *rt, int gray);
 /* Palette activation: the main device's table back to its default for the current type, and single-entry writes. */
 int mac_color_reset_table(MacRuntime *rt);
+int mac_color_paint_box(MacRuntime *rt, uint32_t port, int t, int l, int b, int r); /* a pen stroke: the box in pnPat and pnMode */
 int mac_color_set_entry(MacRuntime *rt, unsigned index, uint16_t r, uint16_t g, uint16_t b);
 /* Realize the palette associated with the frontmost visible window on the main device. 0 ok (or nothing to do),
  * -1 with the CPU halted when the palette needs something unsupported. */

@@ -236,7 +236,32 @@ static int animate_palette(MacRuntime*r,uint32_t sp){
     }
     mac_cpu_set(r->cpu,MAC_A7,sp+14);return 1;
 }
+/* PmForeColor(dstEntry) ($AA97) and PmBackColor(dstEntry) ($AA98): the current port's foreground (or background) becomes entry
+ * dstEntry of its window's palette: the device index activation gave that entry (palette_map) goes into fgColor +80 (bkColor +84), and
+ * the entry's RGB into rgbFgColor +36 (rgbBkColor +42). The port must be a window port whose palette is the active one, and the entry
+ * must exist; anything else halts by name. The interface text here does not say what a port without a palette gets, so that is not
+ * guessed at. */
+static int pm_color(MacRuntime*r,uint32_t sp,int fore){
+    if(!valid(r,sp,2))return fail(r,"PmForeColor stack exceeds guest RAM.");
+    int entry=(int16_t)rd(r,sp,2);
+    MacWindowState*w=r->current_port?mac_window_find(r,r->current_port):NULL;
+    if(!w || !w->palette_handle)return fail(r,"PmForeColor and PmBackColor need the current port to be a window with a palette.");
+    if(r->palette_active!=w->palette_handle)return fail(r,"PmForeColor and PmBackColor need the window's palette to be the active one.");
+    MacHandle*m=palette(r,w->palette_handle);
+    if(!m)return fail(r,"Window palette association is invalid.");
+    unsigned n=rd(r,m->pointer,2);
+    if(entry<0 || (unsigned)entry>=n)return fail(r,"PmForeColor entry is outside the window's palette.");
+    uint32_t port=r->current_port,e=m->pointer+16+16*(unsigned)entry;
+    if(!valid(r,port,108))return fail(r,"PmForeColor needs a valid current port.");
+    wr(r,port+(fore?80:84),4,r->palette_map[entry]);
+    for(unsigned k=0;k<3;k++)wr(r,port+(fore?36:42)+2*k,2,rd(r,e+2*k,2));
+    mac_cpu_set(r->cpu,MAC_A7,sp+2);return 1;
+}
 int mac_palette_manager_service(MacRuntime *r,uint16_t opcode){
+    if(opcode==0xaa97 || opcode==0xaa98){
+        if(mac_cpu_halted(r->cpu))return -1;
+        return pm_color(r,mac_cpu_get(r->cpu,MAC_A7),opcode==0xaa97);
+    }
     if(opcode==0xaa9a){
         if(mac_cpu_halted(r->cpu))return -1;
         return animate_palette(r,mac_cpu_get(r->cpu,MAC_A7));

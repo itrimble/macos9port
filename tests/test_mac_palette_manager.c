@@ -190,4 +190,40 @@ static void animate(void){
   mac_cpu_destroy(q.cpu);
  }
 }
-int main(void){animate();palette_dispatch();dispatched();successful();failure();associations();puts("mac palette manager object and association tests passed");return 0;}
+static uint32_t rdw_raw(MacRuntime*r,uint32_t p){const uint8_t*m=mac_cpu_ram(r->cpu);return (uint32_t)m[p]<<24|m[p+1]<<16|m[p+2]<<8|m[p+3];}
+
+/* PmForeColor ($AA97) / PmBackColor ($AA98): the current port takes the device index and RGB of a palette entry. */
+static int pm_call(MacRuntime*r,uint16_t op,int entry){mac_cpu_set(r->cpu,MAC_A7,0x8000);wr(r,0x8000,2,(uint16_t)entry);return mac_palette_manager_service(r,op);}
+static void pm_colors(void){
+    uint32_t window,palette;MacRuntime r=animate_rig(&window,&palette);uint32_t port=r.current_port;
+    CHECK(port==window);
+    uint32_t pal=rd(&r,palette,4);
+    wr(&r,pal+16+16*3,2,0x1111);wr(&r,pal+16+16*3+2,2,0x2222);wr(&r,pal+16+16*3+4,2,0x3333);
+    wr(&r,pal+16+16*5,2,0x4444);wr(&r,pal+16+16*5+2,2,0x5555);wr(&r,pal+16+16*5+4,2,0x6666);
+    r.palette_map[3]=40;r.palette_map[5]=77;
+    wr(&r,port+80,4,200);wr(&r,port+84,4,7);
+    CHECK(pm_call(&r,0xaa97,3)==1 && mac_cpu_get(r.cpu,MAC_A7)==0x8002);
+    CHECK(rd(&r,port+80,4)==40 && rd(&r,port+36,2)==0x1111 && rd(&r,port+38,2)==0x2222 && rd(&r,port+40,2)==0x3333 && rd(&r,port+84,4)==7);   /* the foreground only */
+    CHECK(pm_call(&r,0xaa98,5)==1 && mac_cpu_get(r.cpu,MAC_A7)==0x8002);
+    CHECK(rd(&r,port+84,4)==77 && rd(&r,port+42,2)==0x4444 && rd(&r,port+44,2)==0x5555 && rd(&r,port+46,2)==0x6666 && rd(&r,port+80,4)==40);   /* the background only */
+    CHECK(pm_call(&r,0xaa97,0)==1 && rd(&r,port+80,4)==r.palette_map[0]);                                                                  /* the first entry */
+    CHECK(pm_call(&r,0xaa97,7)==1);                                                                                                         /* the last of eight */
+    CHECK(pm_call(&r,0xaa99,0)==0 && pm_call(&r,0xaa9b,0)==0);                                                                              /* neighbours are not ours */
+    mac_cpu_destroy(r.cpu);
+    for(unsigned k=0;k<7;k++){
+        r=animate_rig(&window,&palette);uint32_t before=rd(&r,r.current_port+80,4);int entry=2;uint16_t op=0xaa97;
+        if(k==0)entry=8;                                              /* one past the palette */
+        if(k==1)entry=-1;
+        if(k==2)r.current_port=0;                                     /* no port */
+        if(k==3)mac_window_find(&r,window)->palette_handle=0;         /* the window has no palette */
+        if(k==4)r.palette_active=0;                                   /* its palette is not the active one */
+        if(k==5)r.current_port=0x1234;                                /* not a window's port */
+        if(k==6){op=0xaa98;entry=99;}
+        int rc=pm_call(&r,op,entry);
+        CHECK(rc==-1 && mac_cpu_halted(r.cpu));
+        if(k<2||k==6){CHECK(rdw_raw(&r,window+80)==before);}
+        mac_cpu_destroy(r.cpu);
+    }
+    r=animate_rig(&window,&palette);mac_cpu_set(r.cpu,MAC_A7,(uint32_t)mac_cpu_ram_size(r.cpu)-1);CHECK(mac_palette_manager_service(&r,0xaa97)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
+}
+int main(void){animate();pm_colors();palette_dispatch();dispatched();successful();failure();associations();puts("mac palette manager object and association tests passed");return 0;}

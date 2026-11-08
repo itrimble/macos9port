@@ -153,7 +153,7 @@ static void lifecycle(void){
     rt.handles[0].state=0x80;wr(&rt,R+6,2,40);CHECK(replace(&rt,h,R)==1 && rd(&rt,h,4)==p);
     mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,4,h);CHECK(mac_regions_service(&rt,0xa8d9)==1 && rd(&rt,h,4)==0);
     CHECK(!rt.handles[0].handle && create(&rt)!=0 && rt.handle_count==1);
-    CHECK(mac_regions_service(&rt,0xa8ea)==0 && mac_regions_service(&rt,0xa8da)==0 && mac_regions_service(&rt,0xa8ee)==0);mac_cpu_destroy(rt.cpu);
+    CHECK(mac_regions_service(&rt,0xa8ea)==0 && mac_regions_service(&rt,0xa8d7)==0 && mac_regions_service(&rt,0xa8ee)==0);mac_cpu_destroy(rt.cpu);
 }
 static void failures(void){
     for(int kind=0;kind<8;kind++) {
@@ -274,4 +274,63 @@ static void more_checks(void){
      CHECK(mac_region_box_algebra(0xa8e7,A,Bx,out)==1 && out[3]==20);                                                    /* xor of touching boxes */
      CHECK(mac_region_box_algebra(0xa8e6,A,D,out)==0);}                                                                  /* an L */
 }
-int main(void){complex_regions();more_checks();queries();algebra_table();set_empty();lifecycle();failures();puts("rectangular region ownership checks passed");}
+
+/* OpenRgn .. CloseRgn: outline calls are observed (and left to draw); the region is what the outline encloses, even-odd. */
+#define PORTA 0x9000u
+static MacRuntime rec_rt(void){MacRuntime rt=fresh();rt.current_port=PORTA;return rt;}
+static void obs2(MacRuntime *rt,uint16_t op,int a,int b){mac_cpu_set(rt->cpu,MAC_A7,SP);wr(rt,SP,2,(uint16_t)b);wr(rt,SP+2,2,(uint16_t)a);mac_rgn_record_observe(rt,op);}   /* (h,v) or (dh,dv): v on top */
+static void obs_rect(MacRuntime *rt,B b){wr(rt,R,2,(uint16_t)b.t);wr(rt,R+2,2,(uint16_t)b.l);wr(rt,R+4,2,(uint16_t)b.b);wr(rt,R+6,2,(uint16_t)b.r);mac_cpu_set(rt->cpu,MAC_A7,SP);wr(rt,SP,4,R);mac_rgn_record_observe(rt,0xa8a1);}
+static int close_into(MacRuntime *rt,uint32_t h){mac_cpu_set(rt->cpu,MAC_A7,SP);wr(rt,SP,4,h);return mac_regions_service(rt,0xa8db);}
+static int open_it(MacRuntime *rt){mac_cpu_set(rt->cpu,MAC_A7,SP);return mac_regions_service(rt,0xa8da);}
+static void recording(void){
+    /* a rectangle by MoveTo and three LineTos (the fourth side is the implicit close) */
+    MacRuntime rt=rec_rt();uint32_t d=create(&rt);
+    CHECK(open_it(&rt)==1 && rt.rgn_rec && mac_cpu_get(rt.cpu,MAC_A7)==SP);
+    obs2(&rt,0xa893,2,3);obs2(&rt,0xa891,10,3);obs2(&rt,0xa891,10,8);obs2(&rt,0xa891,2,8);
+    CHECK(close_into(&rt,d)==1 && mac_cpu_get(rt.cpu,MAC_A7)==SP+4 && !rt.rgn_rec);
+    {B g=get_box(&rt,d);CHECK(rd(&rt,rd(&rt,d,4),2)==10 && g.t==3 && g.l==2 && g.b==8 && g.r==10);}
+    mac_cpu_destroy(rt.cpu);
+    /* an L, drawn with LineTo, Line and Move */
+    rt=rec_rt();d=create(&rt);open_it(&rt);
+    obs2(&rt,0xa893,0,0);obs2(&rt,0xa892,10,0);obs2(&rt,0xa892,0,5);obs2(&rt,0xa891,5,5);obs2(&rt,0xa892,0,5);obs2(&rt,0xa891,0,10);
+    CHECK(close_into(&rt,d)==1);{MacRgn g;mac_rgn_init(&g);CHECK(region_of(&rt,d,&g)==0 && g.n==2);
+        for(int y=-2;y<14;y++)for(int x=-2;x<14;x++)CHECK(mac_rgn_contains(&g,x,y)==((y>=0&&y<5&&x>=0&&x<10)||(y>=5&&y<10&&x>=0&&x<5)));mac_rgn_free(&g);}
+    mac_cpu_destroy(rt.cpu);
+    /* the path starts at the pen's position when OpenRgn is called (v 6, h 4), and Move without ink starts nothing */
+    rt=rec_rt();d=create(&rt);wr(&rt,PORTA+48,2,6);wr(&rt,PORTA+50,2,4);open_it(&rt);
+    obs2(&rt,0xa891,12,6);obs2(&rt,0xa891,12,9);obs2(&rt,0xa891,4,9);
+    CHECK(close_into(&rt,d)==1);{B g=get_box(&rt,d);CHECK(g.t==6 && g.l==4 && g.b==9 && g.r==12);}
+    mac_cpu_destroy(rt.cpu);
+    /* FrameRect records a closed rectangle; two nested frames make a hole (even-odd); separate sub-paths are closed separately */
+    rt=rec_rt();d=create(&rt);open_it(&rt);obs_rect(&rt,(B){0,0,10,10});obs_rect(&rt,(B){3,3,7,7});
+    CHECK(close_into(&rt,d)==1);{MacRgn g;mac_rgn_init(&g);CHECK(region_of(&rt,d,&g)==0 && g.n==4 && mac_rgn_contains(&g,1,1) && !mac_rgn_contains(&g,5,5));mac_rgn_free(&g);}
+    mac_cpu_destroy(rt.cpu);
+    rt=rec_rt();d=create(&rt);open_it(&rt);obs2(&rt,0xa893,0,0);obs2(&rt,0xa891,4,0);obs2(&rt,0xa891,4,3);obs2(&rt,0xa891,0,3);   /* a sub-path left open at a MoveTo is closed back to its start */
+    obs2(&rt,0xa893,10,10);obs2(&rt,0xa891,14,10);obs2(&rt,0xa891,14,13);obs2(&rt,0xa891,10,13);
+    CHECK(close_into(&rt,d)==1);{MacRgn g;mac_rgn_init(&g);CHECK(region_of(&rt,d,&g)==0 && g.n==2 && mac_rgn_contains(&g,1,1) && mac_rgn_contains(&g,11,11) && !mac_rgn_contains(&g,6,6));mac_rgn_free(&g);}
+    mac_cpu_destroy(rt.cpu);
+    rt=rec_rt();obs2(&rt,0xa891,5,5);obs_rect(&rt,(B){0,0,5,5});CHECK(!rt.rgn_rec && !mac_cpu_halted(rt.cpu));mac_cpu_destroy(rt.cpu);   /* observing with no region open does nothing */
+    /* an empty outline gives an empty region; an inverted FrameRect records nothing */
+    rt=rec_rt();d=create(&rt);set_box(&rt,d,(B){1,1,2,2});open_it(&rt);obs_rect(&rt,(B){5,5,5,9});CHECK(close_into(&rt,d)==1 && rd(&rt,rd(&rt,d,4),2)==10 && get_box(&rt,d).b==0);mac_cpu_destroy(rt.cpu);
+    /* an inverted FrameRect (bottom above top, or right left of left) records nothing: it must not become a rectangle */
+    rt=rec_rt();d=create(&rt);open_it(&rt);obs_rect(&rt,(B){9,0,5,10});obs_rect(&rt,(B){0,9,10,5});CHECK(close_into(&rt,d)==1 && get_box(&rt,d).b==0 && get_box(&rt,d).r==0 && rd(&rt,rd(&rt,d,4),2)==10);mac_cpu_destroy(rt.cpu);
+    /* refusals: each halts by name */
+    for(unsigned k=0;k<10;k++){
+        rt=rec_rt();d=create(&rt);int rc=0;
+        if(k==0){CHECK(open_it(&rt)==1);rc=open_it(&rt);}                                                          /* a second OpenRgn */
+        if(k==1)rc=close_into(&rt,d);                                                                              /* CloseRgn without OpenRgn */
+        if(k==2){open_it(&rt);obs2(&rt,0xa893,0,0);obs2(&rt,0xa891,5,5);rc=close_into(&rt,d);}                    /* a diagonal */
+        if(k==3){open_it(&rt);mac_cpu_set(rt.cpu,MAC_A7,SP);rc=mac_cpu_halted(rt.cpu)?-1:(wr(&rt,SP,4,0),mac_regions_service(&rt,0xa8db));}   /* a NIL destination */
+        if(k==4){open_it(&rt);obs2(&rt,0xa8b7,0,0);rc=mac_cpu_halted(rt.cpu)?-1:0;}                               /* FrameOval */
+        if(k==5){open_it(&rt);obs2(&rt,0xa8c6,0,0);rc=mac_cpu_halted(rt.cpu)?-1:0;}                               /* FramePoly */
+        if(k==6){open_it(&rt);obs2(&rt,0xa8d2,0,0);rc=mac_cpu_halted(rt.cpu)?-1:0;}                               /* FrameRgn */
+        if(k==7){open_it(&rt);for(int i=0;i<4100 && !mac_cpu_halted(rt.cpu);i++)obs2(&rt,0xa891,i&1?0:1,0);rc=mac_cpu_halted(rt.cpu)?-1:0;}   /* too many segments */
+        if(k==8){rt.current_port=0;rc=open_it(&rt);}                                                               /* no port */
+        if(k==9){open_it(&rt);obs2(&rt,0xa893,0,0);obs2(&rt,0xa891,0,6);obs2(&rt,0xa891,3,6);obs2(&rt,0xa891,3,0);mac_cpu_set(rt.cpu,MAC_A7,(uint32_t)mac_cpu_ram_size(rt.cpu)-2);rc=mac_regions_service(&rt,0xa8db);}   /* bad stack */
+        CHECK(rc==-1 && mac_cpu_halted(rt.cpu));mac_cpu_destroy(rt.cpu);
+    }
+    /* the destination keeps its old contents when the close is refused */
+    rt=rec_rt();d=create(&rt);set_box(&rt,d,(B){7,7,9,9});open_it(&rt);obs2(&rt,0xa893,0,0);obs2(&rt,0xa891,5,5);close_into(&rt,d);
+    {const uint8_t *ram=mac_cpu_ram(rt.cpu);uint32_t dp=(uint32_t)(ram[d]<<24|ram[d+1]<<16|ram[d+2]<<8|ram[d+3]);CHECK(mac_cpu_halted(rt.cpu) && ram[dp+3]==7 && ram[dp+9]==9);}mac_cpu_destroy(rt.cpu);
+}
+int main(void){recording();complex_regions();more_checks();queries();algebra_table();set_empty();lifecycle();failures();puts("rectangular region ownership checks passed");}

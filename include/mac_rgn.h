@@ -32,4 +32,7 @@ int mac_rgn_is_rect(const MacRgn *g, MacRect *r);                 /* exactly one
 void mac_rgn_bbox(const MacRgn *g, MacRect *r);                   /* all zero for an empty region */
 int mac_rgn_equal(const MacRgn *a, const MacRgn *b);
 void mac_rgn_offset(MacRgn *g, int dh, int dv);
+/* Fills a region from the vertical edges of closed rectilinear outlines, even-odd: edge i is (x, y0, y1) with y0 < y1 covering scan
+ * lines y0 to y1-1. A scan line whose edge count is odd (an outline that does not close) is an error. 0 ok, -1 with *why. */
+int mac_rgn_from_vedges(MacRgn *g, const int (*edges)[3], int n, const char **why);
 #endif

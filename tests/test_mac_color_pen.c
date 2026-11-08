@@ -68,4 +68,52 @@ static void failures(void){
     MacRuntime r=fresh();mac_cpu_set(r.cpu,MAC_A7,MAC_RUNTIME_RAM-2);
     CHECK(mac_color_pen_service(&r,0xa89d)==-1);mac_cpu_destroy(r.cpu);
 }
-int main(void){patterns();state();failures();puts("mac color pen tests passed");return 0;}
+
+/* LineTo ($A891), Line ($A892) and Move ($A894) on a colour port: an axis-aligned line paints the rectangle the pen sweeps, in the pen
+ * pattern and mode, clipped; Move and a hidden pen only move; a diagonal halts by name. v is on top of the stack. */
+static unsigned scr(MacRuntime*r,int x,int y){return mac_cpu_ram(r->cpu)[r->screen_base+(unsigned)y*640u+(unsigned)x];}
+static int pen_call(MacRuntime*r,uint16_t op,int h,int v){wr(r,SP,2,(uint16_t)v);wr(r,SP+2,2,(uint16_t)h);return call(r,op);}
+static int pen_at(MacRuntime*r,int*v,int*h){*v=(int16_t)rd(r,PORT+48,2);*h=(int16_t)rd(r,PORT+50,2);return 1;}
+static void lines(void){
+    MacRuntime r=fresh();int v,h;memset(mac_cpu_ram(r.cpu)+r.screen_base,17,640*40);
+    CHECK(pen_call(&r,0xa893,10,5)==1);                                                   /* MoveTo(10,5) */
+    CHECK(pen_call(&r,0xa891,20,5)==1 && mac_cpu_get(r.cpu,MAC_A7)==SP+4);                /* LineTo(20,5): a 1x1 pen sweeps x 10..20 */
+    pen_at(&r,&v,&h);CHECK(v==5 && h==20);
+    for(int x=9;x<=21;x++)CHECK(scr(&r,x,5)==((x>=10&&x<=20)?255u:17u));
+    CHECK(scr(&r,15,4)==17 && scr(&r,15,6)==17);
+    CHECK(pen_call(&r,0xa891,20,9)==1);for(int y=4;y<=10;y++)CHECK(scr(&r,20,y)==((y>=5&&y<=9)?255u:17u));      /* vertical */
+    CHECK(pen_call(&r,0xa892,-5,0)==1);pen_at(&r,&v,&h);CHECK(v==9 && h==15);                                   /* Line(-5,0): leftwards */
+    for(int x=14;x<=21;x++)CHECK(scr(&r,x,9)==((x>=15&&x<=20)?255u:17u));
+    CHECK(pen_call(&r,0xa892,0,-3)==1);pen_at(&r,&v,&h);CHECK(v==6 && h==15);for(int y=4;y<=10;y++)CHECK(scr(&r,15,y)==((y>=5&&y<=9)?255u:17u));   /* upwards: rows 6 to 9, joining the first line at row 5 */
+    CHECK(pen_call(&r,0xa894,30,12)==1);pen_at(&r,&v,&h);CHECK(v==18 && h==45 && scr(&r,40,15)==17 && scr(&r,45,18)==17);   /* Move(dh,dv): relative, no ink */
+    mac_cpu_destroy(r.cpu);
+    /* a zero-length LineTo is a dot; a bigger pen sweeps a bigger rectangle (width 2, height 3) */
+    r=fresh();memset(mac_cpu_ram(r.cpu)+r.screen_base,17,640*40);
+    pen_call(&r,0xa893,4,4);CHECK(pen_call(&r,0xa891,4,4)==1 && scr(&r,4,4)==255 && scr(&r,5,4)==17 && scr(&r,4,5)==17);
+    wr(&r,SP,2,3);wr(&r,SP+2,2,2);CHECK(call(&r,0xa89b)==1);                                      /* PenSize(2 wide, 3 high) */
+    pen_call(&r,0xa893,10,10);pen_call(&r,0xa891,20,10);
+    for(int y=9;y<=13;y++)for(int x=9;x<=22;x++)CHECK(scr(&r,x,y)==((y>=10&&y<=12&&x>=10&&x<=21)?255u:17u));
+    mac_cpu_destroy(r.cpu);
+    /* the pen pattern and mode decide the pixels: 0xAA rows, patCopy paints the background where the pattern is clear */
+    r=fresh();memset(mac_cpu_ram(r.cpu)+r.screen_base,17,640*40);
+    {uint8_t bits[8]={0xaa,0xaa,0xaa,0xaa,0xaa,0xaa,0xaa,0xaa};memcpy(mac_cpu_ram(r.cpu)+0xa001,bits,8);wr(&r,SP,4,0xa001);CHECK(call(&r,0xa89d)==1);}
+    pen_call(&r,0xa893,10,5);pen_call(&r,0xa891,13,5);CHECK(scr(&r,10,5)==255 && scr(&r,11,5)==0 && scr(&r,12,5)==255 && scr(&r,13,5)==0);
+    wr(&r,SP,2,9);CHECK(call(&r,0xa89c)==1);                                                       /* PenMode(patOr = 9): ink only where the pattern is set */
+    memset(mac_cpu_ram(r.cpu)+r.screen_base,17,640*40);pen_call(&r,0xa891,10,5);pen_call(&r,0xa893,10,6);pen_call(&r,0xa891,13,6);
+    CHECK(scr(&r,10,6)==255 && scr(&r,11,6)==17 && scr(&r,12,6)==255 && scr(&r,13,6)==17);
+    mac_cpu_destroy(r.cpu);
+    /* a hidden pen moves without painting; showing it again paints */
+    r=fresh();memset(mac_cpu_ram(r.cpu)+r.screen_base,17,640*40);
+    CHECK(call(&r,0xa896)==1);pen_call(&r,0xa893,5,5);CHECK(pen_call(&r,0xa891,15,5)==1);pen_at(&r,&v,&h);CHECK(v==5 && h==15 && scr(&r,8,5)==17);
+    CHECK(call(&r,0xa897)==1);pen_call(&r,0xa891,25,5);CHECK(scr(&r,20,5)==255 && scr(&r,14,5)==17);
+    mac_cpu_destroy(r.cpu);
+    /* a diagonal is a named halt that leaves the pen and the pixels alone */
+    r=fresh();memset(mac_cpu_ram(r.cpu)+r.screen_base,17,640*40);pen_call(&r,0xa893,5,5);
+    CHECK(pen_call(&r,0xa891,9,9)==-1 && mac_cpu_halted(r.cpu) && strstr(mac_cpu_error(r.cpu),"Diagonal") && scr(&r,7,7)==17);mac_cpu_destroy(r.cpu);
+    r=fresh();pen_call(&r,0xa893,5,5);CHECK(pen_call(&r,0xa892,3,-3)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
+    /* a diagonal Move is fine (it draws nothing) */
+    r=fresh();pen_call(&r,0xa893,5,5);CHECK(pen_call(&r,0xa894,3,-3)==1);pen_at(&r,&v,&h);CHECK(v==2 && h==8);mac_cpu_destroy(r.cpu);
+    /* a transfer mode the colour raster does not do is refused rather than drawn wrongly */
+    r=fresh();wr(&r,PORT+56,2,3);pen_call(&r,0xa893,5,5);CHECK(pen_call(&r,0xa891,9,5)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
+}
+int main(void){lines();patterns();state();failures();puts("mac color pen tests passed");return 0;}

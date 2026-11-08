@@ -5,7 +5,7 @@
 
 /* Region calls on the region engine (mac_rgn.c): NewRgn $A8D8, DisposeRgn $A8D9, CopyRgn $A8DC, SetEmptyRgn $A8DD, SetRectRgn $A8DE,
  * RectRgn $A8DF, OffsetRgn $A8E0, InsetRgn $A8E1, EmptyRgn $A8E2, EqualRgn $A8E3, SectRgn $A8E4, UnionRgn $A8E5, DiffRgn $A8E6,
- * XorRgn $A8E7, PtInRgn $A8E8, RectInRgn $A8E9. OpenRgn and CloseRgn are not implemented.
+ * XorRgn $A8E7, PtInRgn $A8E8, RectInRgn $A8E9; OpenRgn $A8DA and CloseRgn $A8DB record an outline (see below).
  *
  * A region record is guest memory, so it is untrusted: it is decoded and validated against the runtime's own handle table (its
  * rgnSize word may not exceed the handle's real size) every time it is used. Results are encoded back in the documented format.
@@ -139,10 +139,14 @@ static int region_query(MacRuntime *rt,uint16_t opcode,uint32_t sp) {
     if(rc==1){mac_cpu_write(rt->cpu,sp+pop,1,(unsigned)answer);wr(rt,0x220,2,0);mac_cpu_set(rt->cpu,MAC_A7,sp+pop);}
     mac_rgn_free(&g);mac_rgn_free(&o);return rc;
 }
+static int open_rgn(MacRuntime *rt);
+static int close_rgn(MacRuntime *rt,uint32_t sp);
 int mac_regions_service(MacRuntime *rt,uint16_t opcode) {
-    if(opcode!=0xa8d8 && opcode!=0xa8d9 && opcode!=0xa8dc && opcode!=0xa8dd && opcode!=0xa8de && opcode!=0xa8df && (opcode<0xa8e0 || opcode>0xa8e7) && opcode!=0xa8e8 && opcode!=0xa8e9)return 0;
+    if(opcode!=0xa8d8 && opcode!=0xa8d9 && opcode!=0xa8da && opcode!=0xa8db && opcode!=0xa8dc && opcode!=0xa8dd && opcode!=0xa8de && opcode!=0xa8df && (opcode<0xa8e0 || opcode>0xa8e7) && opcode!=0xa8e8 && opcode!=0xa8e9)return 0;
     if(mac_cpu_halted(rt->cpu))return -1;
     uint32_t sp=mac_cpu_get(rt->cpu,MAC_A7);
+    if(opcode==0xa8da)return open_rgn(rt);
+    if(opcode==0xa8db)return close_rgn(rt,sp);
     if(opcode>=0xa8e4 && opcode<=0xa8e7)return region_algebra(rt,opcode,sp);
     if((opcode>=0xa8e0 && opcode<=0xa8e3) || opcode==0xa8e8 || opcode==0xa8e9)return region_query(rt,opcode,sp);
     unsigned stack=opcode==0xa8de?12:(opcode==0xa8df||opcode==0xa8dc)?8:4;
@@ -177,6 +181,74 @@ int mac_regions_service(MacRuntime *rt,uint16_t opcode) {
     mac_rgn_free(&g);
     if(rc)return -1;
     mac_cpu_set(rt->cpu,MAC_A7,sp+stack);return 1;
+}
+
+/* ---- OpenRgn .. CloseRgn ----
+ * OpenRgn ($A8DA) starts recording the current port's outline calls; CloseRgn ($A8DB, destination region on the stack) ends it and stores
+ * the region the outline encloses. Recorded here: MoveTo, LineTo, Move, Line and FrameRect, as axis-aligned closed paths filled even-odd
+ * (each MoveTo starts a new sub-path, and every sub-path is closed back to its start, as QuickDraw closes the outline). The calls are
+ * only observed: they still draw as usual. A diagonal segment, a second OpenRgn, a CloseRgn without OpenRgn, more than 4096 segments, or
+ * a frame of an oval, round rectangle, arc, polygon or region while recording (outlines this module cannot capture) halts by name. */
+typedef struct { int h0,v0,h1,v1; } Seg;
+typedef struct MacRgnRec { int n,cur_v,cur_h,start_v,start_h; Seg seg[4096]; } Rec;
+void mac_rgn_record_destroy(MacRuntime *rt){free(rt->rgn_rec);rt->rgn_rec=NULL;}
+static int add_seg(MacRuntime *rt,Rec *r,int h0,int v0,int h1,int v1) {
+    if(h0==h1 && v0==v1)return 0;
+    if(r->n>=4096)return fail(rt,"OpenRgn recorded more than 4096 outline segments.");
+    r->seg[r->n++]=(Seg){h0,v0,h1,v1};return 0;
+}
+static int close_sub(MacRuntime *rt,Rec *r){return add_seg(rt,r,r->cur_h,r->cur_v,r->start_h,r->start_v);}
+void mac_rgn_record_observe(MacRuntime *rt,uint16_t opcode) {
+    Rec *r=rt->rgn_rec;
+    if(!r || !rt->cpu || mac_cpu_halted(rt->cpu))return;
+    uint32_t sp=mac_cpu_get(rt->cpu,MAC_A7);
+    switch(opcode) {
+    case 0xa893: case 0xa891: case 0xa894: case 0xa892: {                      /* MoveTo, LineTo, Move, Line: (h, v) or (dh, dv); v is on top */
+        if(!valid(rt,sp,4)){fail(rt,"Outline call stack exceeds guest RAM.");return;}
+        int v=(int16_t)rd(rt,sp,2),h=(int16_t)rd(rt,sp+2,2);
+        int rel=opcode==0xa894||opcode==0xa892,nh=rel?r->cur_h+h:h,nv=rel?r->cur_v+v:v;
+        if(opcode==0xa893){if(close_sub(rt,r))return;r->start_h=nh;r->start_v=nv;}   /* a new sub-path */
+        else if(opcode==0xa891 || opcode==0xa892){if(add_seg(rt,r,r->cur_h,r->cur_v,nh,nv))return;}
+        r->cur_h=nh;r->cur_v=nv;return; }
+    case 0xa8a1: {                                                              /* FrameRect(r): a closed rectangle of its own */
+        if(!valid(rt,sp,4)){fail(rt,"Outline call stack exceeds guest RAM.");return;}
+        uint32_t p=rd(rt,sp,4);
+        if(!valid(rt,p,8)){fail(rt,"FrameRect rectangle exceeds guest RAM while recording a region.");return;}
+        int t=(int16_t)rd(rt,p,2),l=(int16_t)rd(rt,p+2,2),b=(int16_t)rd(rt,p+4,2),rr=(int16_t)rd(rt,p+6,2);
+        if(b<=t || rr<=l)return;
+        if(add_seg(rt,r,l,t,rr,t)||add_seg(rt,r,rr,t,rr,b)||add_seg(rt,r,rr,b,l,b)||add_seg(rt,r,l,b,l,t))return;
+        return; }
+    case 0xa8b7: case 0xa8b0: case 0xa8be: case 0xa8c6: case 0xa8d2:
+        fail(rt,"Framing an oval, round rectangle, arc, polygon or region while recording a region (OpenRgn) is unsupported.");return;
+    default: return;
+    }
+}
+static int open_rgn(MacRuntime *rt) {
+    if(rt->rgn_rec)return fail(rt,"OpenRgn while a region is already being recorded is unsupported.");
+    uint32_t port=rt->current_port;
+    if(!valid(rt,port,108))return fail(rt,"OpenRgn needs a current port.");
+    Rec *r=calloc(1,sizeof *r);
+    if(!r)return fail(rt,"OpenRgn could not allocate its recording.");
+    r->cur_v=r->start_v=(int16_t)rd(rt,port+48,2);r->cur_h=r->start_h=(int16_t)rd(rt,port+50,2);
+    rt->rgn_rec=r;return 1;
+}
+static int close_rgn(MacRuntime *rt,uint32_t sp) {
+    Rec *r=rt->rgn_rec;
+    if(!r)return fail(rt,"CloseRgn without OpenRgn.");
+    if(!valid(rt,sp,4))return fail(rt,"Region call stack exceeds aligned guest RAM.");
+    uint32_t h=rd(rt,sp,4);MacHandle *m=lookup(rt,h);
+    if(!m)return fail(rt,"CloseRgn requires a valid owned, non-resource, non-code handle.");
+    if(close_sub(rt,r))return -1;
+    static int edges[4096][3];int n=0;
+    for(int i=0;i<r->n;i++) {
+        Seg s=r->seg[i];
+        if(s.h0!=s.h1 && s.v0!=s.v1)return fail(rt,"A diagonal line was recorded while building a region; only horizontal and vertical outlines are supported.");
+        if(s.h0==s.h1){edges[n][0]=s.h0;edges[n][1]=s.v0<s.v1?s.v0:s.v1;edges[n][2]=s.v0<s.v1?s.v1:s.v0;n++;}
+    }
+    MacRgn g;mac_rgn_init(&g);const char *why=NULL;int rc=-1;
+    if(mac_rgn_from_vedges(&g,(const int (*)[3])edges,n,&why))fail(rt,why?why:"The recorded outline could not be filled.");
+    else if(!store(rt,m,h,&g)){mac_cpu_set(rt->cpu,MAC_A7,sp+4);mac_rgn_record_destroy(rt);rc=1;}
+    mac_rgn_free(&g);return rc;
 }
 
 /* Rectangle algebra for other modules (the window update region): op is $A8E4 sect, $A8E5 union, $A8E6 diff, $A8E7 xor; boxes are

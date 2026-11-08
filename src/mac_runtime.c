@@ -183,6 +183,7 @@ void mac_runtime_destroy(MacRuntime *rt) {
     mac_resource_chain_destroy(rt);
     mac_stdfile_destroy(rt);
     mac_alert_destroy(rt);
+    mac_rgn_record_destroy(rt);
     mac_files_destroy(rt);
     mac_drive_destroy(rt);
     mac_system_volume_destroy(rt->system_volume);

@@ -33,7 +33,7 @@ static int pattern(MacRuntime *rt,uint32_t port,unsigned offset,uint32_t *data) 
 int mac_color_pen_service(MacRuntime *rt,uint16_t opcode) {
     unsigned args;
     switch(opcode) {
-    case 0xa87c: case 0xa89d: case 0xa89b: case 0xa893: case 0xa89a: args=4;break;
+    case 0xa87c: case 0xa89d: case 0xa89b: case 0xa893: case 0xa89a: case 0xa891: case 0xa892: case 0xa894: args=4;break;
     case 0xa89c: args=2;break;
     case 0xa896: case 0xa897: case 0xa89e: args=0;break;
     default:return 0;
@@ -59,6 +59,21 @@ int mac_color_pen_service(MacRuntime *rt,uint16_t opcode) {
         if(opcode==0xa89e) {
             wr(rt,port+52,2,1);wr(rt,port+54,2,1);wr(rt,port+56,2,8);
         }
+    } else if(opcode==0xa891 || opcode==0xa892 || opcode==0xa894) {
+        /* LineTo(h, v), Line(dh, dv), Move(dh, dv): v is on top. A line paints the rectangle the pen sweeps (pen size at each point);
+         * only horizontal and vertical lines are supported. A hidden pen (pnVis < 0) moves without drawing. Move never draws. */
+        int v=(int16_t)rd(rt,sp,2),h=(int16_t)rd(rt,sp+2,2);
+        int cv=(int16_t)rd(rt,port+48,2),ch=(int16_t)rd(rt,port+50,2);
+        int nv=opcode==0xa891?v:cv+v,nh=opcode==0xa891?h:ch+h;
+        if(opcode!=0xa894 && (int16_t)rd(rt,port+66,2)>=0) {
+            int ph=(int16_t)rd(rt,port+52,2),pw=(int16_t)rd(rt,port+54,2);
+            if(cv!=nv && ch!=nh)return fail(rt,"Diagonal lines on color ports are unsupported.");
+            if(ph>0 && pw>0) {
+                int t=cv<nv?cv:nv,l=ch<nh?ch:nh,b=(cv>nv?cv:nv)+ph,r=(ch>nh?ch:nh)+pw;
+                if(mac_color_paint_box(rt,port,t,l,b,r)<0)return -1;
+            }
+        }
+        wr(rt,port+48,2,(uint16_t)nv);wr(rt,port+50,2,(uint16_t)nh);
     } else if(opcode==0xa89b || opcode==0xa893) {
         uint16_t v=(uint16_t)rd(rt,sp,2),h=(uint16_t)rd(rt,sp+2,2);
         if(opcode==0xa89b && ((int16_t)v<0 || (int16_t)h<0))
