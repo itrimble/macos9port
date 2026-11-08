@@ -16,7 +16,7 @@
  * a list that does not fit 1024 files, Eject and Drive (the single volume cannot do either, so they are drawn dimmed).
  * Buttons act on mouse-up inside the button; scroll arrows and page regions act once per click (no auto-repeat, no thumb
  * drag); the icon item is not drawn. */
-enum { SELECTOR_GET = 2, SELECTOR_PGET = 4, DLOG_TYPE = 0x444c4f47, DITL_TYPE = 0x4449544c };
+enum { SELECTOR_GET = 2, SELECTOR_PGET = 4, SELECTOR_SGET = 6, DLOG_TYPE = 0x444c4f47, DITL_TYPE = 0x4449544c };
 
 static int fail(MacRuntime *rt, const char *why) { mac_cpu_halt(rt->cpu, why); return -1; }
 static int valid(MacRuntime *rt, uint32_t p, size_t n) { size_t z = mac_cpu_ram_size(rt->cpu); return p >= 0x400 && p <= z && n <= z - p; }
@@ -114,15 +114,22 @@ static int filter_done(void *rtp, void *ctx, uint32_t result) {
 static int begin(MacRuntime *rt, uint32_t sp, uint32_t pc, unsigned selector) {
     uint32_t a = sp + 2, reply, hook, list, filter, prompt, where, filter_proc = 0, pop;
     int16_t dialog_id = -4000, num;
+    if (selector == SELECTOR_SGET) {      /* StandardGetFile(fileFilter, numTypes, typeList, VAR reply): no prompt, hook or position */
+        if (!valid(rt, sp, 16)) return fail(rt, "Standard File stack is invalid.");
+        reply = rd(rt, a, 4); list = rd(rt, a + 4, 4); num = (int16_t)rd(rt, a + 8, 2); filter = rd(rt, a + 10, 4);
+        hook = 0; prompt = 0; where = (uint32_t)((((480 - 208) / 2) << 16) | ((640 - 348) / 2)); pop = 16;
+        if (filter) return fail(rt, "StandardGetFile file filter procedures are unsupported.");
+    } else {
     if (selector == SELECTOR_PGET) { filter_proc = rd(rt, a, 4); dialog_id = (int16_t)rd(rt, a + 4, 2); a += 6; pop = 34; } else pop = 28;
     reply = rd(rt, a, 4); hook = rd(rt, a + 4, 4); list = rd(rt, a + 8, 4); num = (int16_t)rd(rt, a + 12, 2);
     filter = rd(rt, a + 14, 4); prompt = rd(rt, a + 18, 4); where = rd(rt, a + 22, 4);
+    }
     if (!valid(rt, sp, pop)) return fail(rt, "Standard File stack is invalid.");
     if (hook) return fail(rt, "Standard File dialog hooks are unsupported.");
     if (filter_proc) return fail(rt, "Standard File dialog filter procedures are unsupported.");
     if (num < -1 || num > 4) return fail(rt, "Standard File numTypes must be -1 or 0 to 4.");
-    if (!valid(rt, reply, 74)) return fail(rt, "Standard File reply record is invalid.");
-    if (!valid(rt, prompt, 1) || !valid(rt, prompt, (size_t)rd(rt, prompt, 1) + 1)) return fail(rt, "Standard File prompt is invalid.");
+    if (!valid(rt, reply, selector == SELECTOR_SGET ? 88 : 74)) return fail(rt, "Standard File reply record is invalid.");
+    if (prompt && (!valid(rt, prompt, 1) || !valid(rt, prompt, (size_t)rd(rt, prompt, 1) + 1))) return fail(rt, "Standard File prompt is invalid.");
     if (num > 0 && !valid(rt, list, (size_t)num * 4)) return fail(rt, "Standard File type list is invalid.");
     if (filter && (filter & 1)) return fail(rt, "Standard File file filter address is invalid.");
     if (rt->screen_depth != 8 || rt->screen_width != 640 || rt->screen_height != 480 || rt->screen_row_bytes != 640 ||
@@ -145,8 +152,8 @@ static int begin(MacRuntime *rt, uint32_t sp, uint32_t pc, unsigned selector) {
     unsigned rows = l->bottom > l->top ? (unsigned)(l->bottom - l->top - 1) / SF_ROW : 0;
     if (!rows) { mac_stdfile_destroy(rt); return fail(rt, "Standard File list item has no room for rows."); }
     s->list.rows = rows;
-    unsigned n = (unsigned)rd(rt, prompt, 1); if (n > sizeof s->prompt - 1) n = sizeof s->prompt - 1;
-    memcpy(s->prompt, mac_cpu_ram(rt->cpu) + prompt + 1, n);
+    unsigned n = prompt ? (unsigned)rd(rt, prompt, 1) : 0; if (n > sizeof s->prompt - 1) n = sizeof s->prompt - 1;
+    if (prompt) memcpy(s->prompt, mac_cpu_ram(rt->cpu) + prompt + 1, n);
     memcpy(s->volume, "OS Pi Data", 11);
     MacFileEntry *entries = malloc(SF_MAX_FILES * sizeof *entries);
     s->all = malloc(SF_MAX_FILES * sizeof *s->all);
@@ -213,10 +220,16 @@ static int handle(MacRuntime *rt, MacSfState *s, const MacEvent *e) {
 
 static void write_reply(MacRuntime *rt, const MacSfState *s, int outcome) {
     uint8_t *ram = mac_cpu_ram(rt->cpu) + s->reply;
-    memset(ram, 0, 74);
+    int spec = s->selector == SELECTOR_SGET;
+    memset(ram, 0, spec ? 88 : 74);
     if (outcome != OPEN) return;
     const MacFileEntry *e = &s->list.entries[s->list.selected];
     unsigned n = (unsigned)strlen(e->name);
+    if (spec) {                                      /* StandardFileReply: good, FSSpec {vRefNum -1, parID 2, name}, sfType, no flags */
+        ram[0] = 1; wr(rt, s->reply + 2, 4, e->type); wr(rt, s->reply + 6, 2, 0xffff); wr(rt, s->reply + 8, 4, 2);
+        ram[12] = (uint8_t)n; memcpy(ram + 13, e->name, n);
+        return;
+    }
     ram[0] = 1;                                      /* good */
     wr(rt, s->reply + 2, 4, e->type);                /* fType */
     wr(rt, s->reply + 6, 2, 0xffff);                 /* vRefNum: the one volume */
@@ -250,14 +263,17 @@ int mac_stdfile_service(MacRuntime *rt, uint16_t opcode) {
     unsigned selector = rd(rt, sp, 2);
     if (rt->last_trap_pc >= 0x2000 && rt->last_trap_pc < 0x2000 + 4096 * 8)
         return fail(rt, "Standard File reached through a patched trap vector is unsupported.");
-    if (selector == 1 || rt->stdput) return rt->stdput && selector != 1 ? fail(rt, "Pack3 called while an SFPutFile dialog is open.") : mac_stdput_service(rt, sp, pc);
+    if (selector == 1 || selector == 5 || rt->stdput) {
+        if (rt->stdput && selector != 1 && selector != 5) return fail(rt, "Pack3 called while a Put dialog is open.");
+        return mac_stdput_service(rt, sp, pc, selector == 5);
+    }
     MacSfState *s = rt->stdfile;
     if (s) {
         if (s->stage != SF_STAGE_RUN || pc != s->trap_pc || sp != s->sp) return fail(rt, "Standard File called again while a dialog is open.");
         return step(rt, s);
     }
-    if (selector != SELECTOR_GET && selector != SELECTOR_PGET) {
-        char msg[64]; snprintf(msg, sizeof msg, "Unsupported Pack3 selector $%04x (only SFPutFile, SFGetFile and SFPGetFile).", selector);
+    if (selector != SELECTOR_GET && selector != SELECTOR_PGET && selector != SELECTOR_SGET) {
+        char msg[160]; snprintf(msg, sizeof msg, "Unsupported Pack3 selector $%04x (only SFPutFile, SFGetFile, SFPGetFile, StandardPutFile and StandardGetFile).", selector);
         return fail(rt, msg);
     }
     int rc = begin(rt, sp, pc, selector);

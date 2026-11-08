@@ -207,6 +207,32 @@ int main(void) {
     mac_cpu_set(g.rt.cpu, MAC_A7, mac_cpu_get(g.rt.cpu, MAC_A7) - 2); pump(&g, 2);
     CHECK(mac_cpu_halted(g.rt.cpu)); rig_close(&g);
 
+    /* --- StandardGetFile (selector 6): no prompt, centred, StandardFileReply of 88 bytes with an FSSpec. */
+    #define START6(g, num, filter) do { MacRuntime *rt_ = &(g).rt; uint32_t sp_ = STACK - 16; wr(rt_, sp_, 2, 6); wr(rt_, sp_ + 2, 4, REPLY); wr(rt_, sp_ + 6, 4, TYPES); \
+        wr(rt_, sp_ + 10, 2, (uint16_t)(num)); wr(rt_, sp_ + 12, 4, (filter)); memset(mac_cpu_ram(rt_->cpu) + REPLY, 0xee, 88); \
+        mac_cpu_set(rt_->cpu, MAC_A7, sp_); mac_cpu_set(rt_->cpu, MAC_PC, PROGRAM); } while (0)
+    CHECK(rig_open(&g, 0) == 0); START6(g, -1, 0); pump(&g, 3);
+    CHECK(dialog(&g) && dialog(&g)->top == 136 && dialog(&g)->left == 146 && dialog(&g)->width == 348 && names(&g, n, 16) == 4);
+    item_point(136, 146, 7, &x, &y); y = 136 + 39 + 1 + SF_ROW + 4; click(&g, x, y);
+    CHECK(dialog(&g) && dialog(&g)->list.selected == 1);
+    item_point(136, 146, 1, &x, &y); click(&g, x, y);
+    CHECK(!dialog(&g) && raw(&g.rt, REPLY, 1) == 1 && raw(&g.rt, REPLY + 1, 1) == 0 && raw(&g.rt, REPLY + 2, 4) == 0x676c6948);
+    CHECK(raw(&g.rt, REPLY + 6, 2) == 0xffff && raw(&g.rt, REPLY + 8, 4) == 2 && raw(&g.rt, REPLY + 12, 1) == 4 && !memcmp(mac_cpu_ram(g.rt.cpu) + REPLY + 13, "Beta", 4));
+    CHECK(raw(&g.rt, REPLY + 17, 4) == 0 && raw(&g.rt, REPLY + 76, 4) == 0 && raw(&g.rt, REPLY + 80, 4) == 0 && raw(&g.rt, REPLY + 84, 4) == 0);   /* script, flags, folder/volume, reserved */
+    pump(&g, 3); CHECK(mac_cpu_get(g.rt.cpu, MAC_D1) == 5 && mac_cpu_get(g.rt.cpu, MAC_A7) == STACK - 16 + 16 && screen_all_back(&g));
+    rig_close(&g);
+    CHECK(rig_open(&g, 0) == 0); START6(g, -1, 0); pump(&g, 3); key(&g, 27, 0);                      /* Escape: sfGood = 0 and all 88 bytes cleared */
+    { unsigned nz = 0; for (unsigned i = 0; i < 88; i++) nz += raw(&g.rt, REPLY + i, 1) != 0; CHECK(!dialog(&g) && nz == 0); }
+    rig_close(&g);
+    CHECK(rig_open(&g, 0) == 0); memcpy(mac_cpu_ram(g.rt.cpu) + TYPES, "TEXT", 4); START6(g, 1, 0); pump(&g, 3);
+    CHECK(names(&g, n, 16) == 1 && !strcmp(n[0], "alpha")); rig_close(&g);                              /* the type list applies */
+    for (unsigned k = 0; k < 4; k++) {                                                                 /* refusals: a file filter, bad numTypes, reply too small, bad stack */
+        CHECK(rig_open(&g, 0) == 0); START6(g, k == 1 ? 9 : -1, k == 0 ? 0x11110000 : 0);
+        if (k == 2) wr(&g.rt, STACK - 16 + 2, 4, (uint32_t)mac_cpu_ram_size(g.rt.cpu) - 80);        /* room for an SFReply (74) but not a StandardFileReply (88) */
+        if (k == 3) mac_cpu_set(g.rt.cpu, MAC_A7, (uint32_t)mac_cpu_ram_size(g.rt.cpu) - 8);
+        pump(&g, 4);
+        CHECK(mac_cpu_halted(g.rt.cpu) && !dialog(&g) && screen_all_back(&g)); rig_close(&g);
+    }
     if (!fails) puts("Standard File checks passed");
     return fails ? 1 : 0;
 }

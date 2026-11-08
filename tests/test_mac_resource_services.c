@@ -97,6 +97,7 @@ static void normal(void) {
     CHECK(mac_cpu_read(rt.cpu, p, 4) == 0x54657374);
     CHECK(get(&rt, 0xa81f, TEXT, 128) == h);
     CHECK(one(&rt, 0xa9a5, h, 4) == 4 && error(&rt) == 0);
+    CHECK(one(&rt, 0xa821, h, 4) == 4 && error(&rt) == 0);
     CHECK(one(&rt, 0xa9a6, h, 2) == 0x24 && error(&rt) == 0);
     CHECK(one(&rt, 0xa99c, TEXT, 2) == 1);
     CHECK(one(&rt, 0xa99c, 0x41414141, 2) == 0 && error(&rt) == 0);
@@ -106,6 +107,7 @@ static void normal(void) {
     CHECK(get(&rt, 0xa9a0, TEXT, 129) == 0 && error(&rt) == -192);
     CHECK(get(&rt, 0xa9a0, 0x41414141, 128) == 0 && error(&rt) == 0);
     CHECK(one(&rt, 0xa9a5, 0, 4) == UINT32_MAX && error(&rt) == -192);
+    CHECK(one(&rt, 0xa821, 0, 4) == UINT32_MAX && error(&rt) == -192);
     start(&rt); CHECK(mac_resource_service(&rt, 0xa9af) == 1);
     CHECK(mac_cpu_get(rt.cpu, MAC_A7) == SP);
     CHECK((int16_t)mac_cpu_read(rt.cpu, SP, 2) == -192 && error(&rt) == -192);
@@ -286,6 +288,7 @@ static void write_resource(void) {
     one(&rt, 0xa9a3, h2, 0);
     uint32_t h3 = get(&rt, 0xa9a0, TEXT, 128);
     CHECK(one(&rt, 0xa9a5, h3, 4) == 10);
+    CHECK(one(&rt, 0xa821, h3, 4) == 10);
     CHECK(memcmp(mac_cpu_ram(rt.cpu) + mac_cpu_read(rt.cpu, h3, 4), "Longer text", 10) == 0);
     CHECK(memcmp(bytes, pristine, END) == 0);
 

@@ -66,6 +66,10 @@ int mac_system_service(MacRuntime *rt, uint16_t opcode) {
                      * Not claimed: gestaltFullExtFSDispatching (bit 0, all HFSDispatch selectors), the File System
                      * Manager (bit 2) and every volume-size/format bit. */
         response = 1u << 1; break;
+    case 0x73746466: /* stdf: gestaltStandardFile58 (bit 0) only: StandardPutFile (selector 5) and StandardGetFile (selector 6) exist (mac_stdput.c,
+                      * mac_stdfile.c); CustomPutFile and CustomGetFile (7, 8), translation, colour icons and dynamic volume
+                      * allocation are not claimed, and selectors 7 and 8 halt by name. */
+        response = 1; break;
     default: error = -5551; break;
     }
     mac_cpu_set(rt->cpu, MAC_A0, response);

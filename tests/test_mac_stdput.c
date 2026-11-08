@@ -102,8 +102,34 @@ static void refusals(void){
     /* destroying the runtime state while the dialog is open frees it */
     r=rig("a");put(&r,WHERE);mac_stdput_destroy(&r);CHECK(!r.stdput);mac_stdput_destroy(&r);mac_cpu_destroy(r.cpu);
 }
+/* StandardPutFile (selector 5): reply, defaultName, prompt; centred; StandardFileReply of 88 bytes. */
+static int put5(MacRuntime*r){
+    wr(r,SP,2,5);wr(r,SP+2,4,REPLY);wr(r,SP+6,4,ORIG);wr(r,SP+10,4,PROMPT);memset(mac_cpu_ram(r->cpu)+REPLY,0xee,88);
+    mac_cpu_set(r->cpu,MAC_A7,SP);mac_cpu_set(r->cpu,MAC_PC,PC);return mac_stdfile_service(r,0xa9ea);
+}
+static void standard_put(void){
+    MacRuntime r=rig("Start");CHECK(put5(&r)==1 && open_now(&r));
+    CHECK(!screen_same(&r));
+    {unsigned d=0;for(int x=170;x<470;x++)if(mac_cpu_ram(r.cpu)[SCR+170*640+x]!=(uint8_t)((170*640+x)*7))d++;CHECK(d>100);}   /* centred: top row 170, left 170 */
+    {unsigned on=0,off=0;for(int y=200;y<300;y++){on+=mac_cpu_ram(r.cpu)[SCR+y*640+170]!=(uint8_t)((y*640+170)*7);off+=mac_cpu_ram(r.cpu)[SCR+y*640+169]!=(uint8_t)((y*640+169)*7);}CHECK(on>50 && off==0);}   /* left edge exactly 170 */
+    type(&r,"X");click(&r,410,280);CHECK(again(&r)==1 && !open_now(&r) && mac_cpu_get(r.cpu,MAC_A7)==SP+14 && screen_same(&r));
+    CHECK(good(&r)==1 && rd(&r,REPLY+1,1)==0 && rd(&r,REPLY+2,4)==0 && rd(&r,REPLY+6,2)==0xffff && rd(&r,REPLY+8,4)==2);
+    CHECK(rd(&r,REPLY+12,1)==6 && !memcmp(mac_cpu_ram(r.cpu)+REPLY+13,"StartX",6) && rd(&r,REPLY+19,4)==0 && rd(&r,REPLY+76,4)==0 && rd(&r,REPLY+80,4)==0 && rd(&r,REPLY+84,4)==0);
+    mac_cpu_destroy(r.cpu);
+    r=rig("Q");put5(&r);click(&r,320,280);CHECK(again(&r)==1 && !open_now(&r) && mac_cpu_get(r.cpu,MAC_A7)==SP+14);   /* Cancel */
+    {unsigned nz=0;for(unsigned i=0;i<88;i++)nz+=mac_cpu_ram(r.cpu)[REPLY+i]!=0;CHECK(nz==0);}
+    mac_cpu_destroy(r.cpu);
+    for(unsigned k=0;k<4;k++){                                      /* refusals */
+        r=rig("a");wr(&r,SP,2,5);wr(&r,SP+2,4,REPLY);wr(&r,SP+6,4,ORIG);wr(&r,SP+10,4,PROMPT);
+        if(k==0)wr(&r,SP+2,4,(uint32_t)mac_cpu_ram_size(r.cpu)-80);   /* room for an SFReply but not a StandardFileReply */
+        if(k==1)wr(&r,SP+10,4,(uint32_t)mac_cpu_ram_size(r.cpu)+8);
+        if(k==2)wr(&r,SP+6,4,0);
+        mac_cpu_set(r.cpu,MAC_A7,k==3?(uint32_t)mac_cpu_ram_size(r.cpu)-6:SP);mac_cpu_set(r.cpu,MAC_PC,PC);
+        CHECK(mac_stdfile_service(&r,0xa9ea)==-1 && mac_cpu_halted(r.cpu) && !r.stdput);mac_cpu_destroy(r.cpu);
+    }
+}
 int main(void){
-    saving();cancelling();origname();placement();refusals();
+    standard_put();saving();cancelling();origname();placement();refusals();
     if(!fails)puts("SFPutFile checks passed");
     return fails?1:0;
 }

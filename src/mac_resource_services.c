@@ -159,7 +159,7 @@ int mac_resource_service(MacRuntime *rt, uint16_t opcode) {
     switch (opcode) {
     case 0xa9a0: case 0xa81f: case 0xa99d: args = 6; width = 4; break;
     case 0xa9bc: args = 2; width = 4; break; /* GetPicture(picID): GetResource(PICT,id). */
-    case 0xa9a5: args = 4; width = 4; break;
+    case 0xa9a5: case 0xa821: args = 4; width = 4; break; /* SizeResource; MaxSizeRsrc answers the same (an assumption: no slack in our resource files) */
     case 0xa9a6: case 0xa99c: args = 4; width = 2; break;
     case 0xa9a2: case 0xa9a3: case 0xa992: args = 4; break;
     case 0xa9a8: args = 16; break;
@@ -197,7 +197,7 @@ int mac_resource_service(MacRuntime *rt, uint16_t opcode) {
     MacResource r;
     MacHandle *h = handle(rt, value, &r);
     if (!h) return result(rt, sp, args, width, UINT32_MAX, RES_NOT_FOUND);
-    if (opcode == 0xa9a5) return result(rt, sp, 4, 4, (uint32_t)r.size, 0);
+    if (opcode == 0xa9a5 || opcode == 0xa821) return result(rt, sp, 4, 4, (uint32_t)r.size, 0);
     if (opcode == 0xa9a6) return result(rt, sp, 4, 2,
         r.attributes | (h->resource_changed ? 0x80 : 0), 0);
     if (opcode == 0xa9a2) {

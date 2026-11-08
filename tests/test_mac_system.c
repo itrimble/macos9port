@@ -80,6 +80,8 @@ int main(void) {
             mac_cpu_get(rt.cpu,MAC_D0)!=(i==7?(uint32_t)-5551:0) ||
             mac_cpu_get(rt.cpu,MAC_A7)!=0x50000) failed=1;
     }
+    mac_cpu_set(rt.cpu,MAC_D0,0x73746466);mac_cpu_set(rt.cpu,MAC_A7,0x50000);                  /* 'stdf': exactly bit 0, StandardFile58 */
+    if (mac_system_service(&rt,0xa1ad)!=1 || mac_cpu_get(rt.cpu,MAC_A0)!=1 || mac_cpu_get(rt.cpu,MAC_D0)!=0) failed=1;
     rt.main_device=1;rt.screen_depth=8;                         /* the indexed color profile is up */
     mac_cpu_set(rt.cpu,MAC_D0,0x71647277);mac_cpu_set(rt.cpu,MAC_A7,0x50000);
     if (mac_system_service(&rt,0xa1ad)!=1 || mac_cpu_get(rt.cpu,MAC_A0)!=1 || mac_cpu_get(rt.cpu,MAC_D0)!=0) failed=1;

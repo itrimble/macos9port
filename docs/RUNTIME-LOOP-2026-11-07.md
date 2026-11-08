@@ -103,7 +103,7 @@ None of these has reached its main loop. "Traps" is the count before the halt.
 | Glider 4.10 | 1249 | `A204` | a Device Manager `Control` (PBControlImmed) on driver reference number -4, csCode 2, csParam 3, reached from library glue. Glider's source calls `GetSoundVol`/`SetSoundVol`, which are glue in MPW, so that is the likely cause; I did not find a source that confirms it, so it is unimplemented, not guessed |
 | Room Editor 1.06 | (dialog) | `GetNewDialog` `A97C` | with scripted input (probe, headless): Standard File, open a file, then its own alert (witch icon, "Okay" button; clicking Okay dismisses it), then it calls `GetNewDialog`, so it needs the real Dialog Manager (dialog records, `ModalDialog`, item access). Headless frames of the dialog and the alert were viewed. WIND 128 (procID 160, the app\'s own WDEF 10) is still ahead |
 | Glider PRO 1.1.2 | 143 | `A260` | `PBDirCreate` (HFSDispatch selector 6) to create a "Preferences" folder; the file system has one flat directory, so this needs a hierarchy, not a one-off |
-| Glider Edit 1.1.1 | 36 | waits in its own alert (`A985`) | it asks Gestalt `stdf` (Standard File 3.0), gets "undefined", and shows an alert (viewed in a headless frame): "Sorry, this program can\'t run on this computer because it needs the new filesystem (system 7.0 or higher)", button "Oh ...". Moving on needs the System 7 Standard File calls (Pack3 selectors 5 to 8) and an honest `stdf` Gestalt answer |
+| Glider Edit 1.1.1 | 36 | idles at its menu bar (File, Edit) | headless frames, 9 Nov 2026: with Gestalt `stdf` now answered (bit 0 only: `StandardPutFile` and `StandardGetFile` exist; `CustomPutFile` and `CustomGetFile`, selectors 7 and 8, halt by name) the alert is gone. The next halt was `MaxSizeRsrc` (`$A821`), now answered like `SizeResource` (an assumption that our resource files carry no slack; I could not open a description of it). The app then shows its menu bar and waits; File > Open... opens a `StandardGetFile` dialog (centred, empty list: no matching files on the volume). I have not opened a file or looked at anything past that dialog |
 
 The window-colour change cleared Glider 4.10's `wctb 128` (content, frame and text black;
 parts 3 and 4 are documented as reserved). A pixel dump of the screen at the halt is entirely
@@ -225,6 +225,11 @@ the probe, not a window I watched, and I have not listened to any audio.
   different verb (the door then answers *"Dr. Brain's front door seems very secure."*). A click on the doorbell with that verb changes the door's
   grating in the next frame; I have not seen the whole sequence or heard any sound. Flamingo and lamp clicks showed no text in the
   frames I looked at; I did not check whether they should.
+- **Standard File selectors 5 and 6, and Glider Edit (headless frames):** `StandardPutFile` (selector 5) shares the save-as dialog;
+  `StandardGetFile` (selector 6) shares the open dialog. Both are centred and return a 88-byte `StandardFileReply` whose FSSpec is
+  {vRefNum $FFFF, parID 2, name}; `sfReplacing` is always 0 (no replace alert), and a file filter on `StandardGetFile` halts. Mutation
+  checks: 13 of 14 killed after two test fixes; the survivor is a stack-room boundary for `StandardPutFile` that changes no outcome I can
+  construct. `MaxSizeRsrc` answers like `SizeResource`.
 - **Parity:** Monkey Island and Monkey Island 2 are byte-identical to the previous baseline; `make test` exits 0; ASan on Castle (90 s with
   the menu script) and on the new and touched menu, window and utility tests reports nothing.
 
