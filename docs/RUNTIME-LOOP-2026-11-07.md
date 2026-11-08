@@ -220,6 +220,11 @@ the probe, not a window I watched, and I have not listened to any audio.
   runtime still shows one window at a time. Mutation checks on the window change: 6 of 8 killed after one added boundary test; one
   survivor is equivalent in effect (a snapshot copy of the full width whose extra bytes are never pasted), one was the boundary case now
   covered.
+- **Clicking around the room (headless frames, no halt in 125 s):** with the default verb the doorbell gives *"This looks like every
+  other castle doorbell you've seen."*, the door gives its earlier text, and a click near the top row of the window selects a
+  different verb (the door then answers *"Dr. Brain's front door seems very secure."*). A click on the doorbell with that verb changes the door's
+  grating in the next frame; I have not seen the whole sequence or heard any sound. Flamingo and lamp clicks showed no text in the
+  frames I looked at; I did not check whether they should.
 - **Parity:** Monkey Island and Monkey Island 2 are byte-identical to the previous baseline; `make test` exits 0; ASan on Castle (90 s with
   the menu script) and on the new and touched menu, window and utility tests reports nothing.
 
