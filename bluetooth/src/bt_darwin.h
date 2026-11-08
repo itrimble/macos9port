@@ -33,6 +33,8 @@ typedef void (*BtDarwinCloseFn)(void *ctx);
 
 BtDarwin *bt_darwin_new(void);
 void bt_darwin_free(BtDarwin *d);
+/* Process pending callbacks on the caller (main) run loop without waiting. */
+void bt_darwin_poll(BtDarwin *d);
 /* Run a standard inquiry for the given number of seconds. */
 typedef void (*BtDarwinDoneFn)(void *ctx, int status);
 int bt_darwin_discover(BtDarwin *d, uint32_t seconds, BtDarwinDeviceFn fn, void *ctx);

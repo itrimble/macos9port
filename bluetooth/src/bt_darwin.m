@@ -105,6 +105,10 @@ static long darwin_read(void *ctx, void *p, size_t cap) {
     return 0;
 }
 
+void bt_darwin_poll(BtDarwin *d) {
+    if (d) CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, true);
+}
+
 int bt_darwin_available(void) {
     IOBluetoothHostController *host = [IOBluetoothHostController defaultController];
     return host && host.powerState == kBluetoothHCIPowerStateON;
