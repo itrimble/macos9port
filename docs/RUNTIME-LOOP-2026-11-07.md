@@ -567,3 +567,17 @@ the probe, not a window I watched, and I have not listened to any audio.
   Mutants killed except one equivalent (the odd-handle test: the table lookup rejects odd handles anyway). ASan clean; `make test` 0; MI and MI2 identical; Castle refreshed.
   **Next halt (headless):** Glider PRO's New House flow now halts in `NewControl` from `GetNewControl` id 129: **procID 2050 = the application's own CDEF 128** (CNTL 128 and 129 both).
   Running a program's CDEF means executing guest code through `mac_guest_call` for draw/hit-test/calc messages: that is the next design step, and it is also what the parked guest-WDEF item needs.
+
+- **Guest control definitions (CDEF) run (headless).** A control whose procID is id*16+variant (id >= 2) now runs the program's own CDEF resource: new `src/mac_cdef.c`. Each
+  Control Manager call builds a job (a list of messages: initCntl 3, drawCntl 0, testCntl 1, dispCntl 4; numbers from memory) and each `mac_guest_call` completion starts the
+  next; the last runs the call's finish step (writes the result, e.g. the new handle or the part code) and pops the arguments. The CDEF handle is a pinned resource handle in
+  contrlDefProc with the variant in the high byte (as on a real Mac); contrlData belongs to the CDEF. The owner window's port is current during the calls and restored after.
+  Part codes from testCntl are clamped to 1..254. One job at a time: a Control Manager call made by a running CDEF halts. Standard controls take the same path natively.
+  Behaviour change: FindControl now returns a control only when its part is non-zero and it is visible and active. **Bug found and fixed on the way:** `call_filter` (ModalDialog filter
+  procedures) passed theDialog/event/itemHit in the reverse stack order (and its test pinned the wrong order); a real Pascal filter would have read itemHit as the dialog.
+  New services the CDEF needed: GetPenState/SetPenState on colour ports, GetItem, GetItemCmd/Mark/Style/Icon (GetItemIcon's 2-byte VAR is from memory), CalcMenuSize, GetMCEntry (always
+  nil: no menu colour tables), and CountMItems/Get* accept a raw MENU resource handle (strict paths still refuse it). Tests: `tests/test_mac_cdef.c` (message order and argument layout, results,
+  clamping, port restore, hidden/inactive skipping, dispose/kill, nested halt, 9 corrupted-input cases), additions to the menu-records, colour-pen and dialog tests. Equivalent mutants:
+  the 520-step bound (lists are capped at 512), the CDEF size floor (checked twice).
+  **Glider PRO (headless):** CNTL 128/129 (procID 2050, CDEF 128) are created, initialised and drawn by Glider's own CDEF; the run goes on to the application's own `GetCIcon` (`$AA1E`,
+  colour icons 'cicn'), the next halt. **Not seen in a window.** The CDEF's drawing is only as good as our pen, text and menu calls; no frame has been checked yet.

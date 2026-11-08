@@ -34,7 +34,7 @@ static int pattern(MacRuntime *rt,uint32_t port,unsigned offset,uint32_t *data) 
 int mac_color_pen_service(MacRuntime *rt,uint16_t opcode) {
     unsigned args;
     switch(opcode) {
-    case 0xa87c: case 0xa89d: case 0xa89b: case 0xa893: case 0xa89a: case 0xa891: case 0xa892: case 0xa894: args=4;break;
+    case 0xa87c: case 0xa89d: case 0xa89b: case 0xa893: case 0xa89a: case 0xa891: case 0xa892: case 0xa894: case 0xa898: case 0xa899: args=4;break;
     case 0xa89c: args=2;break;
     case 0xa896: case 0xa897: case 0xa89e: args=0;break;
     default:return 0;
@@ -88,6 +88,23 @@ int mac_color_pen_service(MacRuntime *rt,uint16_t opcode) {
             return fail(rt,why);
         }
         wr(rt,port+56,2,mode);
+    } else if(opcode==0xa898 || opcode==0xa899) {
+        /* GetPenState / SetPenState (pnState): pnLoc (4), pnSize (4), pnMode (2), pnPat (8) = 18 bytes; the pattern is the old-style 8 bytes of the pen's PixPat. */
+        uint32_t state=rd(rt,sp,4);
+        if(!state || range(rt,state,18,0)<0)return fail(rt,"Invalid PenState address.");
+        if(pattern(rt,port,58,&data)<0)return -1;
+        uint8_t *ram=mac_cpu_ram(rt->cpu);
+        if(opcode==0xa898) {
+            wr(rt,state,4,rd(rt,port+48,4));wr(rt,state+4,4,rd(rt,port+52,4));wr(rt,state+8,2,rd(rt,port+56,2));
+            memcpy(ram+state+10,ram+data+20,8);
+        } else {
+            uint32_t size=rd(rt,state+4,4);
+            if((int16_t)(size>>16)<0 || (int16_t)(size&0xffff)<0)return fail(rt,"Negative color pen size is unsupported.");
+            unsigned mode=rd(rt,state+8,2);
+            if(mode>15 && mode!=44)return fail(rt,"Color pen transfer mode in SetPenState is unsupported.");
+            wr(rt,port+48,4,rd(rt,state,4));wr(rt,port+52,4,size);wr(rt,port+56,2,mode);
+            memcpy(ram+data+20,ram+state+10,8);
+        }
     } else if(opcode==0xa89a) {
         uint32_t out=rd(rt,sp,4),point=rd(rt,port+48,4);
         if(!out || range(rt,out,4,1)<0)return fail(rt,"Invalid GetPen output pointer.");

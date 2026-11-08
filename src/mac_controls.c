@@ -1,4 +1,5 @@
 #include "mac_controls.h"
+#include "mac_cdef.h"
 #include "mac_window_int.h"
 #include "mac_resource.h"
 #include <stdio.h>
@@ -36,9 +37,17 @@ static MacWindowState *owner_of(MacRuntime *rt, uint32_t p) {
     if (!w) mac_cpu_halt(rt->cpu, "A control's owner window is not a registered window.");
     return w;
 }
-static void redraw(MacRuntime *rt, uint32_t p) {
-    MacWindowState *w = owner_of(rt, p);
-    if (w && w->visible && rd(rt, p + CTL_VIS, 1)) mac_control_draw(rt, w, p, 0);
+uint32_t mac_control_record(MacRuntime *rt, uint32_t h) { return record(rt, h); }
+/* Every operation builds its guest-visible effects as a job (mac_cdef.c): standard controls are drawn and tested natively when their step comes up, custom
+ * ones by running their CDEF. A call with no steps completes at once. */
+static void redraw(MacRuntime *rt, uint32_t h) { mac_cdef_add(rt, h, CDEF_DRAW, 0); }
+static int fin_result(MacRuntime *rt, MacCdefJob *j) { if (j->user[2]) wr(rt, j->user[0], j->user[2], j->user[1]); return 0; }
+static int fin_find(MacRuntime *rt, MacCdefJob *j) { wr(rt, j->user[0], 4, j->found); wr(rt, j->user[1], 2, (uint16_t)j->part); return 0; }
+static int fin_test(MacRuntime *rt, MacCdefJob *j) { wr(rt, j->user[1], 2, (uint16_t)j->part); return 0; }
+static int dispose(MacRuntime *rt, uint32_t h);
+static int fin_dispose(MacRuntime *rt, MacCdefJob *j) {
+    for (unsigned i = 0; i < j->count; i++) if (j->step[i].message == CDEF_DISP && dispose(rt, j->step[i].handle) < 0) return -1;
+    return 0;
 }
 static int pascal_ok(MacRuntime *rt, uint32_t s) { return s >= 0x400 && ram_ok(rt, s, 1) && ram_ok(rt, s, 1 + (size_t)mac_cpu_ram(rt->cpu)[s]); }
 static void unlink_control(MacRuntime *rt, MacWindowState *w, uint32_t h) {
@@ -65,11 +74,12 @@ static int64_t make_control(MacRuntime *rt, uint32_t win, const uint8_t *rect, c
     MacWindowState *w = mac_window_find(rt, win);
     if (!w) return fail(rt, "NewControl needs a registered window (dialogs are not supported).");
     unsigned base = proc & ~8u;
-    if (base >= 16 && base != 16) {
-        char why[160]; snprintf(why, sizeof why, "NewControl: procID %u names the program's own control definition (CDEF %u): custom CDEFs are not run by this runtime.", proc, proc >> 4);
-        return fail(rt, why);
-    }
-    if (base != 0 && base != 1 && base != 2 && base != 16) return fail(rt, "NewControl: only push button, check box, radio button and scroll bar control definitions are supported.");
+    int cid = mac_cdef_custom_id(proc);
+    uint32_t cdef = 0;
+    if (cid) {
+        cdef = mac_cdef_load(rt, (unsigned)cid);
+        if (!cdef) { char why[160]; snprintf(why, sizeof why, "NewControl: procID %u needs CDEF %d, which the application does not have.", proc, cid); return fail(rt, why); }
+    } else if (base != 0 && base != 1 && base != 2 && base != 16) return fail(rt, "NewControl: only push button, check box, radio button and scroll bar control definitions are supported.");
     if (hi < lo) return fail(rt, "NewControl: the maximum is below the minimum.");
     unsigned slot = 0; while (slot < rt->handle_count && (rt->handles[slot].handle || rt->handles[slot].pointer)) slot++;
     if (slot == rt->handle_count && rt->handle_count == MAC_RUNTIME_HANDLES) return fail(rt, "NewControl: no free handle slot.");
@@ -85,10 +95,12 @@ static int64_t make_control(MacRuntime *rt, uint32_t win, const uint8_t *rect, c
     wr(rt, p + CTL_VIS, 1, visible);
     if (value < lo) value = lo; if (value > hi) value = hi;
     wr(rt, p + CTL_VALUE, 2, (uint16_t)value); wr(rt, p + CTL_MIN, 2, (uint16_t)lo); wr(rt, p + CTL_MAX, 2, (uint16_t)hi);
-    wr(rt, p + CTL_DATA, 4, proc); wr(rt, p + CTL_REFCON, 4, refcon);
+    if (cdef) wr(rt, p + CTL_DEFPROC, 4, ((proc & 15) << 24) | cdef); else wr(rt, p + CTL_DATA, 4, proc);   /* a custom control's contrlData belongs to its CDEF */
+    wr(rt, p + CTL_REFCON, 4, refcon);
     memcpy(ram + p + CTL_TITLE, title, 1 + (size_t)title[0]);
-    redraw(rt, p);
     wr(rt, 0xa60, 2, 0);
+    if (cdef) mac_cdef_add(rt, h, CDEF_INIT, 0);
+    redraw(rt, h);
     return h;
 }
 static int new_control(MacRuntime *rt, uint32_t sp) {
@@ -98,9 +110,8 @@ static int new_control(MacRuntime *rt, uint32_t sp) {
     uint8_t rect[8], ttl[256]; memcpy(rect, mac_cpu_ram(rt->cpu) + bounds, 8); memcpy(ttl, mac_cpu_ram(rt->cpu) + title, 1 + (size_t)mac_cpu_ram(rt->cpu)[title]);
     int64_t h = make_control(rt, win, rect, ttl, rd(rt, sp + 12, 1) != 0, (int16_t)rd(rt, sp + 10, 2), (int16_t)rd(rt, sp + 8, 2), (int16_t)rd(rt, sp + 6, 2), rd(rt, sp + 4, 2), refcon);
     if (h < 0) return -1;
-    wr(rt, sp + 26, 4, (uint32_t)h);
-    mac_cpu_set(rt->cpu, MAC_A7, sp + 26);
-    return 1;
+    rt->cdef->user[0] = sp + 26; rt->cdef->user[1] = (uint32_t)h; rt->cdef->user[2] = 4;
+    return mac_cdef_start(rt);
 }
 /* GetNewControl(controlID, owner): the CNTL resource is bounds (8), value (2), visible (1) + filler (1), max (2), min (2), procID (2), refCon (4), title (Pascal);
  * this layout is from memory of Inside Macintosh. The resource is read from the application's own fork. */
@@ -112,9 +123,8 @@ static int get_new_control(MacRuntime *rt, uint32_t sp) {
     int64_t h = make_control(rt, rd(rt, sp, 4), d, d + 22, d[10] != 0, (int16_t)(d[8] << 8 | d[9]), (int16_t)(d[14] << 8 | d[15]), (int16_t)(d[12] << 8 | d[13]),
                              (unsigned)(d[16] << 8 | d[17]), (uint32_t)d[18] << 24 | d[19] << 16 | d[20] << 8 | d[21]);
     if (h < 0) return -1;
-    wr(rt, sp + 6, 4, (uint32_t)h);
-    mac_cpu_set(rt->cpu, MAC_A7, sp + 6);
-    return 1;
+    rt->cdef->user[0] = sp + 6; rt->cdef->user[1] = (uint32_t)h; rt->cdef->user[2] = 4;
+    return mac_cdef_start(rt);
 }
 
 /* Argument bytes and result bytes for each trap: from the MPW listing (Pascal order: the last argument is at SP). */
@@ -149,14 +159,14 @@ int mac_controls_service(MacRuntime *rt, uint16_t op) {
     uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7);
     if ((sp & 1) || !ram_ok(rt, sp, args + result)) return fail(rt, "Control Manager call has an invalid stack.");
     MacWindowState *w;
+    if (mac_cdef_job_new(rt, sp, args, fin_result) < 0) return -1;
     if (op == 0xa954) return new_control(rt, sp);
     if (op == 0xa9be) return get_new_control(rt, sp);
     if (op == 0xa904) {                                                              /* DrawGrowIcon(window): validated, draws nothing */
         w = mac_window_find(rt, rd(rt, sp, 4));
         if (!w) return fail(rt, "DrawGrowIcon's window is not a registered window.");
         /* No window definition this runtime creates (procIDs 1, 2, 4, 12 and the approximated custom ones) has a grow box, so there is nothing to draw. */
-        mac_cpu_set(rt->cpu, MAC_A7, sp + 4);
-        return 1;
+        return mac_cdef_start(rt);
     }
     uint32_t h = 0, p = 0;
     switch (op) {
@@ -167,39 +177,37 @@ int mac_controls_service(MacRuntime *rt, uint16_t op) {
         for (unsigned guard = 0; cur && guard < 512; guard++) {
             uint32_t pr = record(rt, cur); if (!pr) return -1;
             uint32_t next = rd(rt, pr + CTL_NEXT, 4);
-            if (op == 0xa956) { if (dispose(rt, cur)) return -1; }
-            else if (w->visible && rd(rt, pr + CTL_VIS, 1)) mac_control_draw(rt, w, pr, 0);
+            if (mac_cdef_add(rt, cur, op == 0xa956 ? CDEF_DISP : CDEF_DRAW, 0) < 0) return -1;
             cur = next;
         }
         if (cur) return fail(rt, "A window's control list is longer than 512 entries or loops.");
-        break; }
+        if (op == 0xa956) rt->cdef->finish = fin_dispose;
+        return mac_cdef_start(rt); }
     case 0xa96c: {                                                                   /* FindControl(thePoint, theWindow, VAR theControl): part */
         uint32_t out = rd(rt, sp, 4), pt = rd(rt, sp + 8, 4);
         w = mac_window_find(rt, rd(rt, sp + 4, 4));
         if (!w) return fail(rt, "FindControl's window is not a registered window.");
         if (!ram_ok(rt, out, 4) || (out & 1)) return fail(rt, "FindControl's result pointer is invalid.");
-        int v = (int16_t)(pt >> 16), hh = (int16_t)(pt & 0xffff), part = 0; uint32_t found = 0, cur = rd(rt, w->address + 140, 4);
-        for (unsigned guard = 0; cur && guard < 512 && !found; guard++) {
+        int v = (int16_t)(pt >> 16), hh = (int16_t)(pt & 0xffff); uint32_t cur = rd(rt, w->address + 140, 4);
+        for (unsigned guard = 0; cur && guard < 512; guard++) {                      /* front to back: the visible, active controls that hold the point */
             uint32_t pr = record(rt, cur); if (!pr) return -1;
             int b0 = (int16_t)rd(rt, pr + CTL_RECT, 2), b1 = (int16_t)rd(rt, pr + CTL_RECT + 2, 2), b2 = (int16_t)rd(rt, pr + CTL_RECT + 4, 2), b3 = (int16_t)rd(rt, pr + CTL_RECT + 6, 2);
-            if (rd(rt, pr + CTL_VIS, 1) && v >= b0 && v < b2 && hh >= b1 && hh < b3) { found = cur; part = mac_control_part(rt, pr, v, hh); }
+            if (rd(rt, pr + CTL_VIS, 1) && rd(rt, pr + CTL_HILITE, 1) != 255 && v >= b0 && v < b2 && hh >= b1 && hh < b3 && mac_cdef_add(rt, cur, CDEF_TEST, pt) < 0) return -1;
             cur = rd(rt, pr + CTL_NEXT, 4);
         }
-        if (cur && !found) return fail(rt, "A window's control list is longer than 512 entries or loops.");
-        wr(rt, out, 4, found); wr(rt, sp + args, 2, (uint16_t)part);
-        mac_cpu_set(rt->cpu, MAC_A7, sp + args);
-        return 1; }
+        if (cur) return fail(rt, "A window's control list is longer than 512 entries or loops.");
+        rt->cdef->finish = fin_find; rt->cdef->user[0] = out; rt->cdef->user[1] = sp + args;
+        return mac_cdef_start(rt); }
     default: break;
     }
-    if (op == 0xa956 || op == 0xa969 || op == 0xa953) { mac_cpu_set(rt->cpu, MAC_A7, sp + args); return 1; }
     h = rd(rt, sp + args - 4, 4);                                                    /* the control handle is the first argument (deepest) */
     p = record(rt, h); if (!p) return -1;
     switch (op) {
-    case 0xa955: if (dispose(rt, h)) return -1; break;
+    case 0xa955: rt->cdef->finish = fin_dispose; mac_cdef_add(rt, h, CDEF_DISP, 0); break;
     case 0xa957: case 0xa958: {
         w = owner_of(rt, p); if (!w) return -1;
         int on = op == 0xa957;
-        if (on && !rd(rt, p + CTL_VIS, 1)) { wr(rt, p + CTL_VIS, 1, 1); redraw(rt, p); }
+        if (on && !rd(rt, p + CTL_VIS, 1)) { wr(rt, p + CTL_VIS, 1, 1); redraw(rt, h); }
         if (!on && rd(rt, p + CTL_VIS, 1)) { if (w->visible) mac_control_draw(rt, w, p, 1); wr(rt, p + CTL_VIS, 1, 0); }
         break; }
     case 0xa959: case 0xa95c: {                                                      /* MoveControl(ctl, h, v) / SizeControl(ctl, w, h) */
@@ -210,13 +218,13 @@ int mac_controls_service(MacRuntime *rt, uint16_t op) {
         else { if (x < 1 || y < 1) return fail(rt, "SizeControl needs a positive width and height."); b = t + y; r = l + x; }
         if (w->visible && rd(rt, p + CTL_VIS, 1)) mac_control_draw(rt, w, p, 1);
         wr(rt, p + CTL_RECT, 2, (uint16_t)t); wr(rt, p + CTL_RECT + 2, 2, (uint16_t)l); wr(rt, p + CTL_RECT + 4, 2, (uint16_t)b); wr(rt, p + CTL_RECT + 6, 2, (uint16_t)r);
-        redraw(rt, p);
+        redraw(rt, h);
         break; }
     case 0xa95a: wr(rt, sp + args, 4, rd(rt, p + CTL_REFCON, 4)); break;
     case 0xa95b: wr(rt, p + CTL_REFCON, 4, rd(rt, sp, 4)); break;
     case 0xa96a: wr(rt, sp + args, 4, rd(rt, p + CTL_ACTION, 4)); break;
     case 0xa96b: wr(rt, p + CTL_ACTION, 4, rd(rt, sp, 4)); break;
-    case 0xa95d: wr(rt, p + CTL_HILITE, 1, rd(rt, sp, 2) & 0xff); redraw(rt, p); break;
+    case 0xa95d: wr(rt, p + CTL_HILITE, 1, rd(rt, sp, 2) & 0xff); redraw(rt, h); break;
     case 0xa960: wr(rt, sp + args, 2, rd(rt, p + CTL_VALUE, 2)); break;
     case 0xa961: wr(rt, sp + args, 2, rd(rt, p + CTL_MIN, 2)); break;
     case 0xa962: wr(rt, sp + args, 2, rd(rt, p + CTL_MAX, 2)); break;
@@ -227,7 +235,7 @@ int mac_controls_service(MacRuntime *rt, uint16_t op) {
         if (op == 0xa963) cur = v;
         if (cur < lo) cur = lo; if (cur > hi) cur = hi;
         wr(rt, p + CTL_MIN, 2, (uint16_t)lo); wr(rt, p + CTL_MAX, 2, (uint16_t)hi); wr(rt, p + CTL_VALUE, 2, (uint16_t)cur);
-        redraw(rt, p);
+        redraw(rt, h);
         break; }
     case 0xa95e: {                                                                   /* GetCTitle(ctl, VAR title) */
         uint32_t out = rd(rt, sp, 4); unsigned n = rd(rt, p + CTL_TITLE, 1);
@@ -238,15 +246,15 @@ int mac_controls_service(MacRuntime *rt, uint16_t op) {
         uint32_t src = rd(rt, sp, 4);
         if (!pascal_ok(rt, src)) return fail(rt, "SetCTitle's title is outside guest RAM.");
         memmove(mac_cpu_ram(rt->cpu) + p + CTL_TITLE, mac_cpu_ram(rt->cpu) + src, 1 + (size_t)mac_cpu_ram(rt->cpu)[src]);
-        redraw(rt, p);
+        redraw(rt, h);
         break; }
     case 0xa966: {                                                                   /* TestControl(ctl, pt): part */
         uint32_t pt = rd(rt, sp, 4);
-        wr(rt, sp + args, 2, (uint16_t)mac_control_part(rt, p, (int16_t)(pt >> 16), (int16_t)(pt & 0xffff)));
+        rt->cdef->finish = fin_test; rt->cdef->user[1] = sp + args;
+        mac_cdef_add(rt, h, CDEF_TEST, pt);
         break; }
     default: return fail(rt, "Unhandled control trap.");
     }
     if (mac_cpu_halted(rt->cpu)) return -1;
-    mac_cpu_set(rt->cpu, MAC_A7, sp + args);
-    return 1;
+    return mac_cdef_start(rt);
 }

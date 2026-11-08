@@ -116,6 +116,7 @@ typedef struct {
     int trace;
     uint32_t appfork_mark; /* file mark of the application resource fork opened for direct reads (mac_appfork.c) */
     struct MacAlertState *alert; /* native alert dialog (mac_alert.c) */
+    struct MacCdefJob *cdef;     /* control definition calls in flight (mac_cdef.c) */
     struct MacRgnRec *rgn_rec;   /* OpenRgn..CloseRgn recording in progress (mac_regions.c) */
     struct MacMenuSel *menusel;  /* MenuSelect tracking in progress (mac_menuselect.c) */
     int16_t menu_hilite;         /* ID of the menu whose title is highlighted, 0 for none */
@@ -196,6 +197,7 @@ int mac_appfork_service(MacRuntime *rt, uint16_t opcode); /* PBRead/PBGetEOF on 
 int mac_dialog_next_event(MacRuntime *rt, MacEvent *out); /* next mouse/key event for a modal dialog */
 int mac_alert_service(MacRuntime *rt, uint16_t opcode); /* Alert, StopAlert, NoteAlert, CautionAlert: $A985..$A988 */
 void mac_alert_destroy(MacRuntime *rt);
+void mac_cdef_destroy(MacRuntime *rt);
 int mac_controls_service(MacRuntime *rt, uint16_t opcode); /* Control Manager subset (mac_controls.c) */
 int mac_alias_service(MacRuntime *rt, uint16_t opcode); /* AliasDispatch $A823 (mac_alias.c) */
 int mac_cmpstring_service(MacRuntime *rt, uint16_t opcode); /* CmpString $A03C (mac_cmpstring.c) */

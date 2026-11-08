@@ -11,7 +11,8 @@
  * installs for every trap key; the trap handler recognises "guest call active and PC == stub" and calls
  * mac_guest_return, which reads the result, restores A7 to its value before the call, and runs the caller's `done`
  * callback. `done` either starts the next call (sequential, e.g. one filter call per file) or returns, in which case PC
- * is the resume address saved when the first call started. Nested calls are refused. Pascal calling convention only:
+ * is the resume address saved when the first call started. Nested calls are refused. `args` is copied lowest address first, so args[0] is the LAST
+ * Pascal argument (the one nearest the return address) and the first-declared argument comes last. Pascal calling convention only:
  * the routine preserves everything except D0-D2/A0-A1, which the interrupted trap's caller already treats as scratch. */
 #define RETURN_STUB (0x2000u + 0xfeu * 8)
 

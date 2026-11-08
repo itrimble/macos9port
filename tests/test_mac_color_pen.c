@@ -46,6 +46,18 @@ static void state(void){
     CHECK(call(&r,0xa89e)==1 && rd(&r,PORT+52,4)==0x00010001 && rd(&r,PORT+56,2)==8);
     CHECK(rd(&r,PORT+48,4)==0xffff0007 && rd(&r,PORT+66,2)==0xffff);
     uint32_t pen=rd(&r,rd(&r,PORT+58,4),4);CHECK(rd(&r,pen+20,4)==0xffffffff);
+    /* GetPenState / SetPenState: pnLoc, pnSize, pnMode and the 8 pattern bytes, round-tripped. */
+    wr(&r,SP,4,0xb100);CHECK(call(&r,0xa898)==1 && rd(&r,0xb100,4)==0xffff0007 && rd(&r,0xb104,4)==0x00010001 && rd(&r,0xb108,2)==8 && rd(&r,0xb10a,4)==0xffffffff && rd(&r,0xb10e,4)==0xffffffff);
+    wr(&r,0xb200,4,0x00050006);wr(&r,0xb204,4,0x00020003);wr(&r,0xb208,2,10);wr(&r,0xb20a,4,0x01020304);wr(&r,0xb20e,4,0x05060708);
+    wr(&r,SP,4,0xb200);CHECK(call(&r,0xa899)==1 && rd(&r,PORT+48,4)==0x00050006 && rd(&r,PORT+52,4)==0x00020003 && rd(&r,PORT+56,2)==10 && rd(&r,pen+20,4)==0x01020304 && rd(&r,pen+24,4)==0x05060708);
+    wr(&r,SP,4,0xb300);CHECK(call(&r,0xa898)==1 && !memcmp(mac_cpu_ram(r.cpu)+0xb300,mac_cpu_ram(r.cpu)+0xb200,18));
+    for(unsigned k=0;k<5;k++){                                                                                        /* refusals halt and change nothing */
+        MacRuntime q=fresh();uint32_t before=rd(&q,PORT+48,4);wr(&q,0xb200,4,0x00050006);wr(&q,0xb204,4,0x00020003);wr(&q,0xb208,2,10);
+        if(k==1)wr(&q,0xb204,4,0xffff0003);if(k==2)wr(&q,0xb204,4,0x0002ffff);if(k==3)wr(&q,0xb208,2,16);
+        wr(&q,SP,4,k==0?0:k==4?(uint32_t)MAC_RUNTIME_RAM-4:0xb200);
+        CHECK(call(&q,0xa899)==-1 && mac_cpu_halted(q.cpu) && rd(&q,PORT+48,4)==before);mac_cpu_destroy(q.cpu);
+    }
+    {MacRuntime q=fresh();wr(&q,SP,4,0);CHECK(call(&q,0xa898)==-1 && mac_cpu_halted(q.cpu));mac_cpu_destroy(q.cpu);}
     CHECK(call(&r,0xabcd)==0);wr(&r,PORT+6,2,80);CHECK(call(&r,0xa89d)==0);
     mac_cpu_destroy(r.cpu);
 }

@@ -350,8 +350,8 @@ static void modal_loop(void) {
             if (pass) { mac_cpu_set(g.rt.cpu, MAC_A7, SP); mac_cpu_set(g.rt.cpu, MAC_PC, TRAP_PC); CHECK(mac_dlgmgr_service(&g.rt, 0xa991) == 1); }
             else CHECK(modal(&g, FILT, hit) == 1);
             CHECK(g.rt.guest.active && mac_cpu_get(g.rt.cpu, MAC_PC) == FILT);                                        /* a guest call is under way: the CPU runs the filter */
-            uint32_t a7 = mac_cpu_get(g.rt.cpu, MAC_A7), ev = raw(&g.rt, a7 + 8, 4), ip = raw(&g.rt, a7 + 12, 4);
-            CHECK(raw(&g.rt, a7 + 4, 4) == d && ev == ip - 18 && ev < SP - 40 && a7 < ev && (ev & 1) == 0);         /* Pascal argument order; scratch above the callee's frame */
+            uint32_t a7 = mac_cpu_get(g.rt.cpu, MAC_A7), ev = raw(&g.rt, a7 + 8, 4), ip = raw(&g.rt, a7 + 4, 4);
+            CHECK(raw(&g.rt, a7 + 12, 4) == d && ev == ip - 18 && ev < SP - 40 && a7 < ev && (ev & 1) == 0);         /* Pascal argument order; scratch above the callee's frame */
             unsigned what = raw(&g.rt, ev, 2);
             CHECK(what == (mode == 3 ? 0u : mode == 1 ? (pass ? 2u : 1u) : 3u) && raw(&g.rt, ip, 2) == 0);           /* the event offered (a null event when idle) */
             if (mode == 0) wr(&g.rt, ip, 2, 4);                                                                      /* the filter stores itemHit 4 (the check box) ... */

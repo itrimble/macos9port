@@ -262,7 +262,7 @@ static int call_filter(MacRuntime *rt, Dlg *d, const MacEvent *e, int real) {
     d->scratch = at; d->pend = *e; d->pend_real = real;
     wr(rt, at, 2, e->what); wr(rt, at + 2, 4, e->message); wr(rt, at + 6, 4, e->when); wr(rt, at + 10, 2, (uint16_t)e->y); wr(rt, at + 12, 2, (uint16_t)e->x); wr(rt, at + 14, 2, e->modifiers);
     wr(rt, at + 18, 2, 0);
-    uint8_t args[12]; uint32_t v[3] = { d->ptr, at, at + 18 };
+    uint8_t args[12]; uint32_t v[3] = { at + 18, at, d->ptr };   /* lowest address first: the last Pascal argument (itemHit), then the event, then the dialog */
     for (int i = 0; i < 3; i++) for (int k = 0; k < 4; k++) args[i * 4 + k] = (uint8_t)(v[i] >> (24 - 8 * k));
     mac_cpu_set(rt->cpu, MAC_PC, d->pc); mac_cpu_set(rt->cpu, MAC_A7, at);
     return mac_guest_call(rt, d->filter, args, 12, 2, filter_done, d);

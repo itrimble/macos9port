@@ -10,22 +10,26 @@ static int valid(MacRuntime*r,uint32_t p,size_t n){size_t z=mac_cpu_ram_size(r->
 static uint32_t rd(MacRuntime*r,uint32_t p,unsigned n){return mac_cpu_read(r->cpu,p,n);}
 static void wr(MacRuntime*r,uint32_t p,unsigned n,uint32_t v){mac_cpu_write(r->cpu,p,n,v);}
 static int fail(MacRuntime*r,const char*s){mac_cpu_halt(r->cpu,s);return -1;}
-static MacHandle *owned(MacRuntime*r,uint32_t h){
+static MacHandle *owned_x(MacRuntime*r,uint32_t h,int raw){
     if((h&1)||!valid(r,h,4))return NULL;
     for(size_t i=0;i<r->handle_count;i++){
         MacHandle*m=&r->handles[i];
-        if(m->handle==h && (m->resource==0 || (m->resource==2 && m->type==MENU_TYPE)) && !m->loaded_code && !(m->pointer&1) &&
+        if(m->handle==h && (m->resource==0 || (m->resource==2 && m->type==MENU_TYPE) || (raw && m->resource==1 && m->type==MENU_TYPE)) && !m->loaded_code && !(m->pointer&1) &&
            valid(r,m->pointer,m->size) && rd(r,h,4)==m->pointer)return m;
     }return NULL;
 }
-MacHandle *mac_menu_record(MacRuntime*r,uint32_t h,unsigned *items){
-    MacHandle*m=owned(r,h);if(!m || m->type!=MENU_TYPE || m->size<16 || rd(r,m->pointer+6,4))return NULL;
+static MacHandle *owned(MacRuntime*r,uint32_t h){return owned_x(r,h,0);}
+/* `raw`: also accept a MENU resource handle straight from GetResource (a MENU resource has the layout of a menu record, so a real Mac lets a program use it
+ * as a MenuHandle; only counting items is allowed through this path). */
+static MacHandle *menu_record_x(MacRuntime*r,uint32_t h,unsigned *items,int raw){
+    MacHandle*m=owned_x(r,h,raw);if(!m || m->type!=MENU_TYPE || m->size<16 || rd(r,m->pointer+6,4))return NULL;
     const uint8_t*b=mac_cpu_ram(r->cpu)+m->pointer;size_t p=15u+b[14];unsigned count=0;
     if(p>=m->size)return NULL;
     while(b[p]){size_t n=b[p]+5u;if(n>m->size-p || ++count>31)return NULL;p+=n;if(p>=m->size)return NULL;}
     if(p+1!=m->size)return NULL;
     if(items)*items=count;return m;
 }
+MacHandle *mac_menu_record(MacRuntime*r,uint32_t h,unsigned *items){return menu_record_x(r,h,items,0);}
 /* A menu list handle: a count followed by that many owned, distinct menu handles (our private representation). */
 static MacHandle *list_at(MacRuntime*r,uint32_t h,unsigned *count){
     MacHandle*m=owned(r,h);if(!m || m->type || m->size<2)return NULL;
@@ -228,18 +232,57 @@ static int set_item(MacRuntime*r,uint32_t sp){
 }
 int mac_menu_records_service(MacRuntime*r,uint16_t op){
     unsigned args=0,result=0;
-    switch(op){case 0xa931:args=6;result=4;break;case 0xa947:args=10;break;case 0xa933:case 0xa945:case 0xa94d:args=8;break;
-    case 0xa939:case 0xa93a:case 0xa935:args=6;break;case 0xa932:case 0xa93c:args=4;break;case 0xa936:args=2;break;
+    switch(op){case 0xa931:args=6;result=4;break;case 0xa947:case 0xa941:case 0xa946:case 0xa84e:case 0xa943:case 0xa93f:args=10;break;case 0xa933:case 0xa945:case 0xa94d:args=8;break;
+    case 0xa939:case 0xa93a:case 0xa935:args=6;break;case 0xa932:case 0xa93c:case 0xa948:args=4;break;case 0xa936:args=2;break;
     case 0xa934:args=0;break;
-    case 0xa9bf:case 0xa9c0:args=2;result=4;break;case 0xa950:args=4;result=2;break;case 0xa949:args=2;result=4;break;default:return 0;}
+    case 0xa9bf:case 0xa9c0:args=2;result=4;break;case 0xaa64:args=4;result=4;break;case 0xa950:args=4;result=2;break;case 0xa949:args=2;result=4;break;default:return 0;}
     if(!r || !r->cpu || mac_cpu_halted(r->cpu))return -1;
     uint32_t sp=mac_cpu_get(r->cpu,MAC_A7);
     if((sp&1)||!valid(r,sp,args+result)||!valid(r,0xa1c,0x800))return fail(r,"Menu call stack or low memory is invalid.");
+    if(op==0xaa64){wr(r,sp+4,4,0);mac_cpu_set(r->cpu,MAC_A7,sp+4);return 1;}   /* GetMCEntry(menuID, item): no menu colour tables exist here, so there is never an entry */
     if(op==0xa931)return new_menu(r,sp);
     if(op==0xa9bf)return get_menu(r,sp);
     if(op==0xa9c0)return get_new_mbar(r,sp);
     if(op==0xa933)return append(r,sp);
     if(op==0xa947)return set_item(r,sp);
+    if(op==0xa948){   /* CalcMenuSize(menu): menuWidth and menuHeight from the items, the same sizes GetMenu publishes (8x8 text) */
+        MacHandle*m=menu_record_x(r,rd(r,sp,4),NULL,1);unsigned width,height;
+        if(!m)return fail(r,"CalcMenuSize menu is invalid.");
+        if(!dimensions(mac_cpu_ram(r->cpu)+m->pointer,m->size,&width,&height))return fail(r,"CalcMenuSize has malformed items or unsupported menu definitions/icons.");
+        wr(r,m->pointer+2,2,width);wr(r,m->pointer+4,2,height);
+        mac_cpu_set(r->cpu,MAC_A7,sp+4);return 1;
+    }
+    if(op==0xa946){   /* GetItem(menu, item, VAR itemString): the item's text as a Pascal string; an item outside the menu gives an empty string */
+        unsigned count;MacHandle*m=menu_record_x(r,rd(r,sp+6,4),&count,1);uint32_t out=rd(r,sp,4);int item=(int16_t)rd(r,sp+4,2);
+        if(!m)return fail(r,"GetItem menu is invalid.");
+        const uint8_t*b=mac_cpu_ram(r->cpu)+m->pointer;size_t p=15u+b[14];unsigned n=0;
+        if(item>=1 && (unsigned)item<=count){for(int i=1;i<item;i++)p+=b[p]+5u;n=b[p];}
+        if(!out||!valid(r,out,1+n))return fail(r,"GetItem destination is invalid.");
+        wr(r,out,1,n);if(n)memcpy(mac_cpu_ram(r->cpu)+out+1,b+p+1,n);
+        mac_cpu_set(r->cpu,MAC_A7,sp+10);return 1;
+    }
+    if(op==0xa93f){   /* GetItemIcon(menu, item, VAR iconIndex: INTEGER): the icon byte as an integer (the 2-byte size is from memory of Inside Macintosh) */
+        unsigned count;MacHandle*m=menu_record_x(r,rd(r,sp+6,4),&count,1);uint32_t out=rd(r,sp,4);int item=(int16_t)rd(r,sp+4,2);
+        if(!m)return fail(r,"GetItemIcon menu is invalid.");
+        if(!out||(out&1)||!valid(r,out,2))return fail(r,"GetItemIcon destination is invalid.");
+        if(item>=1 && (unsigned)item<=count){
+            const uint8_t*b=mac_cpu_ram(r->cpu)+m->pointer;size_t p=15u+b[14];
+            for(int i=1;i<item;i++)p+=b[p]+5u;
+            wr(r,out,2,b[p+b[p]+1]);
+        }
+        mac_cpu_set(r->cpu,MAC_A7,sp+10);return 1;
+    }
+    if(op==0xa941||op==0xa84e||op==0xa943){   /* GetItemStyle / GetItemCmd / GetItemMark (menu, item, VAR byte): that byte of the item; an item outside the menu leaves it alone */
+        unsigned count;MacHandle*m=menu_record_x(r,rd(r,sp+6,4),&count,1);uint32_t out=rd(r,sp,4);int item=(int16_t)rd(r,sp+4,2);
+        if(!m)return fail(r,"GetItemStyle/Cmd/Mark menu is invalid.");
+        if(!out||!valid(r,out,1))return fail(r,"GetItemStyle destination is invalid.");
+        if(item>=1 && (unsigned)item<=count){
+            const uint8_t*b=mac_cpu_ram(r->cpu)+m->pointer;size_t p=15u+b[14];
+            for(int i=1;i<item;i++)p+=b[p]+5u;
+            wr(r,out,1,b[p+b[p]+(op==0xa941?4:op==0xa943?3:2)]);
+        }
+        mac_cpu_set(r->cpu,MAC_A7,sp+10);return 1;
+    }
     if(op==0xa94d){
         if(!mac_menu_record(r,rd(r,sp+4,4),NULL))return fail(r,"AppendResMenu menu is invalid.");
         uint32_t type=rd(r,sp,4);
@@ -270,7 +313,7 @@ int mac_menu_records_service(MacRuntime*r,uint16_t op){
             wr(r,m->pointer+10,4,op==0xa939?flags|mask:flags&~mask);}
         mac_cpu_set(r->cpu,MAC_A7,sp+6);return 1;
     }
-    if(op==0xa950){unsigned n; if(!mac_menu_record(r,rd(r,sp,4),&n))return fail(r,"CountMItems menu is invalid.");wr(r,sp+4,2,n);mac_cpu_set(r->cpu,MAC_A7,sp+4);return 1;}
+    if(op==0xa950){unsigned n; if(!menu_record_x(r,rd(r,sp,4),&n,1))return fail(r,"CountMItems menu is invalid.");wr(r,sp+4,2,n);mac_cpu_set(r->cpu,MAC_A7,sp+4);return 1;}
     if(op==0xa93c){ /* SetMenuBar: the installed list takes the menus of the given list (a copy, so the caller may dispose its handle) */
         unsigned sc,dc;MacHandle*src=list_at(r,rd(r,sp,4),&sc);
         if(!src)return fail(r,"SetMenuBar requires a valid owned menu list.");

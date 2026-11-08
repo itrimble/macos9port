@@ -28,6 +28,7 @@ static int scroll_geometry(MacRuntime *rt, uint32_t p, int *horizontal, int *len
 }
 
 int mac_control_part(MacRuntime *rt, uint32_t p, int v, int h) {
+    if (rd(rt, p + CTL_DEFPROC, 4)) return 0;                  /* a custom control's parts come from its own CDEF */
     int b[4]; if (!box(rt, p, b) || !rd(rt, p + CTL_VIS, 1) || rd(rt, p + CTL_HILITE, 1) == 255) return 0;
     if (v < b[0] || v >= b[2] || h < b[1] || h >= b[3]) return 0;
     unsigned proc = proc_of(rt, p);
@@ -45,6 +46,7 @@ int mac_control_part(MacRuntime *rt, uint32_t p, int v, int h) {
 
 void mac_control_draw(MacRuntime *rt, const MacWindowState *w, uint32_t p, int erase) {
     int b[4]; if (!box(rt, p, b)) return;
+    if (!erase && rd(rt, p + CTL_DEFPROC, 4)) return;          /* a custom control draws itself */
     uint32_t pm = rd(rt, w->handles[0], 4);
     int oy = ram_ok(rt, pm, 50) ? (int16_t)rd(rt, pm + 6, 2) : 0, ox = ram_ok(rt, pm, 50) ? (int16_t)rd(rt, pm + 8, 2) : 0;
     int t = b[0] - oy, l = b[1] - ox, bt = b[2] - oy, r = b[3] - ox;
