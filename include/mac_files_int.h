@@ -15,6 +15,7 @@ typedef struct {
     int32_t mark;
     int writable;
     char name[FILE_NAME_MAX + 1];
+    int64_t flushed_ns;    /* modification time (ns) of the staging copy at the last flush (mac_files_flush.c) */
 } GuestFile;
 
 typedef struct {
@@ -52,6 +53,8 @@ DIR *mac_files_open_listing(int directory);
  * 1 not an overlay file (continue with the data volume), <0 File Manager error. */
 int mac_files_open_save(MacRuntime *rt, const char *name, unsigned permission, GuestFile *file);
 int mac_files_close(FileState *s, GuestFile *file);
+int mac_files_stage_name(const char *name, char *out, size_t capacity);   /* ".stage-<name>" */
+int mac_files_flush_staged(FileState *s);                                 /* commit dirty staging copies and re-stage them (mac_files_flush.c) */
 void mac_files_abort(FileState *s, GuestFile *file);
 int mac_files_overlay_count(const FileState *s, unsigned *count);
 int mac_files_create(MacRuntime *rt, uint32_t pb);
@@ -72,6 +75,7 @@ void mac_files_empty_fork(uint8_t out[286]); /* PBOpenRF / PBHOpenRF (mac_files_
 int mac_files_write(MacRuntime *rt, uint32_t pb, GuestFile *f);
 int mac_files_set_eof(MacRuntime *rt, uint32_t pb, GuestFile *f);
 int mac_files_set_fpos(MacRuntime *rt, uint32_t pb, GuestFile *f, int query);
+int mac_files_get_volparms(MacRuntime *rt, uint32_t pb);   /* PBHGetVolParms (mac_files_volparms.c) */
 int mac_files_get_info(MacRuntime *rt, uint32_t pb);
 int mac_files_hget_info(MacRuntime *rt, uint32_t pb);
 int mac_files_set_info(MacRuntime *rt, uint32_t pb);

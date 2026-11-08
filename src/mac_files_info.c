@@ -65,6 +65,7 @@ int mac_files_entries(MacRuntime *rt, MacFileEntry *out, unsigned max, unsigned 
     FileState *s = rt->file_state;
     *count = 0;
     if (!s) return -35;
+    mac_files_flush_staged(s);
     char (*names)[256];
     unsigned total;
     int error = listing(s, &names, &total);
@@ -104,6 +105,7 @@ int mac_files_get_info(MacRuntime *rt, uint32_t pb) {
     MacCpu *cpu = rt->cpu;
     FileState *s = rt->file_state;
     if (!s) return -35;
+    mac_files_flush_staged(s);                                  /* what an open file has written is visible to a lookup */
     int error = mac_files_volume_ok(cpu, pb);
     if (error) return error;
     int index = (int16_t)mac_cpu_read(cpu, pb + 28, 2);

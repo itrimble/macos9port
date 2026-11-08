@@ -152,7 +152,11 @@ static int root_info(MacRuntime *rt, uint32_t pb) {
     if (!s) return -35;
     int volume = (int16_t)mac_cpu_read(cpu,pb+22,2);
     if (volume != 0 && volume != -1) return -35;
-    if ((int16_t)mac_cpu_read(cpu,pb+28,2) >= 0) return -50;
+    if ((int16_t)mac_cpu_read(cpu,pb+28,2) >= 0) {   /* PBGetCatInfo by index (1..n) or by name: the files of the single directory, as PBHGetFInfo lists them */
+        int found = mac_files_hget_info(rt,pb);
+        if (!found) mac_cpu_write(cpu,pb+100,4,2);   /* ioFlParID: every file's parent is the volume root (directory ID 2); Glider hands it to FSMakeFSSpec */
+        return found;
+    }
     if (mac_cpu_read(cpu,pb+48,4) != 2) return -120;
     uint32_t name = mac_cpu_read(cpu,pb+18,4);
     if (name && !valid(cpu,name,11)) return -50;
@@ -215,7 +219,7 @@ int mac_files_open_name(MacRuntime *rt, const char *name, unsigned permission, i
     if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_size < 0 || st.st_size > INT32_MAX) {
         close(fd); return -50;
     }
-    s->files[index] = (GuestFile){fd, 0, 0, {0}};
+    s->files[index] = (GuestFile){fd, 0, 0, {0}, 0};
     memcpy(s->files[index].name, name, strlen(name) < FILE_NAME_MAX ? strlen(name) + 1 : 0);
     *ref = REF_BASE + index;
     if (rt->trace) fprintf(stderr, "file-open-result name=%s ref=%d bytes=%lld\n", name, *ref, (long long)st.st_size);
@@ -349,7 +353,7 @@ static unsigned block_size(unsigned base, int wd, unsigned selector) {
     }
 }
 
-int mac_file_service(MacRuntime *rt, uint16_t opcode) {
+static int file_service(MacRuntime *rt, uint16_t opcode) {
     if (opcode == 0xaa52) return mac_fsspec_service(rt, opcode); /* HighLevelFSDispatch */
     unsigned base = opcode & ~0x400u;
     switch (base) {
@@ -367,7 +371,7 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode) {
         uint32_t q = mac_cpu_get(cpu, MAC_A0);
         if (!(q & 1) && valid(cpu, q, 52)) return result(cpu, q, -123);
     }
-    if (wd && selector != 7 && selector != 9) return 0;
+    if (wd && selector != 7 && selector != 9 && selector != 0x30) return 0;
     if (base == 0xa060 && selector != 0x1a) return 0; /* _FSDispatch: only PBOpenDF so far */
     uint32_t pb = mac_cpu_get(cpu, MAC_A0);
     if ((pb & 1) || !valid(cpu, pb, block_size(base, wd, selector))) {
@@ -376,11 +380,11 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode) {
     if (opcode & 0x400) return result(cpu, pb, -50); /* async unsupported */
     FileState *state = rt->file_state;
     switch (base) {
-    case 0xa013: return result(cpu, pb, flush_volume(rt, pb));
+    case 0xa013: mac_files_flush_staged(state); return result(cpu, pb, flush_volume(rt, pb));   /* FlushVol publishes staged writes */
     case 0xa007: return result(cpu, pb, mac_volume_info_basic(rt, pb, state ? state->directory : -1));
     case 0xa207: return result(cpu, pb, mac_volume_info(rt, pb, state ? state->directory : -1));
     case 0xa260: {
-        int error = selector == 9 ? root_info(rt,pb) : working_directory(rt,pb);
+        int error = selector == 0x30 ? mac_files_get_volparms(rt,pb) : selector == 9 ? root_info(rt,pb) : working_directory(rt,pb);
         if (rt->trace) fprintf(stderr, "hfs-dispatch selector=%u volume=%d index=%d dirid=%u name-ptr=%08x error=%d\n",
                                selector, (int16_t)mac_cpu_read(cpu,pb+22,2), (int16_t)mac_cpu_read(cpu,pb+28,2),
                                mac_cpu_read(cpu,pb+48,4), mac_cpu_read(cpu,pb+18,4), error);
@@ -412,4 +416,11 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode) {
     case 0xa044: return result(cpu, pb, mac_files_set_fpos(rt, pb, f, 0));
     default: return result(cpu, pb, mac_files_close(state, f));
     }
+}
+
+/* The File Manager entry point; with tracing on, every handled call reports its trap and result. */
+int mac_file_service(MacRuntime *rt, uint16_t opcode) {
+    int handled = file_service(rt, opcode);
+    if (handled > 0 && rt && rt->trace) fprintf(stderr, "file-call op=%04x result=%d\n", opcode, (int32_t)mac_cpu_get(rt->cpu, MAC_D0));
+    return handled;
 }

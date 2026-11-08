@@ -144,13 +144,45 @@ int main(void) {
     put(&rt,52,2,1234);put(&rt,100,4,12345678);
     CHECK(cat(&rt,0,-1,2,4090)==-50);
     CHECK(mac_cpu_read(rt.cpu,PB+52,2)==1234 && mac_cpu_read(rt.cpu,PB+100,4)==12345678);
-    CHECK(cat(&rt,0,0,2,0)==-50);CHECK(cat(&rt,0,1,2,0)==-50);
+    CHECK(cat(&rt,0,0,2,0)==-50);                                                  /* by name with no name */
+    /* PBGetCatInfo of a file: by index (1..n over the files of the one directory, as PBHGetFInfo lists them) or by name; ioFlParID (offset 100) is the root, 2. */
+    memset(mac_cpu_ram(rt.cpu)+PB+96,0xee,12);
+    CHECK(cat(&rt,0,1,2,NAME)==0 && mac_cpu_ram(rt.cpu)[NAME]>0 && !(mac_cpu_read(rt.cpu,PB+30,1)&0x10) && mac_cpu_read(rt.cpu,PB+100,4)==2);
+    {   char first[64]={0};memcpy(first,mac_cpu_ram(rt.cpu)+NAME+1,mac_cpu_ram(rt.cpu)[NAME]);
+        unsigned n=1;for(;n<40;n++){if(cat(&rt,0,(int)n+1,2,NAME)!=0)break;}
+        CHECK(n<40 && cat(&rt,0,(int)n+1,2,NAME)==-43 && cat(&rt,0,1000,2,NAME)==-43);                    /* past the last file: fnfErr */
+        char again[64]={0};CHECK(cat(&rt,0,1,0,NAME)==0);memcpy(again,mac_cpu_ram(rt.cpu)+NAME+1,mac_cpu_ram(rt.cpu)[NAME]);CHECK(!strcmp(first,again));   /* directory 0 is the default directory */
+        mac_cpu_ram(rt.cpu)[NAME]=(uint8_t)strlen(first);memcpy(mac_cpu_ram(rt.cpu)+NAME+1,first,strlen(first));
+        CHECK(cat(&rt,0,0,2,NAME)==0 && mac_cpu_read(rt.cpu,PB+100,4)==2);                                /* by name */
+        mac_cpu_ram(rt.cpu)[NAME]=7;memcpy(mac_cpu_ram(rt.cpu)+NAME+1,"missing",7);CHECK(cat(&rt,0,0,2,NAME)==-43);
+    }
+    CHECK(cat(&rt,0,1,3,NAME)==-120 && cat(&rt,0,1,99,NAME)==-120);                                        /* only directories 0 and 2 exist */
+    CHECK(cat(&rt,-2,1,2,NAME)==-35);                                                                      /* another volume */
+    put(&rt,22,2,0);put(&rt,28,2,1);put(&rt,48,4,2);put(&rt,18,4,4090);mac_cpu_set(rt.cpu,MAC_D0,9);CHECK(call(&rt,0xa260)==-50);   /* a name buffer that does not fit */
     CHECK(cat(&rt,0,-1,99,0)==-120);CHECK(cat(&rt,-2,-1,2,0)==-35);
     put(&rt,22,2,0);put(&rt,28,2,0xffff);put(&rt,48,4,2);mac_cpu_set(rt.cpu,MAC_D0,9);
     CHECK(call(&rt,0xa660)==-50);
     char moved[512];snprintf(moved,sizeof moved,"%s-moved",root);CHECK(rename(root,moved)==0);
     CHECK(cat(&rt,0,-1,2,0)==0);CHECK(mac_cpu_read(rt.cpu,PB+52,2)==1);CHECK(rename(moved,root)==0);
 
+    /* PBHGetVolParms (HFSDispatch selector $30): buffer at 32, request count at 36, bytes returned at 40; version 2 and no capability bits. */
+    {   uint32_t buf=0x700;
+        #define VOLPARMS(vol,ptr,count) (put(&rt,22,2,(uint16_t)(vol)),put(&rt,32,4,(ptr)),put(&rt,36,4,(uint32_t)(count)),put(&rt,40,4,0x55555555),mac_cpu_set(rt.cpu,MAC_D0,0x30),call(&rt,0xa260))
+        memset(mac_cpu_ram(rt.cpu)+buf,0xee,64);
+        CHECK(VOLPARMS(0,buf,20)==0 && mac_cpu_read(rt.cpu,PB+40,4)==20 && mac_cpu_read(rt.cpu,buf,2)==2);
+        for(unsigned i=2;i<20;i++)CHECK(mac_cpu_ram(rt.cpu)[buf+i]==0);                                  /* no capability bits, no server, no grade */
+        CHECK(mac_cpu_ram(rt.cpu)[buf+20]==0xee);                                                         /* nothing past the 20 bytes */
+        memset(mac_cpu_ram(rt.cpu)+buf,0xee,64);
+        CHECK(VOLPARMS(-1,buf,6)==0 && mac_cpu_read(rt.cpu,PB+40,4)==6 && mac_cpu_ram(rt.cpu)[buf+6]==0xee);   /* a short request gets a short answer */
+        CHECK(VOLPARMS(-2,buf,100)==0 && mac_cpu_read(rt.cpu,PB+40,4)==20);                               /* the system volume (-2) too; a long request gets 20 */
+        memset(mac_cpu_ram(rt.cpu)+buf,0xee,8);
+        CHECK(VOLPARMS(0,buf,0)==0 && mac_cpu_read(rt.cpu,PB+40,4)==0 && mac_cpu_ram(rt.cpu)[buf]==0xee);   /* zero bytes: the buffer is not even looked at */
+        CHECK(VOLPARMS(0,0,0)==0);
+        CHECK(VOLPARMS(0,0,20)==-50 && VOLPARMS(0,buf,-1)==-50 && VOLPARMS(0,buf,0x10001)==-50);          /* nil buffer, negative and absurd counts */
+        CHECK(VOLPARMS(0,4090,20)==-50 && mac_cpu_read(rt.cpu,PB+40,4)==0x55555555);                      /* a buffer that does not fit RAM: nothing written, no count */
+        CHECK(VOLPARMS(5,buf,20)==-35 && VOLPARMS(77,buf,20)==-35);                                       /* unknown volumes */
+        #undef VOLPARMS
+    }
     put(&rt,18,4,0);put(&rt,22,2,0xffff);put(&rt,28,2,0xffff);
     CHECK(call(&rt,0xa207)==0);
     CHECK(mac_cpu_read(rt.cpu,PB+38,2)==0x8000);

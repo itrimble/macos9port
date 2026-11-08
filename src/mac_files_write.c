@@ -97,7 +97,7 @@ int mac_files_volume_ok(MacCpu *cpu, uint32_t pb) {
     return volume == 0 || volume == -1 ? 0 : -35;
 }
 
-static int stage_name(const char *name, char *out, size_t capacity) {
+int mac_files_stage_name(const char *name, char *out, size_t capacity) {
     int k = snprintf(out, capacity, STAGE_PREFIX "%s", name);
     return k < 0 || (size_t)k >= capacity ? -1 : 0;
 }
@@ -196,16 +196,17 @@ int mac_files_open_save(MacRuntime *rt, const char *name, unsigned permission, G
     if (kind != FILE_SAVE) return 1;
     if (permission > 4) return -50;
     if (permission == 1) {
+        mac_files_flush_staged(s);
         int fd = mac_files_open_regular(s->saves, name, O_RDONLY);
         if (fd < 0) return fd;
-        *file = (GuestFile){fd, 0, 0, {0}};
+        *file = (GuestFile){fd, 0, 0, {0}, 0};
         memcpy(file->name, name, strlen(name) + 1);
         return 0;
     }
     GuestFile *other = mac_files_open_by_name(s, name);
     if (other && other->writable) return -49; /* opWrErr: one writer per file. */
     char stage[64];
-    if (stage_name(name, stage, sizeof stage)) return -50;
+    if (mac_files_stage_name(name, stage, sizeof stage)) return -50;
     int src = mac_files_open_regular(s->saves, name, O_RDONLY);
     if (src < 0) return src;
     int dst = openat(s->saves, stage, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
@@ -226,7 +227,7 @@ int mac_files_open_save(MacRuntime *rt, const char *name, unsigned permission, G
         }
     }
     close(src);
-    *file = (GuestFile){dst, 0, 1, {0}};
+    *file = (GuestFile){dst, 0, 1, {0}, 0};
     memcpy(file->name, name, strlen(name) + 1);
     return 0;
 fail:
@@ -253,7 +254,7 @@ int mac_files_close(FileState *s, GuestFile *f) {
     int error = 0;
     if (f->writable) {
         char stage[64];
-        if (stage_name(f->name, stage, sizeof stage) || fsync(f->fd)) error = -36;
+        if (mac_files_stage_name(f->name, stage, sizeof stage) || fsync(f->fd)) error = -36;
         if (!error) {
             int committed = openat(s->saves, f->name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
             uint8_t info[16];
@@ -275,7 +276,7 @@ int mac_files_close(FileState *s, GuestFile *f) {
 void mac_files_abort(FileState *s, GuestFile *f) {
     char stage[64];
     close(f->fd);
-    if (f->writable && !stage_name(f->name, stage, sizeof stage)) unlinkat(s->saves, stage, 0);
+    if (f->writable && !mac_files_stage_name(f->name, stage, sizeof stage)) unlinkat(s->saves, stage, 0);
     f->fd = -1;
     f->writable = 0;
 }
@@ -477,7 +478,7 @@ int mac_files_overlay_put_hidden(MacRuntime *rt, const char *name, const uint8_t
     if (!hidden_name_ok(name)) return -50;
     if (size > s->max_bytes / 4) return -34;
     char stage[64];
-    if (stage_name(name, stage, sizeof stage)) return -50;
+    if (mac_files_stage_name(name, stage, sizeof stage)) return -50;
     int fd = openat(s->saves, stage, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
     if (fd < 0 && errno == EEXIST && !unlinkat(s->saves, stage, 0))
         fd = openat(s->saves, stage, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
