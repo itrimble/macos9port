@@ -41,6 +41,7 @@ R04 and G02. Items stay unchecked.
 | `b7c6d9f` | GetClip, SetClip and ClipRect work on colour ports (clipRgn is at port+28 in both port kinds); SetPortBits `$A875` for basic ports | `test_mac_raster`, `test_mac_setportbits` |
 | `301f8aa` (merged `bf35f9b`) | `_Delay` `$A03B`: waits on the runtime's tick counter by rewinding the trap and yielding the CPU slice, so it is virtual time headless and real time windowed (windowed not observed). Built by a separate agent; register convention (A0 in, D0 out) came from a search excerpt, not an opened page | `test_mac_delay` |
 | `f25ae66` | `noGrowDocProc` (procID 4): the zoomNoGrow title bar without a zoom box (no zoom hit, spareFlag 0); the title-bar height rule shared in one helper instead of six copies. Menu Manager `SetItem` `$A947`: literal text replacement, key/mark/style/enable kept, header width rebuilt; empty text halts. Other procIDs and custom WDEFs still halt | `test_mac_window_nogrow`, `test_mac_menu_setitem` |
+| `acfe6f8` | PICT decoder reads version-1 streams (single-byte opcodes, BitsRect `0x90` and PackBitsRect `0x98` with a plain 1-bit BitMap) and shares one scale-and-paint helper with version 2. `DrawPicture` can draw into a basic GrafPort whose bitmap is not the screen, using an exact black/white palette: a picture with any other colour halts with a named message rather than being thresholded. `UnloadSeg` `$A9F1` validates a jump-table routine address and leaves the segment resident (the call is only a purgeability hint) | `test_mac_pict_v1`, `test_mac_unloadseg` |
 
 ## Compatibility profile decision
 
@@ -54,7 +55,7 @@ off and no Help menu exists; Gestalt `help`, `stdf`, `evnt` remain unanswered.
 ## Evidence at `507c06b`
 
 - `BUILDFLEET_LOCAL=1 make test-memory` exit 0; `BUILDFLEET_LOCAL=1 make test` exit 0 with 127
-  test binaries and no failure line (132 at `bf35f9b`, 134 at `f25ae66`). No source or test file reaches 500 lines.
+  test binaries and no failure line (132 at `bf35f9b`, 134 at `f25ae66`, 136 at `acfe6f8`). No source or test file reaches 500 lines.
 - Every new test file was mutation-checked (deliberate breakage, rebuild with a forced object
   refresh, confirm a test fails). Weak cases found that way were fixed: the pixel-depth and
   trailing-bytes cases, a source-span off-by-one in Pack7, and one redundant read-only check
@@ -74,7 +75,7 @@ None of these has reached its main loop. "Traps" is the count before the halt.
 | App | Traps | Stops at | What it is |
 | --- | --- | --- | --- |
 | Glider 4.10 | 1249 | `A204` | a Device Manager `Control` (PBControlImmed) on driver reference number -4, csCode 2, csParam 3, reached from library glue. Glider's source calls `GetSoundVol`/`SetSoundVol`, which are glue in MPW, so that is the likely cause; I did not find a source that confirms it, so it is unimplemented, not guessed |
-| Room Editor 1.06 | 272 | `DrawPicture` `A8F6` | its first window (WIND 129, `noGrowDocProc`) now opens and the first DrawPicture into it works. The next call draws into a 1-bit basic GrafPort (an offscreen bitmap, rowBytes 64, probably made with SetPortBits); `DrawPicture` is indexed-8 colour-port only. Most of the app's small PICTs (about 95 of 157 bytes) begin `11 01 A0…`, which looks like version 1; the decoder reads only version 2, and I have not decoded them to see their depth. WIND 128 asks for procID 160, i.e. the app's own WDEF 10 (1372 bytes of guest code), still ahead |
+| Room Editor 1.06 | 439 | Pack3 (`A9EA`) selector 4 | Standard File `SFPGetFile`: the app opens a file dialog at startup, the same subsystem Glider Edit stops at. Needs a modal dialog with a file list, buttons and a reply record, so it is a design-first item. WIND 128 (procID 160, the app's own WDEF 10) is still ahead |
 | Glider PRO 1.1.2 | 143 | `A260` | `PBDirCreate` (HFSDispatch selector 6) to create a "Preferences" folder; the file system has one flat directory, so this needs a hierarchy, not a one-off |
 | Glider Edit 1.1.1 | 36 | Gestalt `stdf` | Standard File dialogs; `GetNewMBar` was exercised only with `stdf` faked locally, not committed |
 
@@ -141,8 +142,6 @@ screen black and the real run cannot show the colour work. The unit tests carry 
    reaches its loop.
 2. Glider PRO: `_Delay` (a separate agent is on it). Glider 4.10: identify the Device Manager call on refnum -4
    from a public source, then decide whether it is a small answer or a driver subsystem.
-3. Room Editor: `DrawPicture` into a 1-bit basic GrafPort plus version-1 PICT decoding (a design
-   question: how a colour PICT maps to 1-bit, once the depth of these PICTs is known), then the custom WDEF
-   mechanism (guest callbacks from the Window Manager) as its own design.
-4. Standard File for Glider Edit: a UI contract, design before code.
+3. Standard File (Pack3), shared by Room Editor and Glider Edit: a UI contract, design before code.
+   Then Room Editor's custom WDEF mechanism (guest callbacks from the Window Manager) as its own design.
 5. Exercise compaction with a real fragmenting program, or a purpose-built guest.
