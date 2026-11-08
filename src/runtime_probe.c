@@ -49,7 +49,7 @@ static int parse_script(const char *path, ProbeAction *actions, int max) {
         int fields = sscanf(line, "%lf %7s %d %d", &seconds, a.kind, &a.x, &a.y);
         if (fields < 2 || seconds < 0 || seconds > 3600) { fprintf(stderr, "Bad script line: %s", line); fclose(f); return -1; }
         a.at_us = (uint64_t)(seconds * 1000000.0);
-        if (!strcmp(a.kind, "key")) { a.code = a.x; a.ascii = a.y; }
+        if (!strcmp(a.kind, "key") || !strcmp(a.kind, "keyup")) { a.code = a.x; a.ascii = a.y; }
         else if (strcmp(a.kind, "down") && strcmp(a.kind, "up") && strcmp(a.kind, "move") && strcmp(a.kind, "click")) {
             fprintf(stderr, "Unknown action %s\n", a.kind); fclose(f); return -1;
         }
@@ -126,6 +126,8 @@ static void apply_action(MacRuntime *rt, const ProbeAction *a, int *mouse_down, 
     } else if (!strcmp(a->kind, "down") || !strcmp(a->kind, "up")) {
         *mouse_down = a->kind[0] == 'd';
         mac_runtime_post_event(rt, *mouse_down ? 1 : 2, 0, *mouse_down ? 0 : 0x80, (int16_t)a->x, (int16_t)a->y);
+    } else if (!strcmp(a->kind, "keyup")) {
+        mac_runtime_post_event(rt, 4, ((uint32_t)(a->code & 255) << 8) | (uint32_t)(a->ascii & 255), 0x80, rt->mouse_x, rt->mouse_y);
     } else if (!strcmp(a->kind, "key")) {
         uint32_t message = ((uint32_t)(a->code & 255) << 8) | (uint32_t)(a->ascii & 255);
         mac_runtime_post_event(rt, 3, message, (uint16_t)(*mouse_down ? 0 : 0x80), rt->mouse_x, rt->mouse_y);

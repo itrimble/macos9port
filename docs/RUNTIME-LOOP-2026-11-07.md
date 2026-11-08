@@ -321,6 +321,11 @@ the probe, not a window I watched, and I have not listened to any audio.
   and `where` killed (a mask-to-word mutant was equivalent once I stopped masking). Headless: Glider 4.10 **New Game?** now starts a game
   (glider and two reserve gliders on screen at 45 s, no input beyond the menu click) and then returns to its attract screen, with no halt in
   90 s. I did not steer the glider, so gameplay is not verified.
+- **Steering attempt (headless).** The probe script gained a `keyup` action (the existing `key` action posts a keyDown and the key map keeps
+  it down until a keyUp). With the right arrow (virtual key 124) held from 40 s for 6 s, then the left arrow, Glider 4.10's glider did not
+  move across the room: it sat at the left wall, fell and respawned (reserves went 2 to 1). So its default controls are not the arrow keys,
+  or it reads input I do not provide. **Options > Controls** (menu drag at 105,9 to 105,25) still shows nothing; the trace after it shows
+  only GetKeys/event polling and drawing, no dialog or window creation. The control scheme is unknown; I have not found it.
 - **Parity:** Monkey Island and Monkey Island 2 are byte-identical to the previous baseline; `make test` exits 0; ASan on Castle (90 s with
   the menu script) and on the new and touched menu, window and utility tests reports nothing.
 
