@@ -1,3 +1,4 @@
+#include "desktop_info.h"
 #include "notes.h"
 #include "finder_recent.h"
 #include "native_apps.h"
@@ -59,6 +60,7 @@ void open_item(Session *s, Window *w, int index) {
     if (join_rel(rel, sizeof rel, w->rel, window_items(w)[index].name) != 0) {
         return;
     }
+    if (desktop_info_open(s, rel)) return;
     int native = native_catalog_id(s->root, rel);
     if (native) { (void)native_app_open(s, native); return; }
     if (session_is_sit(window_items(w)[index].name)) {

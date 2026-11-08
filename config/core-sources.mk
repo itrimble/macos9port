@@ -10,3 +10,5 @@ CORE += src/osa.c src/osa_events.c src/osa_json.c src/osa_bridge.c src/osa_scrip
 CORE += src/sound_preferences.c src/control_panel_store.c src/cdev_registry.c src/cdev_ui.c src/cdev_general.c src/cdev_sound.c src/cdev_appearance.c src/cdev_monitors.c src/cdev_keyboard.c src/cdev_energy.c src/cdev_memory.c src/cdev_network.c src/control_panels.c src/control_panels_input.c
 
 CORE += src/native_catalog.c src/native_apps.c
+
+CORE += src/desktop_info.c

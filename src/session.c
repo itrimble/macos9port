@@ -316,6 +316,7 @@ void session_command(Session *s, int cmd) {
     case CMD_BROWSER:
         session_note_network_activity(s);
         if (s->net_connect_via == 2) {
+            s->browser_request = 0; s->browser_open_url[0] = 0;
             dialog_info(s, "Network Offline",
                         "TCP/IP & Network is set to Offline.\n\n"
                         "Choose Host HTTPS or Tailscale in\n"
@@ -444,9 +445,7 @@ void session_command(Session *s, int cmd) {
                  "Created by Ian Trimble\n"
                  "Independent software creator\n"
                  "Games, tools, and classic computing\n\n"
-                 "remnantsecurity.com\n"
-                 "Ian's home for the things he creates\n"
-                 "and shares publicly.\n\n"
+                 "Explore Ian's apps using the link below.\n\n"
                  "OS999 is a clean-room desktop inspired\n"
                  "by classic Macintosh computing.\n"
                  "Compatibility is a work in progress.\n",

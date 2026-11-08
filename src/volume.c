@@ -39,6 +39,9 @@ static const struct {
      "that screenshot. Nothing in it is an\n"
      "Apple system file.\n"},
     {"Trash/.keep", ""},
+    {"System Folder/Fonts/ChicagoFLF", "OS999-FONT:chicagoflf:1\n"},
+    {"System Folder/Fonts/Meslo Nerd Font Regular", "OS999-FONT:meslo-regular:1\n"},
+    {"System Folder/Fonts/Meslo Nerd Font Bold", "OS999-FONT:meslo-bold:1\n"},
     {"System Folder/Fonts/About Fonts",
      "Drop TrueType, OpenType, or PostScript\n"
      "Type 1 fonts in this folder.\n"

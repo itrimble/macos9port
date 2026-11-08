@@ -300,7 +300,8 @@ void browser_window_frame(Session *s, SDL_Window *win, uint32_t *frame, int hidd
     autostart = 0;
     if (s->browser_request || auto_url) {
         s->browser_request = 0;
-        bw_open_window(auto_url ? auto_url : "https://www.youtube.com");
+        bw_open_window(s->browser_open_url[0] ? s->browser_open_url : auto_url ? auto_url : "https://www.youtube.com");
+        s->browser_open_url[0] = 0;
         if (BS.norder) native_app_note(s, NATIVE_BROWSER);
         s->browser_active = s->browser_focused = 1; s->app_request = 4;
         appearance_panel_deactivate();

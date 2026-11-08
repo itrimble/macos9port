@@ -1,3 +1,4 @@
+#include "desktop_info.h"
 #include "notes.h"
 #include "finder_system_icons.h"
 #include "finder_desktop_surface.h"
@@ -21,10 +22,8 @@
 #include "ospi.h"
 #include "session_int.h"
 #include "term.h"
-
 #include <stdio.h>
 #include <string.h>
-
 void session_wheel(Session *s, int dy) {
     s->click_valid = s->display_dimmed = 0; s->last_activity_ms = s->input_now_ms;
     int eff = s->natural_scroll ? -dy : dy;
@@ -373,6 +372,7 @@ void session_up(Session *s, int x, int y) {
         if (s->win[win].kind == WIN_TERMINAL) {
             terminal_up(s, &s->win[win], &lay, x, y);
         }
+        if (zone == Z_CONTENT && !drag && desktop_info_click(s, &s->win[win], x, y)) return;
         if (zone == Z_CONTENT && !drag && s->win[win].kind == WIN_MOVIE && rect_has(lay.content, x, y)) {
             movie_window_click(&s->win[win], x, y);
             return;

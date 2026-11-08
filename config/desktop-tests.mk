@@ -367,3 +367,12 @@ test-documents: build/test_documents
 	./build/test_documents
 
 test: test-documents
+
+build/test_desktop_info: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_desktop_info.c $(HDRS) include/desktop_info.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_desktop_info.c $(FT_LIBS) -lm $(NET_LIBS)
+
+test-desktop-info: build/test_desktop_info
+	./build/test_desktop_info
+
+test: test-desktop-info

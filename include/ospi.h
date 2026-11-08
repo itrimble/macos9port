@@ -249,6 +249,7 @@ struct Session {
     int clipboard_write_request;
     char sound_event[48];
     int browser_request;
+    char browser_open_url[256];
     /* Finder name editing and keyboard navigation (finder_edit.c). */
     int edit_on, edit_len, edit_caret, edit_anchor, edit_armed, edit_cand;
     uint32_t edit_since, edit_arm_ms, type_ms;
