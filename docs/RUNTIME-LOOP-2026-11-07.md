@@ -398,3 +398,9 @@ the probe, not a window I watched, and I have not listened to any audio.
   Headless: **Castle's Hide Desktop** now runs: the menu bar and desktop go black and the game window sits centred (320x200-ish) on black, no
   halt in 120 s. I did not script the reverse (Show Desktop) and a windowed run is untested. Room Editor still stops at its custom WDEF tools
   window; clipping between windows that overlap partly is still unimplemented.
+
+- **Castle after Hide Desktop (headless).** After Hide Desktop the menu bar is gone and my attempts to bring it back with the mouse (move to the top
+  edge, press, drag down) changed nothing visible, so Show Desktop is **not verified**; the game itself kept running 120 s with no halt. I ran
+  all seven existing Castle scripts (room, room2, bell, bell2, door, move, input) for 150 s each: no halts. Further progress needs puzzle play
+  driven by reading frames, which I have not done; the checklist row now says Hide Desktop blacks out the desktop and Show Desktop was not reached
+  (still 499 lines).
