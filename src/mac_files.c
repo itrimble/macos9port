@@ -363,6 +363,10 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode) {
     MacCpu *cpu = rt->cpu;
     int wd = base == 0xa260;
     unsigned selector = mac_cpu_get(cpu, MAC_D0) & 0xffff;
+    if (wd && selector == 6) {   /* DirCreate: this volume has no folders (flat namespace), which wrgVolTypErr (-123, "not an HFS volume") says; nothing is created */
+        uint32_t q = mac_cpu_get(cpu, MAC_A0);
+        if (!(q & 1) && valid(cpu, q, 52)) return result(cpu, q, -123);
+    }
     if (wd && selector != 7 && selector != 9) return 0;
     if (base == 0xa060 && selector != 0x1a) return 0; /* _FSDispatch: only PBOpenDF so far */
     uint32_t pb = mac_cpu_get(cpu, MAC_A0);

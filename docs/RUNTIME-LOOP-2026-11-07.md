@@ -404,3 +404,14 @@ the probe, not a window I watched, and I have not listened to any audio.
   all seven existing Castle scripts (room, room2, bell, bell2, door, move, input) for 150 s each: no halts. Further progress needs puzzle play
   driven by reading frames, which I have not done; the checklist row now says Hide Desktop blacks out the desktop and Show Desktop was not reached
   (still 499 lines).
+
+- **Glider PRO: DirCreate refused, then the Sound Manager (headless).** I scoped real folders and decided against building them now: the flat
+  guest/overlay namespace would need a directory-ID table, parID handling in create/open/GetCatInfo/delete/rename/enumeration and host
+  subdirectories under `--saves`, a change across files that are already over the size limit (`mac_files_write.c` is 516 lines). Instead
+  `HFSDispatch` selector 6 (**DirCreate**) is now answered with `wrgVolTypErr` (-123, "not an HFS volume") and nothing is created: an honest
+  statement that this volume has no folders. Glider PRO handles it itself: it shows its own box, "A File Error Loading/Saving Preferences ...
+  (error = -123)" (my first try with -54 showed that box too; -123 is the code that says what is actually true), and, after a click on Okay,
+  carries on. `test_mac_files` checks the -123 result and that no `Prefs` directory appears on the host (two mutants killed; ASan clean;
+  `make test` 0; Monkey Island and Monkey Island 2 identical). **Next halt:** `$A800` with D0 = `022C0018` (a Sound Manager dispatch selector I
+  cannot name from memory; the existing double-buffer service answers only `00200008`). Before implementing it I need the selector table from
+  Apple's Sound Manager documentation (curl a PDF; Firecrawl is out of credits); I did not open one this iteration, so I am not guessing.
