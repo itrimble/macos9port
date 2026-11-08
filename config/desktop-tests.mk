@@ -103,6 +103,9 @@ test: test-storage
 # Guest networking (net/net.mk, N01-N09): host-side MacTCP service.
 include net/net.mk
 test: test-net
+# Bluetooth stack (bluetooth/bluetooth.mk): HCI, L2CAP, RFCOMM and BNEP.
+include bluetooth/bluetooth.mk
+test: test-bluetooth
 build/test_terminal: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_terminal.c $(HDRS)
 	mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_terminal.c $(FT_LIBS) -lm $(NET_LIBS)
