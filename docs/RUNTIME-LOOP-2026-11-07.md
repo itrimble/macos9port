@@ -428,3 +428,15 @@ the probe, not a window I watched, and I have not listened to any audio.
   pointers, odd/short stacks, bounded tables; mutants killed except two that are equivalent because a later memory write halts anyway), ASan
   clean, `make test` 0, Monkey Island and Monkey Island 2 identical, Castle refreshed. **Next halt:** `Monochrome drawing into the indexed
   screen is unsupported` (a 1-bit drawing path into the 8-bit screen); not started.
+
+- **Basic port over the 8-bit screen (`src/mac_raster.c`).** Glider PRO draws its own alert frame with the basic (black-and-white) QuickDraw
+  calls into a basic GrafPort whose bitmap is the 8-bit screen (baseAddr = screen, rowBytes 640). That used to halt ("Monochrome drawing into the
+  indexed screen"). It now draws bytes: pattern bit 1 is the palette's darkest entry, bit 0 its lightest (ties: first dark, last light, as the
+  window chrome picks), Boolean pattern modes act on the pixel values (my reading of Apple's Color QuickDraw chapter, which says Boolean modes on indexed
+  devices operate on indexes), InvertRect complements the index byte, nothing dithers. Bitmaps wider than their rows, running past the
+  screen, or on a depth other than 1 or 8 halt. `test_mac_raster` has the indexed section (rect paint/erase/invert/frame, the four modes and
+  the not-mode, clipping, palette choice, ties, corrupt ports); 12 mutants killed; ASan clean; `make test` 0; Monkey Island and Monkey Island 2
+  identical; Castle refreshed. Headless: Glider PRO now shows its own boxes: "Okay, with your monitor & color depth, there isn't enough memory ...
+  the music won't be loaded" (Whatever to dismiss), then "Couldn't Load a Resource ... (program error = 4)". The trace shows no resource
+  lookup failing (all `snd ` 1029-1045 found), so the program is judging memory from something we report (free memory / largest block / a
+  failed NewHandle or purge): the next thing to find; not started.

@@ -17,6 +17,8 @@ typedef struct {
     Box bounds, clip;
     uint8_t pattern[8];
     int mode;
+    int indexed;               /* a basic port whose bitmap is the 8-bit screen: pixels are bytes, ink is the palette's black or white */
+    uint8_t black, white;
 } Raster;
 
 static int fail(MacRuntime *rt, const char *message) {
@@ -76,14 +78,28 @@ static int canvas(Raster *r, MacRuntime *rt, uint32_t port) {
     unsigned row=rd(rt,port+6,2);
     if (row & 0xc000) return fail(rt, "Color PixMap rasterization is not supported yet.");
     r->row=row; r->base=rd(rt,port+2,4);
-    if (rt->screen_depth != 1 && r->base == rt->screen_base)
-        return fail(rt, "Monochrome drawing into the indexed screen is unsupported.");
+    if (rt->screen_depth != 1 && r->base == rt->screen_base) {
+        if (rt->screen_depth != 8) return fail(rt, "Monochrome drawing into this screen depth is unsupported.");
+        /* A basic (black-and-white) port over the 8-bit screen. QuickDraw maps its black and white to the device's: the nearest palette
+         * entries are used, and Boolean transfer modes act on the pixel values (indexes), as Apple's Color QuickDraw chapter describes for
+         * indexed devices. Where the real code would dither or pick other entries the results can differ. */
+        r->indexed = 1;
+        unsigned dark = 0, light = 0, lo = UINT32_MAX, hi = 0;
+        for (unsigned i = 0; i < 256; i++) {
+            uint32_t c = rt->palette[i]; unsigned v = ((c >> 16) & 255) + ((c >> 8) & 255) + (c & 255);
+            if (v < lo) { lo = v; dark = i; }
+            if (v >= hi) { hi = v; light = i; }
+        }
+        r->black = (uint8_t)dark; r->white = (uint8_t)light;
+    }
     if (get_box(rt,port+8,&r->bounds)<0 || get_box(rt,port+16,&r->clip)<0) return -1;
     int width=r->bounds.r-r->bounds.l, height=r->bounds.b-r->bounds.t;
-    if (width<0 || height<0 || (unsigned)width>row*8u ||
+    if (width<0 || height<0 || (unsigned)width>row*(r->indexed?1u:8u) ||
         (uint64_t)width*(unsigned)height>8u*1024u*1024u)
         return fail(rt, "QuickDraw bitmap dimensions exceed the mono raster budget.");
     if (range(rt,r->base,(size_t)row*(unsigned)height,0)<0) return -1;
+    if (r->indexed && r->base + (uint64_t)row*(unsigned)height > rt->screen_base + (uint64_t)rt->screen_row_bytes*rt->screen_height)
+        return fail(rt, "QuickDraw bitmap over the screen extends past it.");
     r->clip=intersect(r->clip,r->bounds);
     for (unsigned off=24;off<=28;off+=4) {
         uint32_t data; Box b;
@@ -95,7 +111,22 @@ static int canvas(Raster *r, MacRuntime *rt, uint32_t port) {
     return 1;
 }
 
+static void pixel_indexed(Raster *r, int x, int y, int invert) {
+    unsigned bx=(unsigned)(x-r->bounds.l), by=(unsigned)(y-r->bounds.t);
+    uint8_t *p=mac_cpu_ram(r->rt->cpu)+r->base+(size_t)by*r->row+bx;
+    int bit=!!(r->pattern[(unsigned)y&7]&(0x80u>>((unsigned)x&7)));
+    uint8_t src=bit?r->black:r->white;
+    if (r->mode&4) src=(uint8_t)~src;
+    if (invert) { *p=(uint8_t)~*p; return; }
+    switch(r->mode&3) {
+        case 0:*p=src;break;
+        case 1:*p|=src;break;
+        case 2:*p^=src;break;
+        case 3:*p&=(uint8_t)~src;break;
+    }
+}
 static void pixel(Raster *r, int x, int y, int invert) {
+    if (r->indexed) { pixel_indexed(r,x,y,invert); return; }
     unsigned bx=(unsigned)(x-r->bounds.l), by=(unsigned)(y-r->bounds.t);
     uint8_t *p=mac_cpu_ram(r->rt->cpu)+r->base+(size_t)by*r->row+bx/8;
     uint8_t mask=(uint8_t)(0x80u>>(bx&7));

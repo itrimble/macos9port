@@ -127,6 +127,47 @@ int main(void) {
     if(init(&rt))return 1;
     mac_cpu_write(rt.cpu,PORT+2,4,0xfffffe);rect(&rt,RECT,0,0,8,8);
     CHECK(call(&rt,0xa8a2,RECT)==-1);CHECK(mac_cpu_halted(rt.cpu));mac_runtime_destroy(&rt);
+    /* A basic port whose bitmap is the 8-bit screen: pixels are bytes, ink is the palette's darkest (pattern bit 1) or lightest (bit 0) entry */
+    {
+        if(init(&rt))return 1;
+        rt.screen_depth=8;rt.screen_width=640;rt.screen_height=480;rt.screen_row_bytes=640;
+        for(unsigned i=0;i<256;i++)rt.palette[i]=0xff000000u|((10u+i%200u))*0x010101u;
+        rt.palette[0]=0xffffffffu;rt.palette[255]=0xff000000u;                         /* white at 0, black at 255, grays between */
+        mac_cpu_write(rt.cpu,PORT+6,2,640);rect(&rt,PORT+8,0,0,480,640);rect(&rt,PORT+16,0,0,480,640);
+        uint32_t vr2=mac_cpu_read(rt.cpu,mac_cpu_read(rt.cpu,PORT+24,4),4);rect(&rt,vr2+2,0,0,480,640);
+        uint8_t *scr=mac_cpu_ram(rt.cpu)+rt.screen_base;
+        #define PIX(y,x) scr[(y)*640+(x)]
+        memset(scr,0x55,640*480);
+        rect(&rt,RECT,2,3,5,7);CHECK(call(&rt,0xa8a2,RECT)==1);                               /* PaintRect, default black pattern: index 255 */
+        CHECK(PIX(2,3)==255 && PIX(4,6)==255 && PIX(1,3)==0x55 && PIX(2,2)==0x55 && PIX(5,3)==0x55 && PIX(2,7)==0x55);
+        CHECK(call(&rt,0xa8a3,RECT)==1);CHECK(PIX(2,3)==0 && PIX(4,6)==0 && PIX(1,3)==0x55);   /* EraseRect, white pattern: index 0 */
+        memset(scr,0x55,640*480);CHECK(call(&rt,0xa8a4,RECT)==1);CHECK(PIX(3,4)==0xaa && PIX(1,1)==0x55);   /* InvertRect complements the index byte */
+        memset(scr,0x55,640*480);rect(&rt,RECT,0,0,3,3);CHECK(call(&rt,0xa8a1,RECT)==1);       /* FrameRect, 1-pixel pen */
+        CHECK(PIX(0,0)==255 && PIX(0,2)==255 && PIX(1,1)==0x55 && PIX(2,2)==255 && PIX(3,0)==0x55);
+        memset(scr,0x55,640*480);CHECK(call(&rt,0xa89c,10u<<16)==1);rect(&rt,RECT,0,0,1,1);CHECK(call(&rt,0xa8a2,RECT)==1);   /* patXor with the black index */
+        CHECK(PIX(0,0)==(uint8_t)(0x55^255));
+        CHECK(call(&rt,0xa89c,9u<<16)==1);memset(scr,0x55,640*480);CHECK(call(&rt,0xa8a2,RECT)==1);CHECK(PIX(0,0)==255);                 /* patOr */
+        CHECK(call(&rt,0xa89c,11u<<16)==1);memset(scr,0x55,640*480);CHECK(call(&rt,0xa8a2,RECT)==1);CHECK(PIX(0,0)==0);                   /* patBic: old & ~255 */
+        CHECK(call(&rt,0xa89c,12u<<16)==1);memset(scr,0x55,640*480);CHECK(call(&rt,0xa8a2,RECT)==1);CHECK(PIX(0,0)==0);                  /* notPatCopy: not(black) = 0 */
+        CHECK(call(&rt,0xa89e,0)==1);
+        rect(&rt,RECT,-3,-3,2,2);memset(scr,0x55,640*480);CHECK(call(&rt,0xa8a2,RECT)==1);CHECK(PIX(0,0)==255 && PIX(1,1)==255 && PIX(2,2)==0x55);   /* clipped to the bitmap */
+        /* the palette picks the ink: a palette with black at 7 and white at 200 */
+        for(unsigned i=0;i<256;i++)rt.palette[i]=0xff808080u;rt.palette[7]=0xff000000u;rt.palette[200]=0xffffffffu;
+        memset(scr,0x55,640*480);rect(&rt,RECT,0,0,1,1);CHECK(call(&rt,0xa8a2,RECT)==1);CHECK(PIX(0,0)==7);
+        CHECK(call(&rt,0xa8a3,RECT)==1);CHECK(PIX(0,0)==200);
+        /* ties: the first of equally dark entries is black, the last of equally light ones is white (the same choice the window chrome makes) */
+        for(unsigned i=0;i<256;i++)rt.palette[i]=0xff808080u;rt.palette[3]=0xff000000u;rt.palette[9]=0xff000000u;rt.palette[100]=0xffffffffu;rt.palette[150]=0xffffffffu;
+        memset(scr,0x55,640*480);CHECK(call(&rt,0xa8a2,RECT)==1);CHECK(PIX(0,0)==3);CHECK(call(&rt,0xa8a3,RECT)==1);CHECK(PIX(0,0)==150);
+        /* corrupt ports: a bitmap that would run past the screen, a width wider than its rows, a depth that is not 1 or 8 */
+        mac_cpu_write(rt.cpu,PORT+6,2,640);rect(&rt,PORT+8,0,0,481,640);rect(&rt,PORT+16,0,0,481,640);rect(&rt,RECT,0,0,1,1);
+        CHECK(call(&rt,0xa8a2,RECT)==-1 && mac_cpu_halted(rt.cpu));mac_runtime_destroy(&rt);
+        if(init(&rt))return 1;rt.screen_depth=8;rt.screen_width=640;rt.screen_height=480;rt.screen_row_bytes=640;
+        mac_cpu_write(rt.cpu,PORT+6,2,320);rect(&rt,PORT+8,0,0,480,640);rect(&rt,RECT,0,0,1,1);
+        CHECK(call(&rt,0xa8a2,RECT)==-1 && strstr(mac_cpu_error(rt.cpu),"dimensions")!=NULL);mac_runtime_destroy(&rt);
+        if(init(&rt))return 1;rt.screen_depth=4;rt.screen_width=640;rt.screen_height=480;rect(&rt,RECT,0,0,1,1);
+        CHECK(call(&rt,0xa8a2,RECT)==-1 && strstr(mac_cpu_error(rt.cpu),"screen depth")!=NULL);mac_runtime_destroy(&rt);
+        #undef PIX
+    }
     /* A color port (portVersion 0xC000 at +6): the clip traps work, drawing and pen traps still refuse. */
     if(init(&rt))return 1;
     mac_cpu_write(rt.cpu,PORT+6,2,0xc000);
