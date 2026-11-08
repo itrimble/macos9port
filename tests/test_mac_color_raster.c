@@ -51,6 +51,19 @@ int main(void){
         for(int i=0;i<32;i++)CHECK(mem[PIX+i]==99);
         CHECK(mac_cpu_get(r.cpu,MAC_A7)==SP);mac_cpu_destroy(r.cpu);
     }
+    /* a source mode as the pen mode does what the pattern mode of the same operation does (srcCopy 0 = patCopy 8, ... notSrcBic 7 = notPatBic 15) */
+    for(int mode=0;mode<8;mode++){
+        r=setup();mem=mac_cpu_ram(r.cpu);memset(mem+PIX,9,32);w(&r,PORT+56,2,mode);CHECK(call(&r,0xa8a2)==1);
+        uint8_t a0=mem[PIX],a1=mem[PIX+1];memset(mem+PIX,9,32);w(&r,PORT+56,2,mode+8);CHECK(call(&r,0xa8a2)==1);CHECK(mem[PIX]==a0&&mem[PIX+1]==a1);mac_cpu_destroy(r.cpu);
+    }
+    /* PenMode(44) = transparent + patCopy: set pattern bits paint the foreground, clear bits leave the destination; fg == bg paints nothing */
+    r=setup();mem=mac_cpu_ram(r.cpu);memset(mem+PIX,9,32);w(&r,PORT+56,2,44);rect(&r,RECT,0,0,4,8);rect(&r,R+2,0,0,4,8);
+    CHECK(call(&r,0xa8a2)==1);for(int y=0;y<4;y++)for(int x=0;x<8;x++)CHECK(mem[PIX+y*8+x]==((x&1)?9:3));                 /* $AA: even columns are set */
+    memset(mem+PIX,9,32);CHECK(call(&r,0xa8a1)==1);CHECK(mem[PIX]==3&&mem[PIX+1]==9&&mem[PIX+8+1]==9&&mem[PIX+8+2]==9);   /* a frame in transparent mode: only the edge's set bits */
+    memset(mem+PIX,9,32);w(&r,PORT+84,4,3);CHECK(call(&r,0xa8a2)==1);for(int i=0;i<32;i++)CHECK(mem[PIX+i]==9);          /* background equals foreground (3): transparent */
+    w(&r,PORT+84,4,7);memset(mem+PIX,9,32);w(&r,PORT+56,2,8);CHECK(call(&r,0xa8a2)==1);CHECK(mem[PIX]==3&&mem[PIX+1]==7);   /* patCopy still paints both */
+    w(&r,PORT+56,2,44);memset(mem+PIX,9,32);mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,RECT);CHECK(mac_shapes_service(&r,0xa8b8)==1);CHECK(mem[PIX+2]==3&&mem[PIX+3]==9&&mem[PIX]==9);        /* an oval in transparent mode too */
+    mac_cpu_destroy(r.cpu);
     /* Ovals and round rectangles on the 8 x 4 indexed port: pen pattern $AA (even columns foreground 3), background 7, field filled with 9. */
     r=setup();mem=mac_cpu_ram(r.cpu);
     #define SH(op,args) (mac_cpu_set(r.cpu,MAC_A7,SP),(args),mac_shapes_service(&r,(op)))

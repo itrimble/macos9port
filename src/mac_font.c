@@ -1,4 +1,5 @@
 #include "mac_font.h"
+#include <stdio.h>
 #include <string.h>
 
 /* Classic bitmap font strikes (FONT and NFNT share one layout), read from the guest's own resources. A strike is a 26-byte header
@@ -79,6 +80,8 @@ int mac_font_find(const MacResourceFork *f, int family, int size, unsigned style
             }
         }
     }
-    *why = "That font family and size is not in the guest application's resources (no scaling or system font is provided).";
+    static char message[160];                                                  /* names what was asked for, so a halt says which face is missing */
+    snprintf(message, sizeof message, "Font family %d size %d style %u is not in the guest application's resources (no scaling or system font is provided).", family, size, style);
+    *why = message;
     return -1;
 }

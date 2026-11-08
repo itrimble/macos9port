@@ -93,6 +93,15 @@ static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op,const Box *
     unsigned fg=rd(rt,port+80,4),bg=rd(rt,port+84,4);
     if(fg>255 || bg>255)return fail(rt,"Color indices exceed 8-bit palette.");
     int mode=(op==0xa8a1 || op==0xa8a2)?(int)rd(rt,port+56,2):8;
+    /* 44 is transparent + patCopy (Apple's Color QuickDraw chapter: "To specify a transparent pattern, add the transparent constant to the patCopy
+     * constant"): the pattern's set bits paint the foreground, and its clear bits, which are the background colour, leave the destination alone. The
+     * arithmetic transparent mode replaces the destination with the source unless the source is the background colour, so with a foreground
+     * equal to the background nothing is painted at all. */
+    int transparent=mode==44;
+    if(transparent)mode=8;
+    /* A source mode used as a pen mode acts as the pattern mode of the same operation: Apple's table of Boolean transfer modes (Inside Macintosh,
+     * QuickDraw) gives patCopy/srcCopy, patOr/srcOr, patXor/srcXor, patBic/srcBic and the notPat/notSrc forms identical actions. */
+    if(mode<8)mode+=8;
     if(mode<8 || mode>15)return fail(rt,"Unsupported color pattern transfer mode.");
     uint8_t pat[8];
     if(op==0xa8a5) {
@@ -112,6 +121,7 @@ static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op,const Box *
         int bit=!!(pat[(unsigned)y&7]&(0x80u>>((unsigned)x&7)));
         if(mode&4)bit=!bit;
         if(op==0xa8a4)*p^=255;
+        else if(transparent){ if(bit && fg!=bg)*p=(uint8_t)fg; }
         else { switch(mode&3) {
             case 0:*p=(uint8_t)(bit?fg:bg);break;
             case 1: { if(bit)*p=(uint8_t)fg; break; }

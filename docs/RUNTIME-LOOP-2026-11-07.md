@@ -292,10 +292,17 @@ the probe, not a window I watched, and I have not listened to any audio.
 - **Driving Glider 4.10 (headless frames, scripted mouse only):** the **Game** menu pulls down (New Game? #N, Load House, End Game, Open
   Saved Game..., Save Game, Save Game As?, Quit; the greyed ones are dimmed) and **Options** (Controls, Sound?, Air is Invisible, Depth
   Restore is On, High Scores, Help). **High Scores** draws its notepad page (a default entry, "Ozma of OZ!" 214050, and empty rows).
-  **New Game?** halts: the game calls `PenMode(44)`, a mode that is not patCopy..patBic, a source mode, a Color QuickDraw arithmetic mode
-  ($20-$27) or ditherCopy or hilite that I can find in the interface listing here, and what it means is unknown to me; the refusal now
-  names the mode ("Color pen transfer mode 44 is unsupported"). I have not guessed a behaviour for it. Choosing **Controls** shows nothing I
-  could see in the next 16 s (no dialog calls were made); not investigated.
+  Choosing **Controls** shows nothing I could see in the next 16 s (no dialog calls were made); not investigated.
+  **New Game?** first halted at `PenMode(44)`. Apple's *Color QuickDraw* chapter (the PDF at developer.apple.com, which I downloaded and
+  read) says "to specify a transparent pattern, add the transparent constant to the patCopy constant": 36 + 8 = 44. It is now supported
+  on colour ports: the pattern's set bits paint the foreground, its clear bits (the background colour) leave the destination alone, and a
+  foreground equal to the background paints nothing (the arithmetic transparent rule). The next halt was `PenMode(1)`, a source mode used
+  as a pen mode: the same Apple/Inside Macintosh table of Boolean transfer modes gives patCopy/srcCopy, patOr/srcOr, patXor/srcXor,
+  patBic/srcBic and the notPat/notSrc forms identical actions, so 0 to 7 now act as 8 to 15 on colour ports (they used to halt). The
+  other arithmetic modes ($20-$27 except as above), ditherCopy and hilite still halt, naming the mode. Then **the game asks for the
+  system font** (family 0, size 12, which is Chicago): the runtime only finds fonts in the guest's own resources, so it halts naming
+  "Font family 0 size 12 style 0" (the message now says which face). Providing a system font means rendering the public-domain
+  ChicagoFLF in `fonts/` into a bitmap strike: not started.
 - **Parity:** Monkey Island and Monkey Island 2 are byte-identical to the previous baseline; `make test` exits 0; ASan on Castle (90 s with
   the menu script) and on the new and touched menu, window and utility tests reports nothing.
 

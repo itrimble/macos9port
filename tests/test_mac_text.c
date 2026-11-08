@@ -107,7 +107,8 @@ static void lookup_checks(void) {
     MacStrike s; const char *why = NULL;
     CHECK(mac_font_find(&f, 5, 10, 0, &s, &why) == 0 && s.ascent == 2);                 /* a FONT resource with id family*128+size */
     CHECK(mac_font_find(&f, 5, 9, 0, &s, &why) == 0 && s.ascent == 2);                  /* through the FOND association table to an NFNT */
-    CHECK(mac_font_find(&f, 5, 11, 0, &s, &why) == -1 && why);                          /* no such size, and nothing is scaled */
+    CHECK(mac_font_find(&f, 5, 11, 0, &s, &why) == -1 && why);
+    CHECK(strstr(why, "family 5 size 11 style 0") != NULL);                         /* the refusal names the face asked for */                          /* no such size, and nothing is scaled */
     CHECK(mac_font_find(&f, 4, 10, 0, &s, &why) == -1);                                 /* no such family */
     CHECK(mac_font_find(&f, 5, 9, 1, &s, &why) == -1);                                  /* a bold strike is not in the association table */
     CHECK(mac_font_find(&f, 5, 10, 1, &s, &why) == -1);                                 /* a FONT id carries no style */

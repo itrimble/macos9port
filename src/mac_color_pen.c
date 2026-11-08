@@ -83,8 +83,8 @@ int mac_color_pen_service(MacRuntime *rt,uint16_t opcode) {
         wr(rt,port+offset,2,v);wr(rt,port+offset+2,2,h);
     } else if(opcode==0xa89c) {
         uint16_t mode=(uint16_t)rd(rt,sp,2);
-        if(mode<8 || mode>15) {   /* source modes, the arithmetic modes (blend, addPin, ..., $20-$27), ditherCopy, hilite and anything else */
-            char why[96];snprintf(why,sizeof why,"Color pen transfer mode %u is unsupported (only patCopy to patBic, 8 to 15).",mode);
+        if(mode>15 && mode!=44) {   /* 0-7 act as 8-15 (srcOr = patOr and so on, see mac_color_raster.c) and 44 is transparent + patCopy; the other arithmetic modes ($20-$27), ditherCopy, hilite and anything else are refused */
+            char why[96];snprintf(why,sizeof why,"Color pen transfer mode %u is unsupported (only 0 to 15, and transparent + patCopy, 44).",mode);
             return fail(rt,why);
         }
         wr(rt,port+56,2,mode);

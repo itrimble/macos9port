@@ -42,6 +42,7 @@ static void state(void){
     CHECK(call(&r,0xa896)==1 && call(&r,0xa896)==1 && rd(&r,PORT+66,2)==0xfffe);
     CHECK(call(&r,0xa897)==1 && rd(&r,PORT+66,2)==0xffff);
     wr(&r,SP,2,15);CHECK(call(&r,0xa89c)==1 && rd(&r,PORT+56,2)==15);
+    wr(&r,SP,2,44);CHECK(call(&r,0xa89c)==1 && rd(&r,PORT+56,2)==44);                                      /* transparent + patCopy */
     CHECK(call(&r,0xa89e)==1 && rd(&r,PORT+52,4)==0x00010001 && rd(&r,PORT+56,2)==8);
     CHECK(rd(&r,PORT+48,4)==0xffff0007 && rd(&r,PORT+66,2)==0xffff);
     uint32_t pen=rd(&r,rd(&r,PORT+58,4),4);CHECK(rd(&r,pen+20,4)==0xffffffff);
@@ -115,6 +116,6 @@ static void lines(void){
     /* a diagonal Move is fine (it draws nothing) */
     r=fresh();pen_call(&r,0xa893,5,5);CHECK(pen_call(&r,0xa894,3,-3)==1);pen_at(&r,&v,&h);CHECK(v==2 && h==8);mac_cpu_destroy(r.cpu);
     /* a transfer mode the colour raster does not do is refused rather than drawn wrongly */
-    r=fresh();wr(&r,PORT+56,2,3);pen_call(&r,0xa893,5,5);CHECK(pen_call(&r,0xa891,9,5)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
+    r=fresh();wr(&r,PORT+56,2,40);pen_call(&r,0xa893,5,5);CHECK(pen_call(&r,0xa891,9,5)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);      /* an arithmetic mode */
 }
 int main(void){lines();patterns();state();failures();puts("mac color pen tests passed");return 0;}
