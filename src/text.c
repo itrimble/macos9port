@@ -63,16 +63,17 @@ void text_draw(void *fb_ptr, int x, int y, int max_w, uint32_t color, const char
         return;
     }
     const char *p = text;
-    int cy = y;
-    while (*p) {
+    int cy = y, line_height = typeface_line_height(1);
+    int top = fb->clip ? fb->cy : 0, bottom = fb->clip ? fb->cy + fb->ch : fb->h;
+    while (*p && cy < bottom) {
         int draw_n = 0, adv = 0;
         if (!take_line(p, max_w, &draw_n, &adv) || adv <= 0) {
             break;
         }
-        if (draw_n > 0) {
+        if (draw_n > 0 && cy + line_height > top) {
             fb_text_n(fb, x, cy, color, p, draw_n);
         }
         p += adv;
-        cy += typeface_line_height(1);
+        cy += line_height;
     }
 }

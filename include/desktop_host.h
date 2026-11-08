@@ -8,4 +8,7 @@ void desktop_host_init(const char *volume);
 void desktop_host_tick(Session *session, int guest_active);
 void desktop_host_shutdown(void);
 
+struct SDL_Window; struct SDL_Renderer;
+void desktop_trace_input(Session *s, struct SDL_Window *win, struct SDL_Renderer *ren,
+                         int raw_x, int raw_y, int x, int y, int clicks);
 #endif

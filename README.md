@@ -1,12 +1,28 @@
 # OS999 Stylized
 
 I wanted a classic Mac desktop I could actually click on this Mac, on a
-Raspberry Pi, and on a plain x86_64 Linux box. OS999 Stylized 0.1 is that desktop.
+Raspberry Pi, and on a plain x86_64 Linux box. OS999 Stylized 1.1 is that desktop.
 It is a 64-bit program I wrote from scratch. It is not Mac OS 9.
 
 Jeff Price posted a photo of something he called OS π HD running on a
 Raspberry Pi 4. I have not seen his source. This repository is not his
 work, and it does not contain an Apple ROM.
+
+## Development checkpoint — 7 November 2026
+
+I am combining the separate development branches in this candidate. The
+[master tracker](docs/OS999-MASTER-TRACKER.md) records that work and its remaining
+checks. The [6 November status audit](docs/PROJECT-STATUS-2026-11-06.md) and
+[worktree inventory](docs/WORKTREE-INVENTORY-2026-11-06.md) retain the earlier
+branch evidence; their revisions and paths are historical.
+
+Monkey Island opened its screens, accepted clicks, and played sound in my
+hands-on run. Sustained play, save/reload and latest-build performance still
+need separate verification. An older runtime recorded a 60 FPS median and
+52.5 minimum; those numbers do not describe this integration candidate.
+Host browser, networking and movie code also do not establish guest MacTCP,
+Open Transport or original classic QuickTime acceptance. A passing build is
+one checkpoint. It is not the finished product.
 
 ## Try it on a Mac
 
@@ -96,10 +112,14 @@ Systemless fallback; it may choose a different application from the archive. On
 the WordPerfect 3.5e archive that is Corel OrgChart Builder, not WordPerfect.
 Many programs still fail. I do not commit those downloads.
 
-There is no integrated browser or guest networking stack yet. Garden downloads
-use the host's `curl`. OS999 does not serve SSH or SFTP, and it does not include video
-or audio codecs. A QuickTime page on Macintosh Garden is a classic
-installer disk. Opening it does not play a movie.
+There is no guest networking stack yet. Garden page and archive downloads go
+through the HTTPS-only libcurl transport described below (never the host `curl`).
+OS999 does not serve SSH or SFTP. Double-click a
+`.mov`, `.qt`, `.mp4`, or `.m4v` file and OS999 opens a movie window when the
+video is uncompressed 32-bit `raw ` frames in a classic movie container. Other
+codecs stay closed, with an explanation, and audio tracks are not played yet.
+A QuickTime page on Macintosh Garden is a classic installer disk. Opening that
+disk does not run Apple's QuickTime.
 
 I have built and run this on an Apple Silicon Mac. On 4 November 2026
 `make test` passed in a Debian 12 arm64 container on that Mac, using
@@ -154,8 +174,51 @@ The runtime currently reads only ASCII-named sibling data files, with no writes.
 
 The SDL helper requests an accelerated presentation backend. Guest rasterization
 and framebuffer conversion remain CPU work. That is not full game acceleration.
-Chromium, modern browsing, networking, and classic QuickTime playback remain
-separate unchecked goals. Guest execution is not a security sandbox.
+Integrated Chromium, guest networking APIs, and classic QuickTime playback remain
+separate unchecked goals. The host HTTPS layer is described below. Guest execution is not a security sandbox.
+
+## Terminal
+
+Open **OS999 HD → Applications → Utilities → Terminal** or **File → New Terminal**.
+The launcher is added to seeded volumes without overwriting existing files.
+Terminal opens the host's interactive login shell in the OS999 volume; your
+shell startup files can choose another working directory. On this Mac that is
+zsh with Oh My Zsh and Powerlevel10k. OS999 reads the normal shell configuration
+through zsh; it does not install plugins or rewrite `.zshrc`.
+
+The dark terminal uses bundled Meslo Nerd Font Mono (regular and bold),
+antialiased with FreeType, with Unicode prompt symbols, Powerline separators,
+256 colors, truecolor, and Unicode copying. The font and upstream license notices
+ship inside the app; a system-wide font installation is unnecessary. Without
+FreeType, the fallback is limited bitmap text and does not provide Nerd glyphs.
+This is a fixed-cell terminal, not a complete Unicode shaping/emoji engine.
+The existing theme menu switches to light mode when desired.
+
+`--terminal` opens a shell when launching a desktop for testing. SSH uses the
+host's `ssh`, keys and configuration. Authentication, interactive remote programs,
+and extended sessions need hands-on verification in the packaged preview.
+
+## Tailscale
+
+Open **Applications → Utilities → Tailscale** or **OS999 → Tailscale**.
+The built-in terminal utility lists the host's tailnet devices. Type `ssh 2 ian`
+to connect to device 2 as ian; device numbers refer to the last displayed list.
+Use `refresh` to reload it and `settings` to inspect host connection settings.
+`connect`, `disconnect`, `login`, `dns on|off`, `routes on|off`, and
+`shields on|off` explain their host-wide impact and require typing `yes`.
+These settings affect other applications and existing remote connections too.
+
+Install and authenticate the official Tailscale host client first. OS999 packages
+its management helper, not a VPN daemon. It stores no login keys and does not
+enable a Tailscale SSH server. SSH uses `/usr/bin/ssh`, normal authentication and
+host-key verification; the remote device must provide an SSH service.
+Missing client/service permissions are reported without automatically escalating.
+
+The helper supports standard macOS/Homebrew/Linux client paths; an absolute
+`OS999_TAILSCALE_CLI` can select another installed client. `--tailscale` opens the
+utility at desktop startup. `build/os999-tailnet --status` performs a read-only
+probe. Run `make test-tailnet` for isolated fake-client integration checks.
+Live settings changes and authenticated remote SSH are separate manual checks.
 
 ## Fonts
 
@@ -174,3 +237,76 @@ has no pi, is mine.
 
 Mac, Mac OS, and Finder are trademarks of Apple. OS999 Stylized is an
 independent program and is not affiliated with Apple.
+
+
+## Modern HTTPS and certificates
+
+The networking worktree adds `modern_network.h` and a libcurl transport used by
+Garden page/archive downloads. It requires libcurl 7.85 or newer; use a currently
+patched distribution build. On macOS, `brew install curl` supplies a separate
+maintained library; the Makefile prefers its pkg-config metadata without replacing
+system curl. The resulting development app depends on that installed library.
+Redistributable packaging of its dylibs has not been implemented.
+
+Connections require HTTPS, verified certificate chains and hostnames, and TLS 1.2
+or newer. The default uses the host trust configuration (explicit Apple SecTrust
+with current macOS curl). A trusted host caller may supply a PEM CA file or a PEM
+client certificate/key pair. No roots are installed, no private keys are copied,
+and guest files/environment variables cannot configure these policies. Custom
+trust is backend-dependent and is not a browser trust-store import mechanism.
+Client-authenticated requests refuse all redirects to prevent identity forwarding.
+
+Each request needs an explicit destination callback, checked again on every
+redirect. Garden restricts it to its page and mirror hosts. Ambient proxies,
+netrc credentials, cookies, and curl configuration files are not used. Downloads
+have a total deadline, cancellation, a byte limit across all hops, and a maximum
+of five redirects. They replace the destination only after a successful complete
+2xx response. Failed downloads preserve an existing destination. Calls are
+blocking worker operations; this does not implement guest MacTCP/Open Transport,
+UDP, inbound listeners, or a network sandbox. Garden's existing synchronous UI
+flow remains synchronous.
+
+`browser/` is an isolated source snapshot of the existing CEF browser, with
+certificate enforcement and launch-policy changes. Chromium retains its own
+network process and trust handling. Native client-certificate selection has not
+been verified.
+The libcurl CA/client-key policy does not override Chromium. Browser navigation
+requires HTTPS (apart from explicit internal diagnostic pages), invalid
+certificates have no click-through, and unsupported command-line switches are
+rejected. The lock reflects Chromium SSL status rather than the URL prefix.
+Its separate profile is `~/Library/Application Support/OS999 Browser Networking`.
+Profile aliases are resolved before deriving the cache path, preventing CEF from
+silently falling back to in-memory storage for macOS `/var` paths or symlinks.
+The browser remains a standalone app, not embedded in this worktree's desktop.
+
+Run `BUILDFLEET_LOCAL=1 make test-network` for policy and real loopback TLS tests
+(Python `cryptography` is a test-only dependency). The certificate fixtures and
+keys are generated in a temporary directory and removed after each run. After
+configuring/building CEF, run the requested bounded Ralph verification loop:
+
+```sh
+BUILDFLEET_LOCAL=1 python3 scripts/ralph-network-loop.py --browser --passes 2
+```
+
+It stops on failures for the owning agent to repair, records immutable source
+hashes and artifact hashes, and requires consecutive successful passes. Evidence
+is under `build/ralph-network/`. Browser checks use disposable profiles, reject
+unsafe switches, attempt to reject an untrusted local server and HTTP navigation, and load
+example.com over HTTPS. Public-network availability is required for that last
+check. These checks do not prove phishing protection, exhaustive revocation,
+Linux/Pi compatibility, browser keychain-selection UX, or end-user acceptance.
+
+Current browser security gate: **passed** on this Mac: six unsafe launch flags
+are rejected, an untrusted certificate and plaintext navigation are blocked,
+and public-trust HTTPS completes with verified connection state. All 29 transport
+cases also pass, including the sanitizer run. The standalone browser visibly
+renders example.com with its connection lock. The Certificates menu explains
+validation policy; CEF's certificate-manager page did not open and is not exposed.
+Certificate import and native machine-client-identity selection remain unverified.
+
+Earlier runs stalled while a worker waited in macOS Keychain retrieval. The
+resumed run no longer stalls; how that external condition cleared was not
+observed. No Keychain items, ACLs, passwords or trust roots were changed by this
+work. Diagnostic logs remain in ignored `build/`. This is a standalone host
+browser and transport implementation, not guest socket or integrated desktop
+browser acceptance. See the final Ralph receipt for the exact tested snapshot.

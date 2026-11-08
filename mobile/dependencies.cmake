@@ -1,0 +1,25 @@
+# Explicit dependencies for the expanded desktop core and shared audio service.
+# Supply target builds through the cross toolchain's CMAKE_FIND_ROOT_PATH.
+find_package(CURL REQUIRED)
+find_package(ZLIB REQUIRED)
+find_package(Threads REQUIRED)
+find_package(BZip2 QUIET)
+file(GLOB STORAGE_SOURCES "${OS999_ROOT}/storage/src/*.c")
+add_library(os999_mobile_storage STATIC ${STORAGE_SOURCES})
+target_include_directories(os999_mobile_storage PRIVATE
+    "${OS999_ROOT}/storage/include" "${OS999_ROOT}/storage/src")
+target_compile_definitions(os999_mobile_storage PRIVATE _DEFAULT_SOURCE)
+target_link_libraries(os999_mobile_storage PUBLIC ZLIB::ZLIB)
+if(BZIP2_FOUND)
+    target_compile_definitions(os999_mobile_storage PRIVATE OS999_STORAGE_BZIP2)
+    target_link_libraries(os999_mobile_storage PUBLIC BZip2::BZip2)
+endif()
+find_path(OS999_AV_INCLUDE_DIR libavformat/avformat.h REQUIRED)
+add_library(os999_mobile_dependencies INTERFACE)
+target_include_directories(os999_mobile_dependencies INTERFACE ${OS999_AV_INCLUDE_DIR})
+target_link_libraries(os999_mobile_dependencies INTERFACE
+    os999_mobile_storage CURL::libcurl Threads::Threads)
+foreach(component avformat avcodec swresample avutil)
+    find_library(OS999_${component}_LIBRARY NAMES ${component} REQUIRED)
+    target_link_libraries(os999_mobile_dependencies INTERFACE ${OS999_${component}_LIBRARY})
+endforeach()

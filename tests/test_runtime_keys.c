@@ -1,4 +1,6 @@
 #include "runtime_keys.h"
+#include "runtime_bridge.h"
+_Static_assert((int)RUNTIME_BRIDGE_HOST_COMMAND == (int)KMOD_LGUI, "bridge command modifier");
 
 #include <assert.h>
 #include <stdio.h>

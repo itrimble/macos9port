@@ -1,4 +1,6 @@
 #include "desktop_sound.h"
+#include "audio_service.h"
+#include <math.h>
 #include <SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,19 +19,29 @@ int main(int argc, char **argv) {
     close(fd);
     CHECK(desktop_sound_init(argv[1], pref) == DESKTOP_SOUND_COUNT);
     CHECK(desktop_sound_enabled());
+    audio_service_pause_output(1); /* Deterministic mixer reads below. */
     CHECK(desktop_sound_play(DESKTOP_SOUND_STARTUP));
     CHECK(desktop_sound_queued_bytes() > 0);
     CHECK(!desktop_sound_play(DESKTOP_SOUND_MENU_OPEN));
     desktop_sound_guest_active(1);
     CHECK(desktop_sound_queued_bytes() == 0);
+    CHECK(desktop_sound_effects_suppressed());
+    /* Guest activation clears effects without muting other shared buses. */
+    float app_pcm[2] = {0.25f, -0.25f}, mixed[2] = {0};
+    CHECK(audio_submit_app_pcm_f32(app_pcm, 1) == 1);
+    audio_service_mix_frames(mixed, 1);
+    CHECK(fabsf(mixed[0] - 0.25f) < 0.01f && fabsf(mixed[1] + 0.25f) < 0.01f);
     CHECK(!desktop_sound_play(DESKTOP_SOUND_ALERT));
     desktop_sound_guest_active(0);
+    CHECK(!desktop_sound_effects_suppressed());
     CHECK(desktop_sound_set_enabled(0));
     CHECK(!desktop_sound_enabled());
+    CHECK(desktop_sound_effects_suppressed());
     CHECK(!desktop_sound_play(DESKTOP_SOUND_STARTUP));
     desktop_sound_shutdown();
     CHECK(desktop_sound_init(argv[1], pref) == DESKTOP_SOUND_COUNT);
     CHECK(!desktop_sound_enabled());
+    CHECK(desktop_sound_effects_suppressed());
     CHECK(desktop_sound_set_enabled(1));
     CHECK(desktop_sound_play(DESKTOP_SOUND_MENU_SELECT));
     CHECK(!desktop_sound_play(-1));

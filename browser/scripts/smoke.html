@@ -1,0 +1,8 @@
+<!doctype html><html><head><meta charset=utf-8><title>OS999 Linux Smoke Test</title></head>
+<body style="font:20px sans-serif;margin:30px;background:#eef">
+<h1>Chromium inside OS999 on Linux</h1>
+<p id=ua></p><canvas id=c width=400 height=120></canvas>
+<script>document.getElementById('ua').textContent=navigator.userAgent;
+var g=document.getElementById('c').getContext('2d');g.fillStyle='#36c';g.fillRect(0,0,400,120);
+g.fillStyle='#fff';g.font='28px sans-serif';g.fillText('Rendered by Chromium',20,70);</script>
+</body></html>

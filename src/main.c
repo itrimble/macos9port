@@ -1,10 +1,15 @@
+#include "finder_apps.h"
+#include "finder_print.h"
 #include "ospi.h"
+#include "app_switcher.h"
 #include "draw.h"
 #include "native_launch.h"
 #include "os999_startup.h"
 #include "desktop_guest.h"
 #include "desktop_host.h"
-
+#include "desktop_shortcuts.h"
+#include "browser_window.h"
+#include "term.h"
 #include <SDL.h>
 #include <limits.h>
 #include <stdio.h>
@@ -12,20 +17,18 @@
 #include <string.h>
 #include <pthread.h>
 #include <stdatomic.h>
-
 typedef struct SessionInitTask {
     const char *volume;
     Session *session;
     atomic_int done;
 } SessionInitTask;
-
 static void *create_session_worker(void *context) {
     SessionInitTask *task = context;
     task->session = session_create(task->volume);
+    if (task->session) task->session->guest_menu_command = native_surface_command;
     atomic_store_explicit(&task->done, 1, memory_order_release);
     return NULL;
 }
-
 static const char *flag_arg(int argc, char **argv, const char *flag) {
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], flag) == 0 && i + 1 < argc) {
@@ -34,13 +37,11 @@ static const char *flag_arg(int argc, char **argv, const char *flag) {
     }
     return NULL;
 }
-
 static void take_clip(Session *s) {
     char *text = SDL_GetClipboardText();
     session_set_clip(s, text ? text : "");
     SDL_free(text);
 }
-
 static void logical_point(SDL_Window *win, int x, int y, int *ox, int *oy) {
     int ww = 1;
     int wh = 1;
@@ -54,28 +55,6 @@ static void logical_point(SDL_Window *win, int x, int y, int *ox, int *oy) {
     *ox = x * OSPI_W / ww;
     *oy = y * OSPI_H / wh;
 }
-
-static void trace_input(Session *s, SDL_Window *win, SDL_Renderer *ren,
-                        int raw_x, int raw_y, int x, int y, int clicks) {
-    if (!getenv("OSPI_INPUT_TRACE")) return;
-    int ww = 0, wh = 0, rw = 0, rh = 0;
-    SDL_GetWindowSize(win, &ww, &wh);
-    SDL_GetRendererOutputSize(ren, &rw, &rh);
-    const Window *active = s->nwin > 0 ? &s->win[s->nwin - 1] : NULL;
-    const char *selected = "-";
-    if (active) {
-        for (int i = 0; i < active->nitems; i++) {
-            if (active->items[i].selected) {
-                selected = active->items[i].name;
-                break;
-            }
-        }
-    }
-    fprintf(stderr, "input-trace raw=%d,%d mapped=%d,%d clicks=%d window=%dx%d drawable=%dx%d front=%s selected=%s\n",
-            raw_x, raw_y, x, y, clicks, ww, wh, rw, rh,
-            active ? active->rel : "-", selected);
-}
-
 static int inside(int x, int y, int left, int top, int width, int height) {
     return x >= left && y >= top && x < left + width && y < top + height;
 }
@@ -115,6 +94,7 @@ int main(int argc, char **argv) {
         SDL_Quit();
         return 1;
     }
+    desktop_shortcuts_init();
     SDL_Renderer *ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!ren) {
         ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE);
@@ -260,6 +240,13 @@ int main(int argc, char **argv) {
     uint64_t guest_sequence = 0;
     int guest_width = 0, guest_height = 0, guest_placed = 0;
     int guest_drag = 0, guest_mouse_capture = 0, guest_focus = 0;
+    for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--tailscale")) session_command(s, CMD_TAILSCALE);
+        if (!strcmp(argv[i], "--terminal")) session_command(s, CMD_TERMINAL_SHELL);
+    }
+    const char *play_path = flag_arg(argc, argv, "--play");
+    if (play_path && session_media_hooks() && session_media_hooks()->open_file)
+        session_media_hooks()->open_file(s, play_path);
     while (!session_quit(s)) {
         uint32_t surface_state = RUNTIME_BRIDGE_STARTING;
         char surface_message[256] = {0};
@@ -288,6 +275,10 @@ int main(int argc, char **argv) {
                 if (ev.type == SDL_QUIT) s->quit = 1;
                 continue;
             }
+            if ((ev.type == SDL_KEYDOWN || ev.type == SDL_KEYUP) && finder_apps_key(s, ev.key.keysym.sym,
+                ((ev.key.keysym.mod & KMOD_GUI) ? MOD_CMD : 0) | ((ev.key.keysym.mod & KMOD_SHIFT) ? MOD_SHIFT : 0) |
+                ((ev.key.keysym.mod & (KMOD_CTRL | KMOD_ALT)) ? MOD_OTHER : 0), ev.type == SDL_KEYDOWN, ev.key.repeat)) continue;
+            if (browser_window_event(s, win, &ev)) continue;
             if (!guest_focus && !session_overlay_active(s) && ev.type == SDL_KEYDOWN && !ev.key.repeat &&
                 (ev.key.keysym.sym == SDLK_F9 || ev.key.keysym.sym == SDLK_F10)) {
                 session_command(s, ev.key.keysym.sym == SDLK_F9 ?
@@ -307,29 +298,34 @@ int main(int argc, char **argv) {
             } else if (ev.type == SDL_MOUSEBUTTONDOWN &&
                        (ev.button.button == SDL_BUTTON_LEFT || ev.button.button == SDL_BUTTON_RIGHT)) {
                 logical_point(win, ev.button.x, ev.button.y, &x, &y);
-                if (session_overlay_active(s)) {
-                    if (guest_focus) native_surface_push((RuntimeBridgeInput){.kind=RUNTIME_BRIDGE_FOCUS_LOST});
-                    guest_focus = guest_mouse_capture = 0;
+                s->mouse_mods = (SDL_GetModState() & KMOD_SHIFT ? MOD_SHIFT : 0) |
+                                (SDL_GetModState() & KMOD_GUI ? MOD_CMD : 0) |
+                                (SDL_GetModState() & KMOD_ALT ? MOD_OPTION : 0);
+                if (finder_apps_modal(s) || app_switcher_hit(s,x,y)) {
+                    if (guest_focus && finder_apps_modal(s)) native_surface_push((RuntimeBridgeInput){.kind=RUNTIME_BRIDGE_FOCUS_LOST});
+                    guest_mouse_capture = 0;
+                    take_clip(s);
+                    s->input_now_ms = ev.button.timestamp ? ev.button.timestamp : SDL_GetTicks();
                     if (ev.button.button == SDL_BUTTON_RIGHT || (SDL_GetModState() & KMOD_CTRL))
                         session_context(s, x, y);
-                    else session_down(s, x, y, 1);
+                    else session_down(s, x, y, ev.button.clicks);
                     continue;
                 }
-                int active = native_surface_active() && guest_placed;
+                int active = native_surface_active() && guest_placed && finder_apps_guest_hit(s, guest_focus, x, y);
                 if (active && inside(x, y, guest_window.x, guest_window.y,
                                      guest_window.w, guest_window.h)) {
                     if (ev.button.button == SDL_BUTTON_RIGHT) continue;
                     int close_hit = inside(x, y, guest_window.x + 10,
                                            guest_window.y + 7, 13, 13);
                     if (close_hit) {
-                        native_surface_close();
-                        guest_placed = guest_drag = guest_mouse_capture = guest_focus = 0;
+                        finder_apps_close_guest_window(s);
+                        guest_drag = guest_mouse_capture = 0; guest_focus = s->guest_focused;
                         continue;
                     }
                     if (inside(x, y, guest_window.x, guest_window.y,
                                guest_window.w, 27)) {
                         guest_drag = 1;
-                        guest_focus = 1;
+                        guest_focus = 1; s->app_request = 2;
                         s->press_x = x - guest_window.x;
                         s->press_y = y - guest_window.y;
                         continue;
@@ -339,7 +335,7 @@ int main(int argc, char **argv) {
                         int gx, gy;
                         guest_pixel_point(&guest_window, guest_width, guest_height,
                                           x, y, &gx, &gy);
-                        guest_focus = guest_mouse_capture = 1;
+                        guest_focus = guest_mouse_capture = 1; s->app_request = 2;
                         native_surface_push((RuntimeBridgeInput){RUNTIME_BRIDGE_BUTTON_DOWN,
                             gx, gy, 0, (uint32_t)SDL_GetModState()});
                         continue;
@@ -347,7 +343,7 @@ int main(int argc, char **argv) {
                     guest_focus = 0;
                     continue;
                 }
-                if (guest_focus) {
+                if (guest_focus && y >= TITLE_H) {
                     native_surface_push((RuntimeBridgeInput){.kind=RUNTIME_BRIDGE_FOCUS_LOST});
                     guest_focus = guest_mouse_capture = 0;
                 }
@@ -355,12 +351,13 @@ int main(int argc, char **argv) {
                     session_context(s, x, y);
                     continue;
                 }
+                if (y >= TITLE_H) s->finder_hidden = 0;
                 take_clip(s);
                 /* Several queued clicks can be drained in one frame. Use each
                  * event's time so the fallback can distinguish those clicks. */
                 s->input_now_ms = ev.button.timestamp ? ev.button.timestamp : SDL_GetTicks();
                 session_down(s, x, y, ev.button.clicks);
-                trace_input(s, win, ren, ev.button.x, ev.button.y,
+                desktop_trace_input(s, win, ren, ev.button.x, ev.button.y,
                             x, y, ev.button.clicks);
             } else if (ev.type == SDL_MOUSEBUTTONUP && ev.button.button == SDL_BUTTON_LEFT) {
                 logical_point(win, ev.button.x, ev.button.y, &x, &y);
@@ -377,12 +374,12 @@ int main(int argc, char **argv) {
                 session_up(s, x, y);
             } else if (ev.type == SDL_MOUSEMOTION) {
                 logical_point(win, ev.motion.x, ev.motion.y, &x, &y);
-                if (session_overlay_active(s)) { session_move(s, x, y); continue; }
+                if (finder_apps_modal(s) || finder_apps_pointer_capture(s)) { session_move(s, x, y); continue; }
                 if (guest_drag) {
                     guest_window_drag(&guest_window, x, y, s->press_x, s->press_y);
                     continue;
                 }
-                if (native_surface_active() && guest_placed &&
+                if (native_surface_active() && guest_placed && finder_apps_guest_hit(s, guest_focus, x, y) &&
                     (guest_mouse_capture || inside(x, y, guest_window.image_x,
                      guest_window.image_y, guest_window.image_w, guest_window.image_h))) {
                     int gx, gy;
@@ -395,6 +392,11 @@ int main(int argc, char **argv) {
                 session_move(s, x, y);
             } else if (ev.type == SDL_MOUSEWHEEL) {
                 session_wheel(s, ev.wheel.y);
+            } else if (ev.type == SDL_TEXTINPUT && (!guest_focus || session_overlay_active(s))) {
+                if (session_editing(s)) session_text(s, ev.text.text);
+                else if (s->dialog == 3 || s->dialog == 5) session_text_input(s, ev.text.text);
+                else if (!session_overlay_active(s) && !(SDL_GetModState() & (KMOD_GUI | KMOD_CTRL | KMOD_ALT)))
+                    terminal_text_input(s, ev.text.text);
             } else if (ev.type == SDL_KEYDOWN) {
                 if (guest_focus && native_surface_active() && !session_overlay_active(s)) {
                     native_surface_push((RuntimeBridgeInput){RUNTIME_BRIDGE_KEY_DOWN,
@@ -403,21 +405,34 @@ int main(int argc, char **argv) {
                     continue;
                 }
                 int key = ev.key.keysym.sym;
-                if (key == SDLK_KP_ENTER) {
-                    key = '\r';
+                if (key == SDLK_KP_ENTER) key = '\r';
+                int mods = ((ev.key.keysym.mod & KMOD_GUI) ? MOD_CMD : 0) |
+                           ((ev.key.keysym.mod & KMOD_SHIFT) ? TERM_MOD_SHIFT : 0) |
+                           ((ev.key.keysym.mod & KMOD_CTRL) ? TERM_MOD_CTRL : 0) |
+                           ((ev.key.keysym.mod & KMOD_ALT) ? TERM_MOD_ALT : 0);
+                if ((mods & MOD_CMD) && (key == 'v' || key == 'V')) take_clip(s);
+                if (!session_overlay_active(s) && terminal_front(s) &&
+                    !(mods & (MOD_CMD | TERM_MOD_CTRL | TERM_MOD_ALT)) &&
+                    key >= 32 && key < 127) {
+                    continue;
                 }
-                int mods = (ev.key.keysym.mod & KMOD_GUI) ? MOD_CMD : 0;
-                if (ev.key.keysym.mod & (KMOD_CTRL | KMOD_ALT | KMOD_SHIFT)) mods |= MOD_OTHER;
+                if (ev.key.keysym.mod & (KMOD_CTRL | KMOD_ALT)) mods |= MOD_OTHER;
                 session_key(s, key, mods);
+                if ((mods & MOD_CMD) && (key == 'c' || key == 'C') && s->clip[0])
+                    SDL_SetClipboardText(s->clip);
+                if (session_take_clip_out(s)) SDL_SetClipboardText(s->clip);
             } else if (ev.type == SDL_KEYUP && guest_focus && native_surface_active() && !session_overlay_active(s)) {
                 native_surface_push((RuntimeBridgeInput){RUNTIME_BRIDGE_KEY_UP,
                     0, 0, (uint32_t)ev.key.keysym.sym,
                     (uint32_t)ev.key.keysym.mod});
             } else if (ev.type == SDL_WINDOWEVENT &&
-                       ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST && guest_focus) {
-                native_surface_push((RuntimeBridgeInput){.kind=RUNTIME_BRIDGE_FOCUS_LOST});
-                guest_focus = guest_mouse_capture = 0;
+                       ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+                if (guest_focus) native_surface_push((RuntimeBridgeInput){.kind=RUNTIME_BRIDGE_FOCUS_LOST});
+                guest_focus = guest_mouse_capture = s->app_switch_tab = 0; s->down = s->drag = s->switcher.gesture = s->switcher.tear_armed = 0;
             }
+        }
+        if (finder_apps_sync(s, native_surface_active(), native_surface_title(), &guest_focus)) {
+            native_surface_push((RuntimeBridgeInput){.kind=RUNTIME_BRIDGE_FOCUS_LOST}); guest_mouse_capture = 0;
         }
         if (session_take_startup_toggle(s)) {
             boot_enabled = !boot_enabled;
@@ -429,13 +444,18 @@ int main(int argc, char **argv) {
         s->host_startup_enabled = boot_enabled;
         desktop_host_tick(s, native_surface_active());
         session_tick(s, SDL_GetTicks());
+        s->print_available = desktop_print_supported();
         session_paint(s, frame, OSPI_W, OSPI_H);
-        if (native_surface_active() && guest_placed)
+        desktop_print_service(s, frame);
+        if (native_surface_active() && guest_placed && !s->guest_hidden)
             draw_guest_window(frame, &guest_window, guest_pixels, guest_width,
                               guest_height, surface_state, native_surface_title(),
                               surface_message);
+        if (native_surface_active() && guest_placed) session_windows_paint_above(s, frame, OSPI_W, OSPI_H, 2);
         if (native_surface_active() && guest_placed)
             session_overlay_paint(s, frame, OSPI_W, OSPI_H);
+        s->guest_bounds = guest_placed ? (Rect){guest_window.x, guest_window.y, guest_window.w, guest_window.h} : (Rect){0};
+        browser_window_frame(s, win, frame, os999_startup_active(&startup));
         if (startup_desktop) memcpy(startup_desktop, frame,
                                     (size_t)OSPI_W * OSPI_H * sizeof *frame);
         if (os999_startup_active(&startup))
@@ -464,6 +484,7 @@ int main(int argc, char **argv) {
         SDL_RenderPresent(ren);
     }
     native_surface_close();
+    browser_window_close();
     desktop_host_shutdown();
     os999_startup_release();
     free(startup_desktop);

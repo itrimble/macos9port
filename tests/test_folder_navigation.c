@@ -1,4 +1,6 @@
 #include "folder_navigation.h"
+/* Label editing is covered by the integrated Finder-label fixture. */
+const char *finder_label_name(int label) { (void)label; return "Fixture Label"; }
 #include "folder_view.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,6 +9,10 @@
 static int checks, failures, overlay;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; fprintf(stderr, "FAIL %d: %s\n", __LINE__, #c); } } while (0)
 /* Overlay/menu ownership is stubbed; geometry and scroll limits are real. */
+int finder_recent_valid(const Session *s, const char *path) { (void)s; (void)path; return 0; }
+int finder_apps_enabled(const Session *s, int command) { (void)s; (void)command; return 0; }
+int finder_apps_media_running(const Session *s) { (void)s; return 0; }
+int finder_command_enabled(const Session *s, int command) { (void)s; (void)command; return 0; }
 int appearance_panel_active(void) { return 0; }
 int appearance_panel_can_open(void) { return 0; }
 int desktop_command_enabled(Session *s, int command) { (void)s; (void)command; return 0; }
@@ -52,7 +58,7 @@ int main(void) {
     int scroll = w->scroll;
     CHECK(folder_navigation_key(s, 'z', 0)); CHECK(selected(w) == 2 && w->scroll == scroll);
     CHECK(!folder_navigation_key(s, 'a', MOD_CMD)); CHECK(selected(w) == 2);
-    CHECK(!folder_navigation_key(s, MENU_KEY_DOWN, 2)); CHECK(selected(w) == 2);
+    CHECK(!folder_navigation_key(s, MENU_KEY_DOWN, MOD_OTHER)); CHECK(selected(w) == 2);
     CHECK(!folder_navigation_key(s, '\r', 0)); CHECK(!folder_navigation_key(s, 27, 0));
     w->view_mode = VIEW_LIST;
     CHECK(folder_navigation_key(s, MENU_KEY_DOWN, 0)); CHECK(selected(w) == 3);
@@ -95,11 +101,38 @@ int main(void) {
     for (int i = 0; i < 20; i++) text_navigation_key(s, FOLDER_KEY_PAGE_DOWN, 0);
     CHECK(w->scroll == window_max_scroll(w));
     CHECK(!text_navigation_key(s, FOLDER_KEY_HOME, MOD_OTHER)); CHECK(w->scroll > 0);
-    s->desk_sel = DESK_BACKGROUND; CHECK(!text_navigation_key(s, FOLDER_KEY_HOME, 0));
-    s->desk_sel = DESK_WINDOW; overlay = 1; CHECK(!text_navigation_key(s, FOLDER_KEY_HOME, 0)); overlay = 0;
+    s->desktop_focus = 1; CHECK(!text_navigation_key(s, FOLDER_KEY_HOME, 0));
+    s->desktop_focus = 0; s->desk_sel = -1; overlay = 1; CHECK(!text_navigation_key(s, FOLDER_KEY_HOME, 0)); overlay = 0;
     w->collapsed = 1; CHECK(!text_navigation_key(s, FOLDER_KEY_HOME, 0)); w->collapsed = 0;
     CHECK(text_navigation_key(s, FOLDER_KEY_HOME, 0)); CHECK(w->scroll == 0);
     w->text[0] = 0; CHECK(text_navigation_key(s, FOLDER_KEY_END, 0)); CHECK(w->scroll == 0);
+    /* A manually arranged desktop uses spatial neighbors, not sorted indices. */
+    Window *d=&s->desktop;d->kind=WIN_FOLDER;d->desktop_surface=1;d->w=600;d->h=400;d->nitems=4;
+    d->selection_anchor=d->selection_cursor=-1;s->desktop_focus=1;s->sw=600;s->sh=400;
+    s->system_icons=(SystemIconPositions){.mask=3,.x={500,500},.y={28,80}};
+    const int points[4][2]={{300,200},{0,0},{300,0},{0,200}};
+    for(int i=0;i<4;i++){d->items[i].desktop_position=1;d->items[i].desktop_x=points[i][0];d->items[i].desktop_y=points[i][1];}
+    CHECK(folder_navigation_key(s,MENU_KEY_RIGHT,0));CHECK(selected(d)==1);
+    CHECK(folder_navigation_key(s,MENU_KEY_RIGHT,0));CHECK(selected(d)==2);
+    CHECK(folder_navigation_key(s,MENU_KEY_DOWN,0));CHECK(selected(d)==0);
+    CHECK(folder_navigation_key(s,MENU_KEY_LEFT,0));CHECK(selected(d)==3);
+    CHECK(folder_navigation_key(s,MENU_KEY_UP,0));CHECK(selected(d)==1);
+    CHECK(folder_navigation_key(s,MENU_KEY_UP,0));CHECK(selected(d)==1);
+    CHECK(folder_navigation_key(s,MENU_KEY_RIGHT,MOD_SHIFT));
+    CHECK(folder_navigation_key(s,MENU_KEY_DOWN,MOD_SHIFT));
+    CHECK(d->items[0].selected&&d->items[1].selected&&d->items[2].selected&&!d->items[3].selected);
+    CHECK(folder_navigation_key(s,FOLDER_KEY_HOME,0));CHECK(selected(d)==1);
+    CHECK(folder_navigation_key(s,FOLDER_KEY_END,0));CHECK(selected(d)==0&&d->scroll==0);
+    d->items[0].desktop_position=2;d->items[0].desktop_y=600;
+    CHECK(!desktop_item_visible(d,0));CHECK(folder_navigation_key(s,FOLDER_KEY_END,0));CHECK(selected(d)==0&&d->scroll==0);
+    CHECK(folder_navigation_key(s,'o',0));CHECK(s->desk_sel==0);
+    CHECK(folder_navigation_key(s,MENU_KEY_DOWN,0));CHECK(s->desk_sel==1);
+    CHECK(folder_navigation_key(s,MENU_KEY_LEFT,0));CHECK(s->desk_sel==-1&&selected(d)==2);
+    d->nitems=0;CHECK(folder_navigation_key(s,'o',0));CHECK(s->desk_sel==0);
+    CHECK(folder_navigation_key(s,'t',0));CHECK(s->desk_sel==1);
+    s->browser_focused=1;CHECK(!folder_navigation_key(s,MENU_KEY_LEFT,0));s->browser_focused=0;
+    s->guest_focused=1;CHECK(!folder_navigation_key(s,MENU_KEY_LEFT,0));s->guest_focused=0;
+    s->media_focused=1;CHECK(!folder_navigation_key(s,MENU_KEY_LEFT,0));s->media_focused=0;
     free(s);
     printf("folder navigation: %d checks, %d failures\n", checks, failures);
     return failures != 0;

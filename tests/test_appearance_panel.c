@@ -7,6 +7,10 @@
 #include <string.h>
 #include "desktop_assets.h"
 
+static int occluded;
+/* This isolated panel fixture does not test label persistence or editing. */
+const char *finder_label_name(int label) { (void)label; return "Fixture Label"; }
+int finder_apps_occluded(const Session *s, int app, int x, int y) { (void)s; (void)app; (void)x; (void)y; return occluded; }
 static int current = -1, commands, last_command, icon_draws, selected_theme;
 int desktop_theme_count(void) { return 16; }
 int desktop_theme_current(void) { return selected_theme; }
@@ -34,7 +38,8 @@ const char *desktop_wallpaper_name(int index) { (void)index; return "Fixture Pic
 void session_command(Session *s, int cmd) {
     commands++;
     last_command = cmd;
-    if (cmd >= CMD_THEME_BASE && cmd <= CMD_THEME_LAST) selected_theme = cmd - CMD_THEME_BASE;
+    if (cmd == CMD_APP_FINDER) s->browser_focused = s->guest_focused = s->media_focused = 0;
+    else if (cmd >= CMD_THEME_BASE && cmd <= CMD_THEME_LAST) selected_theme = cmd - CMD_THEME_BASE;
     else current = cmd - CMD_WALLPAPER_BASE - 1;
     s->menu = -1;
 }
@@ -51,8 +56,8 @@ int main(void) {
     CHECK(appearance_panel_active());
     CHECK(!appearance_panel_down(&s, 30, 10)); /* Menu bar is still usable. */
     s.down = s.drag = 1;
-    CHECK(appearance_panel_down(&s, 10, 40));
-    CHECK(!s.down && !s.drag && commands == 0);
+    CHECK(!appearance_panel_down(&s, 10, 40)); /* Outside clicks pass to the exposed app. */
+    CHECK(s.down && s.drag && commands == 0);
     CHECK(appearance_panel_down(&s, 512, 380)); /* Appearance launcher. */
     CHECK(appearance_panel_down(&s, 250, 302)); /* Picture 1. */
     CHECK(current == 0 && last_command == CMD_WALLPAPER_BASE + 1);
@@ -155,9 +160,43 @@ int main(void) {
         CHECK(pixels[(size_t)300 * OSPI_W + 215] == desktop_theme_color(THEME_MENU));
         free(pixels);
     }
+    for (int app = 0; app < 3; app++) {
+        appearance_panel_open_controls(&s);
+        CHECK(appearance_panel_context(&s, 512, 360));
+        Rect regions[2]; CHECK(appearance_panel_regions(&s, regions) == 2);
+        s.browser_focused = app == 0; s.guest_focused = app == 1; s.finder_hidden = app == 2;
+        appearance_panel_deactivate();
+        CHECK(!appearance_panel_active() && !appearance_panel_can_open());
+        CHECK(!appearance_panel_key(&s, 27, 0));
+        occluded = 1;
+        CHECK(!appearance_panel_down(&s, 512, 360));
+        occluded = 0;
+        if (app != 2) {
+            CHECK(appearance_panel_down(&s, 512, 310)); /* Exposed title reactivates Finder. */
+            CHECK(!s.browser_focused && !s.guest_focused && appearance_panel_can_open());
+        }
+        CHECK(appearance_panel_regions(&s, regions) == (app == 2 ? 0 : 1));
+        if (app == 2) {
+            uint32_t *hidden = calloc((size_t)OSPI_W * OSPI_H, sizeof *hidden);
+            CHECK(hidden != NULL);
+            if (hidden) {
+                Fb fb; fb_init(&fb, hidden, OSPI_W, OSPI_H);
+                appearance_panel_draw(&s, &fb);
+                int painted = 0;
+                for (int i=0;i<OSPI_W*OSPI_H;i++) painted |= hidden[i] != 0;
+                CHECK(!painted); free(hidden);
+            }
+        }
+        s.browser_focused = s.guest_focused = s.finder_hidden = 0;
+        CHECK(appearance_panel_active() && appearance_panel_can_open());
+    }
     appearance_panel_close();
     printf("appearance panel: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }
 
 int desktop_command_enabled(Session *s, int cmd) { (void)s; (void)cmd; return 0; }
+
+int finder_apps_enabled(const Session *s, int command) { (void)s; (void)command; return 0; }
+int finder_apps_media_running(const Session *s) { (void)s; return 0; }
+int finder_command_enabled(const Session *s, int cmd) { (void)s; (void)cmd; return 0; }

@@ -1,4 +1,5 @@
 #include "appearance_panel.h"
+#include "finder_apps.h"
 #include "desktop_wallpaper.h"
 #include "desktop_assets.h"
 #include "desktop_theme.h"
@@ -7,7 +8,7 @@
 
 enum { PANEL_CLOSED, PANEL_CONTROLS, PANEL_APPEARANCE, ROW_HEIGHT = 21 };
 static Session *owner;
-static int mode, tab, page, theme_page;
+static int mode, tab, page, theme_page, panel_focus;
 static int context_kind;
 static Rect context_box;
 
@@ -55,6 +56,13 @@ static Rect panel_rect(const Session *s) {
 }
 
 static Rect close_rect(Rect r) { return (Rect){r.x + 8, r.y + 5, 12, 12}; }
+int appearance_panel_regions(const Session *s, Rect out[2]) {
+    if (owner != s || mode == PANEL_CLOSED || s->finder_hidden) return 0;
+    out[0] = panel_rect(s);
+    out[0].w += 3; out[0].h += 3;
+    if (context_kind) { out[1] = context_box; return 2; }
+    return 1;
+}
 static Rect tab_rect(Rect r, int index) {
     return (Rect){r.x + 18 + index * 116, r.y + 35, 112, 27};
 }
@@ -69,16 +77,21 @@ void appearance_panel_close(void) {
     if (owner) owner->down = owner->drag = 0;
     owner = NULL;
     mode = PANEL_CLOSED;
-    tab = page = theme_page = context_kind = 0;
+    tab = page = theme_page = context_kind = panel_focus = 0;
 }
 
-int appearance_panel_active(void) { return mode != PANEL_CLOSED; }
-int appearance_panel_can_open(void) { return mode == PANEL_CONTROLS; }
+void appearance_panel_deactivate(void) { context_kind = 0; }
+void appearance_panel_blur(void) { panel_focus = context_kind = 0; }
+int appearance_panel_active(void) {
+    return mode != PANEL_CLOSED && panel_focus && owner && !owner->media_focused &&
+           !owner->browser_focused && !owner->guest_focused && !owner->finder_hidden;
+}
+int appearance_panel_can_open(void) { return mode == PANEL_CONTROLS && appearance_panel_active(); }
 
 void appearance_panel_open_controls(Session *s) {
     if (!s) return;
     owner = s;
-    context_kind = 0;
+    panel_focus = 1; context_kind = 0;
     s->down = s->drag = 0;
     mode = PANEL_CONTROLS;
     s->menu = s->menu_hot = -1;
@@ -87,7 +100,7 @@ void appearance_panel_open_controls(Session *s) {
 void appearance_panel_open(Session *s, int selected_tab) {
     if (!s) return;
     owner = s;
-    context_kind = 0;
+    panel_focus = 1; context_kind = 0;
     s->down = s->drag = 0;
     mode = PANEL_APPEARANCE;
     tab = selected_tab == APPEARANCE_THEMES_TAB ? APPEARANCE_THEMES_TAB : APPEARANCE_DESKTOP_TAB;
@@ -202,7 +215,7 @@ static void context_draw(Session *s, Fb *fb) {
 }
 
 int appearance_panel_context(Session *s, int x, int y) {
-    if (!s || owner != s || mode == PANEL_CLOSED) return 0;
+    if (!s || owner != s || !appearance_panel_active()) return 0;
     s->down = s->drag = 0;
     s->menu = s->menu_hot = -1;
     context_kind = 0;
@@ -220,7 +233,7 @@ int appearance_panel_context(Session *s, int x, int y) {
 }
 
 void appearance_panel_draw(Session *s, Fb *fb) {
-    if (!s || owner != s || mode == PANEL_CLOSED || !fb) return;
+    if (!s || owner != s || mode == PANEL_CLOSED || s->finder_hidden || !fb) return;
     Rect r = panel_rect(s);
     frame(fb, r, mode == PANEL_CONTROLS ? "Control Panels" : "Appearance");
     if (mode == PANEL_CONTROLS) {
@@ -248,7 +261,13 @@ void appearance_panel_draw(Session *s, Fb *fb) {
 }
 
 int appearance_panel_down(Session *s, int x, int y) {
-    if (!s || owner != s || mode == PANEL_CLOSED) return 0;
+    if (!s || owner != s || mode == PANEL_CLOSED || s->finder_hidden) return 0;
+    Rect r = panel_rect(s);
+    if (!context_kind && (y < TITLE_H || !rect_has(r, x, y) || finder_apps_occluded(s, 1, x, y))) return 0;
+    if (!appearance_panel_active()) {
+        if (s->media_focused || s->browser_focused || s->guest_focused) session_command(s, CMD_APP_FINDER);
+        panel_focus = 1;
+    }
     if (context_kind) {
         s->down = s->drag = 0;
         if (x > context_box.x && x < context_box.x + context_box.w - 1 &&
@@ -259,7 +278,6 @@ int appearance_panel_down(Session *s, int x, int y) {
     }
     if (y < TITLE_H) return 0;
     s->down = s->drag = 0;
-    Rect r = panel_rect(s);
     if (rect_has(close_rect(r), x, y)) { appearance_panel_close(); return 1; }
     if (mode == PANEL_CONTROLS) {
         if (rect_has(controls_appearance(r), x, y)) appearance_panel_open(s, APPEARANCE_DESKTOP_TAB);
@@ -295,7 +313,7 @@ int appearance_panel_down(Session *s, int x, int y) {
 }
 
 int appearance_panel_key(Session *s, int key, int mods) {
-    if (!s || owner != s || mode == PANEL_CLOSED) return 0;
+    if (!s || owner != s || !appearance_panel_active()) return 0;
     if ((mods & MOD_CMD) && (key == 'o' || key == 'O') && mode == PANEL_CONTROLS) return 0;
     if ((mods & MOD_CMD) && (key == 'q' || key == 'Q' || key == 't' || key == 'T')) return 0;
     if (context_kind && key == 27) { context_kind = 0; return 1; }

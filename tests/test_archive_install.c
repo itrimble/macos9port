@@ -1,5 +1,6 @@
 #include "ospi.h"
 #include "../src/session_int.h"
+#include "os999_storage.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -63,6 +64,11 @@ static void test_sit_install(const char *root) {
     char path[OSPI_PATH];
     snprintf(path, sizeof path, "%s:/usr/bin:/bin", tools);
     CHECK(setenv("PATH", path, 1) == 0);
+    /* The storage fallback deliberately checks GUI-safe Homebrew locations
+     * before PATH. Bind its explicit tool override to this test fixture. */
+    const char *prior_unar = getenv("OS999_UNAR");
+    char *saved_unar = prior_unar ? strdup(prior_unar) : NULL;
+    CHECK(setenv("OS999_UNAR", unar, 1) == 0);
     char appdir[OSPI_PATH], archive[OSPI_PATH], rel[OSPI_PATH], err[240], extracted[OSPI_PATH];
     snprintf(appdir, sizeof appdir, "%s/Applications", root);
     snprintf(archive, sizeof archive, "%s/Local.SIT", appdir);
@@ -78,9 +84,12 @@ static void test_sit_install(const char *root) {
     CHECK(setenv("OSPI_TEST_UNAR_MODE", "fail", 1) == 0);
     CHECK(install_sit(root, "Applications/Local.SIT", rel, sizeof rel, err, sizeof err) != 0);
     CHECK(strstr(err, "Could not expand") != NULL && access(archive, F_OK) == 0);
+    /* Deep trees install completely now (the old copy step stopped at depth 8
+     * and left partial files); installs are all-or-nothing. */
     CHECK(setenv("OSPI_TEST_UNAR_MODE", "deep", 1) == 0);
-    CHECK(install_sit(root, "Applications/Local.SIT", rel, sizeof rel, err, sizeof err) != 0);
-    CHECK(strstr(err, "partial files") != NULL && rel[0] != 0 && access(archive, F_OK) == 0);
+    CHECK(install_sit(root, "Applications/Local.SIT", rel, sizeof rel, err, sizeof err) == 0);
+    snprintf(extracted, sizeof extracted, "%s/%s/l0/l1/l2/l3/l4/l5/l6/l7/l8/l9/file", root, rel);
+    CHECK(access(extracted, F_OK) == 0 && access(archive, F_OK) == 0);
     CHECK(setenv("OSPI_TEST_UNAR_MODE", "success", 1) == 0);
     char gui_archive[OSPI_PATH];
     snprintf(gui_archive, sizeof gui_archive, "%s/Click.SIT", appdir);
@@ -111,11 +120,57 @@ static void test_sit_install(const char *root) {
     snprintf(garden_archive, sizeof garden_archive, "%s/Sample.SIT", garden_dir);
     CHECK(access(extracted, F_OK) == 0 && access(garden_archive, F_OK) == 0);
     CHECK(setenv("PATH", saved_path, 1) == 0);
+    if (saved_unar) { setenv("OS999_UNAR", saved_unar, 1); free(saved_unar); }
+    else unsetenv("OS999_UNAR");
     unsetenv("OSPI_TEST_UNAR_MODE");
     unlink(curl); unlink(unar); unlink(systemless);
     rmdir(tools);
 }
 
+
+/* A real Mac file (MacBinary with a resource fork) installs through the
+ * storage stack without calling unar: forks and type/creator survive in an
+ * AppleDouble "<name>.rsrc" sidecar the runtime reads. */
+static void test_native_install(const char *root) {
+    StMacFile f;
+    st_macfile_init(&f);
+    snprintf(f.name, sizeof f.name, "Native Game");
+    st_mac_set_type_creator(&f, 0x4150504Cu, 0x4E415447u); /* APPL / NATG */
+    st_bytes_append(&f.data, "data fork", 9);
+    st_bytes_append(&f.rsrc, "resource fork bytes", 19);
+    StBytes mb = {0};
+    StErr e;
+    CHECK(st_macbinary_encode(&f, &mb, &e) == ST_OK);
+    char path[OSPI_PATH], rel[OSPI_PATH], err[300];
+    snprintf(path, sizeof path, "%s/Applications/Native.sit", root);
+    CHECK(write_bytes(path, mb.p, mb.n) == 0);
+    char saved[OSPI_PATH];
+    snprintf(saved, sizeof saved, "%s", getenv("PATH") ? getenv("PATH") : "");
+    CHECK(setenv("PATH", "/nonexistent", 1) == 0); /* unar unavailable */
+    CHECK(install_sit(root, "Applications/Native.sit", rel, sizeof rel, err, sizeof err) == 0);
+    setenv("PATH", saved, 1);
+    char side[OSPI_PATH], data[OSPI_PATH];
+    snprintf(data, sizeof data, "%s/%s/Native Game", root, rel);
+    snprintf(side, sizeof side, "%s/%s/Native Game.rsrc", root, rel);
+    StBytes sb = {0};
+    StMacFile meta;
+    CHECK(access(data, F_OK) == 0 && st_read_file(side, 1 << 20, &sb, &e) == ST_OK);
+    CHECK(st_applesingle_detect(sb.p, sb.n) == 2 && st_applesingle_decode(sb.p, sb.n, &meta, NULL, &e) == ST_OK);
+    CHECK(meta.rsrc.n == 19 && !memcmp(meta.finfo, "APPLNATG", 8));
+    st_macfile_free(&meta);
+    st_bytes_free(&sb);
+    st_bytes_free(&mb);
+    st_macfile_free(&f);
+    /* Unrecognized content with no unar available fails cleanly, leaving no folder. */
+    snprintf(path, sizeof path, "%s/Applications/Junk.sit", root);
+    CHECK(write_bytes(path, "not an archive", 14) == 0);
+    setenv("PATH", "/nonexistent", 1);
+    CHECK(install_sit(root, "Applications/Junk.sit", rel, sizeof rel, err, sizeof err) != 0);
+    setenv("PATH", saved, 1);
+    CHECK(strstr(err, "Could not expand") != NULL && rel[0] == 0);
+    snprintf(path, sizeof path, "%s/Applications/Junk", root);
+    CHECK(access(path, F_OK) != 0);
+}
 
 int main(void) {
     char root_template[] = "/tmp/ospi-sit-test-XXXXXX";
@@ -126,6 +181,7 @@ int main(void) {
     snprintf(appdir, sizeof appdir, "%s/Applications", root);
     CHECK(volume_mkdir_p(appdir) == 0);
     test_sit_install(root);
+    test_native_install(root);
     char cmd[OSPI_PATH + 32];
     snprintf(cmd, sizeof cmd, "rm -rf '%s'", root);
     if (fails == 0) (void)system(cmd); else fprintf(stderr, "left fixture at %s\n", root);

@@ -1,4 +1,5 @@
 #include "native_launch.h"
+#include "ospi.h"
 #include "mac_resource.h"
 #include "runtime_bridge.h"
 
@@ -17,32 +18,58 @@
 #include <mach-o/dyld.h>
 #endif
 
+static const NativeSurfaceBackend *external_surface;
 static RuntimeBridge *active_surface;
 static char active_surface_name[64];
 static char active_surface_title[256];
 
-int native_surface_active(void) { return active_surface != NULL; }
+int native_surface_active(void) { return active_surface != NULL || external_surface != NULL; }
+
+int native_surface_attach(const NativeSurfaceBackend *backend) {
+    if (native_surface_active() || !backend || !backend->read || !backend->push ||
+        !backend->state || !backend->close || !backend->title) return -1;
+    external_surface = backend;
+    return 0;
+}
+
+int native_surface_command(int command) {
+    if (command != CMD_CLOSE && command != CMD_QUIT) return -1;
+    if (external_surface) { native_surface_close(); return 0; }
+    uint32_t state;
+    if (!active_surface || runtime_bridge_get_state(active_surface, &state, NULL, 0) ||
+        state != RUNTIME_BRIDGE_READY) return 0;
+    return runtime_bridge_shortcut(active_surface, command == CMD_QUIT ? 'q' : 'w');
+}
 
 int native_surface_read(uint32_t *pixels, size_t capacity, int *width, int *height,
                         uint64_t *sequence) {
+    if (external_surface) return external_surface->read(pixels, capacity, width, height, sequence);
     return active_surface ? runtime_bridge_read(active_surface, pixels, capacity,
                                                  width, height, sequence) : 0;
 }
 
 int native_surface_push(RuntimeBridgeInput input) {
+    if (external_surface) return external_surface->push(input);
     return active_surface ? runtime_bridge_push(active_surface, input) : 0;
 }
 
 int native_surface_state(uint32_t *state, char *message, size_t message_size) {
+    if (external_surface) return external_surface->state(state, message, message_size);
     return active_surface ? runtime_bridge_get_state(active_surface, state, message,
                                                        message_size) : -1;
 }
 
 const char *native_surface_title(void) {
+    if (external_surface) return external_surface->title;
     return active_surface_title[0] ? active_surface_title : "Classic Macintosh Application";
 }
 
 void native_surface_close(void) {
+    if (external_surface) {
+        const NativeSurfaceBackend *old = external_surface;
+        external_surface = NULL;
+        old->close();
+    }
     if (!active_surface) return;
     runtime_bridge_set_state(active_surface, RUNTIME_BRIDGE_CLOSED, "");
     runtime_bridge_close(active_surface);
@@ -201,12 +228,41 @@ static void summarize_log(const char *path, char *out, size_t n) {
     }
 }
 
+/* Saves never land in the game folder or the volume. They go beside the
+ * volume under "Saves/<application folder name>", one directory per app, so
+ * reinstalling or removing a game leaves its saves in place. The parent is
+ * created here; the runtime creates the leaf and enforces containment. */
+static int saves_directory(const char *root, const char *fork_path, char *out, size_t n) {
+    char app[PATH_MAX], parent[PATH_MAX];
+    size_t length = strlen(fork_path), suffix = strlen("/..namedfork/rsrc");
+    if (length >= sizeof app) return -1;
+    memcpy(app, fork_path, length + 1);
+    if (length > suffix && !strcmp(app + length - suffix, "/..namedfork/rsrc")) app[length - suffix] = 0;
+    char *slash = strrchr(app, '/');
+    if (!slash || slash == app) return -1;
+    *slash = 0;
+    const char *name = strrchr(app, '/');
+    name = name ? name + 1 : app;
+    if (!*name || !strcmp(name, ".") || !strcmp(name, "..")) return -1;
+    if (!realpath(root, parent)) return -1;
+    slash = strrchr(parent, '/');
+    if (!slash || slash == parent) return -1;
+    *slash = 0;
+    int k = snprintf(out, n, "%s/Saves", parent);
+    if (k < 0 || (size_t)k >= n) return -1;
+    if (mkdir(out, 0700) && errno != EEXIST) return -1;
+    k = snprintf(out, n, "%s/Saves/%s", parent, name);
+    return k < 0 || (size_t)k >= n ? -1 : 0;
+}
+
 int native_open(const char *root, const char *full, char *err, size_t n) {
     if (err && n) err[0] = 0;
-    char fork_path[PATH_MAX], runtime[PATH_MAX];
+    char fork_path[PATH_MAX], runtime[PATH_MAX], saves[PATH_MAX];
     int applicable = resolve_fork(root, full, fork_path, sizeof fork_path, err, n);
     if (applicable != 0) return applicable;
-    if (active_surface) {
+    if (saves_directory(root, fork_path, saves, sizeof saves))
+        return problem(err, n, "Could not prepare this application's save folder.");
+    if (native_surface_active()) {
         uint32_t state = RUNTIME_BRIDGE_STARTING;
         if (native_surface_state(&state, NULL, 0) == 0 && state == RUNTIME_BRIDGE_CLOSED)
             native_surface_close();
@@ -235,7 +291,7 @@ int native_open(const char *root, const char *full, char *err, size_t n) {
             if (log > STDERR_FILENO) close(log);
             if (!getenv("OSPI_PERF_TRACE")) setenv("OSPI_PERF_TRACE", "1", 1);
             char *argv[] = {runtime, "--window", "--indexed", "--interactive",
-                            "--bridge", bridge_name, fork_path, NULL};
+                            "--bridge", bridge_name, "--saves", saves, fork_path, NULL};
             execv(runtime, argv);
             dprintf(STDERR_FILENO, "Could not execute OS999 runtime: %s\n", strerror(errno));
             _exit(127);

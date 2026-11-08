@@ -1,5 +1,3 @@
-volume-sentence replacements: 1
-standalone-tests replacements: 1
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.

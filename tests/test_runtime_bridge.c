@@ -56,6 +56,7 @@ static void blocked_peer(int die_holding_lock) {
     RuntimeBridgeInput input = {RUNTIME_BRIDGE_KEY_UP, 0, 0, 0, 0};
     assert(runtime_bridge_read(host, &pixel, 1, &w, &h, &sequence) == 0);
     assert(runtime_bridge_push(host, input) == 0);
+    assert(runtime_bridge_shortcut(host, 'q') == 0);
     assert(runtime_bridge_pop(host, &input) == 0);
     assert(runtime_bridge_publish(host, &pixel, 1, 1) == -1);
     assert(runtime_bridge_get_state(host, &state, NULL, 0) == -1 && state == 99);
@@ -105,6 +106,25 @@ int main(void) {
     assert(memcmp(&sent, &received, sizeof sent) == 0);
     assert(runtime_bridge_pop(guest, &received) == 0);
 
+    assert(runtime_bridge_shortcut(NULL, 'q') == -1);
+    assert(runtime_bridge_shortcut(host, 'x') == -1);
+    for (int i = 0; i < RUNTIME_BRIDGE_INPUTS - 1; i++) assert(runtime_bridge_push(host, sent) == 1);
+    assert(runtime_bridge_shortcut(host, 'q') == 0); /* no partial key down */
+    for (int i = 0; i < RUNTIME_BRIDGE_INPUTS - 1; i++) {
+        assert(runtime_bridge_pop(guest, &received) == 1);
+        assert(received.kind == RUNTIME_BRIDGE_BUTTON_DOWN);
+    }
+    assert(runtime_bridge_pop(guest, &received) == 0);
+    for (int i = 0; i < 2; i++) {
+        uint32_t key = i ? 'w' : 'q';
+        assert(runtime_bridge_shortcut(host, key) == 1);
+        assert(runtime_bridge_pop(guest, &received) == 1);
+        assert(received.kind == RUNTIME_BRIDGE_KEY_DOWN && received.message == key &&
+               received.modifiers == RUNTIME_BRIDGE_HOST_COMMAND);
+        assert(runtime_bridge_pop(guest, &received) == 1);
+        assert(received.kind == RUNTIME_BRIDGE_KEY_UP && received.message == key && !received.modifiers);
+        assert(runtime_bridge_pop(guest, &received) == 0);
+    }
     runtime_bridge_set_state(guest, RUNTIME_BRIDGE_FAILED, "controlled test failure");
     assert(runtime_bridge_get_state(host, &state, message, sizeof message) == 0);
     assert(state == RUNTIME_BRIDGE_FAILED && strcmp(message, "controlled test failure") == 0);

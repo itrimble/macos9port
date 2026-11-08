@@ -42,12 +42,14 @@ static void check_log(const char *message) {
 }
 
 static int helper(int argc, char **argv) {
-    if (argc != 7 || strcmp(argv[1], "--window") || strcmp(argv[2], "--indexed") ||
-        strcmp(argv[3], "--interactive") || strcmp(argv[4], "--bridge")) return 30;
+    if (argc != 9 || strcmp(argv[1], "--window") || strcmp(argv[2], "--indexed") ||
+        strcmp(argv[3], "--interactive") || strcmp(argv[4], "--bridge") ||
+        strcmp(argv[6], "--saves")) return 30;
     const char *perf = getenv("OSPI_PERF_TRACE");
     if (!perf || strcmp(perf, "1")) return 32;
-    const char *expected = getenv("TEST_FORK");
-    if (!expected || strcmp(argv[6], expected)) return 31;
+    const char *expected = getenv("TEST_FORK"), *saves = getenv("TEST_SAVES");
+    if (!expected || strcmp(argv[8], expected)) return 31;
+    if (!saves || strcmp(argv[7], saves)) return 34;
     RuntimeBridge *bridge = runtime_bridge_open(argv[5]);
     if (!bridge) return 33;
     runtime_bridge_set_state(bridge, RUNTIME_BRIDGE_CLOSED, "test child finished");
@@ -69,10 +71,15 @@ static int helper(int argc, char **argv) {
 int main(int argc, char **argv) {
     if (argc > 1) return helper(argc, argv);
     char directory[] = "/tmp/ospi-native-test-XXXXXX";
-    char *root = mkdtemp(directory);
-    CHECK(root != NULL);
-    if (!root) return 1;
-    char self[PATH_MAX], app[PATH_MAX], fork[PATH_MAX], canonical[PATH_MAX], err[384];
+    CHECK(mkdtemp(directory) != NULL);
+    /* The volume sits one level down so the launcher's "Saves" folder lands
+     * beside it, inside this test's own temporary directory. */
+    char root[PATH_MAX], saves[PATH_MAX], self[PATH_MAX], app[PATH_MAX], fork[PATH_MAX], canonical[PATH_MAX], err[384];
+    snprintf(root, sizeof root, "%s/Volume", directory);
+    CHECK(mkdir(root, 0700) == 0);
+    CHECK(realpath(directory, canonical) != NULL);
+    snprintf(saves, sizeof saves, "%s/Saves/Volume", canonical);
+    setenv("TEST_SAVES", saves, 1);
     CHECK(realpath(argv[0], self) != NULL);
     CHECK(setenv("OSPI_RUNTIME_PATH", self, 1) == 0);
     unsetenv("OSPI_PERF_TRACE");
@@ -135,6 +142,10 @@ int main(int argc, char **argv) {
     CHECK(waitpid(-1, &status, WNOHANG) == -1 && errno == ECHILD);
     CHECK(unlink(fork) == 0);
     CHECK(rmdir(root) == 0);
+    /* The launcher created only the Saves parent; the runtime owns the leaf. */
+    snprintf(saves, sizeof saves, "%s/Saves", directory);
+    CHECK(rmdir(saves) == 0);
+    CHECK(rmdir(directory) == 0);
     printf("Native launch checks: %s\n", fails ? "FAILED" : "ok");
     return fails != 0;
 }

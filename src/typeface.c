@@ -19,12 +19,13 @@
 #endif
 #endif
 
-enum { GLYPHS = 130 };
+enum { GLYPHS = 128 + 384 };   /* ASCII, then a tagged cache for everything else */
 
 typedef struct Glyph {
     int advance, left, top, w, h;
     uint8_t *alpha;
     int ready;
+    unsigned cp;   /* which character a non-ASCII slot holds */
 } Glyph;
 
 typedef struct FaceSlot {
@@ -174,13 +175,7 @@ static void exe_fonts(char *out) {
 }
 
 static int slot_of(unsigned cp) {
-    if (cp < 128) {
-        return (int)cp;
-    }
-    if (cp == 0x03C0) {
-        return 128;
-    }
-    return 129;
+    return cp < 128 ? (int)cp : 128 + (int)(((cp * 2654435761u) >> 20) % (GLYPHS - 128));
 }
 
 static int utf8_one(const char *s, unsigned *cp, int *n) {
@@ -211,10 +206,10 @@ static int utf8_one(const char *s, unsigned *cp, int *n) {
 static Glyph *render_glyph(FaceSlot *slot, unsigned cp) {
     int idx = slot_of(cp);
     Glyph *g = &slot->glyph[idx];
-    if (g->ready) {
-        return g;
-    }
+    if (g->ready && g->cp == cp) return g;
+    if (g->ready) { free(g->alpha); memset(g, 0, sizeof *g); }   /* the slot held another character */
     g->ready = 1;
+    g->cp = cp;
     g->advance = 8;
     if (cp == 0x03C0 && FT_Get_Char_Index(slot->face, cp) == 0) {
         return g;

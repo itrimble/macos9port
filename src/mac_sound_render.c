@@ -16,6 +16,9 @@ size_t mac_sound_render(MacRuntime*r,int16_t *out,size_t frames){
  if(!out || frames>4096){mac_sound_fail(r,"Audio pull exceeds the4096-frame work bound.");return 0;}
  memset(out,0,frames*2*sizeof *out);if(!r->sound || mac_cpu_halted(r->cpu))return 0;
  int trace=getenv("OSPI_AUDIO_TRACE")!=NULL;
+ /* Diagnostic headroom: OSPI_SOUND_MIX_SHIFT=n halves the mix n times before
+  * the clamp so clipping can be compared by ear. Unset in normal runs. */
+ const char *shift_env=getenv("OSPI_SOUND_MIX_SHIFT");int shift=shift_env?atoi(shift_env):0;if(shift<0||shift>4)shift=0;
  for(size_t f=0;f<frames;f++){
   int left=0,right=0;
   for(unsigned i=0;i<MAC_SOUND_CHANNELS;i++){
@@ -42,7 +45,7 @@ size_t mac_sound_render(MacRuntime*r,int16_t *out,size_t frames){
    if(left>32767 || left< -32768 || right>32767 || right< -32768)r->sound->clipped_frames++;
    if(peak>r->sound->peak_absolute)r->sound->peak_absolute=peak;
   }
-  out[f*2]=clamp(left);out[f*2+1]=clamp(right);
+  out[f*2]=clamp(left>>shift);out[f*2+1]=clamp(right>>shift);
  }
  return frames;
 }

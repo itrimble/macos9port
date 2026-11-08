@@ -1,0 +1,248 @@
+# Desktop integration, storage and networking test targets. Included from Makefile.
+build/test_finder_refresh: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_finder_refresh.c $(HDRS)
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_finder_refresh.c $(FT_LIBS) -lm $(NET_LIBS)
+.PHONY: test-finder-refresh
+test-finder-refresh: build/test_finder_refresh
+	./build/test_finder_refresh
+test: test-finder-refresh
+
+build/test_browser_menu_composition: $(CORE) $(STORAGE_A) src/os999_startup.c src/browser_window.c src/browser_input.c src/browser_occlusion.c tests/test_browser_menu_composition.c $(HDRS) $(BROWSER_HDRS)
+	$(CC) $(CFLAGS) $(SDL_CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c src/browser_window.c src/browser_input.c src/browser_occlusion.c tests/test_browser_menu_composition.c $(FT_LIBS) -lm $(NET_LIBS)
+
+.PHONY: test-browser-menu-composition
+test-browser-menu-composition: build/test_browser_menu_composition
+	./build/test_browser_menu_composition
+test: test-browser-menu-composition
+
+build/test_appearance: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_appearance.c $(HDRS) include/os999_startup.h
+	$(CC) $(CFLAGS) -o $@ $(filter-out src/desktop_wallpaper.c,$(CORE) $(STORAGE_LINK)) src/os999_startup.c tests/test_appearance.c $(FT_LIBS) -lm $(NET_LIBS)
+
+build/test_mac_containers: src/mac_resource.c tests/test_mac_containers.c include/mac_resource.h
+	$(CC) $(CFLAGS) -o $@ src/mac_resource.c tests/test_mac_containers.c
+
+build/test_mac_writable_files: $(RUNTIME_OBJ) src/archive_fs.c tests/test_mac_writable_files.c $(RUNTIME_HDRS) $(CPUOBJ) include/archive_fs.h
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) src/archive_fs.c tests/test_mac_writable_files.c $(CPUOBJ) -lm -o $@
+
+build/test_mac_controls_textedit: $(RUNTIME_OBJ) tests/test_mac_controls_textedit.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_controls_textedit.c $(CPUOBJ) -lm -o $@
+
+build/test_mac_quickdraw_accel: $(RUNTIME_OBJ) tests/test_mac_quickdraw_accel.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_quickdraw_accel.c $(CPUOBJ) -lm -o $@
+
+build/test_desktop_themes: assets/icons/c/ospi_icon_hd.c src/archive_fs.c tests/test_desktop_themes.c assets/icons/c/ospi_icon_hd.h include/archive_fs.h
+	$(CC) $(CFLAGS) -o $@ assets/icons/c/ospi_icon_hd.c src/archive_fs.c tests/test_desktop_themes.c
+
+PHASE_STANDALONE_TESTS := build/test_mac_quicktime build/test_browser_ipc build/test_mac_network_policy build/test_mac_pef_cfm build/test_browser_media_gateway build/test_cleanroom_release_gate
+$(PHASE_STANDALONE_TESTS): build/%: tests/%.c
+	$(CC) $(CFLAGS) -o $@ $<
+build/test_mac_perf_audio_gates: src/runtime_perf.c tests/test_mac_perf_audio_gates.c include/runtime_perf.h
+	$(CC) $(CFLAGS) -o $@ src/runtime_perf.c tests/test_mac_perf_audio_gates.c
+build/test_mac_fuzz_soak: src/mac_resource.c src/mac_icon.c src/mac_icon_palette.c src/volume.c src/volume_folders.c assets/icons/c/ospi_icon_hd.c src/runtime_bridge.c tests/test_mac_fuzz_soak.c $(HDRS) assets/icons/c/ospi_icon_hd.h
+	$(CC) $(CFLAGS) -o $@ src/mac_resource.c src/mac_icon.c src/mac_icon_palette.c src/volume.c src/volume_folders.c assets/icons/c/ospi_icon_hd.c src/runtime_bridge.c tests/test_mac_fuzz_soak.c
+build/test_platform_sandbox_audit: build/runtime/mac_cpu.o build/runtime/mac_resource.o src/hostinfo.c src/archive_fs.c src/volume.c src/volume_folders.c src/mac_icon.c src/mac_icon_palette.c tests/test_platform_sandbox_audit.c $(CPUOBJ) $(HDRS) include/mac_cpu.h
+	$(CC) $(CFLAGS) $(CPUFLAGS) build/runtime/mac_cpu.o build/runtime/mac_resource.o src/hostinfo.c src/archive_fs.c src/volume.c src/volume_folders.c src/mac_icon.c src/mac_icon_palette.c tests/test_platform_sandbox_audit.c $(CPUOBJ) -lm -o $@
+
+test: build/test_appearance build/test_mac_containers build/test_mac_writable_files build/test_mac_controls_textedit build/test_mac_quickdraw_accel build/test_desktop_themes build/test_mac_perf_audio_gates build/test_mac_fuzz_soak build/test_platform_sandbox_audit $(PHASE_STANDALONE_TESTS)
+
+
+build/test_appearance_panel: src/appearance_panel.c tests/test_appearance_panel.c $(HDRS)
+	$(CC) $(CFLAGS) -o $@ src/appearance_panel.c src/draw.c src/font.c src/geom.c src/menu.c src/text.c src/typeface.c src/typeface_metrics.c tests/test_appearance_panel.c $(FT_LIBS) -lm
+
+test: build/test_appearance_panel
+
+build/test_desktop_context: src/desktop_theme.c src/desktop_context.c src/geom.c tests/test_desktop_context.c $(HDRS)
+	$(CC) $(CFLAGS) -Isrc -o $@ src/desktop_theme.c src/desktop_context.c src/geom.c tests/test_desktop_context.c
+
+test: build/test_desktop_context
+
+build/test_desktop_controls: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_desktop_controls.c $(HDRS)
+	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_desktop_controls.c $(FT_LIBS) -lm $(NET_LIBS)
+
+test: build/test_desktop_controls
+
+build/test_desktop_icon_map: src/desktop_icon_map.c tests/test_desktop_icon_map.c include/desktop_assets.h
+	$(CC) $(CFLAGS) -o $@ src/desktop_icon_map.c tests/test_desktop_icon_map.c
+
+test: build/test_desktop_icon_map
+
+build/test_desktop_theme: src/desktop_theme.c tests/test_desktop_theme.c include/desktop_theme.h
+	$(CC) $(CFLAGS) -o $@ src/desktop_theme.c tests/test_desktop_theme.c
+
+build/test_theme_integration: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_theme_integration.c $(HDRS)
+	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_theme_integration.c $(FT_LIBS) -lm $(NET_LIBS)
+
+test: build/test_desktop_theme build/test_theme_integration
+
+build/test_desktop_commands: src/desktop_commands.c tests/test_desktop_commands.c $(HDRS)
+	$(CC) $(CFLAGS) -Isrc -o $@ src/desktop_commands.c tests/test_desktop_commands.c
+
+build/test_menu_navigation: src/menu_navigation.c tests/test_menu_navigation.c $(HDRS)
+	$(CC) $(CFLAGS) -o $@ src/menu_navigation.c tests/test_menu_navigation.c
+
+test: build/test_desktop_commands build/test_menu_navigation
+
+build/test_folder_view: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_folder_view.c $(HDRS)
+	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_folder_view.c $(FT_LIBS) -lm $(NET_LIBS)
+
+test: build/test_folder_view
+
+build/test_menu_integration: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_menu_integration.c $(HDRS)
+	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_menu_integration.c $(FT_LIBS) -lm $(NET_LIBS)
+
+test: build/test_menu_integration
+
+
+build/test_folder_navigation: src/folder_navigation.c src/geom.c src/font.c src/draw.c src/text.c src/typeface.c src/typeface_metrics.c src/menu.c src/desktop_theme.c src/desktop_wallpaper.c tests/test_folder_navigation.c $(HDRS)
+	$(CC) $(CFLAGS) -o $@ src/folder_navigation.c src/geom.c src/font.c src/draw.c src/text.c src/typeface.c src/typeface_metrics.c src/menu.c src/desktop_theme.c src/desktop_wallpaper.c tests/test_folder_navigation.c $(FT_LIBS) -lm
+
+test: build/test_folder_navigation
+
+# Storage stack: containers, disk images, HFS/HFS+, guest volumes (L02-L04).
+include storage/storage.mk
+test: test-storage
+# Guest networking (net/net.mk, N01-N09): host-side MacTCP service.
+include net/net.mk
+test: test-net
+build/test_terminal: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_terminal.c $(HDRS)
+	mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_terminal.c $(FT_LIBS) -lm $(NET_LIBS)
+
+test: build/test_terminal
+
+.PHONY: test-network
+build/test_modern_network: src/modern_network.c tests/test_modern_network.c include/modern_network.h
+	mkdir -p build
+	$(CC) $(CFLAGS) tests/test_modern_network.c $(NET_LIBS) -o $@
+
+test-network: build/test_modern_network
+	./build/test_modern_network
+	python3 tests/test_network_tls.py
+
+test: build/test_modern_network
+
+build/test_finder_files: tests/test_finder_files.c src/finder_files.c src/finder_alias.c src/archive_fs.c include/finder_files.h include/ospi.h include/volume_directory.h
+	mkdir -p build
+	$(CC) $(CFLAGS) tests/test_finder_files.c src/finder_files.c src/finder_alias.c src/archive_fs.c -o $@
+test: build/test_finder_files
+
+build/test_finder_desktop: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_finder_desktop.c $(HDRS)
+	mkdir -p build
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_finder_desktop.c $(FT_LIBS) -lm $(NET_LIBS)
+test: build/test_finder_desktop
+
+build/test_finder_state: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_finder_state.c $(HDRS)
+	mkdir -p build
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_finder_state.c $(FT_LIBS) -lm $(NET_LIBS)
+test: build/test_finder_state
+
+build/test_finder_interaction: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_finder_interaction.c $(HDRS)
+	mkdir -p build
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_finder_interaction.c $(FT_LIBS) -lm $(NET_LIBS)
+test: build/test_finder_interaction
+
+ifeq ($(shell uname -s),Darwin)
+build/test_desktop_shortcuts: src/desktop_shortcuts_macos.m tests/test_desktop_shortcuts.m include/desktop_shortcuts.h
+	$(CC) $(CFLAGS) -o $@ src/desktop_shortcuts_macos.m tests/test_desktop_shortcuts.m -framework AppKit
+.PHONY: test-desktop-shortcuts
+test-desktop-shortcuts: build/test_desktop_shortcuts
+	./build/test_desktop_shortcuts
+test: test-desktop-shortcuts
+
+build/test_print_pdf: src/desktop_print_macos.m tests/test_print_pdf.m include/finder_print.h include/ospi.h
+	$(CC) $(CFLAGS) -Isrc -o $@ src/desktop_print_macos.m tests/test_print_pdf.m -framework AppKit -framework CoreGraphics -framework PDFKit
+.PHONY: test-print-pdf
+test-print-pdf: build/test_print_pdf
+	./build/test_print_pdf
+endif
+
+# Folder capacities, bulk selection and journal ownership.
+build/test_folder_capacity: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_folder_capacity.c $(HDRS)
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_folder_capacity.c $(FT_LIBS) -lm $(NET_LIBS)
+.PHONY: test-folder-capacity
+test-folder-capacity: build/test_folder_capacity
+	./build/test_folder_capacity
+test: test-folder-capacity
+
+build/test_search_clipboard_capacity: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_search_clipboard_capacity.c $(HDRS)
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_search_clipboard_capacity.c $(FT_LIBS) -lm $(NET_LIBS)
+.PHONY: test-search-clipboard-capacity
+test-search-clipboard-capacity: build/test_search_clipboard_capacity
+	./build/test_search_clipboard_capacity
+test: test-search-clipboard-capacity
+
+build/test_app_switching: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_app_switching.c $(HDRS)
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_app_switching.c $(FT_LIBS) -lm $(NET_LIBS)
+.PHONY: test-app-switching
+test-app-switching: build/test_app_switching
+	./build/test_app_switching
+test: test-app-switching
+
+build/test_app_stack: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_app_stack.c $(HDRS)
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_app_stack.c $(FT_LIBS) -lm $(NET_LIBS)
+.PHONY: test-app-stack
+test-app-stack: build/test_app_stack
+	./build/test_app_stack
+test: test-app-stack
+
+build/test_app_switcher: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_app_switcher.c $(HDRS)
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_app_switcher.c $(FT_LIBS) -lm $(NET_LIBS)
+.PHONY: test-app-switcher
+test-app-switcher: build/test_app_switcher
+	./build/test_app_switcher
+test: test-app-switcher
+
+
+build/test_finder_spring: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_finder_spring.c $(HDRS)
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_finder_spring.c $(FT_LIBS) -lm $(NET_LIBS)
+.PHONY: test-finder-spring
+test-finder-spring: build/test_finder_spring
+	./build/test_finder_spring
+test: test-finder-spring
+
+
+build/test_finder_labels: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_finder_labels.c $(HDRS)
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_finder_labels.c $(FT_LIBS) -lm $(NET_LIBS)
+.PHONY: test-finder-labels
+test-finder-labels: build/test_finder_labels
+	./build/test_finder_labels
+test: test-finder-labels
+
+
+build/test_finder_preferences: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_finder_preferences.c $(HDRS)
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_finder_preferences.c $(FT_LIBS) -lm $(NET_LIBS)
+.PHONY: test-finder-preferences
+test-finder-preferences: build/test_finder_preferences
+	./build/test_finder_preferences
+test: test-finder-preferences
+
+build/test_desktop_surface: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_desktop_surface.c $(HDRS)
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_desktop_surface.c $(FT_LIBS) -lm $(NET_LIBS)
+.PHONY: test-desktop-surface
+test-desktop-surface: build/test_desktop_surface
+	./build/test_desktop_surface
+test: test-desktop-surface
+
+build/test_icon_position: src/finder_icon_position.c tests/test_icon_position.c include/finder_icon_position.h include/volume_directory.h include/ospi.h
+	$(CC) $(CFLAGS) -o $@ src/finder_icon_position.c tests/test_icon_position.c
+.PHONY: test-icon-position
+test-icon-position: build/test_icon_position
+	./build/test_icon_position
+test: test-icon-position
+
+build/test_system_icon_positions: src/system_icon_positions.c tests/test_system_icon_positions.c include/system_icon_positions.h include/volume_directory.h include/ospi.h
+	$(CC) $(CFLAGS) -o $@ src/system_icon_positions.c tests/test_system_icon_positions.c
+build/test_system_icon_drag: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_system_icon_drag.c $(HDRS)
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_system_icon_drag.c $(FT_LIBS) -lm $(NET_LIBS)
+.PHONY: test-system-icons
+test-system-icons: build/test_system_icon_positions build/test_system_icon_drag
+	./build/test_system_icon_positions
+	./build/test_system_icon_drag
+test: test-system-icons
+
+build/test_quake_surface: tests/test_quake_surface.c src/quake_session.c src/native_launch.c src/runtime_bridge.c src/mac_resource.c src/quake_launch.c include/os999_quake_bridge.h include/native_launch.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -Isrc -o $@ tests/test_quake_surface.c src/native_launch.c src/runtime_bridge.c src/mac_resource.c src/quake_launch.c -pthread
+.PHONY: test-quake-surface
+test-quake-surface: build/test_quake_surface
+	./build/test_quake_surface
+test: test-quake-surface

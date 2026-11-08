@@ -110,6 +110,9 @@ int mac_system_service(MacRuntime *rt, uint16_t opcode);
 int mac_geometry_service(MacRuntime *rt, uint16_t opcode);
 int mac_files_root(MacRuntime *rt, const char *directory);
 void mac_files_destroy(MacRuntime *rt);
+/* Mount a distinct writable save directory as an overlay on the data volume,
+ * bounded by file-count and byte quotas. Without it the volume is read-only. */
+int mac_files_writable(MacRuntime *rt, const char *directory, unsigned max_files, uint64_t max_bytes);
 int mac_volume_blocks(int directory_fd, uint32_t *blocks);
 int mac_volume_info(MacRuntime *rt, uint32_t pb, int directory_fd);
 int mac_file_service(MacRuntime *rt, uint16_t opcode);

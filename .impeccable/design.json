@@ -1,0 +1,74 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-07T00:00:00-06:00",
+  "title": "Design System: OS999 Development Observatory",
+  "extensions": {
+    "evidence": {
+      "basis": "Source inspection of assets/dashboard/index.html, dashboard.css and dashboard.js on 2026-11-07; generatedAt is the documentation date, not a capture timestamp.",
+      "visualAcceptance": "Pending: CUA host unavailable; no screenshots or rendered validation.",
+      "scope": "Python-served browser dashboard only; not the classic desktop.",
+      "rampPolicy": "Tonal ramps are synthesized display aids, not implemented palette tokens. CSS source colors remain normative in DESIGN.md."
+    },
+    "colorMeta": {
+      "bg": {"role":"neutral","displayName":"Night Base","tonalRamp":["oklch(15% .02 250)","oklch(26% .02 250)","oklch(38% .02 250)","oklch(49% .02 250)","oklch(61% .02 250)","oklch(72% .02 250)","oklch(84% .02 250)","oklch(95% .02 250)"]},
+      "panel": {"role":"neutral","displayName":"Instrument Panel","tonalRamp":["oklch(15% .03 250)","oklch(26% .03 250)","oklch(38% .03 250)","oklch(49% .03 250)","oklch(61% .03 250)","oklch(72% .03 250)","oklch(84% .03 250)","oklch(95% .03 250)"]},
+      "raised": {"role":"neutral","displayName":"Raised Slate","tonalRamp":["oklch(15% .04 250)","oklch(26% .04 250)","oklch(38% .04 250)","oklch(49% .04 250)","oklch(61% .04 250)","oklch(72% .04 250)","oklch(84% .04 250)","oklch(95% .04 250)"]},
+      "line": {"role":"neutral","displayName":"Rule Slate","tonalRamp":["oklch(15% .05 245)","oklch(26% .05 245)","oklch(38% .05 245)","oklch(49% .05 245)","oklch(61% .05 245)","oklch(72% .05 245)","oklch(84% .05 245)","oklch(95% .05 245)"]},
+      "text": {"role":"neutral","displayName":"Cool White","tonalRamp":["oklch(15% .01 240)","oklch(26% .01 240)","oklch(38% .01 240)","oklch(49% .01 240)","oklch(61% .01 240)","oklch(72% .01 240)","oklch(84% .01 240)","oklch(95% .01 240)"]},
+      "muted": {"role":"neutral","displayName":"Muted Steel","tonalRamp":["oklch(15% .03 240)","oklch(26% .03 240)","oklch(38% .03 240)","oklch(49% .03 240)","oklch(61% .03 240)","oklch(72% .03 240)","oklch(84% .03 240)","oklch(95% .03 240)"]},
+      "cyan": {"role":"primary","displayName":"Instrument Cyan","tonalRamp":["oklch(15% .11 220)","oklch(26% .11 220)","oklch(38% .11 220)","oklch(49% .11 220)","oklch(61% .11 220)","oklch(72% .11 220)","oklch(84% .11 220)","oklch(95% .11 220)"]},
+      "verified": {"role":"secondary","displayName":"Accepted Mint","tonalRamp":["oklch(15% .13 165)","oklch(26% .13 165)","oklch(38% .13 165)","oklch(49% .13 165)","oklch(61% .13 165)","oklch(72% .13 165)","oklch(84% .13 165)","oklch(95% .13 165)"]},
+      "implemented": {"role":"secondary","displayName":"Implementation Blue","tonalRamp":["oklch(15% .13 250)","oklch(26% .13 250)","oklch(38% .13 250)","oklch(49% .13 250)","oklch(61% .13 250)","oklch(72% .13 250)","oklch(84% .13 250)","oklch(95% .13 250)"]},
+      "in_progress": {"role":"secondary","displayName":"Uncertainty Amber","tonalRamp":["oklch(15% .10 90)","oklch(26% .10 90)","oklch(38% .10 90)","oklch(49% .10 90)","oklch(61% .10 90)","oklch(72% .10 90)","oklch(84% .10 90)","oklch(95% .10 90)"]},
+      "blocked": {"role":"secondary","displayName":"Failure Coral","tonalRamp":["oklch(15% .13 15)","oklch(26% .13 15)","oklch(38% .13 15)","oklch(49% .13 15)","oklch(61% .13 15)","oklch(72% .13 15)","oklch(84% .13 15)","oklch(95% .13 15)"]},
+      "pending": {"role":"secondary","displayName":"Pending Slate","tonalRamp":["oklch(15% .04 250)","oklch(26% .04 250)","oklch(38% .04 250)","oklch(49% .04 250)","oklch(61% .04 250)","oklch(72% .04 250)","oklch(84% .04 250)","oklch(95% .04 250)"]}
+    },
+    "typographyMeta": {
+      "display":{"displayName":"Main heading","purpose":"Parity page heading; 30px at 1150px and 28px at 560px."},
+      "mono":{"displayName":"Evidence identifiers","purpose":"Revision strings and tabular numbers."}
+    },
+    "shadows": [{"name":"live-signal","value":"0 0 9px #69e3b455","purpose":"Live connection lamp only."}],
+    "motion": [{"name":"monitoring-wave","value":"wave 12s linear infinite","purpose":"Timeline dash travels to stroke-dashoffset -1000. Disabled for prefers-reduced-motion; not delivery velocity."}],
+    "breakpoints": [{"name":"wide-min","value":"1600px"},{"name":"compact-max","value":"1150px"},{"name":"stacked-max","value":"820px"},{"name":"phone-max","value":"560px"}]
+  },
+  "components": [
+    {
+      "name":"Quiet button","kind":"button","refersTo":"button-quiet","description":"Refresh or clear filters.",
+      "html":"<button class=\"ds-quiet\">Refresh</button>",
+      "css":".ds-quiet{font:15px/1.5 'IBM Plex Sans',sans-serif;border:1px solid var(--line,#294055);background:transparent;color:var(--text,#eaf2f8);padding:6px 11px;border-radius:6px;cursor:pointer}.ds-quiet:hover{background:var(--raised,#152435)}.ds-quiet:focus-visible{outline:2px solid var(--cyan,#67d5f4);outline-offset:4px}"
+    },
+    {
+      "name":"Search field","kind":"input","refersTo":"input-search","description":"Recessed feature search with visible label.",
+      "html":"<label class=\"ds-search\">Find a feature<input type=\"search\" placeholder=\"AppleScript, Open Transport…\"></label>",
+      "css":".ds-search{display:block;color:var(--text,#eaf2f8);font:15px/1.5 'IBM Plex Sans',sans-serif}.ds-search input{display:block;font:inherit;background:var(--bg,#0a1019);border:1px solid var(--line,#294055);color:var(--text,#eaf2f8);border-radius:6px;width:100%;padding:8px;caret-color:var(--cyan,#67d5f4)}.ds-search input::placeholder{color:#94a9bb;font-size:12px}.ds-search input:focus-visible{outline:2px solid var(--cyan,#67d5f4);outline-offset:4px}"
+    },
+    {
+      "name":"View navigation","kind":"nav","description":"Text navigation with explicit current-page state.",
+      "html":"<nav class=\"ds-nav\" aria-label=\"Dashboard views\"><a href=\"#overview\" aria-current=\"page\">Parity overview</a><a href=\"#roadmap\">Integration roadmap</a></nav>",
+      "css":".ds-nav{display:grid;gap:3px;font:15px/1.5 'IBM Plex Sans',sans-serif}.ds-nav a{display:flex;padding:9px 12px;border-radius:6px;color:var(--muted,#a2b7c8);font-weight:500;text-decoration:none}.ds-nav a[aria-current=page]{background:#1c3549;color:var(--cyan,#67d5f4)}.ds-nav a:hover{background:var(--raised,#152435)}.ds-nav a:focus-visible{outline:2px solid var(--cyan,#67d5f4);outline-offset:4px}"
+    },
+    {
+      "name":"Local badge","kind":"chip","refersTo":"badge","description":"Informational environment label; not an action.",
+      "html":"<span class=\"ds-badge\">Local development</span>",
+      "css":".ds-badge{font:600 11px/1.5 'IBM Plex Sans',sans-serif;letter-spacing:.06em;color:var(--cyan,#67d5f4);border:1px solid #345b70;padding:5px 8px;border-radius:4px;white-space:nowrap}"
+    },
+    {
+      "name":"Evidence panel","kind":"card","refersTo":"panel","description":"Bordered tonal container without a shadow.",
+      "html":"<section class=\"ds-panel\"><h2>Tracked acceptance</h2><p>Implementation evidence still needs acceptance.</p></section>",
+      "css":".ds-panel{background:var(--panel,#101b29);border:1px solid var(--line,#294055);border-radius:var(--radius,14px);padding:23px;color:var(--text,#eaf2f8);font:15px/1.5 'IBM Plex Sans',sans-serif}.ds-panel h2{font-size:18px;font-weight:500;margin:0 0 16px}.ds-panel p{margin:0;color:var(--muted,#a2b7c8)}"
+    },
+    {
+      "name":"Status filter","kind":"button","description":"Labeled legend action; illustrative count is omitted from the sample.",
+      "html":"<button class=\"ds-status\"><span aria-hidden=\"true\"></span>Accepted</button>",
+      "css":".ds-status{display:flex;align-items:center;gap:6px;border:0;background:none;color:var(--muted,#a2b7c8);padding:3px 0;font:11px/1.5 'IBM Plex Sans',sans-serif;cursor:pointer}.ds-status span{width:8px;height:8px;border-radius:2px;background:var(--verified,#69e3b4)}.ds-status:focus-visible{outline:2px solid var(--cyan,#67d5f4);outline-offset:4px}"
+    }
+  ],
+  "narrative": {
+    "northStar":"Development Observatory",
+    "overview":"Blue-black instrument panels make evidence the center of attention. Cool white type carries the dense reading; cyan identifies navigation and live monitoring. The user confirmed a professional dark technical aesthetic with subtle glow. Controls remain compact, explicit and close to the evidence they reveal.\n\nThis document covers only the Python-served browser dashboard, not the classic desktop. It records `assets/dashboard/index.html`, `dashboard.css` and `dashboard.js` as inspected on 7 November 2026. The dashboard surface brief owns page composition. Tokens here describe implementation, not rendered acceptance: the CUA host was unavailable, so screenshots and visual acceptance remain pending.",
+    "keyCharacteristics":["Dark tonal surfaces with fine ruled boundaries.","Restrained live-state glow and a moving monitoring line.","Labeled acceptance states and evidence-first charts.","Compact typography with monospace revision identifiers."],
+    "rules":[{"name":"The Evidence Color Rule","body":"Acceptance and implementation keep separate colors and explicit labels; color alone never establishes acceptance.","section":"colors"},{"name":"The Quiet Instrument Rule","body":"Reserve glow for the live connection lamp; use tonal changes and borders to distinguish content and interaction.","section":"elevation"}],
+    "dos":["Do pair status color with a readable label or explicit count.","Do preserve unknown measurements and source links in every evidence view.","Do retain visible keyboard focus and reduced-motion behavior.","Do review the rendered desktop and phone layouts before visual acceptance."],
+    "donts":["Don't equate implementation blue with accepted mint.","Don't turn missing measurements into zero-valued benchmark bars.","Don't interpret timeline motion as delivery velocity.","Don't claim screenshots or rendered validation from source inspection."]
+  }
+}

@@ -56,7 +56,7 @@ int main(void) {
     CHECK(s != NULL);
     if (!s) return 1;
     CHECK(strstr(preference, "/.os999-wallpaper") != NULL);
-    CHECK(menu_count() == 7 && !strcmp(menu_title(5), "Help"));
+    CHECK(menu_count() == 8 && !strcmp(menu_title(5), "Help"));
     CHECK(!strcmp(menu_title(6), "Appearance"));
     CHECK(menu_cmd_for_key('o') == CMD_OPEN);
     CHECK(menu_cmd_for_key('t') == CMD_THEME_NEXT);
@@ -116,6 +116,10 @@ int main(void) {
     char theme_path[OSPI_PATH];
     snprintf(theme_path, sizeof theme_path, "%s/.os999-theme", root);
     CHECK(unlink(theme_path) == 0);
+    snprintf(theme_path, sizeof theme_path, "%s/.os999-finder-state", root);
+    CHECK(unlink(theme_path) == 0);
+    snprintf(theme_path, sizeof theme_path, "%s/Desktop Folder", root);
+    CHECK(rmdir(theme_path) == 0);
     CHECK(rmdir(root) == 0);
     printf("appearance: %d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;

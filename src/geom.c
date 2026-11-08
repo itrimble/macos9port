@@ -1,5 +1,6 @@
 #include "ospi.h"
 #include "folder_view.h"
+#include "term.h"
 
 #include <string.h>
 
@@ -10,7 +11,9 @@ int rect_has(Rect r, int x, int y) {
 void window_layout(const Window *w, Layout *lay) {
     memset(lay, 0, sizeof *lay);
     lay->outer = (Rect){w->x, w->y, w->w, w->h};
+    if (w->desktop_surface) { lay->content = lay->outer; return; }
     lay->title = (Rect){w->x, w->y, w->w, TITLE_H};
+    if (w->popup && w->collapsed) return;
     lay->closeb = (Rect){w->x + 7, w->y + 4, 12, 12};
     lay->zoom = (Rect){w->x + w->w - 20, w->y + 4, 12, 12};
     lay->shade = (Rect){lay->zoom.x - 16, w->y + 4, 12, 12};
@@ -18,7 +21,7 @@ void window_layout(const Window *w, Layout *lay) {
         return;
     }
     int top = TITLE_H;
-    if (w->kind == WIN_FOLDER) {
+    if (w->kind == WIN_FOLDER || w->kind == WIN_TERMINAL) {
         lay->info = (Rect){w->x, w->y + TITLE_H, w->w, INFO_H};
         top = TITLE_H + INFO_H;
     }
@@ -41,12 +44,15 @@ int window_max_scroll(const Window *w) {
     if (!w || w->collapsed) {
         return 0;
     }
+    if (w->kind == WIN_TERMINAL) {
+        return w->term ? w->term->vt.sb_count * TERM_CELL_H : 0;
+    }
     Layout lay;
     window_layout(w, &lay);
     int doc = 0;
     if (w->kind == WIN_TEXT) {
         int mw = lay.content.w > 16 ? lay.content.w - 12 : 8;
-        doc = text_height(w->text, mw) + 8;
+        doc = text_height(window_text(w), mw) + 8;
     } else if (w->kind == WIN_FOLDER && w->view_mode == VIEW_LIST) {
         doc = FOLDER_LIST_HEADER + w->nitems * FOLDER_LIST_ROW;
     } else if (w->kind == WIN_FOLDER) {
@@ -61,6 +67,25 @@ int window_max_scroll(const Window *w) {
     return maxs > 0 ? maxs : 0;
 }
 
+Rect desktop_item_cell(const Window *w, int index) {
+    const Item *item = &window_items(w)[index];
+    int cols = w->w / CELL_W; if (cols < 1) cols = 1;
+    int x = item->desktop_position ? item->desktop_x : index % cols * CELL_W;
+    int y = item->desktop_position ? item->desktop_y : index / cols * CELL_H;
+    if (item->desktop_position == 1) {
+        int maxx = w->w > CELL_W ? w->w - CELL_W : 0;
+        int maxy = w->h > CELL_H ? w->h - CELL_H : 0;
+        x = x < 0 ? 0 : x > maxx ? maxx : x;
+        y = y < 0 ? 0 : y > maxy ? maxy : y;
+    }
+    return (Rect){w->x + x, w->y + y, CELL_W, CELL_H};
+}
+
+int desktop_item_visible(const Window *w, int index) {
+    Rect r = desktop_item_cell(w, index);
+    return r.x >= w->x && r.y >= w->y && r.x + r.w <= w->x + w->w && r.y + r.h <= w->y + w->h;
+}
+
 int item_index_at(const Window *w, int x, int y) {
     if (!w || w->kind != WIN_FOLDER || w->collapsed) {
         return -1;
@@ -68,6 +93,11 @@ int item_index_at(const Window *w, int x, int y) {
     Layout lay;
     window_layout(w, &lay);
     if (!rect_has(lay.content, x, y)) {
+        return -1;
+    }
+    if (w->desktop_surface) {
+        for (int i = w->nitems - 1; i >= 0; i--)
+            if (rect_has(desktop_item_cell(w, i), x, y)) return i;
         return -1;
     }
     if (w->view_mode == VIEW_LIST) {
@@ -93,6 +123,7 @@ int item_index_at(const Window *w, int x, int y) {
 }
 
 static Rect item_cell(const Window *w, int index) {
+    if (w->desktop_surface) return desktop_item_cell(w, index);
     Layout lay;
     window_layout(w, &lay);
     if (w->view_mode == VIEW_LIST)
@@ -130,6 +161,26 @@ void desktop_icon_rect(int sw, int sh, int which, Rect *icon, Rect *hit) {
     }
 }
 
+void desktop_position_rect(int sw, int sh, int x, int y, Rect *icon, Rect *hit) {
+    int maxx = sw > 76 ? sw - 56 : 20, maxy = sh > 106 ? sh - 78 : 28;
+    x = x < 20 ? 20 : x > maxx ? maxx : x;
+    y = y < 28 ? 28 : y > maxy ? maxy : y;
+    *icon = (Rect){x, y, 32, 32}; *hit = (Rect){x - 20, y, 76, 48};
+}
+void session_desktop_icon_rect(const Session *s, int which, Rect *icon, Rect *hit) {
+    if (which >= 0 && which < 2 && (s->system_icons.mask & (1 << which)))
+        desktop_position_rect(s->sw, s->sh, s->system_icons.x[which], s->system_icons.y[which], icon, hit);
+    else desktop_icon_rect(s->sw, s->sh, which, icon, hit);
+}
+int session_desktop_which(const Session *s, int x, int y) {
+    /* Trash is painted after the disk and owns an overlapping hit region. */
+    for (int i = 1; i >= 0; i--) {
+        Rect icon, hit; session_desktop_icon_rect(s, i, &icon, &hit);
+        if (rect_has(hit, x, y)) return i;
+    }
+    return -1;
+}
+
 int desktop_which(int sw, int sh, int x, int y) {
     for (int which = 0; which < 2; which++) {
         Rect icon, hit;
@@ -143,15 +194,15 @@ int desktop_which(int sw, int sh, int x, int y) {
 }
 
 void dialog_layout(const Session *s, Rect *box, Rect *cancel, Rect *ok) {
-    box->w = 360;
-    box->h = 220;
+    box->w = s->dialog == 5 ? 500 : 360;
+    box->h = s->dialog == 4 || s->dialog == 5 ? 320 : 220;
     box->x = (s->sw - box->w) / 2;
     box->y = (s->sh - box->h) / 2;
     ok->w = 88;
     ok->h = 22;
     ok->x = box->x + box->w - 104;
     ok->y = box->y + box->h - 36;
-    if (s->dialog == 2) {
+    if (s->dialog >= 2) {
         cancel->w = 88;
         cancel->h = 22;
         cancel->x = ok->x - 96;
@@ -162,12 +213,13 @@ void dialog_layout(const Session *s, Rect *box, Rect *cancel, Rect *ok) {
 }
 
 int ospi_item_center(const Session *s, int win, int index, int *x, int *y) {
-    if (!s || win < 0 || win >= s->nwin || index < 0 || index >= s->win[win].nitems) {
+    const Window *w = finder_window(s, win);
+    if (!w || index < 0 || index >= w->nitems) {
         return -1;
     }
-    Rect cell = item_cell(&s->win[win], index);
+    Rect cell = item_cell(w, index);
     *x = cell.x + cell.w / 2;
-    *y = cell.y + (s->win[win].view_mode == VIEW_LIST ? cell.h / 2 : 24);
+    *y = cell.y + (w->view_mode == VIEW_LIST ? cell.h / 2 : 24);
     return 0;
 }
 
@@ -201,7 +253,7 @@ int ospi_desktop_center(const Session *s, int which, int *x, int *y) {
         return -1;
     }
     Rect icon, hit;
-    desktop_icon_rect(s->sw, s->sh, which, &icon, &hit);
+    session_desktop_icon_rect(s, which, &icon, &hit);
     (void)hit;
     *x = icon.x + icon.w / 2;
     *y = icon.y + icon.h / 2;

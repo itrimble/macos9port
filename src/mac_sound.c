@@ -115,7 +115,11 @@ int mac_sound_command(MacRuntime*r,MacSoundChannel*c,MacSoundCommand cmd){
   unsigned note=p&255, amplitude=p>>24;
   if((p&0x00ffff00u) || note>127)return mac_sound_fail(r,"Sampled note contains unsupported frequency bits.");
   if(c->voice){
-   int restart=cmd.command==40 || !c->playing;
+   /* Diagnostic: OSPI_SOUND_LEGATO=1 keeps the sample phase when a note
+    * follows another on the same playing voice, instead of restarting from
+    * the first sample as Inside Macintosh describes. For listening tests. */
+   static int legato=-1;if(legato<0)legato=getenv("OSPI_SOUND_LEGATO")!=NULL;
+   int restart=(cmd.command==40 && !(legato && c->playing && c->data==c->voice_data)) || !c->playing;
    uint32_t source=restart?c->voice_rate:c->source_rate;
    unsigned base=restart?c->voice_base:c->base_note;
    double rate=(double)source*exp2(((double)note-base)/12.0);

@@ -1,26 +1,32 @@
+#include "finder_desktop_surface.h"
+#include "finder_spring.h"
+#include "finder_preferences.h"
+#include "finder_labels.h"
+#include "finder_recent.h"
+#include "app_switcher.h"
 #include "desktop_theme.h"
 #include "appearance_panel.h"
 #include "desktop_context.h"
 #include "ospi.h"
 #include "desktop_wallpaper.h"
 #include "draw.h"
+#include "movie_window.h"
+#include "finder_edit.h"
 #include "session_int.h"
+#include "term.h"
+#include "finder_state.h"
+#include "finder_popup.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
-void session_set_clip(Session *s, const char *text) {
-    if (!s) {
-        return;
-    }
-    s->clip[0] = 0;
-    if (!text) {
-        return;
-    }
-    snprintf(s->clip, sizeof s->clip, "%s", text);
-}
+static const SessionMediaHooks *g_media_hooks;
+
+void session_set_media_hooks(const SessionMediaHooks *hooks) { g_media_hooks = hooks; }
+const SessionMediaHooks *session_media_hooks(void) { return g_media_hooks; }
+
 void session_clamp(Session *s) {
     if (s->sw < 200) {
         s->sw = OSPI_W;
@@ -28,15 +34,18 @@ void session_clamp(Session *s) {
     if (s->sh < 200) {
         s->sh = OSPI_H;
     }
+    finder_desktop_layout(s);
     for (int i = 0; i < s->nwin; i++) {
         Window *w = &s->win[i];
+        if (w->popup) finder_popup_layout(s, w);
         int maxs = window_max_scroll(w);
-        if (w->scroll < 0) {
+        if (!w->collapsed && w->scroll < 0) {
             w->scroll = 0;
         }
-        if (w->scroll > maxs) {
+        if (!w->collapsed && w->scroll > maxs) {
             w->scroll = maxs;
         }
+        if (w->popup && w->collapsed) continue;
         if (w->w < 260) {
             w->w = 260;
         }
@@ -51,18 +60,11 @@ void session_clamp(Session *s) {
         if (w->y < 20) {
             w->y = 20;
         }
-        if (w->x > s->sw - 48) {
-            w->x = s->sw - 48;
-        }
-        if (w->y > s->sh - TITLE_H) {
-            w->y = s->sh - TITLE_H;
-        }
-        if (w->x + w->w > s->sw) {
-            w->w = s->sw - w->x;
-        }
-        if (!w->collapsed && w->y + w->h > s->sh) {
-            w->h = s->sh - w->y;
-        }
+        if (w->w > s->sw) w->w = s->sw;
+        if (w->h > s->sh - 20) w->h = s->sh - 20;
+        if (w->x + w->w > s->sw) w->x = s->sw - w->w;
+        if (w->y + w->h > s->sh) w->y = s->sh - w->h;
+        if (w->kind == WIN_TERMINAL && !w->collapsed) terminal_sync_size(w);
     }
 }
 
@@ -80,6 +82,7 @@ Session *session_create(const char *root) {
     s->menu_hot = -1;
     s->desk_sel = -1;
     s->press_win = -1;
+    s->sound_preview_request = -1;
     s->sw = OSPI_W;
     s->sh = OSPI_H;
     char wallpaper_preference[OSPI_PATH + 32];
@@ -94,13 +97,34 @@ Session *session_create(const char *root) {
     snprintf(s->arch, sizeof s->arch, "%s", host_arch());
     volume_free_bytes(s->root, &s->free_bytes);
     s->last_stat = 1;
-    open_folder(s, "");
+    if (finder_labels_load(s) < 0) fprintf(stderr, "OS999: Label preferences could not be read.\n");
+    finder_recent_load(s);
+    if (finder_preferences_load(s) < 0) fprintf(stderr, "OS999: Finder preferences could not be read.\n");
+    if (system_icon_positions_load(s->root, &s->system_icons) < 0) fprintf(stderr, "OS999: Desktop icon positions could not be read.\n");
+    if (finder_desktop_init(s)) fprintf(stderr, "OS999: Desktop folder unavailable.\n");
+    if (finder_state_load(s) <= 0) open_folder(s, "");
+    if (app_switcher_load(s) < 0) fprintf(stderr, "OS999: Application Switcher settings could not be read.\n");
+    s->sound_event[0] = 0;
     return s;
 }
 
 void session_destroy(Session *s) {
+    finder_spring_finish(s, 0, 0, 0);
+    if (s) {
+        free(s->desktop.expanded_items);
+        for (int i = 0; i < s->nwin; i++) {
+            if (s->win[i].kind == WIN_TERMINAL) terminal_window_close(s, &s->win[i]);
+            movie_window_release(&s->win[i]);
+            free(s->win[i].expanded_items);
+            free(s->win[i].expanded_text);
+        }
+    }
+    if (s && finder_state_save(s)) fprintf(stderr, "OS999: Finder window settings could not be saved.\n");
+    if (s && app_switcher_save(s)) fprintf(stderr, "OS999: Application Switcher settings could not be saved.\n");
     context_close(); appearance_panel_close();
-    desktop_theme_shutdown(); desktop_wallpaper_shutdown(); free(s);
+    if (g_media_hooks && g_media_hooks->quit) g_media_hooks->quit(s);
+    else if (g_media_hooks && g_media_hooks->close) g_media_hooks->close();
+    desktop_theme_shutdown(); desktop_wallpaper_shutdown(); if (s) { free(s->expanded_undo); free(s->clipboard_large_in); free(s->clipboard_large_out); } free(s);
 }
 
 int session_take_startup_toggle(Session *s) {
@@ -121,6 +145,10 @@ int session_quit(const Session *s) { return s && s->quit; }
 
 void session_tick(Session *s, uint32_t now_ms) {
     s->input_now_ms = now_ms;
+    finder_spring_tick(s, now_ms);
+    terminal_tick(s);
+    movie_windows_tick(s, now_ms);
+    finder_edit_tick(s);
     if (s->last_stat != 0 && now_ms - s->last_stat < 1000) {
         return;
     }
@@ -128,5 +156,6 @@ void session_tick(Session *s, uint32_t now_ms) {
     if (volume_free_bytes(s->root, &b) == 0) {
         s->free_bytes = b;
     }
+    finder_refresh(s);
     s->last_stat = now_ms;
 }

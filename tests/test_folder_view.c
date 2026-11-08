@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 static int checks, failures, icon_calls;
 #define CHECK(c) do { checks++; if (!(c)) { failures++; \
@@ -19,7 +20,7 @@ int main(void) {
     Session *s = calloc(1, sizeof *s);
     CHECK(s != NULL);
     if (!s) return 1;
-    s->nwin = 2;
+    s->nwin = 2; s->desk_sel = -1;
     Window *w = &s->win[1];
     *w = (Window){.kind=WIN_FOLDER, .x=30, .y=40, .w=400, .h=240, .nitems=4};
     const char *names[] = {"zeta.txt", "Alpha", "app", "System"};
@@ -86,6 +87,26 @@ int main(void) {
         CHECK(pixels[(size_t)lay.content.y * 800 + lay.content.x + 2] == desktop_theme_color(THEME_MENU));
         free(pixels);
     }
+    int positions[5]; folder_view_columns(w,positions);
+    CHECK(positions[0]==0 && positions[4]==1000);
+    w->items[0].data_size=1;w->items[1].data_size=9000;w->items[2].data_size=20;w->items[3].data_size=500;
+    w->items[0].modified=100;w->items[1].modified=200;w->items[2].modified=300;w->items[3].modified=400;
+    int header_y=lay.content.y+12;
+    CHECK(folder_view_header_click(s,lay.content.x+lay.content.w*675/1000,header_y));
+    CHECK(w->sort_mode==SORT_SIZE && !w->sort_reverse && w->items[0].data_size==9000);
+    CHECK(folder_view_header_click(s,lay.content.x+lay.content.w*675/1000,header_y));
+    CHECK(w->sort_reverse && w->items[0].data_size==1);
+    CHECK(folder_view_header_click(s,lay.content.x+lay.content.w*875/1000,header_y));
+    CHECK(w->sort_mode==SORT_DATE && !w->sort_reverse && w->items[0].modified==400);
+    s->down=1;
+    CHECK(folder_view_header_click(s,lay.content.x+lay.content.w*400/1000,header_y));
+    CHECK(s->press_zone==Z_COLUMN && s->down && w->sort_mode==SORT_DATE);
+    folder_view_column_move(s,lay.content.x+lay.content.w*480/1000);
+    CHECK(w->list_columns[0]>=475 && w->list_columns[0]<=480 && w->sort_mode==SORT_DATE);
+    folder_view_column_move(s,lay.content.x-10000);CHECK(w->list_columns[0]==200);
+    folder_view_column_move(s,lay.content.x+10000);CHECK(w->list_columns[0]==500);
+    session_command(s,CMD_RESET_COLUMNS);folder_view_columns(w,positions);
+    CHECK(positions[1]==400 && w->sort_mode==SORT_DATE);
     CHECK(folder_view_command(s, CMD_VIEW_ICONS));
     CHECK(w->view_mode == VIEW_ICONS && !w->scroll);
     CHECK(!ospi_item_center(s, 1, 0, &x, &y));
@@ -94,6 +115,14 @@ int main(void) {
     CHECK(folder_view_command(s, CMD_VIEW_LIST));
     CHECK(w->view_mode == VIEW_ICONS);
     w->kind = WIN_FOLDER;
+    const int64_t created[] = {0, 100, 400, 400};
+    for (int i=0;i<4;i++) { w->items[i].created=created[i]; w->items[i].label=i==0?7:i==1?0:2; }
+    CHECK(folder_view_command(s,CMD_SORT_CREATED));
+    CHECK(w->sort_mode==SORT_CREATED && w->items[0].created==400 && w->items[3].created==0);
+    CHECK(strcasecmp(w->items[0].name,w->items[1].name)<0);
+    CHECK(folder_view_command(s,CMD_SORT_LABEL));
+    CHECK(w->sort_mode==SORT_LABEL && w->items[0].label==0 && w->items[3].label==7);
+    CHECK(strcasecmp(w->items[1].name,w->items[2].name)<0);
     w->nitems = OSPI_MAX_ITEMS + 1;
     folder_view_sort(w); /* Invalid counts never overrun item storage. */
     free(s);

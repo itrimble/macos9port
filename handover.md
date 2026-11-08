@@ -1,4 +1,39 @@
-# Integration checkpoint — 5 November 2026, evening
+# Integration pickup — 7 November 2026
+
+Read [the master tracker](docs/OS999-MASTER-TRACKER.md) for the current candidate,
+validation and watcher state. The records below are retained evidence from
+5–6 November. Their PIDs, app paths and suggested next steps are historical;
+they do not authorize restarting an old goal or replacing a live bundle.
+
+# Historical documentation checkpoint — 6 November 2026
+
+This header supersedes the current-state and next-action claims in the older
+handover below. Those sections remain a historical record, including their
+process IDs, permissions, artifacts, and incomplete GUI attempts.
+
+- Read [the cross-worktree status](docs/PROJECT-STATUS-2026-11-06.md) first.
+  `main` is not the complete product: `../macos9port-v1.1` combines browser,
+  storage, sound, terminal, movie, mobile, and desktop development.
+- Ian confirms Monkey Island screens opened, clicks worked, and sound played.
+  Do not revert that evidence to "only launched" because automated interaction
+  failed in an older session. Sustained play and save/reload remain unverified.
+- Older MI1 telemetry recorded 60 FPS median / 52.5 minimum and audio underruns.
+  It does not establish performance of the latest artifact. New deterministic
+  and real-time bridge probes are being developed in the dirty main checkout;
+  `.ralph/progress.md` records the owning session's work and limitations.
+- This documentation session performs no builds, game execution, recordings,
+  or GUI automation. Earlier instructions below to resume a timed goal or use
+  CUA are historical, not renewed authorization from this documentation task.
+- Preserve running apps, original volumes, saves, locked worktrees, and dirty
+  files. Re-discover process and branch state before acting; do not reuse old
+  PIDs. Do not rebuild a live bundle in place.
+- During the audit, release/1.1 merged the browser keyboard-focus fix and host
+  networking (`e66a061`). Next review: compare the separate browser-security
+  worktree with that release; wire storage into installation
+  and guest writes; bind subsequent validation to exact integrated revisions.
+  These are follow-up tasks, not changes performed by this documentation audit.
+
+# Historical integration checkpoint — 5 November 2026, evening
 
 This section supersedes the live-state and next-step claims below.
 Ian authorized integration loops, sub-agents, local commits and launching major

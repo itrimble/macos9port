@@ -1,0 +1,9 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<link rel="manifest" href="manifest.json"><title>Controller Arena</title>
+<style>body{font:17px system-ui;background:#152331;color:#fff;margin:24px}canvas{width:min(100%,800px);height:400px;background:#000;border:2px solid #8cf}button,a{font:inherit;margin:8px;padding:8px;color:#111;background:#8cf}pre{white-space:pre-wrap}p{max-width:800px}</style></head>
+<body><h1>Controller Arena</h1><p>A small offline web game for OS999. Click Play, then press a controller button.
+Move with the left stick or arrow keys; A / Cross or Space scores a point. Input pauses when this page loses focus.
+Use Install (+) to keep the app in Apps. No controller is required for the graphics checks.</p>
+<button id="play">Play</button><a href="/apps/">Apps library</a><p id="score">Score: 0</p>
+<canvas id="game" width="800" height="400"></canvas><pre id="status">Checking browser capabilities…</pre>
+<script src="game.js"></script></body></html>

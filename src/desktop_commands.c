@@ -2,60 +2,74 @@
 #include "session_int.h"
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 enum { INFO_COMMAND = 420, SELECT_ALL_COMMAND = 421, COPY_COMMAND = 422 };
 static Window *front(Session *s) {
-    if (!s || s->nwin < 1 || s->nwin > OSPI_MAX_WIN) return NULL;
-    Window *w = &s->win[s->nwin - 1];
-    return w->nitems >= 0 && w->nitems <= OSPI_MAX_ITEMS ? w : NULL;
+    Window *w = finder_current(s);
+    if (!w) return NULL;
+    return w->nitems >= 0 && w->nitems <= window_item_capacity(w) ? w : NULL;
 }
 static int selections(const Window *w) {
     int count = 0;
     if (w && w->kind == WIN_FOLDER)
-        for (int i = 0; i < w->nitems; i++) count += !!w->items[i].selected;
+        for (int i = 0; i < w->nitems; i++) count += !!window_items(w)[i].selected;
     return count;
 }
 int desktop_command_enabled(Session *s, int command) {
-    if (!s || s->dialog || s->desk_sel == DESK_BACKGROUND) return 0;
+    if (!s || s->dialog) return 0;
     Window *w = front(s);
     if (command == INFO_COMMAND) {
         if (s->desk_sel == 0 || s->desk_sel == 1) return 1;
-        return w && w->kind == WIN_FOLDER && selections(w) <= 1;
+        return w && w->kind == WIN_FOLDER && !w->search_results &&
+            (w->desktop_surface ? selections(w) == 1 : selections(w) <= 1);
     }
     if (s->desk_sel >= 0 || !w) return 0;
     if (command == SELECT_ALL_COMMAND) return w->kind == WIN_FOLDER && w->nitems > 0;
     if (command == COPY_COMMAND)
-        return w->kind == WIN_TEXT ? w->text[0] != 0 : selections(w) > 0;
+        return w->kind == WIN_TEXT ? window_text(w)[0] != 0 : selections(w) > 0;
     return 0;
 }
 
 static void copy_selection(Session *s, Window *w) {
-    char text[OSPI_TEXT];
     size_t used = 0;
-    text[0] = 0;
     if (w->kind == WIN_TEXT) {
-        size_t n = strnlen(w->text, sizeof w->text);
-        if (n >= sizeof text) goto oversized;
-        memcpy(text, w->text, n + 1);
+        size_t bound = w->expanded_text ? OSPI_CLIPBOARD_LIMIT + 1 : sizeof w->text;
+        used = strnlen(window_text(w), bound);
+        if (used == bound) goto unavailable;
     } else {
         for (int i = 0; i < w->nitems; i++) {
-            if (!w->items[i].selected) continue;
-            size_t n = strnlen(w->items[i].name, sizeof w->items[i].name);
-            size_t separator = used ? 1 : 0;
-            if (n == sizeof w->items[i].name || n + separator >= sizeof text - used) goto oversized;
-            if (separator) text[used++] = '\n';
-            memcpy(text + used, w->items[i].name, n); used += n;
-            text[used] = 0;
+            const Item *item = &window_items(w)[i];
+            if (!item->selected) continue;
+            size_t n = strnlen(item->name, sizeof item->name), separator = used ? 1 : 0;
+            if (n == sizeof item->name || n + separator > OSPI_CLIPBOARD_LIMIT - used) goto unavailable;
+            used += n + separator;
         }
     }
-    memcpy(s->clipboard_out, text, strlen(text) + 1);
+    char *text = malloc(used + 1);
+    if (!text) goto unavailable;
+    if (w->kind == WIN_TEXT) memcpy(text, window_text(w), used + 1);
+    else {
+        size_t at = 0;
+        for (int i = 0; i < w->nitems; i++) {
+            const Item *item = &window_items(w)[i];
+            if (!item->selected) continue;
+            if (at) text[at++] = '\n';
+            size_t n = strlen(item->name); memcpy(text + at, item->name, n); at += n;
+        }
+        text[at] = 0;
+    }
+    free(s->clipboard_large_out); s->clipboard_large_out = NULL;
+    if (used < sizeof s->clipboard_out) { memcpy(s->clipboard_out, text, used + 1); free(text); }
+    else { s->clipboard_large_out = text; s->clipboard_out[0] = 0; }
     s->clipboard_write_request = 1;
     return;
-oversized:
-    dialog_info(s, "Copy", "The selection is too large to copy completely. Select fewer items.");
+unavailable:
+    dialog_info(s, "Copy", "The complete selection could not be copied. No clipboard change was requested.");
 }
 
 /* Each directory is opened relative to the last verified directory. No parent
@@ -86,6 +100,7 @@ static int metadata(const char *root, const char *relative, struct stat *st) {
 
 static void get_info(Session *s, Window *w) {
     char rel[OSPI_PATH] = {0}, name[OSPI_NAME] = "OS999 HD";
+    int special = 0; s->info_rel[0] = 0;
     int application = 0, disk = s->desk_sel == 0;
     if (s->desk_sel == 1) { strcpy(rel, "Trash"); strcpy(name, "Trash"); }
     else if (!disk && w) {
@@ -95,7 +110,7 @@ static void get_info(Session *s, Window *w) {
         const char *leaf = strrchr(rel, '/');
         if (rel[0]) snprintf(name, sizeof name, "%s", leaf ? leaf + 1 : rel);
         for (int i = 0; i < w->nitems; i++) {
-            Item *item = &w->items[i];
+            Item *item = &window_items(w)[i];
             if (!item->selected) continue;
             size_t length = strnlen(item->name, sizeof item->name);
             if (!length || length == sizeof item->name || strchr(item->name, '/') ||
@@ -106,6 +121,7 @@ static void get_info(Session *s, Window *w) {
             memcpy(rel + n, item->name, length + 1);
             memcpy(name, item->name, length + 1);
             application = item->kind == ITEM_APPLICATION;
+            special = item->kind == ITEM_FOLDER && item->special[0];
             break;
         }
     }
@@ -120,7 +136,17 @@ static void get_info(Session *s, Window *w) {
         snprintf(body, sizeof body, "Name: %s\nKind: %s\nData size: %llu bytes\n\nResource forks are not included in this size.",
                  name, kind, (unsigned long long)st.st_size);
     else snprintf(body, sizeof body, "Name: %s\nKind: %s\n\nContents and link targets were not read.", name, kind);
+    char modified[48] = "", details[OSPI_PATH + 64];
+    struct tm when;
+    if (localtime_r(&st.st_mtime, &when)) strftime(modified, sizeof modified, "%Y-%m-%d %H:%M", &when);
+    snprintf(details, sizeof details, "\nWhere: OS999 HD%s%s\nModified: %s", rel[0] ? ": " : "", rel, modified);
+    strncat(body, details, sizeof body - strlen(body) - 1);
+    if (special && S_ISDIR(st.st_mode)) {
+        snprintf(s->info_rel, sizeof s->info_rel, "%s", rel);
+        strncat(body, "\nKept its special icon when renamed. OK restores the standard icon.", sizeof body - strlen(body) - 1);
+    }
     dialog_info(s, "Get Info", body);
+    if (s->info_rel[0]) { s->dialog = 2; s->dialog_cmd = CMD_STANDARD_ICON; }
     return;
 invalid:
     dialog_info(s, "Get Info", "Information is unavailable. The item may have moved or its path is unsupported.");
@@ -128,11 +154,13 @@ invalid:
 
 int desktop_command(Session *s, int command) {
     if (command != INFO_COMMAND && command != SELECT_ALL_COMMAND && command != COPY_COMMAND) return 0;
-    if (!desktop_command_enabled(s, command)) return 1;
     Window *w = front(s);
+    /* Terminal windows own Copy and Select All; let session_command route them. */
+    if (w && w->kind == WIN_TERMINAL && command != INFO_COMMAND) return 0;
+    if (!desktop_command_enabled(s, command)) return 1;
     if (command == INFO_COMMAND) get_info(s, w);
     else if (command == SELECT_ALL_COMMAND) {
-        for (int i = 0; i < w->nitems; i++) w->items[i].selected = 1;
+        for (int i = 0; i < w->nitems; i++) window_items(w)[i].selected = 1;
     } else copy_selection(s, w);
     return 1;
 }

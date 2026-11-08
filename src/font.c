@@ -156,7 +156,10 @@ int font_next(const char *s, int *advance, const uint8_t **rows) {
         *rows = font8x8_basic[u[0]];
         return 1;
     }
-    *advance = 1;
-    *rows = font8x8_basic[(unsigned char)'?'];
+    static const uint8_t ellipsis[8] = {0, 0, 0, 0, 0, 0, 0x49, 0};
+    int len = u[0] >= 0xF0 ? 4 : u[0] >= 0xE0 ? 3 : u[0] >= 0xC0 ? 2 : 1;
+    for (int i = 1; i < len; i++) if ((u[i] & 0xC0) != 0x80) { len = i; break; }
+    *advance = len;   /* one '?' per character, not per byte */
+    *rows = (u[0] == 0xE2 && u[1] == 0x80 && u[2] == 0xA6) ? ellipsis : font8x8_basic[(unsigned char)'?'];
     return 1;
 }

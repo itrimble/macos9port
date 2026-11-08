@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Splash: the desktop colour with the folding-phone mark, then straight into OS999. -->
+    <style name="Theme.OS999.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/os999_desktop</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.OS999.App</item>
+    </style>
+    <style name="Theme.OS999.App" parent="android:Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/os999_desktop</item>
+        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+    </style>
+    <style name="Theme.OS999" parent="Theme.OS999.Splash" />
+</resources>

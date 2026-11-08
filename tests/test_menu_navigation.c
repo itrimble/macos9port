@@ -12,6 +12,7 @@ static const MenuItem fixture[] = {
 static const MenuItem unavailable[] = {
     {"Unavailable", CMD_QUIT, MI_DISABLED, NULL, 0}, {NULL, 0, 0, NULL, 0}
 };
+int menu_submenu(int command) { (void)command; return 0; }
 int menu_count(void) { return 3; }
 int menu_nitems(int menu) { return menu == 0 ? 4 : menu == 1 ? 2 : 0; }
 const MenuItem *menu_at(int menu, int row) {

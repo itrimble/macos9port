@@ -1,5 +1,6 @@
 #include "mac_icon.h"
 #include "mac_resource.h"
+#include "volume_directory.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,16 +68,17 @@ static void load_icon(const MacResourceFork *fork, Item *item) {
     item->has_guest_icon = 1;
 }
 
-int mac_icon_application(const char *root, const char *rel, Item *item) {
-    char sidecar_rel[OSPI_PATH], path[OSPI_PATH];
-    int n = snprintf(sidecar_rel, sizeof sidecar_rel, "%s.rsrc", rel);
-    if (!item || n < 0 || (size_t)n >= sizeof sidecar_rel ||
-        volume_join(path, sizeof path, root, sidecar_rel) != 0) return 0;
+int mac_icon_application_at(int directory, const char *name, Item *item) {
+    if (!item || !name || !name[0] || name[0] == '.' || strchr(name, '/') ||
+        strlen(name) >= OSPI_NAME) return 0;
+    char sidecar[OSPI_NAME + 6]; snprintf(sidecar, sizeof sidecar, "%s.rsrc", name);
+    int fd = openat(directory, sidecar, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+    if (fd < 0) return 0;
     struct stat st;
-    if (lstat(path, &st) || !S_ISREG(st.st_mode) || st.st_size <= 0 ||
-        st.st_size > 64 * 1024 * 1024) return 0;
-    FILE *f = fopen(path, "rb");
-    if (!f) return 0;
+    if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_size <= 0 ||
+        st.st_size > 64 * 1024 * 1024) { close(fd); return 0; }
+    FILE *f = fdopen(fd, "rb");
+    if (!f) { close(fd); return 0; }
     size_t size = (size_t)st.st_size;
     uint8_t *bytes = malloc(size);
     int valid = 0;
@@ -91,4 +93,16 @@ int mac_icon_application(const char *root, const char *rel, Item *item) {
     free(bytes);
     fclose(f);
     return valid;
+}
+
+int mac_icon_application(const char *root, const char *rel, Item *item) {
+    if (!rel || !rel[0] || rel[0] == '/' || strlen(rel) >= OSPI_PATH) return 0;
+    char parent[OSPI_PATH]; strcpy(parent, rel);
+    char *name = strrchr(parent, '/');
+    if (name) *name++ = 0;
+    else { name = (char *)rel; parent[0] = 0; }
+    int fd = volume_directory_open(root, parent);
+    if (fd < 0) return 0;
+    int result = mac_icon_application_at(fd, name, item);
+    close(fd); return result;
 }

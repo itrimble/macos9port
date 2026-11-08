@@ -11,8 +11,11 @@ int desktop_sound_enabled(void);
 int desktop_sound_set_enabled(int enabled);
 /* Call each main-loop iteration, before events. Guest activation cancels host sounds. */
 void desktop_sound_guest_active(int active);
+/* Effect eligibility only, not the state of the shared hardware output. */
+int desktop_sound_effects_suppressed(void);
 /* Nonblocking, bounded, drops overlapping/repeated UI effects. */
 int desktop_sound_play(int event);
+int desktop_sound_play_named(const char *event_name);
 uint32_t desktop_sound_queued_bytes(void);
 
 #endif

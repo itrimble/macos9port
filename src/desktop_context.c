@@ -5,7 +5,7 @@
 #include <string.h>
 
 enum { ROW_H = 22, SEPARATOR_H = 7, MAX_ROWS = 7,
-       CONTEXT_DESKTOP = 1, CONTEXT_DISK, CONTEXT_TRASH, CONTEXT_FOLDER, CONTEXT_ITEM,
+       CONTEXT_DESKTOP = 1, CONTEXT_DISK, CONTEXT_TRASH, CONTEXT_FOLDER, CONTEXT_ITEM, CONTEXT_DESKTOP_ITEM,
        CONTEXT_APPEARANCE = 410 };
 typedef struct { const char *label; int command, disabled; } ContextRow;
 static struct {
@@ -18,6 +18,11 @@ static struct {
 
 void context_close(void) { memset(&popup, 0, sizeof popup); }
 int context_active(void) { return popup.owner != NULL; }
+int context_bounds(const Session *s, Rect *out) {
+    if (!s || popup.owner != s) return 0;
+    *out = popup.box;
+    return 1;
+}
 
 static void row(const char *label, int command, int disabled) {
     if (popup.count < MAX_ROWS) popup.rows[popup.count++] = (ContextRow){label, command, disabled};
@@ -65,7 +70,7 @@ int context_open(Session *s, int x, int y) {
         s->desk_sel = -1;
         popup.target = item >= 0 ? CONTEXT_ITEM : CONTEXT_FOLDER;
         snprintf(popup.folder, sizeof popup.folder, "%s", w->rel);
-        if (item >= 0) snprintf(popup.item, sizeof popup.item, "%s", w->items[item].name);
+        if (item >= 0) snprintf(popup.item, sizeof popup.item, "%s", window_items(w)[item].name);
         row("Open", CMD_OPEN, item < 0);
         row("Get Info", CMD_GET_INFO, 0);
         row("Copy Name", CMD_COPY, item < 0);
@@ -73,18 +78,29 @@ int context_open(Session *s, int x, int y) {
         row("New Folder", CMD_NEW_FOLDER, 0);
         row("Clean Up", CMD_CLEANUP, 0);
     } else {
-        int which = desktop_which(s->sw, s->sh, x, y);
-        s->desk_sel = which >= 0 ? which : DESK_BACKGROUND;
+        int which = session_desktop_which(s, x, y);
+        s->desk_sel = which;
+        s->desktop_focus = 1;
+        for (int i = 0; i < s->nwin; i++) select_only(&s->win[i], -1);
         popup.target = which == 0 ? CONTEXT_DISK : which == 1 ? CONTEXT_TRASH : CONTEXT_DESKTOP;
-        if (which >= 0) {
+        int desktop_item = which < 0 ? item_index_at(&s->desktop, x, y) : -1;
+        select_only(&s->desktop, desktop_item);
+        if (desktop_item >= 0) {
+            popup.target = CONTEXT_DESKTOP_ITEM;
+            snprintf(popup.item, sizeof popup.item, "%s", window_items(&s->desktop)[desktop_item].name);
+            row("Open", CMD_OPEN, 0); row("Get Info", CMD_GET_INFO, 0);
+            row("Rename", CMD_RENAME, 0); row("Duplicate", CMD_DUPLICATE, 0);
+            row("Make Alias", CMD_MAKE_ALIAS, 0); row("Move to Trash", CMD_MOVE_TRASH, 0);
+        } else if (which >= 0) {
             row("Open", CMD_OPEN, 0);
             row("Get Info", CMD_GET_INFO, 0);
         }
         else {
             row("New Folder", CMD_NEW_FOLDER, 0);
-            row("Clean Up", CMD_CLEANUP, 1); /* Desktop icon positions are currently fixed. */
+            row("Clean Up", CMD_CLEANUP, 0);
             row(NULL, 0, 1);
             row("Change Desktop Picture...", CONTEXT_APPEARANCE, 0);
+            row(NULL, 0, 1); row("Open Desktop Folder", CMD_DESKTOP_ITEMS, 0);
         }
     }
     int height = 4;
@@ -113,9 +129,15 @@ static void dispatch(Session *s, int command) {
             dialog_info(s, "Open", "Close a window first.");
         return;
     }
-    if (target == CONTEXT_DESKTOP) {
-        if (command != CMD_NEW_FOLDER) return;
-        if (open_folder(s, "")) { dialog_info(s, "New Folder", "Close a window first."); return; }
+    if (target == CONTEXT_DESKTOP || target == CONTEXT_DESKTOP_ITEM) {
+        s->desktop_focus = 1; s->desk_sel = -1;
+        if (target == CONTEXT_DESKTOP_ITEM) {
+            int found = -1;
+            for (int i = 0; i < s->desktop.nitems; i++)
+                if (!strcmp(window_items(&s->desktop)[i].name, item)) { found = i; break; }
+            if (found < 0) { dialog_info(s, "Context Menu", "The desktop item is no longer available."); return; }
+            select_only(&s->desktop, found);
+        }
     } else {
         int found = -1;
         for (int i = s->nwin - 1; i >= 0; i--)
@@ -127,7 +149,7 @@ static void dispatch(Session *s, int command) {
         if (command == CMD_OPEN || (target == CONTEXT_ITEM &&
             (command == CMD_GET_INFO || command == CMD_COPY))) {
             for (int i = 0; i < w->nitems; i++) {
-                if (!strcmp(w->items[i].name, item)) {
+                if (!strcmp(window_items(w)[i].name, item)) {
                     select_only(w, i);
                     if (command == CMD_OPEN) open_item(s, w, i);
                     else session_command(s, command);

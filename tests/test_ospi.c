@@ -220,7 +220,7 @@ int main(void) {
     click(s, ax, ay, 2);
     CHECK(s->nwin == 2);
     CHECK(strcmp(s->win[1].rel, "Applications") == 0);
-    CHECK(s->win[1].nitems == 1);
+    CHECK(s->win[1].nitems == 2); /* Placeholder plus bundled Utilities. */
 
     int cx, cy;
     CHECK(ospi_control_center(&s->win[1], 0, &cx, &cy) == 0);

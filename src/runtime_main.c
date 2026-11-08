@@ -44,9 +44,10 @@ int main(int argc, char **argv) {
     const char *path = NULL;
     size_t budget = 100000;
     int inspect = 0, trace = 0, window = 0, indexed = 0, interactive = 0, steps_given = 0;
-    const char *bridge_name = NULL;
+    const char *bridge_name = NULL, *saves = NULL;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--inspect")) inspect = 1;
+        else if (!strcmp(argv[i], "--saves") && i + 1 < argc) saves = argv[++i];
         else if (!strcmp(argv[i], "--window")) window = 1;
         else if (!strcmp(argv[i], "--interactive")) interactive = 1;
         else if (!strcmp(argv[i], "--indexed")) indexed = 1;
@@ -70,7 +71,7 @@ int main(int argc, char **argv) {
     }
     if (interactive) budget = SIZE_MAX;
     if (!path) {
-        fprintf(stderr, "Usage: ospi-runtime [--inspect] [--window] [--indexed] [--trace] [--steps N | --interactive] resource-fork\n");
+        fprintf(stderr, "Usage: ospi-runtime [--inspect] [--window] [--indexed] [--trace] [--saves DIR] [--steps N | --interactive] resource-fork\n");
         return 2;
     }
     size_t size;
@@ -112,6 +113,12 @@ int main(int argc, char **argv) {
     if (slash) { if (slash == data_root) slash[1] = 0; else *slash = 0; }
     if (!slash || mac_files_root(&rt, data_root)) {
         fprintf(stderr, "Cannot establish the application's read-only data directory.\n");
+        mac_runtime_destroy(&rt); free(bytes); return 2;
+    }
+    /* Saves live in a distinct directory with bounded quotas; without --saves
+     * the data volume stays read-only and every guest write fails cleanly. */
+    if (saves && mac_files_writable(&rt, saves, 64, UINT64_C(16) << 20)) {
+        fprintf(stderr, "Cannot establish the writable save directory: %s\n", saves);
         mac_runtime_destroy(&rt); free(bytes); return 2;
     }
     int result;

@@ -1,5 +1,6 @@
 #include "ospi.h"
 #include "mac_icon.h"
+#include "volume_directory.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -21,6 +22,8 @@ static const struct {
      "double-click it to try OS999's own\n"
      "runtime. Support is incomplete. Some\n"
      "archive formats use a legacy launcher.\n"},
+    {"Applications/Utilities/Tailscale", "OS999-BUILTIN:tailscale:1\n"},
+    {"Applications/Utilities/Terminal", "OS999-BUILTIN:terminal:1\n"},
     {"Documents/Notes",
      "Notes live here as plain text.\n\n"
      "Double-click a document to read it.\n"},
@@ -127,6 +130,20 @@ static int exists_file(const char *path) {
     return lstat(path, &st) == 0;
 }
 
+int volume_builtin_terminal(const char *root, const char *rel) {
+    if (!rel || strcmp(rel, "Applications/Utilities/Terminal")) return 0;
+    char body[64];
+    return volume_read(root, rel, body, sizeof body) == 0 &&
+           !strcmp(body, "OS999-BUILTIN:terminal:1\n");
+}
+
+int volume_builtin_tailnet(const char *root, const char *rel) {
+    if (!rel || strcmp(rel, "Applications/Utilities/Tailscale")) return 0;
+    char body[64];
+    return volume_read(root, rel, body, sizeof body) == 0 &&
+           !strcmp(body, "OS999-BUILTIN:tailscale:1\n");
+}
+
 int volume_seed(const char *root) {
     if (!root || volume_mkdir_p(root) != 0) {
         return -1;
@@ -145,7 +162,7 @@ int volume_seed(const char *root) {
             if (volume_join(parent, sizeof parent, root, parent_rel) != 0) {
                 return -1;
             }
-            if (mkdir(parent, 0755) != 0 && errno != EEXIST) {
+            if (volume_mkdir_p(parent) != 0) {
                 return -1;
             }
         }
@@ -184,7 +201,7 @@ static int hidden(const char *root_rel, const char *name) {
     if (name[0] == '.' || (n > 5 && strcasecmp(name + n - 5, ".rsrc") == 0)) {
         return 1;
     }
-    if ((!root_rel || !root_rel[0]) && strcmp(name, "Trash") == 0) {
+    if ((!root_rel || !root_rel[0]) && (strcmp(name, "Trash") == 0 || strcmp(name, "Desktop Folder") == 0)) {
         return 1;
     }
     return 0;
@@ -194,53 +211,83 @@ static int cmp_item(const void *a, const void *b) {
     return strcasecmp(((const Item *)a)->name, ((const Item *)b)->name);
 }
 
-int volume_list(const char *root, const char *rel, Item *items, int max) {
-    char full[OSPI_PATH];
-    if (volume_join(full, sizeof full, root, rel) != 0) {
-        return -1;
-    }
-    DIR *d = opendir(full);
-    if (!d) {
-        return -1;
-    }
+static int list_items(const char *root, const char *rel, Item **buffer, int max, int grow, int *limited) {
+    Item *items = *buffer;
+    if (!items || max < 1) { errno = EINVAL; return -1; }
+    int fd = volume_directory_open(root, rel ? rel : "");
+    if (fd < 0) return -1;
+    DIR *d = fdopendir(fd);
+    if (!d) { int error = errno; close(fd); errno = error; return -1; }
     int n = 0;
     struct dirent *de;
-    while ((de = readdir(d)) != NULL) {
+    for (;;) {
+        errno = 0; de = readdir(d);
+        if (!de) {
+            int error = errno;
+            if (error) { closedir(d); errno = error; return -1; }
+            break;
+        }
         if (hidden(rel, de->d_name)) {
             continue;
         }
         if (strlen(de->d_name) >= OSPI_NAME) {
+            if (limited) *limited = 1;
             continue;
         }
         if (n >= max) {
-            break;
-        }
-        char child_rel[OSPI_PATH];
-        char path[OSPI_PATH];
-        if (!rel || !rel[0]) {
-            snprintf(child_rel, sizeof child_rel, "%s", de->d_name);
-        } else {
-            snprintf(child_rel, sizeof child_rel, "%s/%s", rel, de->d_name);
-        }
-        if (volume_join(path, sizeof path, root, child_rel) != 0) {
-            continue;
+            if (!grow || max == OSPI_FOLDER_LIMIT) {
+                if (limited) *limited = 1;
+                break;
+            }
+            int next = max * 2;
+            if (next > OSPI_FOLDER_LIMIT) next = OSPI_FOLDER_LIMIT;
+            Item *larger = realloc(items, (size_t)next * sizeof *items);
+            if (!larger) { closedir(d); return -1; }
+            items = *buffer = larger; max = next;
         }
         struct stat st;
-        if (lstat(path, &st) != 0) {
+        if (fstatat(fd, de->d_name, &st, AT_SYMLINK_NOFOLLOW) != 0) {
             continue;
         }
         memset(&items[n], 0, sizeof items[n]);
+        items[n].data_size = S_ISREG(st.st_mode) && st.st_size > 0 ? (uint64_t)st.st_size : 0;
+        items[n].modified = (int64_t)st.st_mtime;
+#ifdef __APPLE__
+        items[n].created = (int64_t)st.st_birthtime;
+#endif
         memcpy(items[n].name, de->d_name, strlen(de->d_name) + 1);
         if (S_ISDIR(st.st_mode)) {
             items[n].kind = strcmp(de->d_name, "System Folder") == 0 ? ITEM_SYSTEM : ITEM_FOLDER;
+            char child_rel[OSPI_PATH];
+            int cn = rel && rel[0] ? snprintf(child_rel, sizeof child_rel, "%s/%s", rel, de->d_name)
+                                   : snprintf(child_rel, sizeof child_rel, "%s", de->d_name);
+            if (cn > 0 && (size_t)cn < sizeof child_rel)
+                volume_folder_icon(root, child_rel, items[n].special, sizeof items[n].special);
         } else {
-            items[n].kind = mac_icon_application(root, child_rel, &items[n]) ?
+            char file_rel[OSPI_PATH];
+            int fn = rel && rel[0] ? snprintf(file_rel, sizeof file_rel, "%s/%s", rel, de->d_name)
+                                   : snprintf(file_rel, sizeof file_rel, "%s", de->d_name);
+            int builtin = fn > 0 && (size_t)fn < sizeof file_rel && S_ISREG(st.st_mode) &&
+                          (volume_builtin_terminal(root, file_rel) || volume_builtin_tailnet(root, file_rel));
+            items[n].kind = builtin || (S_ISREG(st.st_mode) && mac_icon_application_at(fd, de->d_name, &items[n])) ?
                             ITEM_APPLICATION : ITEM_FILE;
         }
         n++;
     }
     closedir(d);
     qsort(items, (size_t)n, sizeof items[0], cmp_item);
+    return n;
+}
+
+int volume_list(const char *root, const char *rel, Item *items, int max) {
+    return list_items(root, rel, &items, max, 0, NULL);
+}
+int volume_list_dynamic(const char *root, const char *rel, Item **items, int *limited) {
+    if (!items || !limited) { errno = EINVAL; return -1; }
+    *items = calloc(OSPI_MAX_ITEMS, sizeof **items); *limited = 0;
+    if (!*items) return -1;
+    int n = list_items(root, rel, items, OSPI_MAX_ITEMS, 1, limited);
+    if (n < 0) { free(*items); *items = NULL; }
     return n;
 }
 
@@ -360,63 +407,54 @@ int volume_trash(const char *root, const char *rel, const char *name) {
     return -1;
 }
 
-int volume_count(const char *root, const char *rel) {
-    Item items[OSPI_MAX_ITEMS];
-    return volume_list(root, rel, items, OSPI_MAX_ITEMS);
-}
-
-static int wipe_at(const char *path, int depth) {
-    struct stat st;
-    if (depth > 16 || lstat(path, &st) != 0) {
+/* Rename one item in a folder, carrying its .rsrc resource-fork sidecar.
+ * Returns -2 when another item already has the name (a case-only change of
+ * the same item is fine), -1 for a name the Finder would refuse. */
+int volume_rename(const char *root, const char *rel, const char *from, const char *to) {
+    if (!from || !to || !from[0] || !to[0] || strchr(to, '/') || strchr(to, ':') ||
+        strchr(from, '/') || hidden(rel, to) || hidden(rel, from)) {
         return -1;
     }
-    if (!S_ISDIR(st.st_mode) || S_ISLNK(st.st_mode)) {
-        return unlink(path);
-    }
-    DIR *d = opendir(path);
-    if (!d) {
+    char dir[OSPI_PATH], src[OSPI_PATH], dst[OSPI_PATH];
+    if (volume_join(dir, sizeof dir, root, rel) != 0 ||
+        snprintf(src, sizeof src, "%s/%s", dir, from) >= (int)sizeof src ||
+        snprintf(dst, sizeof dst, "%s/%s", dir, to) >= (int)sizeof dst) {
         return -1;
     }
-    struct dirent *de;
-    int rc = 0;
-    while ((de = readdir(d)) != NULL) {
-        if (strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0) {
-            continue;
-        }
-        char child[OSPI_PATH];
-        int k = snprintf(child, sizeof child, "%s/%s", path, de->d_name);
-        if (k < 0 || (size_t)k >= sizeof child || wipe_at(child, depth + 1) != 0) {
-            rc = -1;
-        }
-    }
-    closedir(d);
-    if (rc != 0 || rmdir(path) != 0) {
+    struct stat a, b;
+    if (lstat(src, &a) != 0) {
         return -1;
+    }
+    if (strcmp(from, to) == 0) {
+        return 0;
+    }
+    if (lstat(dst, &b) == 0 && (a.st_dev != b.st_dev || a.st_ino != b.st_ino)) {
+        return -2;
+    }
+    if (rename(src, dst) != 0) {
+        return -1;
+    }
+    char rsrc_src[OSPI_PATH + 8], rsrc_dst[OSPI_PATH + 8];
+    snprintf(rsrc_src, sizeof rsrc_src, "%s.rsrc", src);
+    snprintf(rsrc_dst, sizeof rsrc_dst, "%s.rsrc", dst);
+    if (lstat(rsrc_src, &a) == 0 && lstat(rsrc_dst, &b) != 0) {
+        rename(rsrc_src, rsrc_dst);
     }
     return 0;
 }
 
-int volume_empty_trash(const char *root) {
-    char trash[OSPI_PATH];
-    if (volume_join(trash, sizeof trash, root, "Trash") != 0) {
-        return -1;
+int volume_count(const char *root, const char *rel) {
+    int fd = volume_directory_open(root, rel ? rel : "");
+    if (fd < 0) return -1;
+    DIR *d = fdopendir(fd);
+    if (!d) { close(fd); return -1; }
+    int count = 0;
+    for (;;) {
+        errno = 0; struct dirent *entry = readdir(d);
+        if (!entry) { if (errno) count = -1; break; }
+        if (hidden(rel, entry->d_name)) continue;
+        if (count == INT32_MAX) { count = -1; break; }
+        count++;
     }
-    DIR *d = opendir(trash);
-    if (!d) {
-        return -1;
-    }
-    struct dirent *de;
-    int rc = 0;
-    while ((de = readdir(d)) != NULL) {
-        if (de->d_name[0] == '.' || strcmp(de->d_name, "..") == 0) {
-            continue;
-        }
-        char child[OSPI_PATH];
-        int k = snprintf(child, sizeof child, "%s/%s", trash, de->d_name);
-        if (k < 0 || (size_t)k >= sizeof child || wipe_at(child, 0) != 0) {
-            rc = -1;
-        }
-    }
-    closedir(d);
-    return rc;
+    closedir(d); return count;
 }

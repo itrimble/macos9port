@@ -7,7 +7,8 @@
 enum {
     RUNTIME_BRIDGE_MAX_WIDTH = 1280,
     RUNTIME_BRIDGE_MAX_HEIGHT = 960,
-    RUNTIME_BRIDGE_INPUTS = 64
+    RUNTIME_BRIDGE_INPUTS = 64,
+    RUNTIME_BRIDGE_HOST_COMMAND = 0x0400 /* SDL2 left-GUI modifier on the wire */
 };
 
 typedef struct RuntimeBridge RuntimeBridge;
@@ -46,6 +47,8 @@ int runtime_bridge_read(RuntimeBridge *bridge, uint32_t *pixels, size_t capacity
                         int *width, int *height, uint64_t *sequence);
 int runtime_bridge_push(RuntimeBridge *bridge, RuntimeBridgeInput input);
 int runtime_bridge_pop(RuntimeBridge *bridge, RuntimeBridgeInput *input);
+/* Atomically enqueue both shortcut edges; 0 means no event was queued. */
+int runtime_bridge_shortcut(RuntimeBridge *bridge, uint32_t key);
 void runtime_bridge_set_state(RuntimeBridge *bridge, uint32_t state,
                               const char *message);
 int runtime_bridge_get_state(RuntimeBridge *bridge, uint32_t *state,

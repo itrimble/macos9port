@@ -28,8 +28,12 @@ int main(void) {
     w->kind = WIN_FOLDER; w->nitems = OSPI_MAX_ITEMS;
     for (int i = 0; i < w->nitems; i++) { memset(w->items[i].name, 'x', OSPI_NAME - 1); w->items[i].name[OSPI_NAME - 1] = 0; w->items[i].selected = 1; }
     strcpy(s->clipboard_out, "preserved"); s->clipboard_write_request = 0;
-    assert(desktop_command(s, 422) && s->dialog);
-    assert(!strcmp(s->clipboard_out, "preserved") && !s->clipboard_write_request);
+    assert(desktop_command(s, 422) && !s->dialog && s->clipboard_write_request);
+    assert(strlen(session_clipboard_output(s)) == OSPI_MAX_ITEMS * OSPI_NAME - 1);
+    s->clipboard_write_request = 0;
+    memset(w->items[0].name, 'x', sizeof w->items[0].name);
+    assert(desktop_command(s, 422) && s->dialog && !s->clipboard_write_request);
+    assert(strlen(session_clipboard_output(s)) == OSPI_MAX_ITEMS * OSPI_NAME - 1);
     char root[] = "/tmp/os999-command-test.XXXXXX"; assert(mkdtemp(root));
     snprintf(s->root, sizeof s->root, "%s", root);
     char path[1024], outside[] = "/tmp/os999-outside-test.XXXXXX";
@@ -54,6 +58,6 @@ int main(void) {
     s->nwin=0; s->desk_sel=-1; s->dialog=0; assert(!desktop_command_enabled(s,420));
     assert(!desktop_command(s,423)); assert(!desktop_command_enabled(NULL,420));
     rmdir(path); snprintf(path,sizeof path,"%s/One",root); unlink(path);
-    snprintf(path,sizeof path,"%s/Link",root); unlink(path); unlink(outside); rmdir(root); free(s);
+    snprintf(path,sizeof path,"%s/Link",root); unlink(path); unlink(outside); rmdir(root); free(s->clipboard_large_out); free(s);
     puts("desktop command checks passed"); return 0;
 }

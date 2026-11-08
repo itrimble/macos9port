@@ -1,6 +1,7 @@
 #include "desktop_guest.h"
 #include "draw.h"
 #include "runtime_bridge.h"
+#include "appearance_panel.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -156,7 +157,36 @@ static void test_drag_containment(void) {
     }
 }
 
+static void test_appearance_below_guest(void) {
+    Session *s = calloc(1, sizeof *s);
+    uint32_t *frame = calloc(OSPI_W * OSPI_H, sizeof *frame);
+    uint32_t *pixels = malloc(320 * 200 * sizeof *pixels);
+    CHECK(s && frame && pixels);
+    if (!s || !frame || !pixels) { free(s); free(frame); free(pixels); return; }
+    for (int i = 0; i < 320 * 200; i++) pixels[i] = 0xFF00CDAB;
+    s->sw = OSPI_W; s->sh = OSPI_H; s->menu = -1;
+    appearance_panel_open(s, APPEARANCE_DESKTOP_TAB);
+    s->guest_active = 1;
+    session_command(s, CMD_APP_GUEST);
+    CHECK(!appearance_panel_active());
+    session_paint(s, frame, OSPI_W, OSPI_H);
+    uint32_t outside = frame[200 * OSPI_W + 300];
+    GuestWindow gw = {0}; guest_window_layout(&gw, 320, 200, 1, 0, 0);
+    draw_guest_window(frame, &gw, pixels, 320, 200, RUNTIME_BRIDGE_READY, "Fixture", "");
+    session_overlay_paint(s, frame, OSPI_W, OSPI_H);
+    int middle = (gw.image_y + 100) * OSPI_W + gw.image_x + 160;
+    CHECK(frame[middle] == 0xFF00CDAB);
+    CHECK(frame[200 * OSPI_W + 300] == outside);
+    session_command(s, CMD_APP_FINDER);
+    CHECK(appearance_panel_active());
+    session_windows_paint(s, frame, OSPI_W, OSPI_H);
+    session_overlay_paint(s, frame, OSPI_W, OSPI_H);
+    CHECK(frame[middle] != 0xFF00CDAB);
+    appearance_panel_close(); free(s); free(frame); free(pixels);
+}
+
 int main(void) {
+    test_appearance_below_guest();
     test_drag_containment();
     test_layout_and_scaling();
     test_pixel_mapping_and_clamping();

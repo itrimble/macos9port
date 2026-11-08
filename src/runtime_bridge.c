@@ -157,6 +157,23 @@ int runtime_bridge_push(RuntimeBridge *bridge, RuntimeBridgeInput input) {
     return 1;
 }
 
+int runtime_bridge_shortcut(RuntimeBridge *bridge, uint32_t key) {
+    if (!bridge || (key != 'q' && key != 'w')) return -1;
+    if (bridge_lock(bridge)) return 0;
+    uint32_t used = bridge->input_write - bridge->input_read;
+    if (used > RUNTIME_BRIDGE_INPUTS - 2) {
+        pthread_mutex_unlock(&bridge->lock); return 0;
+    }
+    RuntimeBridgeInput pair[2] = {
+        {RUNTIME_BRIDGE_KEY_DOWN, 0, 0, key, RUNTIME_BRIDGE_HOST_COMMAND},
+        {RUNTIME_BRIDGE_KEY_UP, 0, 0, key, 0}
+    };
+    for (unsigned i = 0; i < 2; i++)
+        bridge->inputs[bridge->input_write++ % RUNTIME_BRIDGE_INPUTS] = pair[i];
+    pthread_mutex_unlock(&bridge->lock);
+    return 1;
+}
+
 int runtime_bridge_pop(RuntimeBridge *bridge, RuntimeBridgeInput *input) {
     if (!bridge || !input) return -1;
     if (bridge_lock(bridge)) return 0;

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The periwinkle OS999 desktop, as a gradient (matches the iOS icon). -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient android:angle="270" android:startColor="#7A8FD6" android:endColor="#3B4C92" />
+</shape>

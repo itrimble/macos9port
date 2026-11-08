@@ -1,38 +1,86 @@
 APP_BUNDLE ?= build/OS999 Stylized.app
+# Quake III (GPL-2) is built in its own repository and only copied into the bundle.
+QUAKE_SRC ?= ../macos9port-quake-embedded
+QUAKE_BUILD ?= $(QUAKE_SRC)/build/darwin
 CC ?= cc
+# Prefer the maintained, separately installed curl on macOS; never replace /usr/bin/curl.
+CURL_PKG_PATH := $(firstword $(wildcard /opt/homebrew/opt/curl/lib/pkgconfig /usr/local/opt/curl/lib/pkgconfig))
+NET_LIBS := $(shell PKG_CONFIG_PATH=$(CURL_PKG_PATH):$(PKG_CONFIG_PATH) pkg-config --libs libcurl) -pthread
+CURL_CFLAGS := $(shell PKG_CONFIG_PATH=$(CURL_PKG_PATH):$(PKG_CONFIG_PATH) pkg-config --cflags libcurl)
+
 CFLAGS ?= -std=c11 -Wall -Wextra -O2 -Iinclude -Iassets/icons/c -D_DEFAULT_SOURCE
+CFLAGS += $(CURL_CFLAGS)
+ifeq ($(OS999_ENABLE_TEST_HOOKS),1)
+CFLAGS += -DOS999_ENABLE_TEST_HOOKS=1
+endif
 SDL_CFLAGS := $(shell pkg-config --cflags sdl2 2>/dev/null)
 SDL_LIBS := $(shell pkg-config --libs sdl2 2>/dev/null)
+FFMPEG_CFLAGS := $(shell pkg-config --cflags libavformat libavcodec libswresample libavutil 2>/dev/null)
+FFMPEG_LIBS := $(shell pkg-config --libs libavformat libavcodec libswresample libavutil 2>/dev/null)
 FT_CFLAGS := $(shell pkg-config --cflags freetype2 2>/dev/null)
 FT_LIBS := $(shell pkg-config --libs freetype2 2>/dev/null)
 ifneq ($(FT_LIBS),)
 CFLAGS += $(FT_CFLAGS) -DOSPI_FREETYPE
 endif
+# Storage stack (storage/storage.mk, L02-L06): archive installs link it.
+STORAGE_OUT ?= build/storage
+STORAGE_A := $(STORAGE_OUT)/libos999storage.a
+STORAGE_LINK = $(STORAGE_A) $(STORAGE_LIBS)
+CFLAGS += -Istorage/include
 
-CORE := src/folder_navigation.c src/desktop_commands.c src/desktop_help.c src/menu_navigation.c src/folder_view.c src/desktop_theme.c src/desktop_icon_map.c src/appearance_panel.c src/desktop_context.c src/desktop_wallpaper.c src/session_state.c src/typeface_metrics.c src/desktop_assets.c assets/icons/c/ospi_icon_set.c src/font.c src/draw.c src/geom.c src/menu.c src/volume.c src/archive_fs.c src/session_sit.c src/mac_icon.c src/mac_icon_palette.c src/runtime_bridge.c \
-	src/hostinfo.c src/text.c src/paint.c src/session.c src/input.c \
-	src/install.c src/classic.c src/typeface.c src/native_launch.c src/mac_resource.c
-HDRS := include/folder_navigation.h include/desktop_commands.h include/desktop_help.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h
+AUDIO_SRC := src/audio_decoder.c src/audio_dsp.c src/audio_midi.c src/audio_output.c src/audio_service.c
+AUDIO_HDRS := include/volume_directory.h include/audio_decoder.h include/audio_dsp.h include/audio_midi.h include/audio_output.h include/audio_service.h
+
+include config/core-sources.mk
+HDRS := include/quake_launch.h include/term_font.h include/tailnet.h include/finder_edit.h include/app_switcher.h include/desktop_gesture.h include/finder_apps.h include/finder_print.h include/finder_recent.h include/finder_batch.h include/finder_drag.h include/finder_selection.h include/finder_popup.h include/finder_state.h include/finder_settings.h include/finder_search.h include/finder_files.h include/desktop_finder.h include/modern_network.h include/folder_navigation.h include/desktop_commands.h include/desktop_help.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h include/term.h include/mac_movie.h include/movie_window.h
+
+PRINT_HOST := src/desktop_print_stub.c
+SHORTCUT_HOST := src/desktop_shortcuts_stub.c
+ifeq ($(shell uname -s),Darwin)
+SDL_LIBS += -Wl,-headerpad_max_install_names
+PRINT_HOST := src/desktop_print_macos.m
+SHORTCUT_HOST := src/desktop_shortcuts_macos.m
+endif
 
 .PHONY: all test app run clean runtime
 
-all: build/ospi build/ospi-runtime
+all: build/ospi build/ospi-runtime build/os999-tailnet
 
-build/ospi: $(CORE) src/os999_startup.c src/main.c src/desktop_guest.c src/desktop_host.c src/desktop_sound.c $(HDRS) include/os999_startup.h include/desktop_guest.h include/desktop_host.h include/desktop_sound.h
+# Embedded Chromium window (browser/). macOS presents its GPU frames zero-copy.
+BROWSER_SRC := src/browser_window.c src/browser_input.c src/browser_host.c src/browser_paint.c src/browser_script.c src/browser_occlusion.c
+BROWSER_HDRS := include/browser_window.h include/browser_overlay.h include/os999_browser_ipc.h src/browser_window_int.h
+ifeq ($(shell uname -s),Darwin)
+BROWSER_OVERLAY := build/browser_overlay_mac.o
+BROWSER_LIBS := -framework Cocoa -framework QuartzCore -framework IOSurface
+build/browser_overlay_mac.o: src/browser_overlay_mac.m $(BROWSER_HDRS) include/ospi.h
 	mkdir -p build
-	$(CC) $(CFLAGS) $(SDL_CFLAGS) -o $@ $(CORE) src/os999_startup.c src/main.c src/desktop_guest.c src/desktop_host.c src/desktop_sound.c $(SDL_LIBS) $(FT_LIBS) -pthread -lm
+	$(CC) $(CFLAGS) $(SDL_CFLAGS) -fobjc-arc -c src/browser_overlay_mac.m -o $@
+else
+BROWSER_OVERLAY := src/browser_overlay_linux.c
+endif
+build/ospi: $(SHORTCUT_HOST) include/desktop_shortcuts.h $(PRINT_HOST) $(CORE) $(STORAGE_A) $(AUDIO_SRC) src/winamp_skin.c src/media_player_panel.c src/os999_startup.c src/main.c src/desktop_guest.c src/desktop_host.c src/desktop_sound.c $(HDRS) $(AUDIO_HDRS) include/winamp_skin.h include/media_player_panel.h include/os999_startup.h include/desktop_guest.h include/desktop_host.h include/desktop_sound.h $(BROWSER_SRC) $(BROWSER_OVERLAY) $(BROWSER_HDRS)
+	mkdir -p build
+	$(CC) $(CFLAGS) $(SDL_CFLAGS) $(FFMPEG_CFLAGS) -o $@ $(SHORTCUT_HOST) $(PRINT_HOST) $(CORE) $(STORAGE_LINK) $(AUDIO_SRC) src/winamp_skin.c src/media_player_panel.c src/os999_startup.c src/main.c src/desktop_guest.c src/desktop_host.c src/desktop_sound.c $(BROWSER_SRC) $(BROWSER_OVERLAY) $(SDL_LIBS) $(FFMPEG_LIBS) $(FT_LIBS) $(BROWSER_LIBS) -pthread -lm $(NET_LIBS)
 
 build/test_os999_startup: src/os999_startup.c src/font.c tests/test_os999_startup.c include/os999_startup.h include/draw.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -o $@ src/os999_startup.c src/font.c tests/test_os999_startup.c -lm
 
-build/test_ospi: $(CORE) src/os999_startup.c tests/test_ospi.c $(HDRS) include/os999_startup.h
+build/test_ospi: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_ospi.c $(HDRS) include/os999_startup.h
 	mkdir -p build
-	$(CC) $(CFLAGS) -o $@ $(CORE) src/os999_startup.c tests/test_ospi.c $(FT_LIBS) -lm
+	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_ospi.c $(FT_LIBS) -lm $(NET_LIBS)
 
-build/test_archive_install: $(CORE) src/os999_startup.c tests/test_archive_install.c $(HDRS) include/os999_startup.h
+build/test_mac_movie: src/mac_movie.c src/mac_movie_play.c tests/test_mac_movie.c tests/movie_fixture.h include/mac_movie.h
 	mkdir -p build
-	$(CC) $(CFLAGS) -o $@ $(CORE) src/os999_startup.c tests/test_archive_install.c $(FT_LIBS) -lm
+	$(CC) $(CFLAGS) -o $@ src/mac_movie.c src/mac_movie_play.c tests/test_mac_movie.c
+
+build/test_movie_window: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_movie_window.c tests/movie_fixture.h $(HDRS) include/os999_startup.h include/mac_movie.h include/movie_window.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_movie_window.c $(FT_LIBS) -lm $(NET_LIBS)
+
+build/test_archive_install: tests/install_network_stub.c $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_archive_install.c $(HDRS) include/os999_startup.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $(filter-out src/modern_network.c,$(CORE) $(STORAGE_LINK)) $(STORAGE_LINK) tests/install_network_stub.c src/os999_startup.c tests/test_archive_install.c $(FT_LIBS) -lm
 
 # Independent classic runtime. Musashi supplies only CPU instruction execution.
 # Its pinned source and generated tables remain in ignored build/deps/.
@@ -49,6 +97,8 @@ RUNTIME += src/mac_sound.c src/mac_sound_render.c
 RUNTIME += src/mac_sound_double.c
 RUNTIME += src/mac_sound_resample.c
 RUNTIME += src/mac_time.c
+RUNTIME += src/mac_files_write.c src/mac_files_info.c
+RUNTIME_HDRS += include/mac_files_int.h
 RUNTIME_HDRS += include/mac_time.h
 RUNTIME_HDRS += include/mac_sound_double.h
 RUNTIME_HDRS += include/mac_sound.h include/mac_sound_int.h include/runtime_audio.h include/runtime_perf.h include/runtime_keys.h
@@ -175,11 +225,11 @@ build/test_runtime_video: tests/test_runtime_video.c src/runtime_video.c src/run
 build/test_runtime_perf: tests/test_runtime_perf.c src/runtime_perf.c include/runtime_perf.h
 	$(CC) $(CFLAGS) tests/test_runtime_perf.c src/runtime_perf.c -o $@
 
-build/test_runtime_keys: tests/test_runtime_keys.c src/runtime_keys.c include/runtime_keys.h
+build/test_runtime_keys: tests/test_runtime_keys.c src/runtime_keys.c include/runtime_keys.h include/runtime_bridge.h
 	$(CC) $(CFLAGS) $(SDL_CFLAGS) tests/test_runtime_keys.c src/runtime_keys.c -o $@
 
-build/test_mac_icon: tests/test_mac_icon.c src/mac_icon_palette.c include/mac_icon.h
-	$(CC) $(CFLAGS) -o $@ tests/test_mac_icon.c src/mac_icon_palette.c
+build/test_mac_icon: tests/test_mac_icon.c src/mac_icon.c src/mac_icon_palette.c src/mac_resource.c src/volume.c src/volume_folders.c include/mac_icon.h include/mac_resource.h include/ospi.h include/volume_directory.h
+	$(CC) $(CFLAGS) -o $@ tests/test_mac_icon.c src/mac_icon.c src/mac_icon_palette.c src/mac_resource.c src/volume.c src/volume_folders.c
 
 build/test_runtime_bridge: tests/test_runtime_bridge.c src/runtime_bridge.c include/runtime_bridge.h
 	mkdir -p build
@@ -263,6 +313,9 @@ build/test_mac_color: $(RUNTIME_OBJ) tests/test_mac_color.c $(RUNTIME_HDRS) $(CP
 build/test_mac_files: $(RUNTIME_OBJ) tests/test_mac_files.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_files.c $(CPUOBJ) -lm -o $@
 
+build/test_mac_files_write: $(RUNTIME_OBJ) tests/test_mac_files_write.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_files_write.c $(CPUOBJ) -lm -o $@
+
 build/test_mac_geometry: $(RUNTIME_OBJ) tests/test_mac_geometry.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_geometry.c $(CPUOBJ) -lm -o $@
 
@@ -272,21 +325,30 @@ build/test_mac_system: $(RUNTIME_OBJ) tests/test_mac_system.c $(RUNTIME_HDRS) $(
 build/test_mac_raster: $(RUNTIME_OBJ) tests/test_mac_raster.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_raster.c $(CPUOBJ) -lm -o $@
 
-test: build/test_os999_startup build/test_ospi build/test_archive_install build/test_mac_icon build/test_runtime_bridge build/test_mac_resource build/test_mac_cpu build/test_mac_runtime build/test_mac_resource_services build/test_mac_memory build/test_mac_traps build/test_native_launch build/test_mac_events build/test_mac_quickdraw build/test_runtime_video build/test_runtime_perf build/test_runtime_keys build/test_mac_raster build/test_mac_system build/test_mac_geometry build/test_mac_files build/test_mac_cursor build/test_mac_color build/test_mac_dialog build/test_runtime_cursor build/test_mac_color_port build/test_mac_copybits build/test_mac_palette build/test_mac_color_raster
+test: build/test_os999_startup build/test_ospi build/test_archive_install build/test_mac_icon build/test_runtime_bridge build/test_mac_resource build/test_mac_cpu build/test_mac_runtime build/test_mac_resource_services build/test_mac_memory build/test_mac_traps build/test_native_launch build/test_mac_events build/test_mac_quickdraw build/test_runtime_video build/test_runtime_perf build/test_runtime_keys build/test_mac_raster build/test_mac_system build/test_mac_geometry build/test_mac_files build/test_mac_cursor build/test_mac_color build/test_mac_dialog build/test_runtime_cursor build/test_mac_color_port build/test_mac_copybits build/test_mac_palette build/test_mac_color_raster build/test_mac_movie build/test_movie_window build/test_mac_files_write
 	./build/test_desktop_assets assets/icons/ospi-icons.icl8
 	./build/test_appearance
 	./build/test_appearance_panel
 	./build/test_desktop_context
 	./build/test_desktop_controls
+	./build/test_finder_edit
+	./build/test_quake_launch
 	./build/test_desktop_icon_map
 	./build/test_desktop_theme
 	./build/test_theme_integration
 	./build/test_desktop_commands
+	./build/test_finder_interaction
+	./build/test_finder_state
+	./build/test_finder_desktop
+	./build/test_finder_files
 	./build/test_folder_navigation
 	./build/test_menu_navigation
 	./build/test_folder_view
 	./build/test_menu_integration
+	./build/test_terminal
+	./build/test_audio_engine assets/sounds/classic9
 	./build/test_os999_startup
+	./build/test_modern_network
 	./build/test_ospi
 	./build/test_archive_install
 	./build/test_mac_icon
@@ -315,6 +377,7 @@ test: build/test_os999_startup build/test_ospi build/test_archive_install build/
 	./build/test_mac_system
 	./build/test_mac_geometry
 	./build/test_mac_files
+	./build/test_mac_files_write
 	./build/test_mac_cursor
 	./build/test_mac_color
 	./build/test_mac_dialog
@@ -341,22 +404,47 @@ test: build/test_os999_startup build/test_ospi build/test_archive_install build/
 	./build/test_mac_dialog_frame
 	./build/test_mac_palette_manager
 	./build/test_mac_menu_records
+	./build/test_desktop_sound assets/sounds/classic9
+	./build/test_desktop_guest
+	./build/test_archive_fs
+	./build/test_desktop_session_ui
+	./build/test_runtime_audio
+	./build/test_mac_containers
+	./build/test_mac_writable_files
+	./build/test_mac_controls_textedit
+	./build/test_mac_quickdraw_accel
+	./build/test_desktop_themes
+	./build/test_mac_quicktime
+	./build/test_browser_ipc
+	./build/test_mac_network_policy
+	./build/test_mac_pef_cfm
+	./build/test_mac_perf_audio_gates
+	./build/test_browser_media_gateway
+	./build/test_mac_fuzz_soak
+	./build/test_platform_sandbox_audit
+	./build/test_cleanroom_release_gate
+	./build/test_mac_movie
+	./build/test_movie_window
 
-app: build/ospi build/ospi-runtime macos/Info.plist wallpapers
+app: build/ospi build/ospi-runtime build/os999-tailnet macos/Info.plist wallpapers
 	rm -rf "$(APP_BUNDLE)"
 	mkdir -p "$(APP_BUNDLE)/Contents/MacOS" "$(APP_BUNDLE)/Contents/Resources/Fonts"
 	cp build/ospi "$(APP_BUNDLE)/Contents/MacOS/ospi"
 	cp build/ospi-runtime "$(APP_BUNDLE)/Contents/MacOS/ospi-runtime"
+	cp build/os999-tailnet "$(APP_BUNDLE)/Contents/MacOS/os999-tailnet"
+	@if [ -x "$(QUAKE_BUILD)/quake3" ]; then mkdir -p "$(APP_BUNDLE)/Contents/Resources/Quake3" && cp -R "$(QUAKE_BUILD)/quake3" "$(QUAKE_BUILD)/baseq3" "$(APP_BUNDLE)/Contents/Resources/Quake3/" && cp "$(QUAKE_SRC)/COPYING.txt" "$(APP_BUNDLE)/Contents/Resources/Quake3/COPYING-GPL2.txt" && echo "Packaged Quake III from $(QUAKE_BUILD)"; else echo "Quake III not packaged: $(QUAKE_BUILD)/quake3 missing"; fi
 	cp $(MUSASHI)/readme.txt "$(APP_BUNDLE)/Contents/Resources/Musashi-license.txt"
 	sed -n '1,32p' $(MUSASHI)/softfloat/softfloat.c > "$(APP_BUNDLE)/Contents/Resources/SoftFloat-notice.txt"
 	cp fonts/ChicagoFLF.ttf fonts/LICENSE.txt "$(APP_BUNDLE)/Contents/Resources/Fonts/"
+	cp -R fonts/terminal "$(APP_BUNDLE)/Contents/Resources/Fonts/Terminal"
 	mkdir -p "$(APP_BUNDLE)/Contents/Resources/sounds/classic9"
-	cp assets/sounds/classic9/01-startup_chord.wav assets/sounds/classic9/03-plain_beep.wav assets/sounds/classic9/16-menu_open.wav assets/sounds/classic9/17-menu_select.wav "$(APP_BUNDLE)/Contents/Resources/sounds/classic9/"
+	cp assets/sounds/classic9/*.wav "$(APP_BUNDLE)/Contents/Resources/sounds/classic9/"
 	mkdir -p "$(APP_BUNDLE)/Contents/Resources/wallpapers"
 	cp build/wallpapers/*.bmp "$(APP_BUNDLE)/Contents/Resources/wallpapers/"
 	cp assets/icons/ospi-icons.icl8 "$(APP_BUNDLE)/Contents/Resources/"
 	cp macos/Info.plist "$(APP_BUNDLE)/Contents/Info.plist"
 	printf 'APPL????' > "$(APP_BUNDLE)/Contents/PkgInfo"
+	@if [ -d "$(APP_BUNDLE)/Contents/Resources/Quake3" ]; then codesign --force --sign - "$(APP_BUNDLE)/Contents/Resources/Quake3/baseq3/"*.so "$(APP_BUNDLE)/Contents/Resources/Quake3/quake3"; fi
 	codesign --force --sign - "$(APP_BUNDLE)"
 
 ifeq ($(shell uname -s),Darwin)
@@ -370,96 +458,4 @@ endif
 clean:
 	rm -rf build
 
-build/test_mac_menu_records: $(RUNTIME_OBJ) tests/test_mac_menu_records.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_menu_records.c $(CPUOBJ) -lm -o $@
-
-build/test_mac_palette_manager: $(RUNTIME_OBJ) tests/test_mac_palette_manager.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_palette_manager.c $(CPUOBJ) -lm -o $@
-
-test: build/test_mac_palette_manager
-
-build/test_mac_dialog_frame: $(RUNTIME_OBJ) tests/test_mac_dialog_frame.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_dialog_frame.c $(CPUOBJ) -lm -o $@
-
-test: build/test_mac_dialog_frame
-
-build/test_desktop_assets: tests/test_desktop_assets.c src/desktop_assets.c src/mac_icon_palette.c assets/icons/c/ospi_icon_set.c include/desktop_assets.h
-	$(CC) $(CFLAGS) tests/test_desktop_assets.c src/desktop_assets.c src/mac_icon_palette.c assets/icons/c/ospi_icon_set.c -o $@
-
-test: build/test_desktop_assets
-
-build/test_desktop_sound: tests/test_desktop_sound.c src/desktop_sound.c include/desktop_sound.h
-	$(CC) $(CFLAGS) $(SDL_CFLAGS) tests/test_desktop_sound.c src/desktop_sound.c $(SDL_LIBS) -o $@
-
-.PHONY: test-desktop-sound
-test-desktop-sound: build/test_desktop_sound
-	./build/test_desktop_sound assets/sounds/classic9
-
-.PHONY: wallpapers test-wallpapers
-wallpapers:
-	zsh scripts/prepare-wallpapers.sh assets build/wallpapers
-
-build/test_desktop_wallpaper: src/desktop_wallpaper.c src/desktop_wallpaper_catalog.h include/desktop_wallpaper.h tests/test_desktop_wallpaper.c
-	mkdir -p build
-	$(CC) $(CFLAGS) src/desktop_wallpaper.c tests/test_desktop_wallpaper.c -o $@
-
-test-wallpapers: wallpapers build/test_desktop_wallpaper
-	./build/test_desktop_wallpaper build/wallpapers
-
-build/test_appearance: $(CORE) src/os999_startup.c tests/test_appearance.c $(HDRS) include/os999_startup.h
-	$(CC) $(CFLAGS) -o $@ $(filter-out src/desktop_wallpaper.c,$(CORE)) src/os999_startup.c tests/test_appearance.c $(FT_LIBS) -lm
-
-test: build/test_appearance
-
-
-build/test_appearance_panel: src/appearance_panel.c tests/test_appearance_panel.c $(HDRS)
-	$(CC) $(CFLAGS) -o $@ src/appearance_panel.c src/draw.c src/font.c src/geom.c src/menu.c src/text.c src/typeface.c src/typeface_metrics.c tests/test_appearance_panel.c $(FT_LIBS) -lm
-
-test: build/test_appearance_panel
-
-build/test_desktop_context: src/desktop_theme.c src/desktop_context.c src/geom.c tests/test_desktop_context.c $(HDRS)
-	$(CC) $(CFLAGS) -Isrc -o $@ src/desktop_theme.c src/desktop_context.c src/geom.c tests/test_desktop_context.c
-
-test: build/test_desktop_context
-
-build/test_desktop_controls: $(CORE) src/os999_startup.c tests/test_desktop_controls.c $(HDRS)
-	$(CC) $(CFLAGS) -o $@ $(CORE) src/os999_startup.c tests/test_desktop_controls.c $(FT_LIBS) -lm
-
-test: build/test_desktop_controls
-
-build/test_desktop_icon_map: src/desktop_icon_map.c tests/test_desktop_icon_map.c include/desktop_assets.h
-	$(CC) $(CFLAGS) -o $@ src/desktop_icon_map.c tests/test_desktop_icon_map.c
-
-test: build/test_desktop_icon_map
-
-build/test_desktop_theme: src/desktop_theme.c tests/test_desktop_theme.c include/desktop_theme.h
-	$(CC) $(CFLAGS) -o $@ src/desktop_theme.c tests/test_desktop_theme.c
-
-build/test_theme_integration: $(CORE) src/os999_startup.c tests/test_theme_integration.c $(HDRS)
-	$(CC) $(CFLAGS) -o $@ $(CORE) src/os999_startup.c tests/test_theme_integration.c $(FT_LIBS) -lm
-
-test: build/test_desktop_theme build/test_theme_integration
-
-build/test_desktop_commands: src/desktop_commands.c tests/test_desktop_commands.c $(HDRS)
-	$(CC) $(CFLAGS) -Isrc -o $@ src/desktop_commands.c tests/test_desktop_commands.c
-
-build/test_menu_navigation: src/menu_navigation.c tests/test_menu_navigation.c $(HDRS)
-	$(CC) $(CFLAGS) -o $@ src/menu_navigation.c tests/test_menu_navigation.c
-
-test: build/test_desktop_commands build/test_menu_navigation
-
-build/test_folder_view: $(CORE) src/os999_startup.c tests/test_folder_view.c $(HDRS)
-	$(CC) $(CFLAGS) -o $@ $(CORE) src/os999_startup.c tests/test_folder_view.c $(FT_LIBS) -lm
-
-test: build/test_folder_view
-
-build/test_menu_integration: $(CORE) src/os999_startup.c tests/test_menu_integration.c $(HDRS)
-	$(CC) $(CFLAGS) -o $@ $(CORE) src/os999_startup.c tests/test_menu_integration.c $(FT_LIBS) -lm
-
-test: build/test_menu_integration
-
-
-build/test_folder_navigation: src/folder_navigation.c src/geom.c src/font.c src/draw.c src/text.c src/typeface.c src/typeface_metrics.c src/menu.c src/desktop_theme.c src/desktop_wallpaper.c tests/test_folder_navigation.c $(HDRS)
-	$(CC) $(CFLAGS) -o $@ src/folder_navigation.c src/geom.c src/font.c src/draw.c src/text.c src/typeface.c src/typeface_metrics.c src/menu.c src/desktop_theme.c src/desktop_wallpaper.c tests/test_folder_navigation.c $(FT_LIBS) -lm
-
-test: build/test_folder_navigation
+include config/extra-tests.mk

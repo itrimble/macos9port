@@ -1,4 +1,5 @@
 #include "desktop_sound.h"
+#include "audio_service.h"
 #include <SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,10 +8,7 @@
 #include <unistd.h>
 
 enum { MAX_WAV_BYTES = 2 * 1024 * 1024, MAX_PCM_BYTES = 48000 * 4 * 8 };
-typedef struct { uint8_t *data; uint32_t bytes; } Sound;
-static Sound sounds[DESKTOP_SOUND_COUNT];
-static SDL_AudioDeviceID device;
-static int enabled = 1, guest_active, audio_ref;
+static int enabled = 1, guest_active, initialized;
 static uint32_t last_effect;
 static int played_effect;
 static char preference[4096];
@@ -20,8 +18,8 @@ static uint32_t le32(const uint8_t *p) {
 }
 static unsigned le16(const uint8_t *p) { return p[0] | (unsigned)p[1] << 8; }
 
-/* Only the shipped PCM16 stereo/48kHz format; never allocate from a WAV length. */
-static int load_sound(Sound *out, const char *path) {
+/* Validate WAV structure and bounds before caching in AudioService. */
+static int valid_wav_file(const char *path) {
     FILE *f = fopen(path, "rb");
     if (!f) return 0;
     struct stat st;
@@ -34,7 +32,7 @@ static int load_sound(Sound *out, const char *path) {
     fclose(f);
     if (!read_ok) { free(b); return 0; }
     int valid = !memcmp(b, "RIFF", 4) && !memcmp(b + 8, "WAVE", 4) && le32(b + 4) == n - 8;
-    size_t pcm = 0, bytes = 0;
+    size_t pcm = 0;
     int format = 0;
     for (size_t at = 12; valid && at < n;) {
         if (n - at < 8) { valid = 0; break; }
@@ -47,28 +45,19 @@ static int load_sound(Sound *out, const char *path) {
             else format = 1;
         } else if (!memcmp(b + at, "data", 4)) {
             if (pcm || !len || len > MAX_PCM_BYTES || len % 4) valid = 0;
-            else { pcm = data; bytes = len; }
+            else pcm = data;
         }
         size_t padded = len + (len & 1u);
         if (padded > n - data) { valid = 0; break; }
         at = data + padded;
     }
-    if (!valid || !format || !pcm) { free(b); return 0; }
-    memmove(b, b + pcm, bytes);
-    out->data = b;
-    out->bytes = (uint32_t)bytes;
-    return 1;
+    free(b);
+    return valid && format && pcm;
 }
 
 void desktop_sound_shutdown(void) {
-    if (device) SDL_CloseAudioDevice(device);
-    device = 0;
-    for (int i = 0; i < DESKTOP_SOUND_COUNT; i++) {
-        free(sounds[i].data); sounds[i] = (Sound){0};
-    }
-    if (audio_ref) SDL_QuitSubSystem(SDL_INIT_AUDIO);
-    audio_ref = 0;
-    played_effect = guest_active = 0;
+    audio_service_shutdown();
+    initialized = played_effect = guest_active = 0;
 }
 
 int desktop_sound_init(const char *dir, const char *preference_file) {
@@ -88,15 +77,12 @@ int desktop_sound_init(const char *dir, const char *preference_file) {
     for (int i = 0; i < DESKTOP_SOUND_COUNT; i++) {
         char path[4096];
         int n = snprintf(path, sizeof path, "%s/%s", dir, files[i]);
-        if (n > 0 && (size_t)n < sizeof path) loaded += load_sound(&sounds[i], path);
+        if (n > 0 && (size_t)n < sizeof path && valid_wav_file(path))
+            loaded++;
     }
-    if (!loaded || SDL_InitSubSystem(SDL_INIT_AUDIO)) return 0;
-    audio_ref = 1;
-    SDL_AudioSpec want = {0};
-    want.freq = 48000; want.format = AUDIO_S16LSB; want.channels = 2; want.samples = 512;
-    device = SDL_OpenAudioDevice(NULL, 0, &want, NULL, 0);
-    if (!device) return 0;
-    SDL_PauseAudioDevice(device, 0);
+    if (!loaded || audio_service_init(dir) != 0) return 0;
+    audio_set_master_muted(!enabled);
+    initialized = 1;
     return loaded;
 }
 
@@ -117,25 +103,47 @@ int desktop_sound_set_enabled(int value) {
         if (!ok) { unlink(temp); return 0; }
     }
     enabled = value;
-    if (!enabled && device) SDL_ClearQueuedAudio(device);
+    audio_set_master_muted(!enabled);
+    if (!enabled) audio_clear_system_voices();
     return 1;
 }
 
+/* Suppress desktop effects while a guest runs. The shared output stays open
+ * for OS999 Amp and other media; the guest owns its separate audio device. */
 void desktop_sound_guest_active(int active) {
     guest_active = !!active;
-    if (guest_active && device) SDL_ClearQueuedAudio(device);
+    if (guest_active) audio_clear_system_voices();
+}
+
+/* The shared audio engine also serves OS999 Amp, so its output stays open
+ * while a guest runs; desktop effects are suppressed instead. */
+int desktop_sound_effects_suppressed(void) {
+    return !initialized || !enabled || guest_active;
 }
 
 uint32_t desktop_sound_queued_bytes(void) {
-    return device ? SDL_GetQueuedAudioSize(device) : 0;
+    if (!initialized) return 0;
+    size_t frames = audio_active_system_frames();
+    return (uint32_t)(frames * 8);
+}
+
+int desktop_sound_play_named(const char *event_name) {
+    if (!initialized || !enabled || guest_active || !event_name ||
+        desktop_sound_queued_bytes() > 0)
+        return 0;
+    uint32_t now = SDL_GetTicks();
+    if (strcmp(event_name, "startup") != 0 && played_effect && now - last_effect < 120)
+        return 0;
+    if (!audio_play_system_sound(event_name)) return 0;
+    last_effect = now;
+    played_effect = 1;
+    return 1;
 }
 
 int desktop_sound_play(int event) {
-    if (!device || !enabled || guest_active || event < 0 || event >= DESKTOP_SOUND_COUNT ||
-        !sounds[event].data || SDL_GetQueuedAudioSize(device)) return 0;
-    uint32_t now = SDL_GetTicks();
-    if (event != DESKTOP_SOUND_STARTUP && played_effect && now - last_effect < 120) return 0;
-    if (SDL_QueueAudio(device, sounds[event].data, sounds[event].bytes)) return 0;
-    last_effect = now; played_effect = 1;
-    return 1;
+    static const char *names[DESKTOP_SOUND_COUNT] = {
+        "startup", "alert.beep", "menu.open", "menu.select"
+    };
+    if (event < 0 || event >= DESKTOP_SOUND_COUNT) return 0;
+    return desktop_sound_play_named(names[event]);
 }

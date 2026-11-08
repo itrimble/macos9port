@@ -87,6 +87,7 @@ const char *desktop_asset_name(const Item *item, const char *parent_rel) {
     const char *parent = parent_name(parent_rel);
     if (item->kind == ITEM_SYSTEM) return "system_folder";
     if (item->kind == ITEM_FOLDER) {
+        if (item->special[0]) return item->special;   /* kept through a rename */
         icon = exact(folders, sizeof folders / sizeof *folders, name);
         return icon ? icon : "folder";
     }

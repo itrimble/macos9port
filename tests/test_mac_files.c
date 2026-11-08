@@ -226,7 +226,7 @@ int main(void) {
     CHECK(read_at(&rt,0,0,1)==-51);
     for(int i=0;i<32;i++) CHECK(open_name(&rt,"Game Data",0)==0);
     CHECK(open_name(&rt,"Game Data",0)==-42);
-    CHECK(mac_file_service(&rt,0xa003)==0); /* writes fail closed upstream */
+    CHECK(call(&rt,0xa003)==-61); /* wrPermErr: data volume refs are read-only */
     mac_files_destroy(&rt); CHECK(rt.file_state==NULL);
     mac_files_destroy(&rt);
     CHECK(mac_files_root(&rt,root)==0);

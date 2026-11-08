@@ -2,6 +2,7 @@
 #include "session_int.h"
 #include "desktop_host.h"
 #include "desktop_sound.h"
+#include "media_player_panel.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -54,6 +55,7 @@ void desktop_host_init(const char *volume) {
     previous_menu = -1;
     previous_dialog = 0;
     find_sounds(sounds, sizeof sounds);
+    media_panel_init_hooks();
     int n = snprintf(preference, sizeof preference, "%s/.os999-sound", volume);
     if (n <= 0 || (size_t)n >= sizeof preference) return;
     if (!desktop_sound_init(sounds, preference))
@@ -63,9 +65,10 @@ void desktop_host_init(const char *volume) {
 
 void desktop_host_tick(Session *s, int guest_active) {
     if (!s) return;
+    media_panel_tick();
     if (s->clipboard_write_request) {
         s->clipboard_write_request = 0;
-        if (SDL_SetClipboardText(s->clipboard_out) != 0)
+        if (SDL_SetClipboardText(session_clipboard_output(s)) != 0)
             dialog_info(s, "Copy", "Could not copy to the clipboard.");
     }
     desktop_sound_guest_active(guest_active);
@@ -73,6 +76,11 @@ void desktop_host_tick(Session *s, int guest_active) {
         s->sound_toggle_request = 0;
         if (!desktop_sound_set_enabled(!desktop_sound_enabled()))
             fprintf(stderr, "OS999 Stylized: could not save sound preference\n");
+    }
+    if (s->sound_preview_request >= 0) {
+        int ev = s->sound_preview_request;
+        s->sound_preview_request = -1;
+        (void)desktop_sound_play(ev);
     }
     s->host_sound_enabled = desktop_sound_enabled();
     menu_set_sound_enabled(s->host_sound_enabled);
@@ -82,11 +90,15 @@ void desktop_host_tick(Session *s, int guest_active) {
         (void)desktop_sound_play(DESKTOP_SOUND_MENU_OPEN);
     else if (s->menu < 0 && previous_menu >= 0)
         (void)desktop_sound_play(DESKTOP_SOUND_MENU_SELECT);
+    else if (s->sound_event[0])
+        (void)desktop_sound_play_named(s->sound_event);
+    s->sound_event[0] = 0;
     previous_dialog = s->dialog;
     previous_menu = s->menu;
 }
 
 void desktop_host_shutdown(void) {
+    media_panel_shutdown();
     desktop_sound_shutdown();
     previous_menu = -1;
     previous_dialog = 0;
@@ -125,4 +137,25 @@ int desktop_host_resolve_volume(int argc, char **argv, char *out, size_t n) {
     }
     memcpy(out, resolved, strlen(resolved) + 1);
     return 0;
+}
+
+void desktop_trace_input(Session *s, SDL_Window *win, SDL_Renderer *ren,
+                        int raw_x, int raw_y, int x, int y, int clicks) {
+    if (!getenv("OSPI_INPUT_TRACE")) return;
+    int ww = 0, wh = 0, rw = 0, rh = 0;
+    SDL_GetWindowSize(win, &ww, &wh);
+    SDL_GetRendererOutputSize(ren, &rw, &rh);
+    const Window *active = s->nwin > 0 ? &s->win[s->nwin - 1] : NULL;
+    const char *selected = "-";
+    if (active) {
+        for (int i = 0; i < active->nitems; i++) {
+            if (window_items(active)[i].selected) {
+                selected = window_items(active)[i].name;
+                break;
+            }
+        }
+    }
+    fprintf(stderr, "input-trace raw=%d,%d mapped=%d,%d clicks=%d window=%dx%d drawable=%dx%d front=%s selected=%s\n",
+            raw_x, raw_y, x, y, clicks, ww, wh, rw, rh,
+            active ? active->rel : "-", selected);
 }

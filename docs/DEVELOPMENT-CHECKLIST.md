@@ -17,12 +17,20 @@ our runtime to play a video. These are required outcomes, not optional demos.
 This checklist records Ian’s requirements through 5 November 2026.
 Unchecked items are requirements, not claims of existing functionality.
 
+## Historical evidence carried forward — 7 November 2026
+
+The [6 November cross-worktree audit](PROJECT-STATUS-2026-11-06.md) and
+[inventory](WORKTREE-INVENTORY-2026-11-06.md) preserve the earlier branch results,
+including Ian's observed Monkey Island input/audio and older FPS measurements.
+They are dated evidence, not acceptance of this candidate. See the
+[master tracker](OS999-MASTER-TRACKER.md) for subsequent integration. Passing
+specification-only tests does not establish an implemented feature.
+
 ## How we use this checklist
 
 - Keep stable IDs. Mark an item complete only with a linked evidence record.
 - Each record names the source revision (or exact dirty-tree snapshot), host,
-  architecture, tool versions, artifact SHA-256, command or interaction,
-  expected result, observed result, limitations, and date.
+  architecture, tool versions, artifact SHA-256, command or interaction, expected result, observed result, limitations, and date.
 - Track implementation, automated checks, windowed/device checks, performance,
   and Ian's acceptance separately. A pass on one host does not cover another.
 - At each work session: read this file and `CLAUDE.md`, select the earliest
@@ -32,124 +40,79 @@ Unchecked items are requirements, not claims of existing functionality.
 - Run direct local builds/tests for this project, as Ian requested. Do not use
   the build orchestrator. Check tool currency; preserve active jobs and saves.
 
-## Current baseline
+## Historical baseline
 
-The C11/SDL2 desktop routes extracted CODE-resource applications to our
-development runtime; unsupported archive formats retain the older Systemless
-fallback. Our runtime combines Musashi instruction execution with independently
-implemented loading and partial Macintosh API services. User screenshots now
-show original MI1 running in a guest window inside the desktop and progressing
-through scenes; mouse controls and effects respond. Ian reports intermittent
-ticking and missing or delayed music in the SCUMM Bar and Sword Master scenes.
-The current live session has no audio capture, trace, or FPS measurement. Guest
-window drag containment, sustained play, saves, and full acceleration remain
-unverified. Networking and classic QuickTime playback remain unimplemented.
-See [the first implementation loop](RUNTIME-LOOP-2026-11-04.md) for evidence,
-limitations, exact artifacts, and the next reproducible steps.
-
-The first OS999 intro preview looked low quality to Ian: one quick rotation
-followed by the desktop. A subsequent frame still showed faceting and a detached
-leaf. Ian said the software-rendered Granny Smith mesh looked much better, then
-requested 25% of its previous size. The fruit is now scaled to one quarter,
-rebuilt, and visible in a disposable-volume preview; final user acceptance is
-pending. Ian supplied a boot-screen mockup with a framed display, pixel-art
-apple, OS999 wordmark, and “Starting Up…” treatment. Use it as a visual target
-while preserving truthful readiness and the previously requested short startup.
-The small fruit mark is visible in the menu bar, but its click/menu behavior
-has not yet been checked.
-
-Ian also supplied `build resources from ian/Desktop1.png` through `Desktop4.png`
-as OS999 desktop references. `Desktop1` and `Desktop2` show the blue desktop,
-disk and Finder windows, Granny Smith menu mark, and About panel; `Desktop3` and
-`Desktop4` show a future app menu and Chromium window. The `.png` files are
-actually JPEG mockups. `apple_logo.png` is a pixel-art Granny Smith reference,
-not an Apple logo asset to ship. Treat all of these as visual references until
-asset ownership/provenance is recorded; mockups do not prove app functionality.
-The menu item and About This Mac text identify Ian Trimble and show
-`remnantsecurity.com`. Ian clarified that the site is where he houses all
-the things he creates publicly. His screenshot showed the About window too
-large and exposing the temporary volume path. Current source describes the
-site's role, removes that host path, and centers a smaller About window; a fresh
-packaged visual review remains due.
-
-On 4 November 2026, `BUILDFLEET_LOCAL=1 make test` passed the complete local C
-suite. `BUILDFLEET_LOCAL=1 make runtime` reported no work. REA CLI 6.8.0 matches
-the checked npm release; its Codex registration is aligned, but no analysis
-provider is configured and REA tools are not connected in this agent session.
-On 5 November the shared REA skill was refreshed to version 49. Earlier REA
-ZIP inventories succeeded for Monkey Island 2 and Castle of Dr. Brain; their
-Evidence IDs are retained in the loop record. CPU traces are separate evidence.
+See [the preserved baseline](DEVELOPMENT-BASELINE.md). Newer acceptance evidence follows below.
 
 ## 0. Clean-room boundary and target identity
 
 - [ ] C01 Record provenance and compatible licenses for every shipped source,
-  font, icon, codec, dependency, and generated test fixture. Ship no Apple ROM,
-  System file, proprietary font, logo, game asset, or copied implementation.
+  font, icon, codec, dependency, and generated test fixture. Ship no Apple ROM, System file, proprietary font, logo, game asset, or copied implementation.
 - [ ] C02 Use REA for selected application artifacts and behavioral evidence.
-  Keep observations, inferred contracts, implementation, and unknowns separate.
-  Do not decompile Apple code to implement our runtime. Record unsupported
+  Keep observations, inferred contracts, implementation, and unknowns separate. Do not decompile Apple code to implement our runtime. Record unsupported
   formats/providers and retain actual Evidence IDs when REA returns them.
 - [ ] C03 Identify exact editions, languages, architectures, and hashes for all
   target applications. Keep user-supplied binaries and saves outside Git.
 - [ ] C04 Resolve the MacSurf name and correct URL; the supplied URL repeats
   Castle of Dr. Brain. Do not substitute a different browser silently.
 - [x] C05 QuickTime scope resolved by Ian on 4 November 2026: open classic
-  QuickTime and play a video. Run separately supplied QuickTime as guest software
-  on our independent runtime. Its code/assets stay outside our implementation
-  and distribution; do not derive runtime code from Apple's implementation.
-  This records a scope decision only; playback remains unimplemented/unverified.
+  QuickTime and play a video. Run separately supplied QuickTime as guest software on our independent runtime. Its code/assets stay outside our implementation
+  and distribution; do not derive runtime code from Apple's implementation. This records a scope decision only; playback remains unimplemented/unverified.
 
 ## 0.5 OS999 Stylized branding and startup
 
 - [ ] S01 Use “OS999 Stylized” as the display/app name, “OS999” in startup,
-  “OS999 HD” for the default disk, and the original Granny Smith fruit mark
-  in the menu bar.
-  Remove visible OS Pi labels while preserving internal symbols, bundle/data
+  “OS999 HD” for the default disk, and the original Granny Smith fruit mark in the menu bar. Remove visible OS Pi labels while preserving internal symbols, bundle/data
   compatibility, and the existing support-volume path. Verify the packaged app.
 - [ ] S02 Ship the optional startup introduction enabled by default, with a
   persistent end-user on/off setting and a visible preview/replay action.
 - [ ] S03 Use a replaceable, original OS999 emblem; do not copy Apple logos,
-  recordings, or other proprietary assets. The supplied startup prompt describes
-  a spinning Apple-shaped icon; adapt that concept to an original silhouette.
+  recordings, or other proprietary assets. The supplied startup prompt describes a spinning Apple-shaped icon; adapt that concept to an original silhouette.
 - [ ] S04 Drive the initialize → settle → reveal → desktop/failure state machine
-  from actual startup work. Keep status truthful, prevent duplicate reveals,
-  provide recovery on failure, and do not invent progress or spin indefinitely.
+  from actual startup work. Keep status truthful, prevent duplicate reveals, provide recovery on failure, and do not invent progress or spin indefinitely.
 - [ ] S05 Keep the wordmark and “Made for the fun of it.” readable and still;
-  keep any supporting tagline (“For enthusiasts. By enthusiasts.”) secondary.
-  Spin only while work is pending, land upright smoothly, and avoid long waits.
+  keep any supporting tagline (“For enthusiasts. By enthusiasts.”) secondary. Spin only while work is pending, land upright smoothly, and avoid long waits.
   Provide a development preview/replay control for repeatable review.
 - [ ] S06 Respect reduced motion with a static mark and short dissolve. Any
-  startup sound is one optional original sound, respects sound preferences, and
-  never uses a copied Apple chime or delays startup.
+  startup sound is one optional original sound, respects sound preferences, and never uses a copied Apple chime or delays startup.
 - [ ] S07 Reveal the existing functional desktop, menus, windows, icons, and
-  application launching without resizing or animating the host window. Pause
-  hidden-view animation and release startup resources after completion.
+  application launching without resizing or animating the host window. Pause hidden-view animation and release startup resources after completion.
 - [ ] S08 Render a small, crisp Granny Smith fruit icon at the left edge of the
-  simulated menu bar. Keep the OS999 menu hit area and dropdown behavior intact;
-  use original generated artwork rather than Apple-owned logo assets.
+  simulated menu bar. Keep the OS999 menu hit area and dropdown behavior intact; use original generated artwork rather than Apple-owned logo assets.
 - [ ] S09 Make the Granny Smith menu open the OS999 menu with “About This Mac”
-  first. Credit author Ian Trimble, include remnantsecurity.com as the public
-  home for his creations, plus accurate version/runtime details.
+  first. Credit author Ian Trimble, include remnantsecurity.com as the public home for his creations, plus accurate version/runtime details.
 - [ ] S10 Use supplied desktop and boot mockups as layout references. Preserve
-  the existing functional desktop; treat the Chromium image as a future target,
-  not implemented browser evidence. Verify wallpaper, windows, menu, About, and
+  the existing functional desktop; treat the Chromium image as a future target, not implemented browser evidence. Verify wallpaper, windows, menu, About, and
   app launching separately before marking visual acceptance complete.
 - [ ] S11 Keep About This Mac compact and centered, fit the author/site/system
-  information without an oversized window, and never show temporary host paths
-  or the private volume location.
+  information without an oversized window, and never show temporary host paths or the private volume location.
 
 ## 1. Containers, resources, and guest storage
 
 - [x] L01 Implement bounds-checked resource-fork enumeration and type/ID lookup;
-  test truncated headers, offsets, names, counts, and oversized payloads.
-  Raw forks/AppleSingle/AppleDouble parser checks plus 20,000 deterministic
+  test truncated headers, offsets, names, counts, and oversized payloads. Raw forks/AppleSingle/AppleDouble parser checks plus 20,000 deterministic
   mutations pass. [Evidence and format limits](RUNTIME-LOOP-2026-11-04.md).
 - [ ] L02 Preserve data/resource forks, Finder metadata, names, and IDs through
-  MacBinary, BinHex, AppleDouble, ZIP, and required StuffIt variants.
+  MacBinary, BinHex, AppleDouble, ZIP, and required StuffIt variants. 6 November 2026: implemented in `storage/` on branch `os999-storage`
+  (commit 5099e09). MacBinary, BinHex, AppleSingle/Double, ZIP, StuffIt 1.x-5 (methods 0-3 native; 13, 15 and StuffIt X through `unar` with
+  `lsar` metadata) and Compact Pro keep both forks, type/creator, flags and dates. Real Aaru corpora decode identical to their stored copies;
+  see `storage/FEATURES.md` SF01-SF08. The Ralph gate (`storage/scripts/ralph-storage-loop.sh`) passes on Linux x86_64 and arm64. A macOS run and Ian's acceptance are still open.
 - [ ] L03 Decode required Disk Copy containers before parsing HFS. QuickTime's
   page describes a compressed disk image; `.img` does not imply raw HFS.
+  6 November 2026: Disk Copy 4.2, NDIF (raw/zero/ADC; KenCode reported),
+  UDIF (zlib/ADC/raw/zero, bzip2 when available), APM, GPT and HFS
+  wrappers locate the volume; HFS is read and written, HFS+ is read.
+  A real HFS floppy matches the independent machfs reader; a real UDIF
+  dmg reads through GPT to HFS+ (`storage/FEATURES.md` SF09-SF15). No
+  real NDIF image was available; QuickTime's own image is not yet tried.
 - [ ] L04 Implement guest volumes and writable files with path containment,
   symlink/traversal defense, quotas, atomic save updates, and restart recovery.
+  6 November 2026: `storage/include/os999_volume.h` resolves every path
+  with openat + O_NOFOLLOW, enforces byte and file quotas before writing,
+  saves through temporaries + journal + renames, recovers after a crash at
+  each durable step, and undoes unfinished installs. Sidecars are read by
+  the runtime's own `mac_resource_open_container` (SF16-SF20). The
+  desktop does not use it yet; switching installs over is L06 work.
 - [ ] L05 Select the exact application deterministically. Report unsupported
   formats and missing resources instead of launching a neighboring executable.
 - [ ] L06 Support both a user double-click on a local `.sit` archive and the
@@ -166,6 +129,16 @@ Evidence IDs are retained in the loop record. CPU traces are separate evidence.
 
 ## 2. Our execution and Macintosh API runtime
 
+  6 November 2026 (branch `os999-l06-install`, from `integration/all-features`):
+  `install_sit` (double-click) and `install_garden` (download) now expand
+  through the storage stack: content detection, forks and Finder info in
+  AppleDouble `.rsrc` sidecars, quota-checked all-or-nothing installs into
+  the volume, and `unar` only as the fallback for StuffIt 13/15/X or formats
+  we do not decode. Unrecognized files with no unar fail with no folder left
+  behind; deep trees no longer stop at depth 8. `test_archive_install`
+  passes (native MacBinary install with unar absent, stubbed unar paths,
+  Garden route); 69 of the desktop tests that build on the Linux VM pass. A
+  macOS app run with a real Garden `.sit` and Ian's acceptance are open.
 - [ ] R01 Implement the 68k execution core, memory model, exceptions, instruction
   accounting, and reproducible traces. Validate with independently authored
   instruction vectors, including flags, alignment, branches, and fault cases.
@@ -286,6 +259,32 @@ Evidence IDs are retained in the loop record. CPU traces are separate evidence.
   were initially unverified. Ian subsequently confirmed the panel contextual
   interaction works. The other session’s HD-icon test now passes 639 checks;
   its private theme fixtures do not exercise production theme implementation.
+- [ ] V09 Complete the final Mac OS 9-style desktop/menu goal. R1–R7 add
+  Finder file actions, aliases, recent items, native printing, saved layouts,
+  pop-up windows and list columns. R8 combines these with release features and
+  newer main runtime fixes in an isolated worktree. Full combined tests/package
+  pass. R9 adds overlay stacking/input checks, including sanitizer coverage;
+  R10 adds player registration/hiding and background stacking with tests.
+  R12 adds browser registration/lifecycle and Finder stacking tests;
+  R13 adds scoped menu dispatch and browser editing; full application stacking
+  and integrated GUI acceptance remain pending. R14 fixes modal Quit and adds
+  explicit browser IME cancellation on overlay/app interruption. R15 adds
+  retained Appearance/guest foreground composition and input routing. R16
+  scopes browser menu availability to existing windows and editor state. R17
+  routes guest Close/Quit through atomic runtime shortcut delivery. R18 removes
+  the host Minimize conflict with Finder Make Alias (Cmd-M). R19 adds idle
+  folder refresh with selection/layout retention; full suite/package pass.
+  R20 hardens listing/icon reads. R21 expands ordinary folders and bulk Undo;
+  137-file focused/sanitizer checks and full suite/package pass. R22 expands
+  search/clipboard storage; 215 focused/sanitizer checks and full suite/package pass.
+  R23 adds all-app cycling and graceful guest close-box dispatch; full suite/package pass.
+  R24 shares app stacking and modeless focus; focused checks and full suite/package pass.
+  R25 adds a floating switcher and drag outlines; full suite/package and sanitizer pass.
+  R26 persists switcher preferences; GUI restore is verified. R27 fixes release
+  endpoints; full suite/package pass. R28 adds single-media-file switcher drops;
+  R29 Arrange and R30 spring folders pass full suite/package. R31 labels pass full validation. R32 adds saved spring-folder preferences;
+  full suite/package pass. R33 corrects alias drops; R34 desktop files pass full checks; R35 placement passes focused checks; R36 overflow/spatial keys pass full checks; R37 system icons in validation; GUI open.
+  See [desktop loop](DESKTOP-LOOP-2026-11-06.md) and [integration](DESKTOP-INTEGRATION-2026-11-06.md).
 - [ ] V08 Complete useful File/Edit/View/Special/Help menu actions. Current
   menu pass adds Get Info, Close All, Select All, Copy Names/Text, per-window
   Icon/List and Name/Kind sorting, keyboard menu navigation and Help topics.
@@ -397,6 +396,13 @@ Add QuickDraw 3D/RAVE/OpenGL gates when an identified target requires them.
 
 ### Classic QuickTime playback
 
+OS999 has a host movie window for uncompressed 32-bit raw video (`raw `, up to
+640 by 480). Double-click a `.mov`, `.qt`, `.mp4`, or `.m4v` file to play it.
+Click the picture or press Space to pause and resume. The player rejects a
+truncated header, a sample that sits outside the media block, and a movie it
+cannot draw. Guest QuickTime is still required for Q01–Q04. This window does
+not decode Cinepak, rpza, Sorenson, or MPEG, and it does not claim hardware
+video decoding.
 - [ ] Q01 Select an exact classic QuickTime/player version and architecture;
   inventory the guest components it requires. Preserve separately supplied
   installers and extensions outside Git. Do not substitute a modern host player.
@@ -413,6 +419,31 @@ Add QuickDraw 3D/RAVE/OpenGL gates when an identified target requires them.
   through a GPU. Any required accelerated path must pass its own evidence gate.
 
 ## 5. Modern networking and legacy compatibility
+
+Networking worktree checkpoint (5 November 2026): `codex/modern-networking`
+adds host libcurl HTTPS downloads with mandatory chain/hostname verification,
+TLS 1.2 minimum, explicit per-hop destination policy, limits, cancellation,
+atomic files, host CA configuration and opt-in PEM client identities. Garden is
+wired to this path. The isolated CEF source snapshot rejects certificate
+exceptions and unsafe launch flags and derives its lock from SSL status.
+Run `scripts/ralph-network-loop.py --browser --passes 2`; its source manifests,
+commands, exit results and artifact hashes live under `build/ralph-network/`.
+These are partial N01/N02/N03/N08 implementations; keep the broad gates open.
+There is no guest socket adapter, legacy gateway, proxy configuration, inbound
+listener, Linux/Pi proof, embedded browser acceptance, or exhaustive revocation
+coverage. The full desktop suite and synthetic transport tests passed during
+implementation; current browser results belong to the loop receipts, not the
+older browser README's performance evidence. The resumed browser runtime gate
+passes nine cases: unsafe launch switches, invalid certificate refusal, plaintext
+refusal, and trusted HTTPS with verified connection state. A real window renders
+example.com with the connection lock. The Certificates menu explains policy;
+CEF's certificate-manager page did not open, so import and native machine-client
+identity selection remain unverified. Earlier Keychain waits no longer reproduce;
+the external resolution was not observed and no system trust was changed.
+The host transport passes 29 cases, including rejected partial responses,
+cancellation during flush, and missing/untrusted client identities, with a clean
+sanitizer run. Canonical root/cache paths also cover symlinked test profiles.
+The final two-pass Ralph receipt binds these checks to the source snapshot.
 
 - [ ] N01 Use maintained host socket and TLS implementations. Implement guest
   API adapters rather than inventing cryptography or an unnecessary kernel stack.
@@ -458,7 +489,6 @@ Add QuickDraw 3D/RAVE/OpenGL gates when an identified target requires them.
 ## Sources and evidence boundaries
 
 Pages inspected on 4 November 2026; page descriptions are not execution proof.
-
 - [Secret of Monkey Island](https://macintoshgarden.org/games/secret-of-monkey-island)
 - [Monkey Island 2](https://macintoshgarden.org/games/monkey-island-2-le-chucks-revenge)
 - [Castle of Dr. Brain](https://macintoshgarden.org/games/castle-of-dr-brain)

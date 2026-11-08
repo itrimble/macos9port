@@ -25,9 +25,11 @@ int main(void) {
     CHECK(s->menu == 0);
     int controls = -1;
     for (int i = 0; i < menu_nitems(0); i++)
-        if (menu_at(0, i)->cmd == CMD_CONTROL_PANELS) controls = i;
+        if (menu_at(0, i)->cmd == CMD_MENU_PANELS) controls = i;
     CHECK(controls >= 0);
     menu_item_rect(0, controls, &r); click(s, r.x + 5, r.y + 5);
+    CHECK(s->menu_child == MENU_PANELS && !appearance_panel_active());
+    menu_item_rect(MENU_PANELS, 0, &r); click(s, r.x + 5, r.y + 5);
     CHECK(appearance_panel_active() && s->menu == -1 && !s->down);
     session_context(s, 512, 380); /* Right-click the Appearance icon. */
     CHECK(!s->down && !context_active());
@@ -37,12 +39,15 @@ int main(void) {
     click(s, 530, 390); /* Open Appearance from the contextual menu. */
     CHECK(appearance_panel_active());
     int old_windows = s->nwin;
-    click(s, 1000, 700); /* No click-through outside the panel. */
-    CHECK(s->nwin == old_windows && appearance_panel_active());
+    click(s, 1000, 700); /* Exposed desktop receives focus; the panel stays open. */
+    CHECK(s->nwin == old_windows && !appearance_panel_active() && s->desktop_focus);
     menu_title_rect(0, &r); click(s, r.x + 5, r.y + 5);
     CHECK(s->menu == 0); /* Menu bar remains available above panel. */
     session_key(s, 27, 0);
-    CHECK(s->menu == -1 && appearance_panel_active());
+    CHECK(s->menu == -1 && !appearance_panel_active());
+    Rect panels[2]; CHECK(appearance_panel_regions(s, panels) == 1);
+    click(s, panels[0].x + 80, panels[0].y + 10);
+    CHECK(appearance_panel_active());
     session_key(s, 'w', MOD_CMD);
     CHECK(!appearance_panel_active() && s->nwin == old_windows);
     session_context(s, 750, 600);
@@ -51,7 +56,8 @@ int main(void) {
     CHECK(!context_active() && s->nwin == old_windows);
     session_context(s, 750, 600);
     session_key(s, CONTEXT_KEY_DOWN, 0); /* New Folder */
-    session_key(s, CONTEXT_KEY_DOWN, 0); /* Skip disabled Clean Up to Appearance. */
+    session_key(s, CONTEXT_KEY_DOWN, 0); /* Clean Up is now available on the desktop. */
+    session_key(s, CONTEXT_KEY_DOWN, 0); /* Appearance, skipping the separator. */
     session_key(s, '\r', 0);
     CHECK(!context_active() && appearance_panel_active());
     /* Plain row goes through the real persisted wallpaper command. */

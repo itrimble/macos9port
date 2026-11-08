@@ -7,6 +7,8 @@
 enum { FOLDER_LIST_HEADER = 24, FOLDER_LIST_ROW = 24 };
 typedef void (*FolderItemPainter)(Fb *, int, int, const Item *, const char *);
 int folder_view_command(Session *session, int command);
+void folder_view_columns(const Window *window, int positions[5]);
+void folder_view_column_move(Session *session, int x);
 void folder_view_sort(Window *window);
 int folder_view_header_click(Session *session, int x, int y);
 void folder_view_draw_list(Fb *fb, const Window *window, const Layout *layout,

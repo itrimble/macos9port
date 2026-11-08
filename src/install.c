@@ -1,5 +1,8 @@
 #include "ospi.h"
 #include "archive_fs.h"
+#include "modern_network.h"
+#include "os999_unpack.h"
+#include "os999_volume.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -20,21 +23,6 @@ static void set_err(char *err, size_t n, const char *msg) {
     if (err && n) {
         snprintf(err, n, "%s", msg);
     }
-}
-
-static int run_argv(char *const argv[]) {
-    pid_t pid;
-    if (posix_spawnp(&pid, argv[0], NULL, NULL, argv, environ) != 0) {
-        return -1;
-    }
-    int status = 0;
-    if (waitpid(pid, &status, 0) < 0) {
-        return -1;
-    }
-    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-        return -1;
-    }
-    return 0;
 }
 
 int garden_page_ok(const char *url) {
@@ -275,11 +263,20 @@ static int read_file_cap(const char *path, char **out) {
     return 0;
 }
 
+static int garden_network_allowed(const char *url, void *context) {
+    (void)context;
+    return net_https_url(url) && (garden_page_ok(url) || download_host_ok(url));
+}
+
+static int secure_fetch(const char *url, const char *dest, size_t limit, long timeout, const char *referer) {
+    NetPolicy policy = {.max_bytes = limit, .timeout_ms = timeout,
+                        .allow_url = garden_network_allowed, .referer = referer};
+    if (net_init() != 0) return -1;
+    return net_download(url, dest, &policy).status == NET_OK ? 0 : -1;
+}
+
 static int curl_archive(const char *page, const char *url, const char *dest) {
-    char *argv[] = {"curl", "-fsSL", "--proto", "=https", "--proto-redir", "=https", "--max-time", "180",
-                    "--max-filesize", "200000000", "-A", "OSPi/0.1", "-e", (char *)page, "-o", (char *)dest,
-                    (char *)url, NULL};
-    return run_argv(argv);
+    return secure_fetch(url, dest, 200000000, 180000, page);
 }
 
 static int fetch_archive(const char *page, const char *file_url, const char *dest) {
@@ -310,26 +307,30 @@ static int path_within(const char *root, const char *path) {
     return strncmp(root, path, n) == 0 && (path[n] == 0 || path[n] == '/');
 }
 
-static int expand_archive(const char *archive, const char *destination, char *err, size_t err_n) {
-    char tmp[] = "/tmp/ospi-ex-XXXXXX";
-    char *ex = mkdtemp(tmp);
-    if (!ex) {
-        set_err(err, err_n, "Could not create a temporary extraction directory.");
+/* Expand an archive into dest_rel (an existing, empty volume folder) through
+ * the storage stack: content-based detection, forks and Finder info kept in
+ * "<name>.rsrc" sidecars, all-or-nothing install, unar only as the fallback
+ * for StuffIt methods we do not decode. */
+static int expand_archive(const char *root, const char *archive, const char *dest_rel, char *err, size_t err_n) {
+    StArchive a = {0};
+    StUnpackInfo info;
+    StErr e = {0};
+    int rc = st_unpack_file(archive, ST_EXT_ARCHIVE, &a, &info, NULL, &e);
+    if (rc == ST_OK) {
+        StVolume *v = NULL;
+        rc = st_vol_open(root, NULL, &v, &e);
+        if (rc == ST_OK) {
+            rc = st_vol_install(v, dest_rel, &a, &e);
+            st_vol_close(v);
+        }
+    }
+    st_archive_free(&a);
+    if (rc != ST_OK) {
+        char msg[300];
+        snprintf(msg, sizeof msg, "Could not expand this archive: %s.", e.msg[0] ? e.msg : st_status_text(rc));
+        set_err(err, err_n, msg);
         return -1;
     }
-    char *argv[] = {"unar", "-q", "-k", "visible", "-D", "-o", ex, (char *)archive, NULL};
-    if (run_argv(argv) != 0) {
-        archive_remove_tree(ex);
-        set_err(err, err_n, "Could not expand this archive. The unar tool may be missing or the archive unsupported.");
-        return -1;
-    }
-    ArchiveCopyStats stats;
-    if (archive_copy_tree(ex, destination, &stats) != 0) {
-        archive_remove_tree(ex);
-        set_err(err, err_n, "Extracted files could not be copied completely; partial files remain.");
-        return -2;
-    }
-    archive_remove_tree(ex);
     set_err(err, err_n, "");
     return 0;
 }
@@ -381,7 +382,7 @@ int install_sit(const char *root, const char *archive_rel, char *created_rel, si
         return -1;
     }
     if (created_rel && created_n) snprintf(created_rel, created_n, "%s", destination_rel);
-    int expanded = expand_archive(archive_real, destination, err, err_n);
+    int expanded = expand_archive(root, archive_real, destination_rel, err, err_n);
     if (expanded != 0) {
         if (expanded != -2) {
             rmdir(destination);
@@ -408,9 +409,7 @@ int install_garden(const char *root, const char *page_url, char *created_rel, si
         return -1;
     }
     close(pfd);
-    char *curl_page[] = {"curl", "-fsSL", "--proto", "=https", "--proto-redir", "=https", "--max-time",
-                         "60",    "-A",    "OSPi/0.1", "-o",      page_tmp,       (char *)page_url, NULL};
-    if (run_argv(curl_page) != 0) {
+    if (secure_fetch(page_url, page_tmp, 2000000, 60000, NULL) != 0) {
         unlink(page_tmp);
         set_err(err, err_n, "Could not open that Macintosh Garden page.");
         return -1;
@@ -431,13 +430,17 @@ int install_garden(const char *root, const char *page_url, char *created_rel, si
     free(html);
     char name[96];
     safe_name(file_url, name, sizeof name);
-    char created[OSPI_NAME];
-    if (volume_mkdir_unique(root, "Applications", name, created, sizeof created) != 0) {
+    char created[OSPI_NAME], apps[OSPI_PATH];   /* Applications, even if renamed */
+    if (volume_special_folder(root, "applications_folder", "Applications", apps, sizeof apps) != 0 ||
+        volume_mkdir_unique(root, apps, name, created, sizeof created) != 0) {
         set_err(err, err_n, "Could not create a folder in Applications.");
         return -1;
     }
     char rel[OSPI_PATH];
-    snprintf(rel, sizeof rel, "Applications/%s", created);
+    if (snprintf(rel, sizeof rel, "%s/%s", apps, created) >= (int)sizeof rel) {
+        set_err(err, err_n, "Could not create a folder in Applications.");
+        return -1;
+    }
     char dest[OSPI_PATH];
     if (volume_join(dest, sizeof dest, root, rel) != 0) {
         set_err(err, err_n, "Could not create a folder in Applications.");
@@ -470,11 +473,11 @@ int install_garden(const char *root, const char *page_url, char *created_rel, si
     if (created_rel && created_n) {
         snprintf(created_rel, created_n, "%s", rel);
     }
-    int expanded = expand_archive(kept, dest, err, err_n);
+    int expanded = expand_archive(root, kept, rel, err, err_n);
     if (expanded != 0) {
-        set_err(err, err_n, expanded == -2 ?
-                "Archive saved in Applications, but extracted-file copying failed; partial files remain." :
-                "Archive saved in Applications, but extraction failed. Install unar or check the archive.");
+        char why[300];
+        snprintf(why, sizeof why, "Archive saved in Applications, but it could not be expanded. %s", err && err_n ? err : "");
+        set_err(err, err_n, why);
         return -1;
     }
     set_err(err, err_n, "");

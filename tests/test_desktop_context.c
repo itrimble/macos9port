@@ -9,6 +9,7 @@ static int last_command, opened_item, dialogs;
 static char opened_folder[OSPI_PATH], command_folder[OSPI_PATH];
 void select_only(Window *w, int selected) { for (int i = 0; i < w->nitems; i++) w->items[i].selected = i == selected; }
 void bring_front(Session *s, int i) {
+    s->desktop_focus = 0; s->desk_sel = -1;
     Window w = s->win[i];
     memmove(s->win + i, s->win + i + 1, (size_t)(s->nwin - i - 1) * sizeof w);
     s->win[s->nwin - 1] = w;
@@ -24,7 +25,8 @@ void open_item(Session *s, Window *w, int i) { (void)s; (void)w; opened_item = i
 void dialog_info(Session *s, const char *title, const char *body) { (void)s; (void)title; (void)body; dialogs++; }
 void session_command(Session *s, int command) {
     last_command = command;
-    snprintf(command_folder, sizeof command_folder, "%s", s->nwin ? s->win[s->nwin - 1].rel : "none");
+    Window *w = finder_current(s);
+    snprintf(command_folder, sizeof command_folder, "%s", w ? w->rel : "none");
 }
 int text_height(const char *text, int width) { (void)text; (void)width; return 0; }
 int menu_count(void) { return 0; }
@@ -44,6 +46,7 @@ void fb_text(Fb *fb, int x, int y, uint32_t color, const char *text) { (void)fb;
 static Session *new_session(void) {
     Session *s = calloc(1, sizeof *s); assert(s);
     s->sw=1024; s->sh=768; s->nwin=2; s->desk_sel=-1;
+    s->desktop.kind=WIN_FOLDER; s->desktop.desktop_surface=1; strcpy(s->desktop.rel,"Desktop Folder");
     for (int i=0;i<2;i++) {
         Window *w=&s->win[i];
         w->kind=WIN_FOLDER; w->x=50+i*400; w->y=60; w->w=350; w->h=300; w->nitems=2;
@@ -68,17 +71,15 @@ int main(void) {
     assert(s->desk_sel==0 && !s->win[1].items[0].selected);
     enter_first(s); assert(!strcmp(opened_folder,""));
     assert(context_open(s,972,706)); enter_first(s); assert(!strcmp(opened_folder,"Trash"));
-    /* Blank desktop New Folder targets volume root despite another front folder. */
+    /* Blank desktop New Folder targets the desktop despite another front folder. */
     assert(context_open(s,10,500)); enter_first(s);
-    assert(last_command==CMD_NEW_FOLDER && !strcmp(command_folder,""));
+    assert(last_command==CMD_NEW_FOLDER && !strcmp(command_folder,"Desktop Folder"));
     assert(context_open(s,10,500));
     context_key(s,CONTEXT_KEY_DOWN,0); context_key(s,CONTEXT_KEY_DOWN,0); context_key(s,13,0);
-    assert(last_command==410); /* Disabled cleanup and separator skipped. */
+    assert(last_command==CMD_CLEANUP);
     assert(context_open(s,10,500));
     int previous = last_command;
     s->down = 1;
-    assert(context_down(s,20,535)); /* Disabled Clean Up row stays open. */
-    assert(last_command == previous && context_active() && !s->down);
     assert(context_down(s,20,548)); /* Separator does not dispatch. */
     assert(last_command == previous && context_active());
     assert(context_down(s,900,500) && !context_active());
