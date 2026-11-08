@@ -100,7 +100,8 @@ size_t mac_sound_double_poll(MacRuntime*r,size_t budget){
         while(ran-callback_start<callback_budget && !mac_cpu_halted(r->cpu) && mac_cpu_get(r->cpu,MAC_PC)!=DOUBLE_RETURN){size_t n=mac_cpu_run(r->cpu,1);ran+=n;if(!n)break;}
         r->sound->callback_active=0;
         if(mac_cpu_halted(r->cpu))return ran;
-        if(mac_cpu_get(r->cpu,MAC_PC)!=DOUBLE_RETURN || mac_cpu_get(r->cpu,MAC_A7)!=sp){
+        /* Pascal callees pop their two arguments (A7 == sp); C callees leave them for the caller (A7 == sp-8). Both are restored below. */
+        if(mac_cpu_get(r->cpu,MAC_PC)!=DOUBLE_RETURN || (mac_cpu_get(r->cpu,MAC_A7)!=sp && mac_cpu_get(r->cpu,MAC_A7)!=sp-8)){
             char error[160];
             snprintf(error,sizeof error,"Doubleback return mismatch: PC=%08x A7=%08x expected=%08x after %zu instructions.",
                      mac_cpu_get(r->cpu,MAC_PC),mac_cpu_get(r->cpu,MAC_A7),sp,ran-callback_start);
