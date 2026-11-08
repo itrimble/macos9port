@@ -46,6 +46,15 @@ L04 worktree to land in `mac_runtime.h` and `mac_files.c`.
   policy text, redactor and arbitrary MacTCP PBs, including
   out-of-range pointers and live loopback connections. Evidence:
   `make -f net/net.mk net-asan` (`fuzz_gn`).
+- [x] N10 Personal area network: the guest IP stack runs over a link
+  that carries Ethernet frames, so guest TCP crosses a Bluetooth PAN
+  with the guest's own address. ARP answers for our address, IPv4 and
+  TCP carry their Internet checksums, the TCP endpoint does the
+  handshake, moves data both ways and closes, and the broker routes a
+  connection to an address on the PAN subnet over that link instead of
+  a host socket. Evidence: `test_gn_pan` (test_subnet, test_arp,
+  test_handshake, test_data, test_close, test_broker_endpoint) and
+  `test_bt_pan_guest` in `bluetooth/`.
 
 ## Phase 2 (runtime hook, after L04 lands)
 

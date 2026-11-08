@@ -11,7 +11,12 @@ GnMacTcp *gn_mactcp_new(GnBroker *b, GnResolver *r, uint32_t our_ip) {
     if (!m) return NULL;
     m->b = b;
     m->r = r;
-    m->our_ip = our_ip ? our_ip : 0x0A000202u; /* 10.0.2.2: a private, guest-visible address */
+    /* With a personal area network attached the guest keeps the address
+     * on that network, so its TCP reaches the peer over the link. */
+    m->our_ip = our_ip ? our_ip : gn_broker_local_ip(b);
+    if (!m->our_ip) m->our_ip = 0x0A000202u; /* 10.0.2.2: a private, guest-visible address */
+    m->netmask = gn_broker_netmask(b);
+    if (!m->netmask) m->netmask = 0xFFFFFF00u;
     return m;
 }
 
@@ -248,7 +253,7 @@ int gn_mactcp_control(GnMacTcp *m, GnMem *mem, uint32_t pb, int async, uint64_t 
     uint32_t sp = gm_rd(mem, pb + 28, 4);
     if (code == GN_IPCTL_GETADDR) {
         gm_wr(mem, pb + 28, 4, m->our_ip);
-        gm_wr(mem, pb + 32, 4, 0xFFFFFF00u);
+        gm_wr(mem, pb + 32, 4, m->netmask);
         return finish(m, mem, pb, async, 0);
     }
     if (code >= GN_UDP_CREATE && code <= GN_UDP_MTU) {
