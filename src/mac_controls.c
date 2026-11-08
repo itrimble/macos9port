@@ -171,7 +171,7 @@ int mac_controls_service(MacRuntime *rt, uint16_t op) {
     unsigned args, result;
     if (!shape(op, &args, &result)) return 0;
     if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1;
-    if (op == 0xa968 || op == 0xa967) return fail(rt, op == 0xa968 ? "TrackControl is not implemented." : "DragControl is not implemented.");
+    if (op == 0xa967) return fail(rt, "DragControl is not implemented.");
     uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7);
     if ((sp & 1) || !ram_ok(rt, sp, args + result)) return fail(rt, "Control Manager call has an invalid stack.");
     MacWindowState *w;
@@ -264,6 +264,13 @@ int mac_controls_service(MacRuntime *rt, uint16_t op) {
         if (!pascal_ok(rt, src)) return fail(rt, "SetCTitle's title is outside guest RAM.");
         memmove(mac_cpu_ram(rt->cpu) + p + CTL_TITLE, mac_cpu_ram(rt->cpu) + src, 1 + (size_t)mac_cpu_ram(rt->cpu)[src]);
         redraw(rt, h);
+        break; }
+    case 0xa968: {                                                                   /* TrackControl(ctl, startPt, actionProc): custom CDEFs only, with the pop-up convention actionProc = -1 */
+        uint32_t pt = rd(rt, sp + 4, 4);
+        if (!rd(rt, p + CTL_DEFPROC, 4)) return fail(rt, "TrackControl on a standard control is not implemented.");
+        if (rd(rt, sp, 4) != 0xffffffffu) return fail(rt, "TrackControl with an action procedure (or none) is not implemented: only -1, which sends autoTrack to the CDEF.");
+        rt->cdef->finish = fin_test; rt->cdef->user[1] = sp + args; rt->cdef->keep_going = 1;
+        mac_cdef_add(rt, h, CDEF_TEST, pt); mac_cdef_add(rt, h, CDEF_AUTOTRACK, 0);        /* a result of 0 when testCntl finds nothing; otherwise the part */
         break; }
     case 0xa966: {                                                                   /* TestControl(ctl, pt): part */
         uint32_t pt = rd(rt, sp, 4);

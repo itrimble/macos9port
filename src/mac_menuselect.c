@@ -27,6 +27,7 @@ typedef struct MacMenuSel {
     int left, top, w, h;                           /* the pull-down rectangle */
     uint8_t *back;
     int px, py;                                    /* last pointer position */
+    uint32_t popup;                                /* PopUpMenuSelect: the menu handle (a free-standing menu, not in the bar), else 0 */
 } Sel;
 
 static int fail(MacRuntime *r, const char *why) { mac_cpu_halt(r->cpu, why); return -1; }
@@ -34,11 +35,9 @@ static uint32_t rd(MacRuntime *r, uint32_t p, unsigned n) { return mac_cpu_read(
 void mac_menuselect_destroy(MacRuntime *rt) { if (rt->menusel) { free(rt->menusel->back); free(rt->menusel); rt->menusel = NULL; } }
 
 /* A private copy of one registered menu (so nothing the guest changes mid-track can be read twice inconsistently). */
-static int view(MacRuntime *r, unsigned index, MenuView *v) {
+static int view_handle(MacRuntime *r, uint32_t handle, MenuView *v) {
     memset(v, 0, sizeof *v);
-    unsigned count = 0; MacHandle *list = mac_menu_list(r, &count);
-    if (!list || index >= count) return 0;
-    unsigned items = 0; MacHandle *m = mac_menu_record(r, rd(r, list->pointer + 2 + 4 * index, 4), &items);
+    unsigned items = 0; MacHandle *m = mac_menu_record(r, handle, &items);
     if (!m) return 0;
     const uint8_t *b = mac_cpu_ram(r->cpu) + m->pointer;
     v->id = (int16_t)(b[0] << 8 | b[1]); v->flags = (unsigned)b[10] << 24 | (unsigned)b[11] << 16 | (unsigned)b[12] << 8 | b[13];
@@ -50,6 +49,11 @@ static int view(MacRuntime *r, unsigned index, MenuView *v) {
         p += n + 5u;
     }
     return 1;
+}
+static int view(MacRuntime *r, unsigned index, MenuView *v) {
+    unsigned count = 0; MacHandle *list = mac_menu_list(r, &count);
+    if (!list || index >= count) return memset(v, 0, sizeof *v), 0;
+    return view_handle(r, rd(r, list->pointer + 2 + 4 * index, 4), v);
 }
 static unsigned bar_count(MacRuntime *r) { unsigned c = 0; return mac_menu_list(r, &c) ? c : 0; }
 static int bar_height(MacRuntime *r) { return (int)rd(r, 0xbaa, 2); }
@@ -115,7 +119,7 @@ static int draw_menu(MacRuntime *r, const MenuView *v, Sel *s) {
     size_t n = (size_t)s->w * (size_t)s->h; free(s->back); s->back = malloc(n);
     if (!s->back) return fail(r, "Menu tracking could not save the screen under the menu.");
     for (int y = 0; y < s->h; y++) for (int x = 0; x < s->w; x++) { int sx = s->left + x, sy = s->top + y; s->back[(size_t)y * s->w + x] = (sx >= 0 && sy >= 0 && (unsigned)sx < sc.w && (unsigned)sy < sc.h) ? sc.base[(size_t)sy * sc.row + (unsigned)sx] : 0; }
-    for (int y = 0; y < s->h; y++) for (int x = 0; x < s->w; x++) put(&sc, s->left + x, s->top + y, (x == 0 || y == s->h - 1 || x == s->w - 1) ? sc.dark : sc.light);
+    for (int y = 0; y < s->h; y++) for (int x = 0; x < s->w; x++) put(&sc, s->left + x, s->top + y, (x == 0 || y == s->h - 1 || x == s->w - 1 || (s->popup && y == 0)) ? sc.dark : sc.light);
     for (int i = 0; i < v->nitems; i++) draw_item(&sc, v, s, i, i + 1 == s->item);
     s->shown = 1; return 0;
 }
@@ -133,14 +137,14 @@ static void result(MacRuntime *r, uint32_t sp, uint32_t value, unsigned pop) { m
 static int track(MacRuntime *rt, Sel *s) {
     uint32_t s0 = s->sp;
     MenuView *vp = &s->mv, v0; (void)v0;
-    { unsigned cnt = bar_count(rt); MenuView cur; if ((unsigned)s->index >= cnt || !view(rt, (unsigned)s->index, &cur) || cur.id != s->id || cur.nitems != vp->nitems)
-        return fail(rt, "MenuSelect: the menu list changed while tracking."); }
+    { unsigned cnt = bar_count(rt); MenuView cur; int ok = s->popup ? view_handle(rt, s->popup, &cur) : (unsigned)s->index < cnt && view(rt, (unsigned)s->index, &cur);
+      if (!ok || cur.id != s->id || cur.nitems != vp->nitems) return fail(rt, "MenuSelect: the menu list changed while tracking."); }
     MenuView v = *vp;
     MacEvent e; int released = 0, x = rt->mouse_x, y = rt->mouse_y;
     if (!s->shown && draw_menu(rt, &v, s)) return -1;
     while (mac_dialog_next_event(rt, &e)) { if (e.what == 2) { released = 1; x = e.x; y = e.y; break; } if (e.what == 1) { x = e.x; y = e.y; } }
     if (!released) { x = rt->mouse_x; y = rt->mouse_y; }
-    int t = title_at(rt, x, y);
+    int t = s->popup ? -1 : title_at(rt, x, y);
     MenuView w;
     if (t >= 0 && t != s->index && view(rt, (unsigned)t, &w) && (w.flags & 1)) {         /* moved along the bar onto another enabled menu */
         erase_menu(rt, s); hilite_title(rt, (unsigned)s->index);
@@ -158,8 +162,9 @@ static int track(MacRuntime *rt, Sel *s) {
     }
     if (!released) { mac_cpu_set(rt->cpu, MAC_PC, s->pc); mac_cpu_yield(rt->cpu); return 1; }
     erase_menu(rt, s);
-    uint32_t sp = s->sp; int id = s->id, chosen = s->item, index = s->index;
+    uint32_t sp = s->sp; int id = s->id, chosen = s->item, index = s->index, popup = s->popup != 0;
     mac_menuselect_destroy(rt);
+    if (popup) { result(rt, sp, chosen ? ((uint32_t)(uint16_t)id << 16) | (uint32_t)chosen : 0, 10); return 1; }   /* a pop-up leaves nothing highlighted in the bar */
     if (chosen) { rt->menu_hilite = (int16_t)id; result(rt, sp, ((uint32_t)(uint16_t)id << 16) | (uint32_t)chosen, 4); }
     else { hilite_title(rt, (unsigned)index); rt->menu_hilite = 0; result(rt, sp, 0, 4); }
     return 1;
@@ -184,7 +189,39 @@ static int menu_select(MacRuntime *rt, uint32_t sp, uint32_t pc) {
     return track(rt, s);
 }
 
+/* PopUpMenuSelect(menu, top, left, popUpItem): LONGINT (from memory of Inside Macintosh). The menu (an owned menu, usually InsertMenu(menu, -1)'d) is drawn so that item popUpItem lies at (top, left)
+ * in global coordinates, moved to fit the screen, with that item highlighted; the button is tracked as MenuSelect does; releasing over an enabled item returns (menuID << 16) | item, anywhere else 0. */
+static int popup_select(MacRuntime *rt, uint32_t sp, uint32_t pc) {
+    size_t z = mac_cpu_ram_size(rt->cpu);
+    if ((sp & 1) || sp < 0x400 || sp > z || z - sp < 14) return fail(rt, "PopUpMenuSelect has an invalid stack.");
+    if (rt->menusel) {
+        if (pc != rt->menusel->pc || sp != rt->menusel->sp || !rt->menusel->popup) return fail(rt, "PopUpMenuSelect called while another menu is being tracked.");
+        return track(rt, rt->menusel);
+    }
+    int item = (int16_t)rd(rt, sp, 2), left = (int16_t)rd(rt, sp + 2, 2), top = (int16_t)rd(rt, sp + 4, 2); uint32_t h = rd(rt, sp + 6, 4);
+    MenuView v; if (!view_handle(rt, h, &v) || v.nitems < 1) return fail(rt, "PopUpMenuSelect needs an owned, non-empty menu.");
+    Scr sc; if (scr_of(rt, &sc)) return -1;
+    Sel *s = calloc(1, sizeof *s);
+    if (!s) return fail(rt, "PopUpMenuSelect could not allocate its state.");
+    s->sp = sp; s->pc = pc; s->id = v.id; s->popup = h; s->mv = v; s->px = rt->mouse_x; s->py = rt->mouse_y;
+    int w = 0; for (int i = 0; i < v.nitems; i++) { int iw = v.it[i].len * 8 + 24 + (v.it[i].cmd ? 24 : 0); if (iw > w) w = iw; }
+    s->w = w + 8; s->h = v.nitems * ITEM_H + 4;
+    if (item < 1 || item > v.nitems) item = 1;
+    s->left = left; s->top = top - 2 - (item - 1) * ITEM_H;
+    if (s->left + s->w > (int)sc.w) s->left = (int)sc.w - s->w;
+    if (s->top + s->h > (int)sc.h) s->top = (int)sc.h - s->h;
+    if (s->left < 0) s->left = 0;
+    if (s->top < 0) s->top = 0;
+    s->item = item_enabled(&v, item) && !is_sep(&v, item - 1) ? item : 0;
+    rt->menusel = s;
+    return track(rt, s);
+}
+
 int mac_menuselect_service(MacRuntime *rt, uint16_t opcode) {
+    if (opcode == 0xa80b) {
+        if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1;
+        return popup_select(rt, mac_cpu_get(rt->cpu, MAC_A7), (mac_cpu_get(rt->cpu, MAC_PC) - 2) & 0xffffff);
+    }
     if (opcode != 0xa93d && opcode != 0xa938 && opcode != 0xa93e) return 0;
     if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1;
     uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7), pc = (mac_cpu_get(rt->cpu, MAC_PC) - 2) & 0xffffff;

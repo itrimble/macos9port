@@ -70,7 +70,14 @@ static void raw_resource(void){
  uint32_t raw=mac_runtime_resource(&r,0x4d454e55,129);CHECK(raw);
  wr(&r,SP,4,raw);CHECK(call(&r,0xa950)==1&&rd(&r,SP+4,2)==1);
  wr(&r,SP+6,4,raw);wr(&r,SP+4,2,1);wr(&r,SP,4,0x4800);CHECK(call(&r,0xa946)==1&&rd(&r,0x4800,1)==4&&!memcmp(mac_cpu_ram(r.cpu)+0x4801,"Quit",4));
- str(&r,"More");wr(&r,SP,4,0x4000);wr(&r,SP+4,4,raw);CHECK(call(&r,0xa933)==-1&&mac_cpu_halted(r.cpu));         /* AppendMenu on it stays refused */
+ /* InsertMenu(raw, -1) adopts it: published sizes, an ordinary owned menu afterwards (AppendMenu works, and it is in the hierarchical list, not the bar). */
+ {unsigned n0=0;MacHandle*l0=mac_menu_list(&r,&n0);(void)l0;
+  CHECK(!mac_menu_record(&r,raw,NULL));                                                                      /* strict paths still refuse it before */
+  wr(&r,SP,2,0xffff);wr(&r,SP+2,4,raw);CHECK(call(&r,0xa935)==1&&mac_cpu_get(r.cpu,MAC_A7)==SP+6);
+  MacHandle*m=mac_menu_record(&r,raw,NULL);CHECK(m&&m->resource==2&&rd(&r,m->pointer+2,2)==4*8+32&&rd(&r,m->pointer+4,2)==16&&r.hier_count==1&&r.hier_menus[0]==raw);
+  wr(&r,SP,2,0xffff);wr(&r,SP+2,4,raw);CHECK(call(&r,0xa935)==1&&r.hier_count==1);                            /* a second InsertMenu adds nothing */
+  str(&r,"More");wr(&r,SP,4,0x4000);wr(&r,SP+4,4,raw);CHECK(call(&r,0xa933)==1);                              /* AppendMenu now works */
+  wr(&r,SP,4,raw);CHECK(call(&r,0xa950)==1&&rd(&r,SP+4,2)==2);}
  mac_cpu_destroy(r.cpu);
 }
 int main(void){

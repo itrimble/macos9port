@@ -627,3 +627,20 @@ the probe, not a window I watched, and I have not listened to any audio.
   Tests: `tests/test_mac_dlgwindow.c` (standard and custom control items, hidden dialogs, ShowWindow/HideWindow, DrawDialog repaint, DisposeDialog cleanup, item-handle control calls, refusals,
   the swallow exemption); mutants killed except four equivalents (the control item's data-length check is also enforced by the DITL parser, the hidden-flush check is defensive, cancel-yield is
   not observable through the API, and dropping the hidden dialog's draw steps is redundant with the port_only gate). ASan clean; `make test` 0; MI and MI2 identical; Castle refreshed.
+
+- **TrackControl (pop-up convention) and PopUpMenuSelect: Glider PRO's Tools pop-up works (headless).** Glider calls `TrackControl(ctl, pt, -1)` on its pop-up CDEF; with actionProc -1
+  the CDEF is sent testCntl and then autoTrack (message 8, param = the part found; from memory), and the result is the part. Only that case exists: a standard control, an action procedure or
+  none still halt by name. The CDEF's autoTrack calls `PopUpMenuSelect` ($A80B, new in `mac_menuselect.c`): the menu is drawn so that item popUpItem lies at (top, left), moved to fit the
+  screen, tracked like MenuSelect (the pointer decides the highlighted item; releasing over an enabled item returns menuID<<16|item, else 0; no bar title is touched; it never
+  switches to bar menus), with a top frame row (bar menus hang from the bar and have none; the test found that). `InsertMenu` now adopts a raw MENU resource handle (publishing sizes, as GetMenu
+  would). **Seen (frames, headless):** clicking 'Blowers' opens the nine-category pop-up (Blowers, Furniture, Prizes, Transport, Switches, Lighting, Appliances Etc., Enemies, Clutter); releasing
+  on 'Prizes' redraws the palette with a star; the star tool (a click needs ~0.4 s held: a 0.2 s click was not taken, cause not investigated) shows 'Magic Star' and a click in the room places
+  an object (a dashed 32x32 outline: the object's picture is not drawn, and the room still says 'Nothing to show'). With an object present, House > Save House runs the check silently
+  (no 'no stars' message), then calls PBWrite once (A003, d0 0x4be) and SetEOF/SetFPos, and never closes the file; the file in the saves dir stays 0 bytes (writes go to the staging copy,
+  which is only published at close). Not investigated whether Load House can then see it. **Game > Load House?** opens a dialog that is blank except for Cancel/Okay: the house list is
+  a user item (and probably List Manager), and user items are inert. NEXT is therefore user items with draw procedures (needs the dialog port window for every dialog, not only those with control
+  items) and the List Manager, or committing staged writes earlier.
+  Tests: popup tests in `test_mac_menuselect.c` (placement, clamping on all four edges, item range, highlight, release over enabled/disabled/separator/outside/bar title, restore of every pixel,
+  refusals, re-entry, menu deleted under the tracker), TrackControl cases in `test_mac_cdef.c`, raw-menu adoption in `test_mac_menu_records.c`. Equivalent mutants: the initial highlight of
+  the pop-up item (the tracker recomputes it from the pointer at once), re-checking `resource==1` in adoption, and keep_going on native steps. ASan clean (it found a wrong loop bound in my
+  own test edit); `make test` 0; MI and MI2 identical; Castle refreshed.

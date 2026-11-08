@@ -230,6 +230,12 @@ static int set_item(MacRuntime*r,uint32_t sp){
     }
     mac_cpu_set(r->cpu,MAC_A7,sp+10);return 1;
 }
+/* A MENU resource straight from GetResource becomes an ordinary menu the first time InsertMenu is given it (as GetMenu would have made it: published sizes, owned). */
+static void adopt_raw(MacRuntime*r,uint32_t h){
+    MacHandle*m=owned_x(r,h,1);unsigned w,hh;
+    if(!m || m->resource!=1 || m->type!=MENU_TYPE || !dimensions(mac_cpu_ram(r->cpu)+m->pointer,m->size,&w,&hh))return;
+    m->resource=2;wr(r,m->pointer+2,2,w);wr(r,m->pointer+4,2,hh);
+}
 int mac_menu_records_service(MacRuntime*r,uint16_t op){
     unsigned args=0,result=0;
     switch(op){case 0xa931:args=6;result=4;break;case 0xa947:case 0xa941:case 0xa946:case 0xa84e:case 0xa943:case 0xa93f:args=10;break;case 0xa933:case 0xa945:case 0xa94d:case 0xa942:case 0xa944:case 0xa84f:case 0xa940:args=8;break;
@@ -347,7 +353,7 @@ int mac_menu_records_service(MacRuntime*r,uint16_t op){
         for(unsigned i=0;i<r->hier_count;i++)if(r->hier_menus[i]==h)return fail(r,"DeleteMenu must precede DisposeMenu.");
         wr(r,h,4,0);memset(m,0,sizeof *m);
     }else {
-        int before=(int16_t)rd(r,sp,2);uint32_t h=rd(r,sp+2,4);MacHandle*m=mac_menu_record(r,h,NULL);
+        int before=(int16_t)rd(r,sp,2);uint32_t h=rd(r,sp+2,4);adopt_raw(r,h);MacHandle*m=mac_menu_record(r,h,NULL);
         if(!m)return fail(r,"InsertMenu requires an owned menu.");
         if(before==-1){ /* hierarchical (submenu) list: registered by ID, kept apart from the bar and never drawn there */
             unsigned mid=rd(r,m->pointer,2);int dup=0;

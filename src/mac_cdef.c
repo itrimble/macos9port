@@ -38,7 +38,7 @@ int mac_cdef_job_new(MacRuntime *rt, uint32_t sp, uint32_t args, MacCdefFinish f
     if (!rt->cdef) return fail(rt, "Control definition job could not be allocated.");
     if (rt->cdef->active) return fail(rt, "A Control Manager call was made from inside a control definition (unsupported).");
     MacCdefJob *j = rt->cdef;
-    j->count = j->next = 0; j->part = 0; j->found = 0; j->cur_message = 0; j->port_changed = 0; memset(j->user, 0, sizeof j->user);
+    j->count = j->next = 0; j->part = 0; j->keep_going = 0; j->found = 0; j->cur_message = 0; j->port_changed = 0; memset(j->user, 0, sizeof j->user);
     rt->cdef->sp = sp; rt->cdef->args = args; rt->cdef->finish = finish;
     return 0;
 }
@@ -76,12 +76,13 @@ static int advance(MacRuntime *rt) {
         uint32_t def = rd(rt, p + CTL_DEFPROC, 4);
         if (message == CDEF_TEST && (!rd(rt, p + CTL_VIS, 1) || rd(rt, p + CTL_HILITE, 1) == 255)) continue;   /* hidden and inactive controls are not hit */
         if (message == CDEF_DRAW && ((!w->visible && w->port_only != 2) || !rd(rt, p + CTL_VIS, 1))) continue;   /* only visible controls in visible windows are drawn */
+        if (message == CDEF_AUTOTRACK) { if (!j->part || !def) continue; param = (uint32_t)j->part; }   /* autoTrack's param is the part testCntl found */
         if (message == CDEF_DISP && !def) continue;                         /* standard controls have nothing to dispose */
         if (!def) {                                                         /* a standard control: drawn and tested natively */
             if (message == CDEF_DRAW) mac_control_draw(rt, w, p, 0);
             if (message == CDEF_TEST) {
                 int part = mac_control_part(rt, p, (int16_t)(param >> 16), (int16_t)(param & 0xffff));
-                if (part) { j->part = part; j->found = h; j->next = j->count; }
+                if (part) { j->part = part; j->found = h; if (!j->keep_going) j->next = j->count; }
             }
             continue;
         }
@@ -112,7 +113,7 @@ static int step_done(void *vrt, void *ctx, uint32_t result) {
     if (!j || !j->active) return -1;
     if (j->cur_message == CDEF_TEST) {
         int part = (int16_t)(result & 0xffff);
-        if (part > 0 && part < 255) { j->part = part; j->found = j->step[j->next - 1].handle; j->next = j->count; }
+        if (part > 0 && part < 255) { j->part = part; j->found = j->step[j->next - 1].handle; if (!j->keep_going) j->next = j->count; }
     }
     return advance(rt);
 }

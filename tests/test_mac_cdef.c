@@ -118,6 +118,30 @@ int main(void) {
     mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,4,STORAGE);CHECK(mac_controls_service(&rt,0xa956)==1 && running(&rt) && msg(&rt)==CDEF_DISP && ctl(&rt)==h2);
     CHECK(ret(&rt,0)==0 && raw(&rt,h2,4)==0 && raw(&rt,STORAGE+140,4)==0 && a7(&rt)==SP+4);
     mac_cpu_destroy(rt.cpu);
+    /* TrackControl(ctl, startPt, -1): testCntl, then (if it found a part) autoTrack with that part as the parameter; the result is the part. */
+    {   MacRuntime tr = fresh(64); uint32_t th = mk(&tr, 1, 2048); const uint32_t pt = ((uint32_t)70 << 16) | 80;
+        mac_cpu_set(tr.cpu, MAC_A7, SP); wr(&tr, SP, 4, 0xffffffffu); wr(&tr, SP + 4, 4, pt); wr(&tr, SP + 8, 4, th); wr(&tr, SP + 12, 2, 0x5555);
+        CHECK(mac_controls_service(&tr, 0xa968) == 1 && running(&tr) && msg(&tr) == CDEF_TEST && param(&tr) == pt && ctl(&tr) == th);
+        CHECK(ret(&tr, 10) == 0 && running(&tr) && msg(&tr) == CDEF_AUTOTRACK && param(&tr) == 10 && ctl(&tr) == th);
+        CHECK(ret(&tr, 99) == 0 && !tr.guest.active && a7(&tr) == SP + 12 && (int16_t)raw(&tr, SP + 12, 2) == 10);               /* the answer to autoTrack does not change the result */
+        /* testCntl finds nothing: no autoTrack, result 0 */
+        mac_cpu_set(tr.cpu, MAC_A7, SP); wr(&tr, SP, 4, 0xffffffffu); wr(&tr, SP + 4, 4, pt); wr(&tr, SP + 8, 4, th); wr(&tr, SP + 12, 2, 0x5555);
+        CHECK(mac_controls_service(&tr, 0xa968) == 1 && running(&tr) && msg(&tr) == CDEF_TEST);
+        CHECK(ret(&tr, 0) == 0 && !tr.guest.active && a7(&tr) == SP + 12 && raw(&tr, SP + 12, 2) == 0);
+        /* an inactive control is not tracked */
+        wr(&tr, raw(&tr, th, 4) + CTL_HILITE, 1, 255);
+        mac_cpu_set(tr.cpu, MAC_A7, SP); wr(&tr, SP, 4, 0xffffffffu); wr(&tr, SP + 4, 4, pt); wr(&tr, SP + 8, 4, th); wr(&tr, SP + 12, 2, 0x5555);
+        CHECK(mac_controls_service(&tr, 0xa968) == 1 && !tr.guest.active && raw(&tr, SP + 12, 2) == 0);
+        mac_cpu_destroy(tr.cpu); }
+    {   MacRuntime tr = fresh(64); uint32_t th = mk(&tr, 1, 2048);                                                          /* an action procedure (or none) is not supported */
+        mac_cpu_set(tr.cpu, MAC_A7, SP); wr(&tr, SP, 4, 0x1000); wr(&tr, SP + 4, 4, 0); wr(&tr, SP + 8, 4, th);
+        CHECK(mac_controls_service(&tr, 0xa968) == -1 && mac_cpu_halted(tr.cpu)); mac_cpu_destroy(tr.cpu); }
+    {   MacRuntime tr = fresh(64); uint32_t th = mk(&tr, 1, 2048);
+        mac_cpu_set(tr.cpu, MAC_A7, SP); wr(&tr, SP, 4, 0); wr(&tr, SP + 4, 4, 0); wr(&tr, SP + 8, 4, th);
+        CHECK(mac_controls_service(&tr, 0xa968) == -1 && mac_cpu_halted(tr.cpu)); mac_cpu_destroy(tr.cpu); }
+    {   MacRuntime tr = fresh(64); rect(&tr, 60, 60, 80, 160); pstr(&tr, TITLE, "x"); CHECK(newc(&tr, 1, 0, 1, 0, 9) == 1);   /* a standard control */
+        uint32_t sh = raw(&tr, SP + 26, 4); mac_cpu_set(tr.cpu, MAC_A7, SP); wr(&tr, SP, 4, 0xffffffffu); wr(&tr, SP + 4, 4, 0); wr(&tr, SP + 8, 4, sh);
+        CHECK(mac_controls_service(&tr, 0xa968) == -1 && mac_cpu_halted(tr.cpu)); mac_cpu_destroy(tr.cpu); }
     /* Corrupted guest input. */
     for(unsigned k=0;k<9;k++){
         MacRuntime r=fresh(k==7?8:64);int rc=0;

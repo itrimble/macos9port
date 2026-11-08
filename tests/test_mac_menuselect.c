@@ -38,7 +38,61 @@ static int again(MacRuntime*r){mac_cpu_set(r->cpu,MAC_A7,SP);mac_cpu_set(r->cpu,
 static void pointer(MacRuntime*r,int x,int y){r->mouse_x=(int16_t)x;r->mouse_y=(int16_t)y;}
 static void release(MacRuntime*r,int x,int y){mac_runtime_post_event(r,2,0,0x80,(int16_t)x,(int16_t)y);}
 static uint32_t result(MacRuntime*r){return rd(r,SP+4,4);}
+static uint32_t result_at(MacRuntime*r){return rd(r,SP+10,4);}
 static int unchanged(MacRuntime*r,const uint8_t*base){return !memcmp(screen(r),base,640*100);}
+
+
+/* PopUpMenuSelect(menu, top, left, popUpItem): LONGINT, a free-standing menu tracked like MenuSelect. */
+static int popup(MacRuntime*r,uint32_t menu,int top,int left,int item){
+    wr(r,SP,2,(uint16_t)item);wr(r,SP+2,2,(uint16_t)left);wr(r,SP+4,2,(uint16_t)top);wr(r,SP+6,4,menu);wr(r,SP+10,4,0xdeadbeef);
+    mac_cpu_set(r->cpu,MAC_A7,SP);mac_cpu_set(r->cpu,MAC_PC,PC);return mac_menuselect_service(r,0xa80b);
+}
+static int popup_again(MacRuntime*r){mac_cpu_set(r->cpu,MAC_A7,SP);mac_cpu_set(r->cpu,MAC_PC,PC);return mac_menuselect_service(r,0xa80b);}
+static uint32_t make_popup(MacRuntime*r,unsigned id,const char*title,const char*items){   /* NewMenu + AppendMenu + InsertMenu(menu, -1): in no bar */
+    str(r,0x4000,title);wr(r,SP,4,0x4000);wr(r,SP+4,2,id);CHECK(mcall(r,0xa931)==1);uint32_t h=rd(r,SP+6,4);
+    str(r,0x4100,items);wr(r,SP,4,0x4100);wr(r,SP+4,4,h);CHECK(mcall(r,0xa933)==1);
+    wr(r,SP,2,0xffff);wr(r,SP+2,4,h);CHECK(mcall(r,0xa935)==1);return h;
+}
+static void popups(void){
+    uint32_t f;MacRuntime r=rig(&f);uint32_t pm=make_popup(&r,200,"Pop","Alpha/a;Beta;(Gamma");static uint8_t before[640*480];memcpy(before,screen(&r),sizeof before);
+    uint32_t bar_count_before=0;{unsigned n;CHECK(mac_menu_list(&r,&n));bar_count_before=n;}
+    /* item 2 at (top 100, left 200): the pull-down is 96 wide and 3*12+4 tall, its top at 100-2-12 = 86; Beta (item 2) is highlighted at once */
+    pointer(&r,210,102);                                                                            /* the pointer is over the control, i.e. over the current item */
+    CHECK(popup(&r,pm,100,200,2)==1 && r.menusel && mac_cpu_get(r.cpu,MAC_PC)==0x5000 && mac_cpu_get(r.cpu,MAC_A7)==SP);
+    CHECK(px(&r,200,86)==1 && px(&r,295,86)==1 && px(&r,200,125)==1 && px(&r,250,87)==0);          /* dark frame, light inside */
+    CHECK(px(&r,210,102)==1);                                                   /* Beta's row (y 100-112) is inverted */
+    pointer(&r,230,90);CHECK(popup_again(&r)==1 && r.menusel);                                       /* over Alpha: it is highlighted, Beta is not */
+    CHECK(px(&r,205,90)!=0 || px(&r,215,90)!=0);
+    pointer(&r,230,116);CHECK(popup_again(&r)==1 && r.menusel);                                      /* over the disabled Gamma: nothing is highlighted */
+    release(&r,230,104);CHECK(popup_again(&r)==1 && !r.menusel && mac_cpu_get(r.cpu,MAC_A7)==SP+10 && result_at(&r)==((200u<<16)|2) && r.menu_hilite==0);   /* released over Beta */
+    CHECK(!memcmp(screen(&r),before,sizeof before));                                                 /* the screen is exactly as it was: no title was highlighted */
+    {unsigned n;CHECK(mac_menu_list(&r,&n)&&n==bar_count_before);}                                   /* the bar is untouched */
+    /* released outside, over a disabled item or on a separator: 0 */
+    static const int spots[][2]={{20,20},{230,116},{230,87+0},{299,100},{200,100},{20,5},{130,5}};   /* ... and over a menu-bar title: a pop-up never switches to bar menus */
+    for(unsigned k=0;k<7;k++){
+        CHECK(popup(&r,pm,100,200,2)==1);pointer(&r,spots[k][0],spots[k][1]);release(&r,spots[k][0],spots[k][1]);
+        CHECK(popup_again(&r)==1 && !r.menusel && mac_cpu_get(r.cpu,MAC_A7)==SP+10);
+        if(k==0||k==1||k==3||k==5||k==6)CHECK(result_at(&r)==0);
+        CHECK(!memcmp(screen(&r),before,sizeof before));
+    }
+    /* near the screen edges it is moved to fit */
+    CHECK(popup(&r,pm,2,630,2)==1 && px(&r,640-96,0)==1 && px(&r,639,0)==1 && px(&r,640-96-1,0)!=1 && px(&r,560,0)==1);   /* right and top edges: the top frame row is on screen row 0 */
+    release(&r,5,5);CHECK(popup_again(&r)==1 && !r.menusel);
+    CHECK(popup(&r,pm,478,20,3)==1 && px(&r,60,479)==1);release(&r,5,5);CHECK(popup_again(&r)==1);                          /* bottom edge: the frame row is on row 479 */
+    CHECK(popup(&r,pm,200,-5,1)==1 && px(&r,0,210)==1 && px(&r,95,210)==1 && px(&r,96,210)!=1);release(&r,5,5);CHECK(popup_again(&r)==1);   /* left edge: moved to x 0 */
+    /* an item number outside the menu means item 1 */
+    for(unsigned k=0;k<3;k++){const int items[3]={0,99,-3};CHECK(popup(&r,pm,100,200,items[k])==1 && px(&r,250,98)==1 && px(&r,200,98)==1);release(&r,5,5);CHECK(popup_again(&r)==1);}
+    /* refusals: a nil or foreign handle, a menu with no items, a bad stack, being called while a different menu is tracked */
+    {MacRuntime q=rig(&f);CHECK(popup(&q,0,100,200,1)==-1 && mac_cpu_halted(q.cpu));mac_cpu_destroy(q.cpu);}
+    {MacRuntime q=rig(&f);CHECK(popup(&q,0x4800,100,200,1)==-1 && mac_cpu_halted(q.cpu));mac_cpu_destroy(q.cpu);}
+    {MacRuntime q=rig(&f);uint32_t e=make_popup(&q,201,"Empty","");CHECK(popup(&q,e,100,200,1)==-1 && mac_cpu_halted(q.cpu));mac_cpu_destroy(q.cpu);}
+    {MacRuntime q=rig(&f);uint32_t m=make_popup(&q,202,"P","One;Two");mac_cpu_set(q.cpu,MAC_A7,(uint32_t)mac_cpu_ram_size(q.cpu)-6);mac_cpu_set(q.cpu,MAC_PC,PC);CHECK(mac_menuselect_service(&q,0xa80b)==-1 && mac_cpu_halted(q.cpu));(void)m;mac_cpu_destroy(q.cpu);}
+    {MacRuntime q=rig(&f);uint32_t m=make_popup(&q,203,"P","One;Two");CHECK(popup(&q,m,100,200,1)==1 && q.menusel);mac_cpu_set(q.cpu,MAC_A7,SP-0x100);mac_cpu_set(q.cpu,MAC_PC,PC);CHECK(mac_menuselect_service(&q,0xa80b)==-1 && mac_cpu_halted(q.cpu));mac_cpu_destroy(q.cpu);}   /* another call while one is open */
+    {MacRuntime q=rig(&f);CHECK(msel(&q,5,30)==1 && q.menusel);uint32_t m=0x4800;(void)m;wr(&q,SP,2,1);wr(&q,SP+2,2,1);wr(&q,SP+4,2,1);wr(&q,SP+6,4,f);mac_cpu_set(q.cpu,MAC_A7,SP);mac_cpu_set(q.cpu,MAC_PC,PC);CHECK(mac_menuselect_service(&q,0xa80b)==-1 && mac_cpu_halted(q.cpu));mac_cpu_destroy(q.cpu);}   /* while the bar is being tracked */
+    /* the menu list changing under the tracker (the program deleted the menu) halts */
+    {MacRuntime q=rig(&f);uint32_t m=make_popup(&q,204,"P","One;Two");CHECK(popup(&q,m,100,200,1)==1);wr(&q,m,4,0);pointer(&q,205,95);CHECK(popup_again(&q)==-1 && mac_cpu_halted(q.cpu));mac_cpu_destroy(q.cpu);}
+    mac_cpu_destroy(r.cpu);
+}
 
 static void tracking(void){
     uint32_t f;MacRuntime r=rig(&f);static uint8_t bar[640*100];memcpy(bar,screen(&r),sizeof bar);
@@ -125,7 +179,7 @@ static void refusals(void){
     CHECK(msel(&r,5,30)==1 && !r.menusel && result(&r)==0 && !mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
 }
 int main(void){
-    tracking();keys_and_hilite();refusals();
+    tracking();popups();keys_and_hilite();refusals();
     if(!fails)puts("Menu tracking checks passed");
     return fails?1:0;
 }

@@ -6,7 +6,7 @@
  * build a job (a list of messages to send, in order), start the first guest call and return; each completion starts the next, and the last one
  * runs the job's finish callback and pops the trap's arguments. Messages (from memory of Inside Macintosh): drawCntl 0, testCntl 1, initCntl 3,
  * dispCntl 4. One job at a time: Control Manager traps made by a running CDEF halt. */
-enum { CDEF_DRAW = 0, CDEF_TEST = 1, CDEF_INIT = 3, CDEF_DISP = 4, CDEF_MAX_STEPS = 520 };
+enum { CDEF_DRAW = 0, CDEF_TEST = 1, CDEF_INIT = 3, CDEF_DISP = 4, CDEF_AUTOTRACK = 8, CDEF_MAX_STEPS = 520 };
 typedef struct MacCdefJob MacCdefJob;
 typedef int (*MacCdefFinish)(MacRuntime *rt, MacCdefJob *job);
 struct MacCdefJob {
@@ -17,7 +17,8 @@ struct MacCdefJob {
     uint32_t saved_port, port_changed;
     MacCdefFinish finish;
     uint32_t user[4];                        /* finish's private values */
-    int cur_message, part; uint32_t found;                /* result of a testCntl step that answered non-zero */
+    int cur_message, part, keep_going; uint32_t found;   /* keep_going: a testCntl that finds a part does not end the job (TrackControl) */
+                   /* result of a testCntl step that answered non-zero */
 };
 int mac_cdef_finish_result(MacRuntime *rt, MacCdefJob *job);   /* a finish that writes user[2] bytes of user[1] at user[0] */
 int mac_cdef_custom_id(unsigned proc);       /* the CDEF id for a procID, or 0 for the standard definitions */
