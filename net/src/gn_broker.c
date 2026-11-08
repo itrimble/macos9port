@@ -1,7 +1,9 @@
 /* Socket broker: nonblocking host sockets driven by poll(), bounded ring
  * buffers per connection, policy checked before any connect, listen or
- * datagram, timeouts for connects, and metadata-only logging. */
-#include "os999_guestnet.h"
+ * datagram, timeouts for connects, and metadata-only logging. A guest TCP
+ * connection to an address on an attached personal area network travels
+ * over that link instead, through the PAN endpoints in gn_broker_pan.c. */
+#include "gn_broker_int.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -15,36 +17,14 @@
 #include <time.h>
 #include <unistd.h>
 
-typedef struct {
-    uint8_t *p;
-    size_t cap, head, len;
-} Ring;
-
-typedef struct {
-    int fd, kind, state, error, closing;
-    Ring in, out;
-    uint64_t deadline;
-    struct sockaddr_storage local, remote;
-    socklen_t remote_len;
-    int accepted[16], naccepted; /* listener: ready connection ids */
-} Conn;
-
-struct GnBroker {
-    GnPolicy policy;
-    char app[32];
-    GnLimits lim;
-    GnLogFn log;
-    void *log_ctx;
-    Conn *c;
-};
-
 static uint64_t now_ms(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000 + (uint64_t)ts.tv_nsec / 1000000;
 }
 
-static void logf_(GnBroker *b, const char *fmt, const char *what, const struct sockaddr *a, const char *why) {
+void gn_broker_log(GnBroker *b, const char *fmt, const char *what, const struct sockaddr *a,
+                   const char *why) {
     if (!b->log) return;
     char ip[INET6_ADDRSTRLEN] = "?", line[400], safe[400];
     int port = 0;
@@ -60,7 +40,8 @@ static void logf_(GnBroker *b, const char *fmt, const char *what, const struct s
     b->log(b->log_ctx, safe);
 }
 
-GnBroker *gn_broker_new(const GnPolicy *policy, const char *app, const GnLimits *lim, GnLogFn log, void *log_ctx) {
+GnBroker *gn_broker_new(const GnPolicy *policy, const char *app, const GnLimits *lim, GnLogFn log,
+                         void *log_ctx) {
     GnBroker *b = calloc(1, sizeof *b);
     if (!b) return NULL;
     if (policy) b->policy = *policy; else gn_policy_init(&b->policy);
@@ -79,8 +60,12 @@ GnBroker *gn_broker_new(const GnPolicy *policy, const char *app, const GnLimits 
     return b;
 }
 
-static void conn_free(Conn *c) {
+void gn_broker_conn_free(GnConn *c) {
     if (c->fd >= 0) close(c->fd);
+    if (c->tcp) {
+        gn_pan_tcp_free(c->tcp);
+        c->tcp = NULL;
+    }
     free(c->in.p);
     free(c->out.p);
     memset(c, 0, sizeof *c);
@@ -89,19 +74,19 @@ static void conn_free(Conn *c) {
 
 void gn_broker_free(GnBroker *b) {
     if (!b) return;
-    for (size_t i = 0; i < b->lim.max_conns; i++) conn_free(&b->c[i]);
+    for (size_t i = 0; i < b->lim.max_conns; i++) gn_broker_conn_free(&b->c[i]);
     free(b->c);
     free(b);
 }
 
-static Conn *get(GnBroker *b, int id) {
+GnConn *gn_broker_get(GnBroker *b, int id) {
     return b && id >= 0 && (size_t)id < b->lim.max_conns && b->c[id].kind ? &b->c[id] : NULL;
 }
 
-static int slot(GnBroker *b, int kind, int *id) {
+int gn_broker_slot(GnBroker *b, int kind, int *id) {
     for (size_t i = 0; i < b->lim.max_conns; i++) {
         if (b->c[i].kind) continue;
-        Conn *c = &b->c[i];
+        GnConn *c = &b->c[i];
         memset(c, 0, sizeof *c);
         c->fd = -1;
         c->kind = kind;
@@ -109,7 +94,7 @@ static int slot(GnBroker *b, int kind, int *id) {
         c->out.cap = b->lim.send_cap;
         c->in.p = malloc(c->in.cap);
         c->out.p = malloc(c->out.cap);
-        if (!c->in.p || !c->out.p) { conn_free(c); return GN_ENOMEM; }
+        if (!c->in.p || !c->out.p) { gn_broker_conn_free(c); return GN_ENOMEM; }
         *id = (int)i;
         return GN_OK;
     }
@@ -121,31 +106,32 @@ static int nonblock(int fd) {
     return fl < 0 || fcntl(fd, F_SETFL, fl | O_NONBLOCK) < 0 || fcntl(fd, F_SETFD, FD_CLOEXEC) < 0 ? -1 : 0;
 }
 
-static size_t ring_put(Ring *r, const uint8_t *p, size_t n) {
-    size_t room = r->cap - r->len, k = n < room ? n : room;
-    for (size_t i = 0; i < k; i++) r->p[(r->head + r->len + i) % r->cap] = p[i];
-    r->len += k;
-    return k;
+int gn_broker_set_pan(GnBroker *b, GnPan *pan) {
+    if (!b) return GN_EINVAL;
+    b->pan = pan;
+    return GN_OK;
 }
 
-static size_t ring_get(Ring *r, uint8_t *p, size_t n) {
-    size_t k = n < r->len ? n : r->len;
-    for (size_t i = 0; i < k; i++) p[i] = r->p[(r->head + i) % r->cap];
-    r->head = (r->head + k) % r->cap;
-    r->len -= k;
-    return k;
-}
+uint32_t gn_broker_local_ip(GnBroker *b) { return b && b->pan ? gn_pan_local_ip(b->pan) : 0; }
+
+uint32_t gn_broker_netmask(GnBroker *b) { return b && b->pan ? gn_pan_netmask(b->pan) : 0; }
 
 int gn_tcp_connect(GnBroker *b, const struct sockaddr *addr, socklen_t len, const char *host, int *id) {
     if (!b || !addr || !id || len > sizeof(struct sockaddr_storage)) return GN_EINVAL;
     char why[160];
     int rc = gn_policy_check(&b->policy, b->app, GN_OUT, GN_TCP, addr, host, why, sizeof why);
-    logf_(b, "%s tcp %s %s:%d (%s)", rc ? "denied" : "connect", addr, why);
+    gn_broker_log(b, "%s tcp %s %s:%d (%s)", rc ? "denied" : "connect", addr, why);
     if (rc) return rc;
-    if ((rc = slot(b, 1, id))) return rc;
-    Conn *c = &b->c[*id];
+    /* An address on the personal area network travels over that link. */
+    if (b->pan && addr->sa_family == AF_INET) {
+        const struct sockaddr_in *a = (const struct sockaddr_in *)addr;
+        if (gn_pan_owns(b->pan, ntohl(a->sin_addr.s_addr)))
+            return gn_pan_conn_connect(b, ntohl(a->sin_addr.s_addr), ntohs(a->sin_port), id);
+    }
+    if ((rc = gn_broker_slot(b, GN_K_TCP, id))) return rc;
+    GnConn *c = &b->c[*id];
     c->fd = socket(addr->sa_family, SOCK_STREAM, 0);
-    if (c->fd < 0 || nonblock(c->fd)) { conn_free(c); return GN_EIO; }
+    if (c->fd < 0 || nonblock(c->fd)) { gn_broker_conn_free(c); return GN_EIO; }
 #ifdef SO_NOSIGPIPE
     int one = 1;
     setsockopt(c->fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof one);
@@ -155,7 +141,7 @@ int gn_tcp_connect(GnBroker *b, const struct sockaddr *addr, socklen_t len, cons
     c->deadline = now_ms() + b->lim.connect_timeout_ms;
     if (connect(c->fd, addr, len) == 0) c->state = GN_S_OPEN;
     else if (errno == EINPROGRESS) c->state = GN_S_CONNECTING;
-    else { conn_free(c); return GN_EIO; }
+    else { gn_broker_conn_free(c); return GN_EIO; }
     socklen_t ll = sizeof c->local;
     getsockname(c->fd, (struct sockaddr *)&c->local, &ll);
     return GN_OK;
@@ -182,15 +168,17 @@ int gn_tcp_listen(GnBroker *b, int family, uint16_t port, int *id) {
     }
     char why[160];
     int rc = gn_policy_check(&b->policy, b->app, GN_IN, GN_TCP, (struct sockaddr *)&ss, NULL, why, sizeof why);
-    logf_(b, "%s listen %s %s:%d (%s)", rc ? "denied" : "allowed", (struct sockaddr *)&ss, why);
+    gn_broker_log(b, "%s listen %s %s:%d (%s)", rc ? "denied" : "allowed", (struct sockaddr *)&ss, why);
     if (rc) return rc;
-    if ((rc = slot(b, 2, id))) return rc;
-    Conn *c = &b->c[*id];
+    /* With a personal area network attached the guest listens on it. */
+    if (b->pan && family == AF_INET) return gn_pan_conn_listen(b, port, id);
+    if ((rc = gn_broker_slot(b, GN_K_LISTEN, id))) return rc;
+    GnConn *c = &b->c[*id];
     int one = 1;
     c->fd = socket(family, SOCK_STREAM, 0);
     if (c->fd < 0 || nonblock(c->fd) || setsockopt(c->fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof one) ||
         bind(c->fd, (struct sockaddr *)&ss, len) || listen(c->fd, 8)) {
-        conn_free(c);
+        gn_broker_conn_free(c);
         return GN_EIO;
     }
     socklen_t ll = sizeof c->local;
@@ -200,8 +188,10 @@ int gn_tcp_listen(GnBroker *b, int family, uint16_t port, int *id) {
 }
 
 int gn_tcp_accept(GnBroker *b, int listener, int *id) {
-    Conn *l = get(b, listener);
-    if (!l || l->kind != 2 || !id) return GN_EINVAL;
+    GnConn *l = gn_broker_get(b, listener);
+    if (!l || !id) return GN_EINVAL;
+    if (l->kind == GN_K_PAN_LISTEN) return gn_pan_conn_accept(b, listener, id);
+    if (l->kind != GN_K_LISTEN) return GN_EINVAL;
     if (!l->naccepted) return GN_EAGAIN;
     *id = l->accepted[0];
     memmove(l->accepted, l->accepted + 1, (size_t)--l->naccepted * sizeof *l->accepted);
@@ -209,32 +199,40 @@ int gn_tcp_accept(GnBroker *b, int listener, int *id) {
 }
 
 long gn_send(GnBroker *b, int id, const void *p, size_t n) {
-    Conn *c = get(b, id);
-    if (!c || c->kind != 1) return GN_EINVAL;
+    GnConn *c = gn_broker_get(b, id);
+    if (!c) return GN_EINVAL;
+    if (c->kind == GN_K_PAN) return gn_pan_conn_send(b, c, p, n);
+    if (c->kind != GN_K_TCP) return GN_EINVAL;
     if (c->state == GN_S_FAILED || c->state == GN_S_CLOSED) return GN_ECLOSED;
     if (c->closing) return GN_ECLOSED;
-    return (long)ring_put(&c->out, p, n);
+    return (long)gn_ring_put(&c->out, p, n);
 }
 
 long gn_recv(GnBroker *b, int id, void *p, size_t n) {
-    Conn *c = get(b, id);
-    if (!c || c->kind != 1) return GN_EINVAL;
-    size_t k = ring_get(&c->in, p, n);
-    if (!k && (c->state == GN_S_PEER_CLOSED || c->state == GN_S_CLOSED || c->state == GN_S_FAILED)) return GN_ECLOSED;
+    GnConn *c = gn_broker_get(b, id);
+    if (!c) return GN_EINVAL;
+    if (c->kind == GN_K_PAN) return gn_pan_conn_recv(b, c, p, n);
+    if (c->kind != GN_K_TCP) return GN_EINVAL;
+    size_t k = gn_ring_get(&c->in, p, n);
+    if (!k && (c->state == GN_S_PEER_CLOSED || c->state == GN_S_CLOSED || c->state == GN_S_FAILED))
+        return GN_ECLOSED;
     return (long)k;
 }
 
 int gn_shutdown(GnBroker *b, int id) {
-    Conn *c = get(b, id);
-    if (!c || c->kind != 1) return GN_EINVAL;
+    GnConn *c = gn_broker_get(b, id);
+    if (!c) return GN_EINVAL;
+    if (c->kind == GN_K_PAN) return gn_pan_conn_shutdown(b, c);
+    if (c->kind != GN_K_TCP) return GN_EINVAL;
     c->closing = 1;
     if (!c->out.len && c->fd >= 0 && c->state == GN_S_OPEN) shutdown(c->fd, SHUT_WR);
     return GN_OK;
 }
 
 int gn_abort(GnBroker *b, int id) {
-    Conn *c = get(b, id);
+    GnConn *c = gn_broker_get(b, id);
     if (!c) return GN_EINVAL;
+    if (c->kind == GN_K_PAN) return gn_pan_conn_abort(b, c);
     if (c->fd >= 0) {
         struct linger lg = {1, 0};
         setsockopt(c->fd, SOL_SOCKET, SO_LINGER, &lg, sizeof lg);
@@ -247,17 +245,17 @@ int gn_abort(GnBroker *b, int id) {
 }
 
 int gn_release(GnBroker *b, int id) {
-    Conn *c = get(b, id);
+    GnConn *c = gn_broker_get(b, id);
     if (!c) return GN_EINVAL;
-    conn_free(c);
+    gn_broker_conn_free(c);
     return GN_OK;
 }
 
 int gn_udp_open(GnBroker *b, int family, uint16_t port, int *id) {
     if (!b || !id || (family != AF_INET && family != AF_INET6)) return GN_EINVAL;
-    int rc = slot(b, 3, id);
+    int rc = gn_broker_slot(b, GN_K_UDP, id);
     if (rc) return rc;
-    Conn *c = &b->c[*id];
+    GnConn *c = &b->c[*id];
     struct sockaddr_storage ss;
     memset(&ss, 0, sizeof ss);
     socklen_t len;
@@ -276,19 +274,23 @@ int gn_udp_open(GnBroker *b, int family, uint16_t port, int *id) {
         len = sizeof *a;
     }
     c->fd = socket(family, SOCK_DGRAM, 0);
-    if (c->fd < 0 || nonblock(c->fd) || bind(c->fd, (struct sockaddr *)&ss, len)) { conn_free(c); return GN_EIO; }
+    if (c->fd < 0 || nonblock(c->fd) || bind(c->fd, (struct sockaddr *)&ss, len)) {
+        gn_broker_conn_free(c);
+        return GN_EIO;
+    }
     socklen_t ll = sizeof c->local;
     getsockname(c->fd, (struct sockaddr *)&c->local, &ll);
     c->state = GN_S_OPEN;
     return GN_OK;
 }
 
-long gn_udp_sendto(GnBroker *b, int id, const struct sockaddr *addr, socklen_t len, const void *p, size_t n) {
-    Conn *c = get(b, id);
-    if (!c || c->kind != 3 || !addr) return GN_EINVAL;
+long gn_udp_sendto(GnBroker *b, int id, const struct sockaddr *addr, socklen_t len, const void *p,
+                   size_t n) {
+    GnConn *c = gn_broker_get(b, id);
+    if (!c || c->kind != GN_K_UDP || !addr) return GN_EINVAL;
     char why[160];
     int rc = gn_policy_check(&b->policy, b->app, GN_OUT, GN_UDP, addr, NULL, why, sizeof why);
-    if (rc) { logf_(b, "%s udp %s %s:%d (%s)", "denied", addr, why); return rc; }
+    if (rc) { gn_broker_log(b, "%s udp %s %s:%d (%s)", "denied", addr, why); return rc; }
     if (n > 65507) return GN_ELIMIT;
     ssize_t k = sendto(c->fd, p, n, 0, addr, len);
     if (k < 0) return errno == EAGAIN || errno == EWOULDBLOCK ? GN_EAGAIN : GN_EIO;
@@ -296,8 +298,8 @@ long gn_udp_sendto(GnBroker *b, int id, const struct sockaddr *addr, socklen_t l
 }
 
 long gn_udp_recvfrom(GnBroker *b, int id, void *p, size_t n, struct sockaddr_storage *from) {
-    Conn *c = get(b, id);
-    if (!c || c->kind != 3) return GN_EINVAL;
+    GnConn *c = gn_broker_get(b, id);
+    if (!c || c->kind != GN_K_UDP) return GN_EINVAL;
     for (;;) {
         socklen_t fl = sizeof *from;
         ssize_t k = recvfrom(c->fd, p, n, MSG_TRUNC, (struct sockaddr *)from, &fl);
@@ -312,8 +314,9 @@ long gn_udp_recvfrom(GnBroker *b, int id, void *p, size_t n, struct sockaddr_sto
 }
 
 int gn_info(GnBroker *b, int id, GnInfo *out) {
-    Conn *c = get(b, id);
+    GnConn *c = gn_broker_get(b, id);
     if (!c || !out) return GN_EINVAL;
+    if (c->kind == GN_K_PAN || c->kind == GN_K_PAN_LISTEN) return gn_pan_conn_info(c, out);
     memset(out, 0, sizeof *out);
     out->kind = c->kind;
     out->state = c->state;
@@ -326,15 +329,15 @@ int gn_info(GnBroker *b, int id, GnInfo *out) {
     return GN_OK;
 }
 
-static void fail(Conn *c, int err) {
+static void fail(GnConn *c, int err) {
     c->state = GN_S_FAILED;
     c->error = err;
     if (c->fd >= 0) close(c->fd);
     c->fd = -1;
 }
 
-static void service(GnBroker *b, Conn *c, short rev) {
-    if (c->kind == 2) {
+static void service(GnBroker *b, GnConn *c, short rev) {
+    if (c->kind == GN_K_LISTEN) {
         while (c->naccepted < 16) {
             struct sockaddr_storage ss;
             socklen_t sl = sizeof ss;
@@ -342,11 +345,11 @@ static void service(GnBroker *b, Conn *c, short rev) {
             if (fd < 0) break;
             int id;
             if (gn_policy_check(&b->policy, b->app, GN_IN, GN_TCP, (struct sockaddr *)&ss, NULL, NULL, 0) ||
-                slot(b, 1, &id) || nonblock(fd)) {
+                gn_broker_slot(b, GN_K_TCP, &id) || nonblock(fd)) {
                 close(fd);
                 continue;
             }
-            Conn *n = &b->c[id];
+            GnConn *n = &b->c[id];
             n->fd = fd;
 #ifdef SO_NOSIGPIPE
             setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &(int){1}, sizeof(int));
@@ -398,17 +401,19 @@ static void service(GnBroker *b, Conn *c, short rev) {
 
 int gn_pump(GnBroker *b, int timeout_ms) {
     if (!b) return GN_EINVAL;
+    /* The personal area network has no file descriptor: drive it directly. */
+    if (b->pan) gn_pan_tick(b->pan);
     struct pollfd *pf = calloc(b->lim.max_conns, sizeof *pf);
     int *map = calloc(b->lim.max_conns, sizeof *map);
     if (!pf || !map) { free(pf); free(map); return GN_ENOMEM; }
     nfds_t n = 0;
     uint64_t now = now_ms();
     for (size_t i = 0; i < b->lim.max_conns; i++) {
-        Conn *c = &b->c[i];
-        if (!c->kind || c->fd < 0 || c->kind == 3) continue;
+        GnConn *c = &b->c[i];
+        if (!c->kind || c->fd < 0 || c->kind == GN_K_UDP) continue;
         if (c->state == GN_S_CONNECTING && now >= c->deadline) { fail(c, GN_ETIMEOUT); continue; }
         short ev = 0;
-        if (c->kind == 2) ev = POLLIN;
+        if (c->kind == GN_K_LISTEN) ev = POLLIN;
         else if (c->state == GN_S_CONNECTING) ev = POLLOUT;
         else {
             if (c->in.len < c->in.cap && c->state == GN_S_OPEN) ev |= POLLIN;

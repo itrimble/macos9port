@@ -20,6 +20,10 @@ enum { GN_OK = 0, GN_EINVAL = -1, GN_EDENIED = -2, GN_ELIMIT = -3, GN_EIO = -4, 
        GN_ECLOSED = -6, GN_ENOENT = -7, GN_ETIMEOUT = -8, GN_ENOMEM = -9 };
 const char *gn_status_text(int code);
 
+/* The guest IP stack over a link that carries Ethernet frames. */
+typedef struct GnPan GnPan;
+typedef struct GnPanTcp GnPanTcp;
+
 /* ---- policy (N06, N08) ---- */
 enum { GN_OUT = 1, GN_IN = 2 };
 enum { GN_TCP = 1, GN_UDP = 2 };
@@ -92,6 +96,47 @@ long gn_udp_recvfrom(GnBroker *b, int id, void *p, size_t n, struct sockaddr_sto
 int gn_info(GnBroker *b, int id, GnInfo *out);
 /* Move bytes and complete connects/accepts; waits at most timeout_ms. */
 int gn_pump(GnBroker *b, int timeout_ms);
+/* Attach a PAN so TCP to its subnet travels over that link instead of a host
+ * socket. The broker does not own the PAN. */
+int gn_broker_set_pan(GnBroker *b, GnPan *pan);
+uint32_t gn_broker_local_ip(GnBroker *b);   /* the PAN address, 0 without one */
+uint32_t gn_broker_netmask(GnBroker *b);   /* the PAN mask, 0 without one */
+
+/* ---- PAN: IP and TCP over a link that carries Ethernet frames ----
+ *
+ * A Bluetooth personal area network presents an Ethernet-like link, so the
+ * guest's own TCP can run over it and keep its address. net/ owns the
+ * protocol side (ARP, IPv4, TCP); the transport supplies the frames. */
+typedef struct {
+    /* Hand one Ethernet frame to the link. 0 on success, negative on error. */
+    int (*tx)(void *ctx, const void *frame, size_t len);
+    void *ctx;
+} GnPanLink;
+
+GnPan *gn_pan_new(const GnPanLink *link, uint32_t local_ip, uint32_t netmask, const uint8_t mac[6]);
+void gn_pan_free(GnPan *p);
+/* Name the peer so its frames can be addressed without waiting for ARP. */
+int gn_pan_set_peer(GnPan *p, uint32_t peer_ip, const uint8_t mac[6]);
+int gn_pan_owns(GnPan *p, uint32_t ip);      /* ip is on our subnet */
+uint32_t gn_pan_local_ip(GnPan *p);
+uint32_t gn_pan_netmask(GnPan *p);
+/* Feed one inbound Ethernet frame. */
+int gn_pan_rx(GnPan *p, const void *frame, size_t len);
+/* Drive retransmissions and expiry. */
+int gn_pan_tick(GnPan *p);
+
+/* A TCP endpoint over the PAN. */
+GnPanTcp *gn_pan_tcp_new(GnPan *p);
+void gn_pan_tcp_free(GnPanTcp *t);
+int gn_pan_tcp_connect(GnPanTcp *t, uint32_t peer_ip, uint16_t peer_port, uint16_t local_port);
+int gn_pan_tcp_listen(GnPanTcp *t, uint16_t local_port);
+int gn_pan_tcp_accept(GnPanTcp *t, GnPanTcp **out); /* GN_EAGAIN when none */
+long gn_pan_tcp_send(GnPanTcp *t, const void *p, size_t n);  /* bytes queued */
+long gn_pan_tcp_recv(GnPanTcp *t, void *p, size_t n);        /* 0 = nothing yet */
+int gn_pan_tcp_state(GnPanTcp *t);
+int gn_pan_tcp_shutdown(GnPanTcp *t);
+int gn_pan_tcp_abort(GnPanTcp *t);
+uint16_t gn_pan_tcp_local_port(GnPanTcp *t);
 
 /* ---- resolver (N02) ---- */
 typedef struct GnResolver GnResolver;

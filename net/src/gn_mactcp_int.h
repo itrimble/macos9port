@@ -36,6 +36,7 @@ struct GnMacTcp {
     GnBroker *b;
     GnResolver *r;
     uint32_t our_ip;
+    uint32_t netmask;
     GnStream s[GN_STREAMS];
     GnOp ops[GN_OPS];
     struct { char name[128]; uint32_t ip; } cache[GN_CACHE];

@@ -335,6 +335,8 @@ void bt_pan_free(BtPan *p);
 int bt_pan_open(BtPan *p, uint16_t handle, const BtAddress *peer, const uint8_t peer_mac[6],
                 int *out_id);
 int bt_pan_set_local_mac(BtPan *p, const uint8_t mac[6]);
+/* The address this end uses on the link. */
+int bt_pan_local_mac(BtPan *p, uint8_t mac[6]);
 int bt_pan_send(BtPan *p, int id, const void *frame, size_t len);
 long bt_pan_recv(BtPan *p, int id, void *frame, size_t cap);
 int bt_pan_info(BtPan *p, int id, BtPanInfo *out);

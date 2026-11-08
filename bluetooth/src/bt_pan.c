@@ -8,12 +8,16 @@
 
 #include <stdlib.h>
 
+enum { BT_PAN_QUEUE = 16 };
+
 typedef struct {
     int used;
     int cid;                 /* BNEP channel */
     uint8_t peer_mac[6];
     int state;
     uint8_t *rx; size_t rx_cap, rx_len, rx_head;
+    size_t flen[BT_PAN_QUEUE]; /* the length of each frame still waiting */
+    int fn;                   /* how many frames are waiting */
     size_t unsent;
     uint64_t bytes_in, bytes_out;
 } BtPanSock;
@@ -24,23 +28,29 @@ struct BtPan {
     BtPanSock socks[BT_MAX_PAN];
 };
 
-static void fifo_push(uint8_t *buf, size_t cap, size_t *head, size_t *len, const uint8_t *p, size_t n) {
-    size_t tail = (*head + *len) % cap;
-    if (cap - *len < n) {
-        memmove(buf, buf + *head, *len);
-        *head = 0;
-        tail = *len;
-        if (cap - *len < n) return;
-    }
-    for (size_t i = 0; i < n; i++) buf[(tail + i) % cap] = p[i];
-    *len += n;
+/* A link layer socket carries frames, not a byte stream: every frame keeps
+ * its own place in the queue, so two frames that arrive together are handed
+ * over one by one. */
+static int pan_push(BtPanSock *s, const uint8_t *p, size_t n) {
+    if (!s->rx || n > s->rx_cap) return 0;
+    if (s->rx_cap - s->rx_len < n) return 0; /* no room */
+    if (s->fn >= BT_PAN_QUEUE) return 0;
+    size_t tail = (s->rx_head + s->rx_len) % s->rx_cap;
+    for (size_t i = 0; i < n; i++) s->rx[(tail + i) % s->rx_cap] = p[i];
+    s->rx_len += n;
+    s->flen[s->fn++] = n;
+    return 1;
 }
 
-static size_t fifo_pop(uint8_t *buf, size_t cap, size_t *head, size_t *len, uint8_t *p, size_t cap_out) {
-    size_t n = *len < cap_out ? *len : cap_out;
-    for (size_t i = 0; i < n; i++) p[i] = buf[(*head + i) % cap];
-    *head = (*head + n) % cap;
-    *len -= n;
+static size_t pan_pop(BtPanSock *s, uint8_t *p, size_t cap_out) {
+    if (!s->fn) return 0;
+    size_t n = s->flen[0];
+    if (n > cap_out) return 0; /* the frame stays for a caller with room */
+    for (size_t i = 0; i < n; i++) p[i] = s->rx[(s->rx_head + i) % s->rx_cap];
+    s->rx_head = (s->rx_head + n) % s->rx_cap;
+    s->rx_len -= n;
+    for (int i = 1; i < s->fn; i++) s->flen[i - 1] = s->flen[i];
+    s->fn--;
     return n;
 }
 
@@ -77,6 +87,12 @@ void bt_pan_free(BtPan *p) {
 int bt_pan_set_local_mac(BtPan *p, const uint8_t mac[6]) {
     if (!p || !mac) return BT_EINVAL;
     memcpy(p->local_mac, mac, 6);
+    return BT_OK;
+}
+
+int bt_pan_local_mac(BtPan *p, uint8_t mac[6]) {
+    if (!p || !mac) return BT_EINVAL;
+    memcpy(mac, p->local_mac, 6);
     return BT_OK;
 }
 
@@ -134,7 +150,7 @@ long bt_pan_recv(BtPan *p, int id, void *frame, size_t cap) {
     if (!p || !frame) return BT_EINVAL;
     if (id < 0 || id >= BT_MAX_PAN || !p->socks[id].used) return BT_ENOENT;
     BtPanSock *s = &p->socks[id];
-    size_t n = fifo_pop(s->rx, s->rx_cap, &s->rx_head, &s->rx_len, frame, cap);
+    size_t n = pan_pop(s, frame, cap);
     if (n) s->bytes_in += n;
     return (long)n;
 }
@@ -171,7 +187,7 @@ int bt_pan_route(BtPan *p, const uint8_t src_mac[6], const uint8_t *frame, size_
         BtPanSock *s = &p->socks[i];
         if (!s->used) continue;
         if (memcmp(s->peer_mac, src_mac, 6) != 0) continue;
-        fifo_push(s->rx, s->rx_cap, &s->rx_head, &s->rx_len, frame, len);
+        if (!pan_push(s, frame, len)) return BT_ELIMIT;
         s->bytes_in += len;
         return BT_OK;
     }

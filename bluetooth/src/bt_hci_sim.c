@@ -186,7 +186,7 @@ static void sim_command(BtSim *s, uint16_t opcode, const uint8_t *p, size_t n) {
             ln->needs_pin = dev->needs_pin;
         }
         sim_connection_complete(s, handle, &peer);
-        if (s->peer_l2cap) bt_l2cap_link_up(s->peer_l2cap, handle, &peer);
+        if (s->peer_l2cap) bt_l2cap_link_up(s->peer_l2cap, handle, &s->local);
         break;
     }
     case BT_OP_ACCEPT_CONNECTION: {
@@ -202,7 +202,7 @@ static void sim_command(BtSim *s, uint16_t opcode, const uint8_t *p, size_t n) {
             ln->peer = peer;
         }
         sim_connection_complete(s, handle, &peer);
-        if (s->peer_l2cap) bt_l2cap_link_up(s->peer_l2cap, handle, &peer);
+        if (s->peer_l2cap) bt_l2cap_link_up(s->peer_l2cap, handle, &s->local);
         break;
     }
     case BT_OP_DISCONNECT: {

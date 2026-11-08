@@ -7,7 +7,7 @@ NET_HDR := $(wildcard $(NET_DIR)/include/*.h $(NET_DIR)/src/*.h)
 NET_CFLAGS ?= -std=c11 -Wall -Wextra -O2 -D_DEFAULT_SOURCE
 NET_INC := -I$(NET_DIR)/include -I$(NET_DIR)/src -I$(NET_DIR)/tests
 GUEST_NET_LIBS := -lpthread
-NET_TESTS := policy broker mactcp
+NET_TESTS := policy broker mactcp pan
 NET_TEST_BINS := $(NET_TESTS:%=$(NET_OUT)/test_gn_%)
 NET_SAN := -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1
 NET_FUZZ_ITERS ?= 20000

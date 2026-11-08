@@ -12,6 +12,8 @@ C11 with no SDL and no windowing. It is the Bluetooth counterpart of
   credit based flow control.
 - `bt_bnep` — Ethernet encapsulation, so a peer becomes a network link.
 - `bt_pan` — a link-layer socket over BNEP for the guest network stack.
+- `bt_panif` — the seam that binds a PAN socket to the guest IP stack
+  in `net/`, so guest TCP runs over the Bluetooth link.
 - `bt_pair` — the pairing machine: PIN entry, authentication, encryption
   and bonding.
 - `bt_device` — the device database that discovery fills.
@@ -75,6 +77,31 @@ bt_pan_info(pan, id, &info);
 bt_pan_close(pan, id);
 ```
 
+A link layer socket carries frames, not a byte stream: `bt_pan_recv`
+hands over one frame at a time, so two frames that arrive together stay
+two frames.
+
+## The guest over the PAN
+
+`bt_panif` binds an open PAN socket to the guest IP stack in `net/`. The
+guest stack owns IP, ARP and TCP; the Bluetooth stack only supplies the
+frames, so the dependency runs one way and `net/` never mentions
+Bluetooth:
+
+```c
+BtPanIf *ifc = bt_panif_new(pan, id, 0x0A000101u, 0xFFFFFF00u, NULL);
+bt_panif_set_peer(ifc, 0x0A000102u, peer_mac);
+
+gn_broker_set_pan(broker, bt_panif_pan(ifc));
+bt_panif_pump(ifc);   /* move the frames that arrived into the guest stack */
+```
+
+From then on a guest program that opens a TCP connection to an address
+on that network reaches the peer over the Bluetooth link, with the
+address it was given by `ipctlGetAddr`. `net/` decides which connections
+take the PAN by subnet: an address on the PAN travels over the link, and
+every other address still uses a host socket.
+
 ## The macOS accelerator
 
 `bt_darwin.m` uses IOBluetooth for device inquiry and for opening an
@@ -99,6 +126,11 @@ The end to end test drives a controller simulator (`bt_hci_sim.c`): the
 simulator answers HCI commands the way a controller does and carries
 the ACL link to a peer stack, so discovery, pairing, RFCOMM and BNEP
 are all exercised end to end with no radio.
+
+`test_bt_pan_guest` goes one step further: it runs a guest MacTCP
+stream across the link, from the `.IPP` control calls down to the
+Ethernet frame on BNEP, so the guest network stack and the Bluetooth
+stack are proved together rather than apart.
 
 ## Bounds
 

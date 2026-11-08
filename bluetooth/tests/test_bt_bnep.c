@@ -131,6 +131,48 @@ static void test_pan_socket_routes_frames(void) {
     bt_wire_free(&w);
 }
 
+static void test_pan_keeps_frame_boundaries(void) {
+    BtWire w;
+    BtBnep *client = NULL, *server = NULL;
+    int cid = setup_bnep(&w, &client, &server);
+    CHECK(cid >= 0);
+
+    BtPan *pan = bt_pan_new(client);
+    int id = -1;
+    CHECK(bt_pan_open(pan, w.handle, NULL, peer_mac, &id) == BT_OK);
+
+    /* Two frames that arrive together must be handed over one by one: a
+     * link layer socket carries frames, not a byte stream. */
+    uint8_t first[14 + 4], second[14 + 6];
+    memcpy(first, peer_mac, 6);
+    memcpy(first + 6, our_mac, 6);
+    first[12] = 0x08;
+    first[13] = 0x00;
+    memcpy(first + 14, "\x01\x02\x03\x04", 4);
+    memcpy(second, peer_mac, 6);
+    memcpy(second + 6, our_mac, 6);
+    second[12] = 0x08;
+    second[13] = 0x06;
+    memcpy(second + 14, "\x0A\x0B\x0C\x0D\x0E\x0F", 6);
+
+    CHECK(bt_pan_route(pan, peer_mac, first, sizeof first) == BT_OK);
+    CHECK(bt_pan_route(pan, peer_mac, second, sizeof second) == BT_OK);
+
+    uint8_t frame[128];
+    long n = bt_pan_recv(pan, id, frame, sizeof frame);
+    CHECK(n == (long)sizeof first);
+    CHECK(memcmp(frame, first, sizeof first) == 0);
+    n = bt_pan_recv(pan, id, frame, sizeof frame);
+    CHECK(n == (long)sizeof second);
+    CHECK(memcmp(frame, second, sizeof second) == 0);
+    CHECK(bt_pan_recv(pan, id, frame, sizeof frame) == 0);
+
+    bt_pan_free(pan);
+    bt_bnep_free(client);
+    bt_bnep_free(server);
+    bt_wire_free(&w);
+}
+
 static void test_pan_rejects_bad_input(void) {
     BtWire w;
     BtBnep *client = NULL, *server = NULL;
@@ -156,6 +198,7 @@ int main(void) {
     test_bnep_connects_and_carries_frames();
     test_multicast_filter();
     test_pan_socket_routes_frames();
+    test_pan_keeps_frame_boundaries();
     test_pan_rejects_bad_input();
     return bt_done("test_bt_bnep");
 }

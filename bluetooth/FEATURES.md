@@ -52,9 +52,10 @@ item is checked only with evidence: a test name or a recorded command.
   (test_bnep_connects_and_carries_frames, test_multicast_filter).
 - [x] B10 PAN socket: a socket opens to a peer, frames are routed by
   the source MAC of the peer, the socket reports its state and
-  counters, and a frame from an unknown peer is not routed. Evidence:
-  `test_bt_bnep` (test_pan_socket_routes_frames,
-  test_pan_rejects_bad_input).
+  counters, and a frame from an unknown peer is not routed. Frames keep
+  their boundaries, so two frames that arrive together are handed over
+  one by one. Evidence: `test_bt_bnep` (test_pan_socket_routes_frames,
+  test_pan_keeps_frame_boundaries, test_pan_rejects_bad_input).
 - [x] B11 Bounds: no buffer grows without a limit. The device database
   is capped, an L2CAP SDU is cut off, a payload that does not fit is
   dropped, and a frame over the cap is refused. Evidence:
@@ -71,6 +72,11 @@ item is checked only with evidence: a test name or a recorded command.
   IOBluetooth, with the channel handed to the stack so RFCOMM and BNEP
   run on it unchanged. Evidence: `make bt-darwin` (compiles against
   the macOS SDK).
+- [x] B15 The guest sees the PAN: `bt_panif` binds a PAN socket to the
+  guest IP stack in `net/`, and a guest MacTCP stream opened to a peer
+  on that network crosses BNEP, L2CAP and the controller and comes back
+  the other way. Evidence: `test_bt_pan_guest`
+  (test_guest_tcp_over_the_pan).
 
 ## Not yet done
 
@@ -84,9 +90,10 @@ item is checked only with evidence: a test name or a recorded command.
   flow only.
 - [ ] Low Energy. Discovery is the classic inquiry; there is no LE
   advertising scan.
-- [ ] The guest sees the PAN. `bt_pan` is the socket the guest
-  network stack would use, but the MacTCP layer in `net/` does not
-  open it yet.
+- [ ] The desktop opens a PAN. `bt_panif` binds a personal area network
+  to the guest IP stack and the guest reaches a peer over it, but the
+  desktop does not yet offer the user a way to pick the peer or to bring
+  the link up.
 
 ## Host validation
 
