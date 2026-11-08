@@ -265,3 +265,27 @@ test-desktop-pan: build/test_desktop_guestnet build/test_desktop_bluetooth build
 	./build/test_desktop_bluetooth
 	./build/test_desktop_pan_guest
 test: test-desktop-pan
+# OSA scripting components and the JSON Apple Event bridge.
+build/test_applescript: src/osa_events.c src/osa_json.c src/osa_bridge.c src/osa.c src/osa_script.c tests/test_applescript.c include/osa_events.h include/osa_json.h include/osa_bridge.h include/osa.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -o $@ src/osa_events.c src/osa_json.c src/osa_bridge.c src/osa.c src/osa_script.c tests/test_applescript.c
+.PHONY: test-applescript
+test-applescript: build/test_applescript
+	./build/test_applescript
+test: test-applescript
+
+build/test_osa_boundaries: src/osa_events.c src/osa_json.c src/osa_bridge.c src/osa.c src/osa_script.c tests/test_osa_boundaries.c include/osa.h include/osa_json.h include/osa_events.h include/osa_bridge.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -o $@ src/osa_events.c src/osa_json.c src/osa_bridge.c src/osa.c src/osa_script.c tests/test_osa_boundaries.c
+.PHONY: test-osa-boundaries
+test-osa-boundaries: build/test_osa_boundaries
+	./build/test_osa_boundaries
+test: test-osa-boundaries
+
+build/test_osa_session: src/osa_events.c src/osa_json.c src/osa_bridge.c src/osa.c src/osa_script.c src/osa_session.c src/osa_ipc.c src/desktop_theme.c tests/test_osa_session.c include/osa_session.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -o $@ src/osa_events.c src/osa_json.c src/osa_bridge.c src/osa.c src/osa_script.c src/osa_session.c src/osa_ipc.c src/desktop_theme.c tests/test_osa_session.c
+.PHONY: test-osa-session
+test-osa-session: build/test_osa_session
+	./build/test_osa_session
+test: test-osa-session

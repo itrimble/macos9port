@@ -1,3 +1,4 @@
+#include "osa_session.h"
 #include "finder_apps.h"
 #include "finder_print.h"
 #include "ospi.h"
@@ -58,7 +59,6 @@ static void logical_point(SDL_Window *win, int x, int y, int *ox, int *oy) {
 static int inside(int x, int y, int left, int top, int width, int height) {
     return x >= left && y >= top && x < left + width && y < top + height;
 }
-
 int main(int argc, char **argv) {
     if (argc == 3 && strcmp(argv[1], "--seed") == 0) {
         return volume_seed(argv[2]) == 0 ? 0 : 1;
@@ -141,7 +141,6 @@ int main(int argc, char **argv) {
         os999_startup_begin(&startup, SDL_GetTicks(), reduce_motion && strcmp(reduce_motion, "1") == 0);
     else
         startup.phase = OS999_STARTUP_INACTIVE;
-
     SessionInitTask init = {.volume = volume, .session = NULL};
     atomic_init(&init.done, 0);
     pthread_t init_thread;
@@ -224,9 +223,8 @@ int main(int argc, char **argv) {
         SDL_DestroyTexture(tex); SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
         return startup_failed || !s ? 1 : 0;
     }
-    /* --open REL opens one volume item at launch (test and demo runs), using
-     * the same path a desktop double-click takes. A failure is reported on
-     * stderr and the desktop stays usable. */
+    /* --open REL uses desktop open semantics and reports errors on stderr. */
+    osa_ipc_start_from_env();
     const char *open_rel = flag_arg(argc, argv, "--open");
     if (open_rel && open_rel[0] && !strstr(open_rel, "..")) {
         char full[OSPI_PATH], err[240] = "";
@@ -443,6 +441,7 @@ int main(int argc, char **argv) {
             os999_startup_begin(&startup, SDL_GetTicks(), reduce_motion && strcmp(reduce_motion, "1") == 0);
         s->host_startup_enabled = boot_enabled;
         desktop_host_tick(s, native_surface_active());
+        osa_ipc_poll(s);
         session_tick(s, SDL_GetTicks());
         s->print_available = desktop_print_supported();
         session_paint(s, frame, OSPI_W, OSPI_H);
@@ -483,6 +482,7 @@ int main(int argc, char **argv) {
         SDL_RenderCopy(ren, tex, NULL, &dst);
         SDL_RenderPresent(ren);
     }
+    osa_ipc_close();
     native_surface_close();
     browser_window_close();
     desktop_host_shutdown();
