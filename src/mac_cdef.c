@@ -1,5 +1,6 @@
 #include "mac_cdef.h"
 #include "mac_window_int.h"
+#include "mac_dlgwindow.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -76,6 +77,7 @@ static int advance(MacRuntime *rt) {
         uint32_t def = rd(rt, p + CTL_DEFPROC, 4);
         if (message == CDEF_TEST && (!rd(rt, p + CTL_VIS, 1) || rd(rt, p + CTL_HILITE, 1) == 255)) continue;   /* hidden and inactive controls are not hit */
         if (message == CDEF_DRAW && ((!w->visible && w->port_only != 2) || !rd(rt, p + CTL_VIS, 1))) continue;   /* only visible controls in visible windows are drawn */
+        if (message == CDEF_DRAW && def && rt->guest.active && mac_dlgwin_owe_redraw(rt, w->address)) continue;   /* inside a guest call (a ModalDialog filter) the drawing cannot run now: the dialog owes its controls a redraw after the call returns */
         if (message == CDEF_AUTOTRACK) { if (!j->part || !def) continue; param = (uint32_t)j->part; }   /* autoTrack's param is the part testCntl found */
         if (message == CDEF_DISP && !def) continue;                         /* standard controls have nothing to dispose */
         if (!def) {                                                         /* a standard control: drawn and tested natively */

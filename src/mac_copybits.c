@@ -45,6 +45,7 @@ static int region(MacRuntime*rt,uint32_t h,Box*b,unsigned slot){
     return box(rt,p+2,b);
 }
 static int image(MacRuntime*rt,uint32_t p,Image*i){
+    p=mac_dlgmgr_redirect_bits(rt,p);   /* &dialog->portBits is the dialog's port window's bits */
     if(!p||valid(rt,p,14,1)<0)return fail(rt,"CopyBits invalid bitmap.");
     unsigned row=rd(rt,p+4,2);
     if((row&0xc000)==0xc000) {

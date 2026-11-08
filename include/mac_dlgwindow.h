@@ -10,6 +10,7 @@ int mac_dlgwin_available(const MacRuntime *rt);
 uint32_t mac_dlgwin_ensure(MacRuntime *rt, Dlg *d);
 void mac_dlgwin_shown(MacRuntime *rt, uint32_t window, int shown);   /* the dialog was shown or hidden: whether its controls draw */
 void mac_dlgwin_destroy(MacRuntime *rt, uint32_t window);
+int mac_dlgwin_owe_redraw(MacRuntime *rt, uint32_t window);   /* defer a control redraw requested inside a guest call; 1 if the window is a dialog's */
 int mac_dlgwin_update(MacRuntime *rt, uint32_t window, int begin);   /* BeginUpdate (begin) / EndUpdate on a dialog's port window: brackets the drawing; 1, or -1 after halting */
 /* Creates a control for every control item (the item's rectangle replaces the CNTL's); the guest-visible item handle is the control handle. The job `rt->cdef` must exist.
  * 0 ok, -1 halted. */

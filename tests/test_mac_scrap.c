@@ -18,7 +18,7 @@ static int get(MacRuntime *r, uint32_t type, uint32_t dest, uint32_t off) { mac_
 int main(void) {
     MacRuntime r = fresh();
     memset(mac_cpu_ram(r.cpu) + 0x2000, 0xee, 64);
-    CHECK(mac_scrap_service(&r, 0xa9ff) == 0 && mac_scrap_service(&r, 0xa000) == 0 && mac_scrap_service(&r, 0xa9fb) == 0);   /* neighbours are not ours */
+    CHECK(mac_scrap_service(&r, 0xa9ff) == 0 && mac_scrap_service(&r, 0xa000) == 0 && mac_scrap_service(&r, 0xa9f8) == 0);   /* neighbours are not ours */
     CHECK(zero(&r) == 1 && rd(&r, SP, 4) == 0 && mac_cpu_get(r.cpu, MAC_A7) == SP);                                     /* ZeroScrap: noErr, no arguments to pop */
     CHECK(get(&r, TEXT, 0x3000, 0x2000) == 1 && (int32_t)rd(&r, SP + 12, 4) == -102 && mac_cpu_get(r.cpu, MAC_A7) == SP + 12 && rd(&r, 0x2000, 1) == 0xee);   /* empty: noTypeErr, offset untouched */
     memcpy(mac_cpu_ram(r.cpu) + 0x2100, "hello", 5);
@@ -28,6 +28,18 @@ int main(void) {
     CHECK(zero(&r) == 1 && get(&r, TEXT, 0x3000, 0x2000) == 1 && (int32_t)rd(&r, SP + 12, 4) == -102);                /* ZeroScrap forgets everything */
     CHECK(put(&r, 5, TEXT, 0x2100) == 1 && get(&r, TEXT, 0x3000, 0x2000) == -1 && mac_cpu_halted(r.cpu));              /* a present type: halts by name (not implemented) */
     mac_scrap_destroy(&r); mac_cpu_destroy(r.cpu);
+    /* UnloadScrap ($A9FA) and LoadScrap ($A9FB): no arguments, a LONGINT result of noErr, the scrap itself untouched; a bad stack halts. */
+    for (unsigned k = 0; k < 2; k++) {
+        MacRuntime q = fresh(); unsigned op = k ? 0xa9fb : 0xa9fa;
+        memcpy(mac_cpu_ram(q.cpu) + 0x2100, "hello", 5); CHECK(put(&q, 5, TEXT, 0x2100) == 1);
+        mac_cpu_set(q.cpu, MAC_A7, SP); w(&q, SP, 4, 0x55555555);
+        CHECK(mac_scrap_service(&q, (uint16_t)op) == 1 && rd(&q, SP, 4) == 0 && mac_cpu_get(q.cpu, MAC_A7) == SP && !mac_cpu_halted(q.cpu));
+        CHECK(get(&q, PICT, 0x3000, 0x2000) == 1 && (int32_t)rd(&q, SP + 12, 4) == -102);                  /* still usable, still holding TEXT only */
+        CHECK(get(&q, TEXT, 0x3000, 0x2000) == -1 && mac_cpu_halted(q.cpu));                                /* TEXT survived Load/Unload (a present type halts by name) */
+        mac_scrap_destroy(&q); mac_cpu_destroy(q.cpu);
+        MacRuntime b = fresh(); mac_cpu_set(b.cpu, MAC_A7, SP + 1); CHECK(mac_scrap_service(&b, (uint16_t)op) == -1 && mac_cpu_halted(b.cpu)); mac_cpu_destroy(b.cpu);
+        MacRuntime c = fresh(); mac_cpu_set(c.cpu, MAC_A7, (uint32_t)mac_cpu_ram_size(c.cpu) - 2); CHECK(mac_scrap_service(&c, (uint16_t)op) == -1); mac_cpu_destroy(c.cpu);
+    }
     {   /* corrupt arguments halt and change nothing */
         struct { int kind; } k[] = { {0}, {1}, {2}, {3}, {4}, {5}, {6}, {7} };
         for (unsigned i = 0; i < sizeof k / sizeof *k; i++) {

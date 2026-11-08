@@ -456,6 +456,14 @@ static int dialog_update(MacRuntime *rt, uint16_t opcode) {
     if (rc > 0) mac_cpu_set(rt->cpu, MAC_A7, sp + 4);
     return rc;
 }
+/* A program may name a dialog's port bits as the CopyBits destination (the DialogPtr is a GrafPtr). The dialog here is a native record, so its bits are the port window's. */
+uint32_t mac_dlgmgr_redirect_bits(MacRuntime *rt, uint32_t bits) {
+    if (!rt->dlgmgr || bits < 2) return bits;
+    Dlg *d = find(rt, bits - 2);
+    if (!d || !mac_dlgwin_available(rt)) return bits;
+    uint32_t win = mac_dlgwin_ensure(rt, d);
+    return win ? win + 2 : bits;
+}
 int mac_dlgmgr_service(MacRuntime *rt, uint16_t opcode) {
     if ((opcode == 0xa922 || opcode == 0xa923) && rt && rt->dlgmgr && !mac_cpu_halted(rt->cpu)) { int u = dialog_update(rt, opcode); if (u) return u; }
     int rc = dlg_service(rt, opcode);

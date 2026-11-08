@@ -228,6 +228,7 @@ int mac_shapes_service(MacRuntime *rt, uint16_t opcode); /* ovals and round rect
 int mac_devmgr_service(MacRuntime *rt, uint16_t opcode); /* Device Manager Control, mac_devmgr.c */
 int mac_dlgmgr_service(MacRuntime *rt, uint16_t opcode); /* GetNewDialog, ModalDialog and friends (mac_dlgmgr.c) */
 void mac_dlgmgr_destroy(MacRuntime *rt);
+uint32_t mac_dlgmgr_redirect_bits(MacRuntime *rt, uint32_t bits);   /* &theDialog->portBits (dialog + 2) -> the dialog's port window's portBits; any other address unchanged */
 int mac_menu_service(MacRuntime *rt, uint16_t opcode);
 int mac_toolbox_service(MacRuntime *rt, uint16_t opcode);
 int mac_raster_service(MacRuntime *rt, uint16_t opcode);

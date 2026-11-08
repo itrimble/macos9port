@@ -102,3 +102,14 @@ int mac_dlgwin_update(MacRuntime *rt, uint32_t window, int begin) {
     w->updating = begin ? 1 : 0;
     return 1;
 }
+
+/* A control of a dialog's port window needs drawing while a guest call is running (nested guest calls are unsupported): note that the dialog owes its controls a
+ * redraw, which mac_dlgwin_flush does once the call has returned. 1 when `window` is a dialog's port window (the draw is deferred), 0 otherwise. */
+int mac_dlgwin_owe_redraw(MacRuntime *rt, uint32_t window) {
+    if (!rt->dlgmgr || !window) return 0;
+    for (unsigned i = 0; i < 4; i++) {
+        Dlg *d = M(rt)->open[i];
+        if (d && d->port_window == window) { d->ctl_pending = 1; return 1; }
+    }
+    return 0;
+}

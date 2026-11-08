@@ -19,15 +19,16 @@ static void clear(Scrap *s) { for (unsigned i = 0; i < s->count; i++) free(s->da
 void mac_scrap_destroy(MacRuntime *rt) { if (rt->scrap) { clear(rt->scrap); free(rt->scrap); rt->scrap = NULL; } }
 
 int mac_scrap_service(MacRuntime *rt, uint16_t opcode) {
-    if (opcode != 0xa9fc && opcode != 0xa9fd && opcode != 0xa9fe) return 0;
+    if (opcode != 0xa9fa && opcode != 0xa9fb && opcode != 0xa9fc && opcode != 0xa9fd && opcode != 0xa9fe) return 0;
     if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1;
     MacCpu *cpu = rt->cpu;
     uint32_t sp = mac_cpu_get(cpu, MAC_A7);
-    unsigned args = opcode == 0xa9fc ? 0 : 12;
+    unsigned args = opcode == 0xa9fc || opcode == 0xa9fa || opcode == 0xa9fb ? 0 : 12;
     if ((sp & 1) || !ok(rt, sp, args + 4)) return fail(rt, "Scrap Manager call has an invalid stack.");
     if (!rt->scrap && !(rt->scrap = calloc(1, sizeof(Scrap)))) return fail(rt, "Scrap Manager could not allocate its scrap.");
     Scrap *s = rt->scrap; int32_t result = 0;
     if (opcode == 0xa9fc) clear(s);                                                   /* ZeroScrap */
+    else if (opcode == 0xa9fa || opcode == 0xa9fb) result = 0;                        /* UnloadScrap / LoadScrap: the scrap lives in host memory, so there is nothing to move to or from a scrap file; noErr (the signatures, FUNCTION ...: LONGINT with no arguments, are from memory) */
     else if (opcode == 0xa9fe) {                                                      /* PutScrap */
         uint32_t src = mac_cpu_read(cpu, sp, 4), type = mac_cpu_read(cpu, sp + 4, 4); int32_t len = (int32_t)mac_cpu_read(cpu, sp + 8, 4);
         if (len < 0 || len > MAX_BYTES) return fail(rt, "PutScrap length is negative or larger than the 64 KB this scrap keeps.");

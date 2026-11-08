@@ -266,6 +266,30 @@ int main(void) {
         const uint8_t *s = mac_cpu_ram(rt.cpu) + rt.screen_base; unsigned ink = 0; for (int y = 50; y < 54; y++) for (int x = 60; x < 76; x++) if (s[y * 640 + x] != s[50 * 640 + 60]) ink++;
         CHECK(ink == 0); mac_cpu_destroy(rt.cpu); }
     {   MacRuntime rt = fresh(); CHECK(get_new(&rt, 310) == -1 && mac_cpu_halted(rt.cpu)); mac_cpu_destroy(rt.cpu); }                                      /* an item without an id is refused by the DITL parser */
+    /* A control redraw requested inside a guest call (here a faked running call, as a ModalDialog filter is) is deferred, not a "nested guest call" halt: the value is set, the
+     * call is handled, and the dialog draws its controls once the call is over (the next dialog service that succeeds). */
+    {   MacRuntime rt = fresh(); CHECK(get_new(&rt, 301) == 1 && running(&rt)); CHECK(ret(&rt, 0) == 0 && ret(&rt, 0) == 0 && !rt.guest.active);
+        uint32_t d = raw(&rt, SP + 10, 4), type, h; CHECK(get_ditem(&rt, d, 2, &type, &h) == 1);
+        rt.guest.active = 1;
+        mac_cpu_set(rt.cpu, MAC_A7, SP); wr(&rt, SP, 2, 1); wr(&rt, SP + 2, 4, h);
+        CHECK(mac_controls_service(&rt, 0xa963) == 1 && !mac_cpu_halted(rt.cpu) && a7(&rt) == SP + 6 && rt.guest.active == 1);          /* handled inside the call, nothing started */
+        CHECK(raw(&rt, raw(&rt, h, 4) + CTL_VALUE, 2) == 1);                                                                              /* the value was set */
+        { Dlg *dd = M(&rt)->open[0]; CHECK(dd && dd->ctl_pending); }                                                                       /* the redraw is owed */
+        rt.guest.active = 0;
+        wr(&rt, SP, 4, d); CHECK(trap(&rt, 0xa981, SP) == 1 && running(&rt) && msg(&rt) == CDEF_DRAW && ctl_arg(&rt) == h);               /* drawn after the call: the CDEF runs */
+        mac_cpu_destroy(rt.cpu); }
+    /* &theDialog->portBits (dialog + 2) names the dialog's port window's bits for CopyBits; other addresses and a missing Dialog Manager are left alone. */
+    {   MacRuntime rt = fresh(); CHECK(get_new(&rt, 304) == 1); uint32_t d = raw(&rt, SP + 10, 4);
+        CHECK(rt.window_count == 0);
+        uint32_t bits = mac_dlgmgr_redirect_bits(&rt, d + 2), win = rt.current_port;
+        CHECK(rt.window_count == 1 && bits != d + 2 && mac_window_find(&rt, bits - 2) != NULL);                                           /* the port window is made on demand */
+        CHECK(mac_dlgmgr_redirect_bits(&rt, d + 2) == bits && rt.window_count == 1);                                                      /* and reused */
+        CHECK(mac_dlgmgr_redirect_bits(&rt, d) == d && mac_dlgmgr_redirect_bits(&rt, d + 4) == d + 4 && mac_dlgmgr_redirect_bits(&rt, 0) == 0 && mac_dlgmgr_redirect_bits(&rt, 1) == 1);
+        CHECK(mac_dlgmgr_redirect_bits(&rt, 0x5002) == 0x5002);                                                                           /* not a dialog */
+        (void)win; mac_cpu_destroy(rt.cpu); }
+    {   MacRuntime rt = fresh(); CHECK(get_new(&rt, 304) == 1); uint32_t d = raw(&rt, SP + 10, 4); rt.manager_flags &= ~2u;
+        CHECK(mac_dlgmgr_redirect_bits(&rt, d + 2) == d + 2 && rt.window_count == 0); mac_cpu_destroy(rt.cpu); }                          /* no colour window machinery: unchanged */
+    {   MacRuntime rt = {0}; CHECK(mac_dlgmgr_redirect_bits(&rt, 0x5002) == 0x5002); }                                                   /* no Dialog Manager at all */
     /* Refusals: a missing CNTL, an item that names none, a CDEF the program lacks. Each halts and registers no window. */
     for (unsigned k = 0; k < 3; k++) {
         MacRuntime rt = fresh(); int rc = get_new(&rt, k == 0 ? 302 : k == 1 ? 303 : 305);
