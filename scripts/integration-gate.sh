@@ -22,6 +22,7 @@ progress_pass package_tests
 progress_start desktop
 make -j2 -W src/main.c -W src/runtime_audio.c -W src/desktop_sound.c \
     -W src/browser_overlay_mac.m test all test-wallpapers test-desktop-sound
+make -j2 -W src/quicktime_decode.c -W src/quicktime_movie.c test-quicktime
 progress_pass desktop
 progress_start tailnet
 make test-tailnet

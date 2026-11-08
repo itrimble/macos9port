@@ -48,7 +48,7 @@ set(SOURCES "")
 foreach(f ${CORE_FILES})
     list(APPEND SOURCES ${OS999_ROOT}/${f})
 endforeach()
-foreach(f quicktime_decode quicktime_movie quicktime_backend media_player_panel winamp_skin os999_startup desktop_host desktop_sound audio_decoder audio_dsp audio_midi audio_output audio_service)
+foreach(f quicktime_decode quicktime_movie quicktime_backend media_player_panel winamp_skin os999_startup os999_startup_sprite desktop_host desktop_sound audio_decoder audio_dsp audio_midi audio_output audio_service)
     list(APPEND SOURCES ${OS999_ROOT}/src/${f}.c)
 endforeach()
 # These must be target-platform dependencies when cross-compiling.
