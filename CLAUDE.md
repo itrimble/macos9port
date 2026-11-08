@@ -66,6 +66,14 @@ make test-wallpapers                # converts assets/wallpapers with sips, then
 make clean                          # rm -rf build (also drops the Musashi download)
 ```
 
+For a complete standalone macOS artifact, use `scripts/integration-gate.sh`
+through the configured local watcher; `make app` is base packaging only. The
+complete gate builds exact browser/engine sources, bundles dependencies and
+checks relocated startup. It pins genuine SDL2 privately because SDL2-compat
+2.32.74 crashes on synthetic keyboard text injection. Keep that compatibility
+pin and its linkage checks until a replacement passes the same tests. See
+`docs/OS999-MASTER-TRACKER.md` for current artifacts and acceptance boundaries.
+
 Run a single test: every test is its own binary built from one `tests/test_*.c`.
 Build the target and run it, e.g.
 
@@ -163,7 +171,8 @@ and `make app` converts HD wallpaper masters with `sips` at package time.
 ## Repo layout notes
 
 - `browser/`: separate CEF/Chromium app (`sh browser/scripts/build.sh`), the
-  B01/B02 checklist track. Not yet embedded in the desktop window.
+  B01/B02 checklist track. Its GPU frames are embedded in the desktop; the
+  complete gate builds and bundles the helper from the candidate source.
 - `keyboard/`: on-screen keyboards for foldables; own `keyboard.mk`
   (`make -f keyboard.mk test`), links `../src/font.c`.
 - `terminal/`, `videosupport/`, `ios_android/`, `quake/`, `build resources

@@ -1,5 +1,40 @@
 # OS999 master tracker
 
+## Current checkpoint — 7 November 2026
+
+Build 8 passed the complete gate and its source was fast-forwarded into local
+main as `f19ead673186885108b2717d20b79e28ded77151`. The tested tree is
+`b3daf8be1f5f609ea7dcc17b6f7654a9d8c2d204`. Subsequent documentation-only
+status notes do not change that artifact or its validation receipt. No push.
+
+The artifact and receipt are in
+`~/Library/Application Support/OS999/Integration/runs/initial-integration-8/`.
+Desktop/runtime, tailnet, 29 TLS cases, keyboard 64,063/pad 56/SDL 12 checks,
+mobile 592 checks and the ARM64 host simulator build passed. All eight SDL
+clients link the private genuine SDL2 build. The package contains 28 host
+libraries; strict signatures and a relocated minimal-PATH seed passed with
+675 loaded images confined to the copied bundle and system locations.
+
+The relocated preview uses `/tmp/os999-package-smoke-sy6swlvx/OS999 Build 8.app`
+and its sibling disposable Volume. PID 68103 was observed running, and the
+real desktop/disk window was visually inspected. R6 and existing saves remain
+untouched. This is not browser interaction, gameplay, listening, or device
+acceptance. Real storage fixtures were skipped; Quake demo data extraction and
+native iOS/Android execution remain unresolved.
+
+Dashboard and watcher now run from main under their existing launchd services.
+Dashboard tests (5), watcher tests (10), HTTP assets and foreign-Host rejection
+pass. The watcher is configured and idle for explicit ready commits; its next
+number is 9. Failed Build 7 remains recorded. Original main edits are retained
+in stash `3e965471d1e0890b8874585528194ccabcebb3cd` and the verified backup
+`../macos9port-backups/main-promotion-20261107-173017`; 82 colliding source files
+were preserved there before promotion. Local evidence and nested worktrees
+remain in place, excluded locally rather than deleted.
+
+SnapDog dashboard captures run on the Mac mini; integration stays on this Mac.
+Ian approved temporarily disabling Open in Editor to bypass stale editor state;
+restore it after capture. Capture completion is recorded separately.
+
 ## Delivery contract — 7 November 2026
 
 One complete macOS app, all existing work integrated into local main, plus
@@ -8,7 +43,7 @@ local builds (`BUILDFLEET_LOCAL=1`). Leave a persistent watcher accepting
 explicit ready markers for exact commits, testing before local promotion.
 Use authorized Quake demo data outside Git. Preserve existing apps and saves.
 
-## Current integration
+## Candidate assembly before final validation
 
 - Candidate: `integration/complete-20261107`, worktree
   `/Users/ian/projects/macos9port-complete`, based on main `cd8b557`.
@@ -125,8 +160,8 @@ The final gate builds the browser from candidate source with a matching shared
 CEF pin, and builds the external Quake engine from its immutable commit in a
 run-owned worktree. It checks browser source, full bundle files and symlinks,
 engine commit/binary/protocol, tests, signatures, and a bounded relocated seed
-with external-library rejection before issuing a passing receipt. Its final
-execution on the frozen candidate and main reconciliation are still pending.
+with external-library rejection before issuing a passing receipt. Build 8
+completed this gate and main reconciliation; see the current checkpoint above.
 
 `make app` creates the base desktop/runtime/Quake bundle only. The complete
 browser, transitive-library, provenance, and relocated-launch gate is
@@ -146,4 +181,4 @@ The complete gate now builds genuine SDL2 2.32.10 from its verified official
 archive into a private ignored prefix. This deliberate compatibility pin leaves
 Homebrew and live R6 unchanged. It forces SDL client relinking, verifies actual
 library paths and installed-file hashes, records provenance, and bundles the
-upstream license. Build 8 validation remains pending; this is not fleet parity.
+upstream license. Build 8 validation passed; this project dependency pin is not fleet parity.

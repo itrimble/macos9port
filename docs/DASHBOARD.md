@@ -47,8 +47,8 @@ with a matching passing receipt. A dirty main checkout blocks promotion; failed
 candidates and logs remain available for repair. No public remote push is involved.
 
 An online worker is not a passing build. Read its waiting/error status and the
-actual numbered receipt. The complete app integration and its initial promotion
-are still being validated separately from dashboard service tests.
+actual numbered receipt. Build 8 and initial local-main promotion passed; the exact receipt remains
+separate from dashboard service tests and GUI/gameplay acceptance.
 
 ## Running and maintenance
 
@@ -65,5 +65,6 @@ with no runtime CDN. The installed login service is
 
 Data/service tests cover live revision changes, event-stream delivery, invalid
 configuration recovery, source allowlisting, traversal rejection and foreign Host
-rejection. Browser rendering, mobile layout and interactive visual acceptance
-remain unverified while the browser-control host is unavailable.
+rejection. Ian approved the desktop appearance as an MVP on 7 November 2026.
+SnapDog capture work runs on the Mac mini; mobile layout and exhaustive
+interactive acceptance remain unverified. The service now reads canonical main.
