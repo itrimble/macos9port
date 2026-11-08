@@ -182,6 +182,7 @@ void mac_runtime_destroy(MacRuntime *rt) {
     mac_sound_destroy(rt);
     mac_resource_chain_destroy(rt);
     mac_stdfile_destroy(rt);
+    mac_stdput_destroy(rt);
     mac_alert_destroy(rt);
     mac_rgn_record_destroy(rt);
     mac_menuselect_destroy(rt);

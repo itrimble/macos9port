@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Pack3 ($A9EA): Standard File SFGetFile (selector 2) and SFPGetFile (selector 4), as a native modal dialog.
+/* Pack3 ($A9EA): Standard File SFGetFile (selector 2; SFPutFile, selector 1, is in mac_stdput.c) and SFPGetFile (selector 4), as a native modal dialog.
  *
  * Stack, Pascal order (selector word at SP, then the last parameter):
  *   sel 2: reply4 dlgHook4 typeList4 numTypes2 fileFilter4 prompt4 where4                    (28 bytes with the selector)
@@ -12,7 +12,7 @@
  * _Delay does), so each re-execution handles the queued mouse and key events, redraws if something changed, and either
  * finishes or waits again. With no input the dialog simply stays open: a headless run proves only that it was reached.
  * A file-filter routine (TRUE hides the file) is called once per candidate through mac_guest_call before the dialog opens.
- * Not supported, and halting with a message: dialog hooks, dialog filter procedures, the Put and Standard File selectors,
+ * Not supported, and halting with a message: dialog hooks, dialog filter procedures, the SFPPutFile and Standard File selectors,
  * a list that does not fit 1024 files, Eject and Drive (the single volume cannot do either, so they are drawn dimmed).
  * Buttons act on mouse-up inside the button; scroll arrows and page regions act once per click (no auto-repeat, no thumb
  * drag); the icon item is not drawn. */
@@ -250,13 +250,14 @@ int mac_stdfile_service(MacRuntime *rt, uint16_t opcode) {
     unsigned selector = rd(rt, sp, 2);
     if (rt->last_trap_pc >= 0x2000 && rt->last_trap_pc < 0x2000 + 4096 * 8)
         return fail(rt, "Standard File reached through a patched trap vector is unsupported.");
+    if (selector == 1 || rt->stdput) return rt->stdput && selector != 1 ? fail(rt, "Pack3 called while an SFPutFile dialog is open.") : mac_stdput_service(rt, sp, pc);
     MacSfState *s = rt->stdfile;
     if (s) {
         if (s->stage != SF_STAGE_RUN || pc != s->trap_pc || sp != s->sp) return fail(rt, "Standard File called again while a dialog is open.");
         return step(rt, s);
     }
     if (selector != SELECTOR_GET && selector != SELECTOR_PGET) {
-        char msg[64]; snprintf(msg, sizeof msg, "Unsupported Pack3 selector $%04x (only SFGetFile and SFPGetFile).", selector);
+        char msg[64]; snprintf(msg, sizeof msg, "Unsupported Pack3 selector $%04x (only SFPutFile, SFGetFile and SFPGetFile).", selector);
         return fail(rt, msg);
     }
     int rc = begin(rt, sp, pc, selector);

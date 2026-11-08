@@ -201,6 +201,16 @@ the probe, not a window I watched, and I have not listened to any audio.
   front-door scene at 1.5x in the frame. The sound render callback has the same change but no odd-stack test of its own. **Large Window
   still halts:** `SizeWindow exceeds supported content dimensions` (the game asks for 640x400 at top 140 before moving the window, and
   our window model keeps windows fully on the 640x480 screen). That needs off-screen window geometry, which I have not started.
+- **Save and restore (headless frames and a file on disk):** **File > Save Game?** halted on Pack3 selector 1 (`SFPutFile`). It is now a
+  native modal in `src/mac_stdput.c`: a reduced "save as" dialog of our own (prompt, "Save in: OS Pi Data", one editable name of 1 to 31
+  characters without ':', Save and Cancel; no file list, no Eject/Drive, no "replace existing file?" alert). With the probe's new
+  `--saves DIR` (the same writable overlay `ospi-runtime --saves` uses), typing `AB` and Return makes Castle create a 13,970-byte
+  `AB` in that directory and carry on. Without `--saves` the game shows its own "An error occurred creating a file" alert, which is the
+  read-only volume doing its job. In a second run on that directory **File > Restore Game?** lists `AB`; selecting it and pressing Open
+  closes the dialog, the game's icon bar appears and nothing halts. I saved at the very start of the room, so this does not show that
+  game state comes back. Mutation checks on the Save dialog: 13 of 13 killed (one needed a placement test added).
+- **Still open:** Options > Large Window and Hide Desktop both halt in `SizeWindow exceeds supported content dimensions`; Restart and Quit
+  run without a halt but I have not looked at what they do.
 - **Parity:** Monkey Island and Monkey Island 2 are byte-identical to the previous baseline; `make test` exits 0; ASan on Castle (90 s with
   the menu script) and on the new and touched menu, window and utility tests reports nothing.
 
