@@ -366,3 +366,13 @@ the probe, not a window I watched, and I have not listened to any audio.
   Headless: Room Editor 1.06 now shows its **Room Background Info?** dialog with the tile palette after the password alert and runs 60 s with no
   halt; the PICT in the earlier dialog is still not shown and I did not click through to see whether the editor itself works. `make test` 0, ASan
   clean on `test_mac_dlgmgr`, Monkey Island and Monkey Island 2 identical, Castle refreshed.
+
+- **Room Editor 1.06: Okay in the background dialog, then the tools window.** A scripted mouse down/up on **Okay** closes the dialog and the
+  editor asks for `GetNewCWindow` 128 (its tools palette, "Room Navigator"). That WIND is 274 bytes with a 5-byte Pascal title and 250 stray
+  bytes after it (bytes of a longer title). The loader used to halt on any trailing bytes beyond the System 7 positioning word; it now ignores
+  them (halt message also names the id and size now). That is my reading of the format: a real Mac reads the length-prefixed title and nothing
+  else that would matter here, but I did not verify what a real Mac does with the stray bytes (the positioning word included). A mutant that
+  rejects long resources again is killed by the new `stray_bytes` test; `make test` 0, ASan clean on `test_mac_window_resource`, Monkey Island and
+  Monkey Island 2 identical, Castle refreshed. Next halt (headless): that window's procID is 160, a **custom floating-window WDEF**
+  (`Only standard zoomNoGrow, noGrowDocProc, plainDBox and dBoxProc windows ... custom WDEFs are unsupported`). Running a guest WDEF (or
+  providing a floating-window frame ourselves, which the editor may rely on for hit-testing) is a real subsystem; not started.

@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include "mac_window_int.h"
 #include <string.h>
 
@@ -66,7 +67,9 @@ int mac_window_resource_service(MacRuntime *rt,uint16_t opcode) {
     }
     if(size<19 || size<19u+data[18])return fail(rt,"WIND resource is truncated.");
     size_t end=19u+data[18],aligned=(end+1)&~(size_t)1;
-    if(size>end && size!=aligned && size!=aligned+2)return fail(rt,"WIND resource has unsupported trailing fields.");
+    /* Bytes after the title: exactly the System 7 positioning word (read) or nothing is the documented layout. Longer resources exist (Room
+     * Editor's WIND 128 has 250 stray bytes after its Pascal title); the title is length-prefixed, so they cannot change what is read here, and
+     * they are ignored, positioning word included. That is my reading of the format, not something I verified against a real Mac. */
     if(size==aligned+2 && be16(data+aligned))return fail(rt,"WIND automatic positioning is unsupported.");
     Colors tint={0};
     if(mac_resource_find(&rt->fork,UINT32_C(0x77637462),id,&colors)==0) {
