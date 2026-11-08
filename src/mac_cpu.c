@@ -138,7 +138,7 @@ static int illegal_instruction(int opcode) {
         if (active && active->trap && active->trap(active, (uint16_t)opcode, pc,
                                                    active->trap_user) == 0)
             return 1;
-        snprintf(error, sizeof error, "unhandled A-line trap %04x at %08x", opcode & 0xffff, pc);
+        snprintf(error, sizeof error, "unhandled A-line trap %04x at %08x (D0 %08x)", opcode & 0xffff, pc, (unsigned)m68k_get_reg(NULL, M68K_REG_D0)); /* D0 names the selector of the dispatching traps */
         mac_cpu_halt(active, error);
         return 1;
     }
@@ -251,7 +251,7 @@ size_t mac_cpu_run(MacCpu *cpu, size_t instruction_budget) {
             mac_cpu_set(cpu, MAC_PC, (pc + 2) & 0xffffff);
             if (!cpu->trap || cpu->trap(cpu, opcode, pc, cpu->trap_user) != 0) {
                 char error[128];
-                snprintf(error, sizeof error, "unhandled A-line trap %04x at %08x", opcode, pc);
+                snprintf(error, sizeof error, "unhandled A-line trap %04x at %08x (D0 %08x)", opcode, pc, mac_cpu_get(cpu, MAC_D0));
                 mac_cpu_halt(cpu, error);
             }
             cpu->cycles += 4; /* Adapter dispatch work, not a Macintosh timing model. */

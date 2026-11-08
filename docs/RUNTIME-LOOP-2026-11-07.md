@@ -337,3 +337,11 @@ the probe, not a window I watched, and I have not listened to any audio.
 2. Glider PRO: a hierarchical file system for `PBDirCreate` (HFSDispatch selector 6) and its siblings.
 3. The real Dialog Manager (`GetNewDialog` `A97C`, `ModalDialog`, `DrawDialog`, dialog item get/set, `DisposeDialog`): Room Editor\'s next halt, built on the DITL parser and `mac_dialog_draw`. Then Pack3 selectors 5 to 8 (`StandardGetFile`) and the `stdf` Gestalt answer for Glider Edit, and Room Editor\'s custom WDEF mechanism (now possible through `mac_guest_call`). Castle of Dr. Brain now reaches its title screen headlessly: next is a windowed or scripted run to see whether it takes input, plays sound, and starts the game.
 4. Exercise compaction with a real fragmenting program, or a purpose-built guest.
+
+- **Glider PRO (headless, 20 s).** Halts at `$A260` with D0 = 6 (HFSDispatch **DirCreate**): the call before it is GetCatInfo (selector 9, answered).
+  The name is "Preferences", ioVRefNum -2, ioDirID 0: it is making a Preferences folder. Not implemented, deliberately: the guest volume
+  and the save overlay are a flat namespace (`mac_files_read_name` rejects ':' and names are single components), so a folder registry
+  with nothing behind it would be a fake. Real folders need a decision about the overlay layout (host subdirectories under `--saves`, a
+  directory-ID table, parID handling in create/open/GetCatInfo/enumeration); that is the next real piece of work for this app. Halts of
+  unhandled A-line traps now print D0, so a dispatching trap's selector shows in the message (`make test` 0; Monkey Island and Monkey
+  Island 2 identical to baseline; `test_mac_cpu` clean under ASan).
