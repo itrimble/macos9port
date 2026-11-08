@@ -16,7 +16,7 @@ BT_SRC := $(filter-out $(BT_SIM_SRC),$(wildcard $(BT_DIR)/src/*.c))
 BT_HDR := $(wildcard $(BT_DIR)/include/*.h $(BT_DIR)/src/*.h)
 BT_CFLAGS ?= -std=c11 -Wall -Wextra -O2 -D_DEFAULT_SOURCE
 BT_INC := -I$(BT_DIR)/include -I$(BT_DIR)/src -I$(BT_DIR)/tests -I$(NET_DIR)/include
-BT_TESTS := hci device pair l2cap rfcomm bnep
+BT_TESTS := hci device pair l2cap rfcomm bnep bnep_wire
 BT_TEST_BINS := $(BT_TESTS:%=$(BT_OUT)/test_bt_%)
 BT_SAN := -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1
 
@@ -59,4 +59,14 @@ bt-asan:
 # The macOS accelerator is Objective-C against IOBluetooth. It is built
 # on its own so the rest of the stack stays plain C.
 bt-darwin:
+	@mkdir -p $(BT_OUT)
 	$(CC) $(BT_CFLAGS) $(BT_INC) -x objective-c -fobjc-arc -c $(BT_DIR)/src/bt_darwin.m -o $(BT_OUT)/bt_darwin.o
+
+ifeq ($(shell uname -s),Darwin)
+$(BT_OUT)/test_bt_darwin: $(BT_DIR)/tests/test_bt_darwin.m $(BT_DIR)/src/bt_darwin.m $(BT_HDR) $(BT_OUT)/libos999bt.a
+	$(CC) $(BT_CFLAGS) $(BT_INC) -fobjc-arc -o $@ $(BT_DIR)/tests/test_bt_darwin.m $(BT_DIR)/src/bt_darwin.m $(BT_OUT)/libos999bt.a -framework Foundation -framework IOBluetooth
+.PHONY: test-bt-darwin
+test-bt-darwin: $(BT_OUT)/test_bt_darwin
+	$(BT_OUT)/test_bt_darwin
+test-bluetooth: test-bt-darwin
+endif

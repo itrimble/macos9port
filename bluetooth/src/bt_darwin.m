@@ -24,11 +24,20 @@ struct BtDarwin {
  * on the delegate itself. */
 @interface BtDarwinInquiry : NSObject <IOBluetoothDeviceInquiryDelegate>
 @property(nonatomic, assign) BtDarwinDeviceFn found;
+@property(nonatomic, assign) BtDarwinDoneFn done;
 @property(nonatomic, assign) void *ctx;
 @end
 
 @implementation BtDarwinInquiry
+- (void)deviceInquiryComplete:(IOBluetoothDeviceInquiry *)sender error:(IOReturn)error
+                     aborted:(BOOL)aborted {
+    (void)sender;
+    BtDarwinDoneFn done = self.done;
+    self.done = NULL;
+    if (done) done(self.ctx, (error == kIOReturnSuccess && !aborted) ? BT_OK : BT_EIO);
+}
 - (void)deviceInquiryDeviceFound:(IOBluetoothDeviceInquiry *)sender device:(IOBluetoothDevice *)device {
+    (void)sender;
     if (!self.found || !device) return;
     const char *text = [[device addressString] UTF8String];
     BtAddress addr;
@@ -45,6 +54,7 @@ struct BtDarwin {
 @property(nonatomic, assign) BtDarwinCloseFn on_close;
 @property(nonatomic, assign) void *ctx;
 @property(nonatomic, assign) uint16_t handle;
+@property(nonatomic, assign) BtDarwin *owner;
 - (const BtDarwinPipe *)pipe;
 @end
 
@@ -57,12 +67,8 @@ struct BtDarwin {
 }
 
 - (void)l2capChannelOpenComplete:(IOBluetoothL2CAPChannel *)channel status:(IOReturn)error {
-    (void)channel;
-    if (error != kIOReturnSuccess) {
-        if (self.on_close) self.on_close(self.ctx);
-        return;
-    }
-    if (self.on_open) self.on_open(self.ctx, self.handle, &_pipe);
+    /* Synchronous open reports exactly once after the pipe is initialized. */
+    (void)channel; (void)error;
 }
 
 - (const BtDarwinPipe *)pipe {
@@ -71,13 +77,24 @@ struct BtDarwin {
 
 - (void)l2capChannelClosed:(IOBluetoothL2CAPChannel *)channel {
     (void)channel;
-    if (self.on_close) self.on_close(self.ctx);
+    BtDarwinCloseFn notify = self.on_close;
+    void *context = self.ctx;
+    self.on_close = NULL;
+    self.on_data = NULL;
+    BtDarwin *owner = self.owner;
+    self.owner = NULL;
+    if (owner) {
+        owner->channel = nil;
+        owner->channel_delegate = nil;
+    }
+    if (notify) notify(context);
 }
 @end
 
 static long darwin_write(void *ctx, const void *p, size_t n) {
     IOBluetoothL2CAPChannel *channel = (__bridge IOBluetoothL2CAPChannel *)ctx;
     if (!channel || !n) return 0;
+    if (!p || n > UINT16_MAX || n > [channel outgoingMTU]) return -1;
     IOReturn rc = [channel writeSync:(void *)p length:(UInt16)n];
     return rc == kIOReturnSuccess ? (long)n : -1;
 }
@@ -89,7 +106,15 @@ static long darwin_read(void *ctx, void *p, size_t cap) {
 }
 
 int bt_darwin_available(void) {
-    return 1;
+    IOBluetoothHostController *host = [IOBluetoothHostController defaultController];
+    return host && host.powerState == kBluetoothHCIPowerStateON;
+}
+
+int bt_darwin_local_address(BtDarwin *d, BtAddress *out) {
+    if (!d || !out) return BT_EINVAL;
+    NSString *address = [[IOBluetoothHostController defaultController] addressAsString];
+    if (!address) return BT_ENOENT;
+    return bt_addr_parse(address.UTF8String, out);
 }
 
 BtDarwin *bt_darwin_new(void) {
@@ -104,10 +129,16 @@ void bt_darwin_free(BtDarwin *d) {
 }
 
 int bt_darwin_discover(BtDarwin *d, uint32_t seconds, BtDarwinDeviceFn fn, void *ctx) {
-    if (!d) return BT_EINVAL;
+    return bt_darwin_discover_with_done(d, seconds, fn, NULL, ctx);
+}
+
+int bt_darwin_discover_with_done(BtDarwin *d, uint32_t seconds, BtDarwinDeviceFn fn,
+                                BtDarwinDoneFn done, void *ctx) {
+    if (!d || seconds > 60) return BT_EINVAL;
     bt_darwin_stop_discover(d);
     BtDarwinInquiry *delegate = [[BtDarwinInquiry alloc] init];
     delegate.found = fn;
+    delegate.done = done;
     delegate.ctx = ctx;
     IOBluetoothDeviceInquiry *inquiry = [[IOBluetoothDeviceInquiry alloc] initWithDelegate:delegate];
     if (!inquiry) {
@@ -130,6 +161,10 @@ int bt_darwin_discover(BtDarwin *d, uint32_t seconds, BtDarwinDeviceFn fn, void 
 
 int bt_darwin_stop_discover(BtDarwin *d) {
     if (!d || !d->inquiry) return BT_OK;
+    BtDarwinInquiry *delegate = d->inquiry_delegate;
+    delegate.found = NULL;
+    delegate.done = NULL;
+    delegate.ctx = NULL;
     [d->inquiry stop];
     d->inquiry = nil;
     d->inquiry_delegate = nil;
@@ -149,9 +184,7 @@ int bt_darwin_open_l2cap(BtDarwin *d, const BtAddress *peer, uint16_t psm,
     if ([device isConnected] == NO && [device openConnection] != kIOReturnSuccess) return BT_EIO;
 
     BtDarwinChannel *delegate = [[BtDarwinChannel alloc] init];
-    delegate.on_open = on_open;
-    delegate.on_data = on_data;
-    delegate.on_close = on_close;
+    /* Install callbacks only once synchronous open and pipe setup succeed. */
     delegate.ctx = ctx;
     delegate.handle = d->next_handle++;
 
@@ -165,11 +198,21 @@ int bt_darwin_open_l2cap(BtDarwin *d, const BtAddress *peer, uint16_t psm,
     pipe->ctx = (__bridge void *)channel;
     d->channel = channel;
     d->channel_delegate = delegate;
+    delegate.owner = d;
+    delegate.on_data = on_data;
+    delegate.on_close = on_close;
+    if (on_open) on_open(ctx, delegate.handle, pipe);
     return BT_OK;
 }
 
 int bt_darwin_close_l2cap(BtDarwin *d) {
     if (!d || !d->channel) return BT_OK;
+    BtDarwinChannel *delegate = d->channel_delegate;
+    delegate.owner = NULL;
+    delegate.on_open = NULL;
+    delegate.on_data = NULL;
+    delegate.on_close = NULL;
+    delegate.ctx = NULL;
     [d->channel closeChannel];
     d->channel = nil;
     d->channel_delegate = nil;

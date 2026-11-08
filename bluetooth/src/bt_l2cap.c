@@ -186,6 +186,30 @@ uint8_t bt_l2cap_next_lid(BtL2cap *l) {
     return l->lid;
 }
 
+void bt_l2cap_detach_context(BtL2cap *l, void *ctx) {
+    if (!l || !ctx) return;
+    for (int i = 0; i < BT_MAX_CHANS; i++) {
+        BtL2capChan *c = &l->chans[i];
+        if (c->open_ctx == ctx) { c->on_open = NULL; c->open_ctx = NULL; }
+        if (c->data_ctx == ctx) { c->data_fn = NULL; c->data_ctx = NULL; }
+        if (c->chan_close_ctx == ctx) { c->chan_close = NULL; c->chan_close_ctx = NULL; }
+    }
+    for (int i = l->nlistens - 1; i >= 0; i--)
+        if (l->listens[i].ctx == ctx) bt_l2cap_unlisten(l, l->listens[i].psm);
+}
+
+int bt_l2cap_unlisten(BtL2cap *l, uint16_t psm) {
+    if (!l) return BT_EINVAL;
+    for (int i = 0; i < l->nlistens; i++) {
+        if (l->listens[i].psm != psm) continue;
+        memmove(l->listens + i, l->listens + i + 1,
+                (size_t)(l->nlistens - i - 1) * sizeof *l->listens);
+        l->nlistens--;
+        return BT_OK;
+    }
+    return BT_ENOENT;
+}
+
 int bt_l2cap_listen(BtL2cap *l, uint16_t psm, BtL2capOpenFn on_open, void *ctx) {
     if (!l || !psm || psm == BT_L2CAP_CID_SIG) return BT_EINVAL;
     for (int i = 0; i < l->nlistens; i++)
@@ -232,6 +256,7 @@ int bt_l2cap_disconnect(BtL2cap *l, int cid) {
     BtL2capChan *c = bt_l2cap_chan_find(l, cid);
     if (!c) return BT_ENOENT;
     if (c->state == BT_L2CAP_CLOSED) return BT_OK;
+    if (c->adopted) return BT_EUNSUP; /* host closes its channel, then reports pipe_closed */
     uint8_t d[2];
     bt_wr16(d, (uint16_t)c->remote_cid);
     c->state = BT_L2CAP_WAIT_DISCONNECT_RSP;
@@ -307,9 +332,10 @@ int bt_l2cap_send(BtL2cap *l, int cid, const void *p, size_t n) {
     if (c->state != BT_L2CAP_OPEN) return BT_ECLOSED;
     if (c->adopted) {
         /* The system framed the channel, so the payload goes as it is. */
+        if (n > c->peer_mtu) return BT_ELIMIT;
         if (!c->pipe.write) return BT_EIO;
         long w = c->pipe.write(c->pipe.ctx, p, n);
-        return w < 0 ? BT_EIO : BT_OK;
+        return w == (long)n ? BT_OK : BT_EIO;
     }
     if (!l->send) return BT_EIO;
     size_t chunk = chan_chunk(c);
@@ -365,6 +391,12 @@ int bt_l2cap_adopt(BtL2cap *l, uint16_t handle, const BtAddress *peer, uint16_t 
     }
     *out_cid = cid;
     return BT_OK;
+}
+
+void bt_l2cap_pipe_closed(BtL2cap *l, int cid) {
+    if (!l) return;
+    BtL2capChan *c = bt_l2cap_chan_find(l, cid);
+    if (c && c->adopted) bt_l2cap_chan_close(l, c);
 }
 
 void bt_l2cap_pipe_rx(BtL2cap *l, int cid, const uint8_t *p, size_t n) {
