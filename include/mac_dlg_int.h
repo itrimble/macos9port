@@ -10,7 +10,7 @@ typedef struct {
     uint32_t ptr; int16_t id; int left, top, width, height; int visible_flag;
     MacDitl ditl; uint8_t length[MAC_DITL_MAX_ITEMS]; char text[MAC_DITL_MAX_ITEMS][TEXT_CAP + 1]; int16_t value[MAC_DITL_MAX_ITEMS];
     uint32_t handle[MAC_DITL_MAX_ITEMS], block[MAC_DITL_MAX_ITEMS];   /* item handles and the text blocks they point at: the host's own record of both */
-    uint32_t region[3];                                            /* strucRgn, contRgn, updateRgn handles, owned as ordinary regions */
+    uint32_t region[5];                                            /* strucRgn, contRgn, updateRgn, and the GrafPort's visRgn and clipRgn handles, owned as ordinary regions */
     uint8_t item_hidden[MAC_DITL_MAX_ITEMS];                       /* HideDItem: not drawn, not hit, and its box reports 16384 pixels to the right */
     int edit_item, sel_start, sel_end, def_item, cancel_item, hidden;   /* hidden: drawn nothing until ShowWindow */
     uint8_t *backdrop; int drawn;
@@ -25,6 +25,7 @@ typedef struct MacDlgMgr { Dlg *open[MAX_OPEN]; uint32_t port; /* the dialog Set
 #define M(rt) ((Mgr *)(rt)->dlgmgr)
 
 
+int mac_dlg_port_regions(MacRuntime *rt, Dlg *d);   /* the DialogPtr's GrafPort visRgn (+24, the dialog's rectangle in local coordinates) and clipRgn (+28, wide open): 1, 0 if out of memory (mac_dlgdraw.c) */
 int mac_dlg_edit_char(Dlg *d, unsigned k, unsigned ch);   /* typing / Backspace in an edit item, with SelIText selections (mac_dlgedit.c) */
 void mac_dlg_draw_pict(MacRuntime *rt, int l, int t, int r, int b, int16_t id);   /* a PICT item, scaled to its rectangle (mac_dlgpict.c) */
 static inline int has_text(const MacDitlItem *it) { return it->kind == MAC_ITEM_STATIC || it->kind == MAC_ITEM_EDIT || it->kind == MAC_ITEM_BUTTON || it->kind == MAC_ITEM_CHECK || it->kind == MAC_ITEM_RADIO; }

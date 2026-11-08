@@ -387,6 +387,16 @@ static void modal_loop(void) {
     CHECK(rig_open(&g) == 0); CHECK(modal(&g, 0, hit) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
     CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); CHECK(modal(&g, 0, 0x1000000) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
     CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); modal(&g, 0, hit); wr(&g.rt, SP - 2, 4, hit); CHECK(trap(&g, 0xa991, SP - 4) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
+    /* The DialogPtr is also a GrafPort: portRect, visRgn (+24, the dialog's rectangle in local coordinates) and clipRgn (+28, wide open) are real regions, so a program that
+     * intersects its drawing with thePort^.visRgn^^.rgnBBox (Glider PRO's Load House) draws; they are freed with the dialog. */
+    CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc);
+    {   uint32_t vh = raw(&g.rt, d + 24, 4), ch = raw(&g.rt, d + 28, 4), vp = raw(&g.rt, vh, 4), cp = raw(&g.rt, ch, 4);
+        CHECK(vh && ch && vh != ch && raw(&g.rt, vp, 2) == 10 && (int16_t)raw(&g.rt, vp + 2, 2) == 0 && (int16_t)raw(&g.rt, vp + 4, 2) == 0 && (int16_t)raw(&g.rt, vp + 6, 2) == 100 && (int16_t)raw(&g.rt, vp + 8, 2) == 280);
+        CHECK((int16_t)raw(&g.rt, cp + 2, 2) <= -30000 && (int16_t)raw(&g.rt, cp + 6, 2) >= 30000 && (int16_t)raw(&g.rt, d + 20, 2) == 100 && (int16_t)raw(&g.rt, d + 22, 2) == 280);
+        wr(&g.rt, SP, 4, d); CHECK(trap(&g, 0xa983, SP) == 1);
+        unsigned left = 0; for (size_t i = 0; i < g.rt.handle_count; i++) if (g.rt.handles[i].handle == vh || g.rt.handles[i].handle == ch) left++;
+        CHECK(left == 0); }
+    mac_runtime_destroy(&g.rt);
     /* an enabled user item is hit by the press itself (ModalDialog returns its number on mouse-down); a press outside every item returns nothing */
     CHECK(rig_open(&g) == 0); d = get_new(&g, 130, 0, 0xffffffffu, &rc); wr(&g.rt, hit, 2, 0xffff); post(&g, 1, 0, 0, 100, 70); modal(&g, 0, hit);
     CHECK(raw(&g.rt, hit, 2) == 2 && mac_cpu_get(g.rt.cpu, MAC_A7) == SP + 8 && mac_cpu_get(g.rt.cpu, MAC_PC) == TRAP_PC); mac_runtime_destroy(&g.rt);

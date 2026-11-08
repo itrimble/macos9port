@@ -32,7 +32,7 @@ static void dispose(MacRuntime *rt, Dlg *d, int restore) {
         if (rt->current_port == d->port_window) { uint32_t fw = mac_window_front(rt); rt->current_port = fw != d->port_window ? fw : 0; if (rt->qd_globals) wr(rt, rt->qd_globals, 4, rt->current_port); }
         mac_dlgwin_destroy(rt, d->port_window);
     }
-    for (unsigned i = 0; i < 3; i++) mac_dlg_free_region(rt, d->region[i]);
+    for (unsigned i = 0; i < 5; i++) mac_dlg_free_region(rt, d->region[i]);
     if (restore && d->drawn && d->backdrop) { MacPen pen; mac_pen_init(&pen, rt, d->left, d->top, d->width, d->height); mac_pen_restore(&pen, d->backdrop); }
     for (unsigned i = 0; i < MAX_OPEN; i++) if (M(rt) && M(rt)->open[i] == d) M(rt)->open[i] = NULL;
     free(d->backdrop); free(d);
@@ -120,7 +120,7 @@ static int get_new_dialog(MacRuntime *rt, uint32_t sp) {
     d->region[0] = mac_dlg_new_rect_region(rt, d->top - 1, d->left - 1, d->top + h + 1, d->left + w + 1);   /* structure */
     d->region[1] = mac_dlg_new_rect_region(rt, d->top, d->left, d->top + h, d->left + w);                   /* content */
     d->region[2] = mac_dlg_new_rect_region(rt, 0, 0, 0, 0);                                                 /* update: nothing to draw */
-    if (!d->region[0] || !d->region[1] || !d->region[2]) { dispose(rt, d, 0); return fail(rt, "GetNewDialog could not allocate the window regions."); }
+    if (!d->region[0] || !d->region[1] || !d->region[2] || !mac_dlg_port_regions(rt, d)) { dispose(rt, d, 0); return fail(rt, "GetNewDialog could not allocate the window regions."); }
     wr(rt, ptr + 110, 1, d->hidden ? 0 : 1); wr(rt, ptr + 111, 1, d->hidden ? 0 : 1);               /* visible, hilited */
     wr(rt, ptr + 114, 4, d->region[0]); wr(rt, ptr + 118, 4, d->region[1]); wr(rt, ptr + 122, 4, d->region[2]);
     wr(rt, ptr + 16, 2, 0); wr(rt, ptr + 18, 2, 0); wr(rt, ptr + 20, 2, (uint16_t)h); wr(rt, ptr + 22, 2, (uint16_t)w);   /* portRect, local */

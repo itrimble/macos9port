@@ -168,6 +168,7 @@ int mac_resource_file_service(MacRuntime *rt,uint16_t opcode) {
     unsigned args,width;
     switch(opcode) {
     case 0xa997:args=4;width=2;break;
+    case 0xa9c4:args=8;width=2;break;                                   /* OpenRFPerm(fileName, vRefNum, permission): the resource file of the named file, as OpenResFile (permission and volume are not distinguished) */
     case 0xa994:args=0;width=2;break;
     case 0xa998:case 0xa99a:args=2;width=0;break;
     case 0xa9a4:args=4;width=2;break;
@@ -178,6 +179,7 @@ int mac_resource_file_service(MacRuntime *rt,uint16_t opcode) {
     int error=0;int16_t value=-1;
     struct MacResourceChain *c=rt->resource_chain;
     if(opcode==0xa997)error=mac_resource_open_by_pointer(rt,mac_cpu_read(cpu,sp,4),&value);
+    else if(opcode==0xa9c4)error=mac_resource_open_by_pointer(rt,mac_cpu_read(cpu,sp+4,4),&value);
     else if(opcode==0xa994)value=c?c->current:MAC_APP_RES_REF;
     else if(opcode==0xa9a4) {
         uint32_t h=mac_cpu_read(cpu,sp,4);error=-192;

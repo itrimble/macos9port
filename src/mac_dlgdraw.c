@@ -25,6 +25,13 @@ void mac_dlg_free_region(MacRuntime *rt, uint32_t h) {
     for (size_t i = 0; h && i < rt->handle_count; i++) if (rt->handles[i].handle == h) rt->handles[i] = (MacHandle){0};
 }
 
+int mac_dlg_port_regions(MacRuntime *rt, Dlg *d) {
+    d->region[3] = mac_dlg_new_rect_region(rt, 0, 0, d->height, d->width);
+    d->region[4] = mac_dlg_new_rect_region(rt, -32000, -32000, 32000, 32000);
+    if (!d->region[3] || !d->region[4]) return 0;
+    wr(rt, d->ptr + 24, 4, d->region[3]); wr(rt, d->ptr + 28, 4, d->region[4]);
+    return 1;
+}
 unsigned mac_dlg_expand(const MacRuntime *rt, const Dlg *d, unsigned k, char *out, unsigned cap) {
     unsigned n = 0;
     for (unsigned i = 0; i < d->length[k] && n + 1 < cap; i++) {
