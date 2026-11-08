@@ -175,6 +175,27 @@ int main(void) {
     CHECK(edge_early > 0);
     CHECK(edge_late > edge_early);
 
+    /* The lit edge always advances to the right: sample the whole boot and
+       check the edge never goes backwards. The reveal is excluded because the
+       bar is deliberately dissolving into the desktop there. */
+    os999_startup_begin(&s, 0, 0);
+    int previous_edge = -1;
+    int advances = 0;
+    int samples = 0;
+    for (uint32_t t = 0; t <= 4900; t += 100) {
+        /* The desktop comes up while the fruit is still turning, so the intro
+           can leave the spin and finish the bar. */
+        os999_startup_frame(&s, t, t > 3300, image, desktop, W, H);
+        if (s.phase == OS999_STARTUP_REVEAL) break;
+        int edge = bright_edge(inner_x, inner_y + 2, inner_w);
+        CHECK(edge >= previous_edge);
+        if (edge > previous_edge) advances++;
+        previous_edge = edge;
+        samples++;
+    }
+    CHECK(samples > 40);
+    CHECK(advances > 30);
+
     /* A desktop that is ready early must not snap the bar to full: the fill
        still has to cross the track while the intro plays. */
     os999_startup_begin(&s, 0, 0);
