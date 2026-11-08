@@ -89,6 +89,8 @@ typedef struct {
     uint32_t hier_menus[32]; /* submenus registered with InsertMenu(menu, -1); never drawn in the bar */
     unsigned hier_count;
     struct MacResEdits *res_edits; /* resource edits layered over the fork (host memory) */
+    uint8_t palette_map[256];  /* device index chosen for each entry of the activated palette */
+    uint32_t palette_active;   /* handle of the palette last activated, 0 = none */
     MacHeapBridge *heap_bridge; /* protected heap over [lo,hi) of guest RAM; NULL = legacy bump only */
     MacHandle handles[MAC_RUNTIME_HANDLES];
     size_t handle_count;
@@ -172,6 +174,14 @@ int mac_fsspec_service(MacRuntime *rt, uint16_t opcode); /* HighLevelFSDispatch 
 int mac_color_init(MacRuntime *rt);
 /* Main device color/gray table switch at the current 8-bit depth (SetDepth's device-type bit). 0 ok. */
 int mac_color_set_gray(MacRuntime *rt, int gray);
+/* Palette activation: the main device's table back to its default for the current type, and single-entry writes. */
+int mac_color_reset_table(MacRuntime *rt);
+int mac_color_set_entry(MacRuntime *rt, unsigned index, uint16_t r, uint16_t g, uint16_t b);
+/* Realize the palette associated with the frontmost visible window on the main device. 0 ok (or nothing to do),
+ * -1 with the CPU halted when the palette needs something unsupported. */
+int mac_palette_activate(MacRuntime *rt, MacWindowState *window);
+/* The refusals activation would make, checked without changing anything (0 ok, -1 halted). */
+int mac_palette_check(MacRuntime *rt, const MacWindowState *window);
 int mac_color_service(MacRuntime *rt, uint16_t opcode);
 int mac_cursor_service(MacRuntime *rt, uint16_t opcode);
 int mac_ccursor_service(MacRuntime *rt, uint16_t opcode);

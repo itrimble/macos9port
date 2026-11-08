@@ -435,11 +435,11 @@ int mac_window_service(MacRuntime *rt,uint16_t opcode) {
     } else if(opcode==0xa915 || opcode==0xa916) {
         if(w->updating)return fail(rt,"Window visibility cannot change inside BeginUpdate.");
         int show=opcode==0xa915;
-        if(show && w->palette_handle)return fail(rt,"Showing an associated palette requires unimplemented Palette Manager activation.");
+        if(show && mac_palette_check(rt,w))return -1; /* a palette we cannot realize refuses before the window shows */
         uint32_t front=mac_window_front(rt);
         if(show && front && front!=w->address)return fail(rt,"Showing a second visible window requires unsupported compositing.");
         if(w->active!=show && rt->event_count>=64)return fail(rt,"Window activation event queue is full.");
-        visibility(rt,show);
+        visibility(rt,show);if(show && w->palette_handle && mac_palette_activate(rt,w))return -1;
     } else if(opcode==0xa91f || opcode==0xa920) {
         if(opcode==0xa920 && !w->visible)mac_window_to_front(rt,w->address);
         if(w->visible){

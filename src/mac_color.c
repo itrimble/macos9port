@@ -45,6 +45,26 @@ int mac_color_set_gray(MacRuntime *rt, int gray) {
     return 0;
 }
 
+/* Palette activation primitives for the main device. reset: back to the default table for the device's current type
+ * (color or gray), bumping ctSeed. set_entry: one entry's 16-bit RGB into the guest table and the 8-bit view. */
+int mac_color_reset_table(MacRuntime *rt) {
+    if (!rt->main_device || rt->screen_depth != 8) return -1;
+    uint32_t ct = rd(rt, rt->screen_colors, 4), gd = rd(rt, rt->main_device, 4);
+    if (!valid(rt, ct, 2056) || !valid(rt, gd, 62)) return -1;
+    fill_table(rt, ct, !(rd(rt, gd + 20, 2) & 1));
+    wr(rt, ct, 4, rd(rt, ct, 4) + 1);
+    return 0;
+}
+
+int mac_color_set_entry(MacRuntime *rt, unsigned index, uint16_t r, uint16_t g, uint16_t b) {
+    if (index > 255 || !rt->main_device || rt->screen_depth != 8) return -1;
+    uint32_t ct = rd(rt, rt->screen_colors, 4);
+    if (!valid(rt, ct, 2056)) return -1;
+    wr(rt, ct + 10 + index * 8, 2, r); wr(rt, ct + 12 + index * 8, 2, g); wr(rt, ct + 14 + index * 8, 2, b);
+    rt->palette[index] = (uint32_t)(r >> 8) << 16 | (uint32_t)(g >> 8) << 8 | (b >> 8);
+    return 0;
+}
+
 int mac_color_init(MacRuntime *rt) {
     if (mac_cpu_halted(rt->cpu)) return -1;
     if (rt->main_device) return 1;

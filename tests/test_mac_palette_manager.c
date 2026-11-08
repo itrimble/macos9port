@@ -49,7 +49,12 @@ static void associations(void){
  CHECK(rd(&r,h,4)==0 && !mac_window_find(&r,windows[0])->palette_handle && !mac_window_find(&r,windows[1])->palette_handle);
  CHECK(create(&r,16,0)==1);h=rd(&r,0x800a,4);mac_window_find(&r,windows[0])->palette_handle=h;
  wr(&r,0x8000,4,windows[0]);mac_cpu_set(r.cpu,MAC_A7,0x8000);
- CHECK(mac_window_service(&r,0xa915)==-1 && !mac_window_find(&r,windows[0])->visible);mac_cpu_destroy(r.cpu);
+ /* This palette's entries use usage 14 (animated and explicit bits set), which activation does not support: showing the
+  * window must refuse BEFORE the window appears, with the device table untouched. Supported usages are covered in
+  * test_mac_palette_activation. */
+ {uint32_t table[256];memcpy(table,r.palette,sizeof table);
+  CHECK(mac_window_service(&r,0xa915)==-1 && mac_cpu_halted(r.cpu) && !mac_window_find(&r,windows[0])->visible && !memcmp(table,r.palette,sizeof table));}
+ mac_cpu_destroy(r.cpu);
 }
 static void dispatched(void){
  MacRuntime r=fresh();mac_traps_init(&r);mac_cpu_set(r.cpu,MAC_A7,0x8000);wr(&r,0x8008,2,16);

@@ -26,6 +26,70 @@ static MacHandle *palette(MacRuntime*r,uint32_t h) {
     unsigned n=rd(r,m->pointer,2);
     return n<=256 && m->size==16+n*16?m:NULL;
 }
+/* Palette activation on the single 8-bit main device. The device table returns to its default for the current
+ * type (color or gray), then each entry is satisfied by its usage: courteous entries use the nearest existing color
+ * and change nothing; tolerant entries use an existing exact match or take the unclaimed device index (never 0 or
+ * 255) whose current color is nearest, and are set to the exact RGB. A tolerant entry's tolerance only ever relaxes
+ * that, so supplying the exact color always satisfies it. Entries inhibited for this device type (pmInhibitC8 on a
+ * color device, pmInhibitG8 on a gray one) are skipped. Dithered, animated and explicit entries are refused before
+ * anything changes. The window is invalidated if the table changed. */
+static unsigned nearest_index(const MacRuntime*r,uint32_t rgb,const uint8_t*claimed,unsigned lo,unsigned hi){
+    unsigned best=lo;long bd=-1;
+    for(unsigned i=lo;i<=hi;i++){
+        if(claimed && claimed[i])continue;
+        uint32_t c=r->palette[i];
+        long dr=(long)((c>>16)&255)-(long)((rgb>>16)&255),dg=(long)((c>>8)&255)-(long)((rgb>>8)&255),db=(long)(c&255)-(long)(rgb&255);
+        long d=dr*dr+dg*dg+db*db;if(bd<0 || d<bd){bd=d;best=i;}
+    }
+    return best;
+}
+/* Everything activation can refuse, checked before anything is changed (ShowWindow calls this first so a refused
+ * palette leaves the window hidden). 0 ok, -1 with the CPU halted. */
+int mac_palette_check(MacRuntime*r,const MacWindowState*w){
+    if(!w || !w->palette_handle)return 0;
+    MacHandle*m=palette(r,w->palette_handle);
+    if(!m)return fail(r,"Window palette association is invalid.");
+    if(!r->main_device || r->screen_depth!=8)return fail(r,"Palette activation is implemented for the 8-bit indexed device only.");
+    uint32_t p=m->pointer,gd=rd(r,r->main_device,4);unsigned n=rd(r,p,2);
+    if(!valid(r,gd,62))return fail(r,"Palette activation needs a valid main device record.");
+    if(n>254)return fail(r,"Palette needs more device entries than the 8-bit device has free.");
+    for(unsigned i=0;i<n;i++){
+        uint32_t usage=rd(r,p+16+16*i+6,2);
+        if(usage&~0x3f3fu)return fail(r,"Palette entry has unsupported usage modifiers.");
+        if((usage&0xf)!=0 && (usage&0xf)!=2)return fail(r,"Palette usage dithered, animated or explicit is unsupported.");
+    }
+    return 0;
+}
+int mac_palette_activate(MacRuntime*r,MacWindowState*w){
+    if(!w || !w->palette_handle || w!=&r->window || !w->visible)return 0; /* only the frontmost visible window drives the device */
+    if(mac_palette_check(r,w))return -1;
+    MacHandle*m=palette(r,w->palette_handle);
+    uint32_t p=m->pointer,gd=rd(r,r->main_device,4);unsigned n=rd(r,p,2);
+    int gray=!(rd(r,gd+20,2)&1);
+    uint32_t before[256];memcpy(before,r->palette,sizeof before);
+    if(mac_color_reset_table(r))return fail(r,"Palette activation could not reset the device table.");
+    uint8_t claimed[256]={0}; /* allocation searches indices 1-254 only, so white (0) and black (255) are never reallocated */
+    for(unsigned i=0;i<n;i++){
+        uint32_t e=p+16+16*i,usage=rd(r,e+6,2);
+        uint16_t c16[3]={(uint16_t)rd(r,e,2),(uint16_t)rd(r,e+2,2),(uint16_t)rd(r,e+4,2)};
+        uint32_t rgb=(uint32_t)(c16[0]>>8)<<16|(uint32_t)(c16[1]>>8)<<8|(c16[2]>>8);
+        if(usage&(gray?0x1000u:0x2000u)){r->palette_map[i]=(uint8_t)nearest_index(r,rgb,NULL,0,255);continue;}
+        if((usage&0xf)==0){r->palette_map[i]=(uint8_t)nearest_index(r,rgb,NULL,0,255);continue;}
+        unsigned j=256;
+        for(unsigned k=0;k<256;k++)if(r->palette[k]==rgb){j=k;break;}
+        if(j==256){
+            j=nearest_index(r,rgb,claimed,1,254);
+            if(mac_color_set_entry(r,j,c16[0],c16[1],c16[2]))return fail(r,"Palette activation could not write a device entry.");
+        }
+        claimed[j]=1;r->palette_map[i]=(uint8_t)j;
+    }
+    r->palette_active=w->palette_handle;
+    if(memcmp(before,r->palette,sizeof before) && w->handles[10]){ /* colors changed: the window must redraw */
+        uint32_t region=rd(r,w->handles[10],4);
+        if(region && valid(r,region,10)){wr(r,region,2,10);for(unsigned k=0;k<4;k++)wr(r,region+2+2*k,2,(uint16_t)w->bounds[k]);}
+    }
+    return 0;
+}
 static int association(MacRuntime*r,uint16_t opcode,uint32_t sp){
     if(opcode==0xaa93){
         uint32_t h=rd(r,sp,4);MacHandle *m=palette(r,h);
@@ -49,8 +113,8 @@ static int association(MacRuntime*r,uint16_t opcode,uint32_t sp){
     }
     uint32_t h=rd(r,sp+2,4);
     if(!palette(r,h))return fail(r,"SetPalette requires an owned Palette Manager object.");
-    if(w->visible)return fail(r,"SetPalette for a visible window requires unimplemented Palette Manager activation.");
     w->palette_handle=h;w->palette_updates=rd(r,sp,1)?0xe000:0xc000;
+    if(mac_palette_activate(r,w))return -1; /* a visible frontmost window gets its palette realized now; others on show */
     mac_cpu_set(r->cpu,MAC_A7,sp+10);return 1;
 }
 /* _PaletteDispatch ($AAA2): the selector is the low word of D0, high byte = argument bytes, low byte = routine
@@ -123,10 +187,17 @@ int mac_palette_manager_service(MacRuntime *r,uint16_t opcode){
         if(mac_cpu_halted(r->cpu))return -1;
         return palette_dispatch(r);
     }
-    if(opcode!=0xaa91 && opcode!=0xaa92 && opcode!=0xaa93 && opcode!=0xaa95 && opcode!=0xaa96)return 0;
+    if(opcode!=0xaa91 && opcode!=0xaa92 && opcode!=0xaa93 && opcode!=0xaa94 && opcode!=0xaa95 && opcode!=0xaa96)return 0;
     if(mac_cpu_halted(r->cpu))return -1;
     uint32_t sp=mac_cpu_get(r->cpu,MAC_A7);
     if(opcode==0xaa92)return get_new_palette(r,sp);
+    if(opcode==0xaa94){ /* ActivatePalette(window) */
+        if(!valid(r,sp,4))return fail(r,"ActivatePalette stack exceeds guest RAM.");
+        MacWindowState*w=mac_window_find(r,rd(r,sp,4));
+        if(!w)return fail(r,"ActivatePalette requires a registered window.");
+        if(mac_palette_activate(r,w))return -1;
+        mac_cpu_set(r->cpu,MAC_A7,sp+4);return 1;
+    }
     if(opcode!=0xaa91){
         unsigned n=opcode==0xaa93?4:opcode==0xaa95?10:8;
         if(!valid(r,sp,n))return fail(r,"Palette Manager stack exceeds guest RAM.");
