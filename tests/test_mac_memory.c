@@ -79,6 +79,8 @@ static void high_heap(void) {
     CHECK(mac_cpu_read(rt.cpu, h, 4) == high);
     CHECK(call(&rt, 0xa01c, 0, 0) == 1);
     CHECK(mac_cpu_get(rt.cpu, MAC_D0) == high - old);
+    mac_cpu_write(rt.cpu, 0x220, 2, 0xfffc);
+    CHECK(call(&rt, 0xa162, 0, 0) == 1 && mac_cpu_get(rt.cpu, MAC_D0) == high - old && mac_cpu_get(rt.cpu, MAC_A0) == high - old && mac_cpu_read(rt.cpu, 0x220, 2) == 0xfffc);   /* PurgeSpace */
     CHECK(call(&rt, 0xa040, 0, high - old + 1) == 1); error_is(&rt, -108);
     CHECK(mac_runtime_alloc(&rt, high - old) == old);
     CHECK(mac_runtime_alloc(&rt, 4) == 0 && rt.heap_next == high);

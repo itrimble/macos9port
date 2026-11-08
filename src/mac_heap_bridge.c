@@ -278,6 +278,14 @@ int mac_heap_service(MacRuntime *rt, uint16_t opcode) {
         }
         return 1;
     }
+    case 0x62: /* PurgeSpace: D0 = total free after a purge, A0 = largest contiguous block after one (nothing is purgeable yet, so this is
+                * FreeMem and MaxBlock after compaction). MemError is left alone. */
+        if (opcode & 0x400) return 0;
+        compact_all(b);
+        os999_heap_stats(b->heap, &st);
+        mac_cpu_set(cpu, MAC_D0, (uint32_t)(st.max_bytes - st.used));
+        mac_cpu_set(cpu, MAC_A0, (uint32_t)st.largest_alloc);
+        return 1;
     case 0x1c: case 0x1d: case 0x61: /* FreeMem / MaxMem / MaxBlock */
         if (call == 0x1d) compact_all(b);
         os999_heap_stats(b->heap, &st);

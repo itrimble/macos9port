@@ -204,7 +204,7 @@ int mac_region_box_algebra(unsigned op, const int a[4], const int b[4], int out[
 int mac_window_inval_service(MacRuntime *rt, uint16_t opcode); /* InvalRect/InvalRgn/ValidRect/ValidRgn, $A927..$A92A */
 int mac_stdfile_service(MacRuntime *rt, uint16_t opcode); /* Pack3 Standard File, $A9EA */
 void mac_stdfile_destroy(MacRuntime *rt);
-int mac_stdput_service(MacRuntime *rt, uint32_t sp, uint32_t pc); /* Pack3 selector 1, SFPutFile (mac_stdput.c) */
+int mac_stdput_service(MacRuntime *rt, uint32_t sp, uint32_t pc, int spec); /* Pack3 selectors 1 (SFPutFile) and 5 (StandardPutFile), mac_stdput.c */
 void mac_stdput_destroy(MacRuntime *rt);
 int mac_menu_service(MacRuntime *rt, uint16_t opcode);
 int mac_toolbox_service(MacRuntime *rt, uint16_t opcode);

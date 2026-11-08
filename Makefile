@@ -92,7 +92,7 @@ RUNTIME += src/mac_video_config.c src/mac_vbl.c src/mac_pixmap.c src/mac_pixels.
 RUNTIME_HDRS := include/folder_navigation.h src/runtime_video_pixels.h src/runtime_frame.h src/runtime_pacing.h include/mac_resource.h include/mac_cpu.h include/mac_runtime.h include/mac_window_int.h include/mac_system_volume.h include/mac_drive_queue.h include/mac_menu_int.h include/runtime_bridge.h
 RUNTIME += src/mac_resource_catalog.c src/mac_resource_files.c
 RUNTIME += src/mac_pict_decode.c src/mac_picture.c
-RUNTIME += src/mac_sane.c
+RUNTIME += src/mac_sane.c src/mac_sane_arith.c
 RUNTIME += src/mac_numconv.c src/mac_help.c src/mac_appleevents.c
 RUNTIME += src/mac_sound.c src/mac_sound_render.c
 RUNTIME += src/mac_sound_double.c
@@ -130,8 +130,10 @@ test: build/test_mac_picture
 
 build/test_mac_sane: $(RUNTIME_OBJ) tests/test_mac_sane.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sane.c $(CPUOBJ) -lm -o $@
+build/test_mac_sane_arith: $(RUNTIME_OBJ) tests/test_mac_sane_arith.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sane_arith.c $(CPUOBJ) -lm -o $@
 
-test: build/test_mac_sane
+test: build/test_mac_sane build/test_mac_sane_arith
 
 build/test_mac_help: $(RUNTIME_OBJ) tests/test_mac_help.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_help.c $(CPUOBJ) -lm -o $@
@@ -492,6 +494,7 @@ test: build/test_os999_startup build/test_ospi build/test_archive_install build/
 	./build/test_mac_picture
 	./build/test_mac_pict_v1
 	./build/test_mac_sane
+	./build/test_mac_sane_arith
 	./build/test_mac_numconv
 	./build/test_mac_help
 	./build/test_mac_delay

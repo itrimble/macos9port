@@ -103,7 +103,7 @@ None of these has reached its main loop. "Traps" is the count before the halt.
 | Glider 4.10 | 1249 | `A204` | a Device Manager `Control` (PBControlImmed) on driver reference number -4, csCode 2, csParam 3, reached from library glue. Glider's source calls `GetSoundVol`/`SetSoundVol`, which are glue in MPW, so that is the likely cause; I did not find a source that confirms it, so it is unimplemented, not guessed |
 | Room Editor 1.06 | (dialog) | `GetNewDialog` `A97C` | with scripted input (probe, headless): Standard File, open a file, then its own alert (witch icon, "Okay" button; clicking Okay dismisses it), then it calls `GetNewDialog`, so it needs the real Dialog Manager (dialog records, `ModalDialog`, item access). Headless frames of the dialog and the alert were viewed. WIND 128 (procID 160, the app\'s own WDEF 10) is still ahead |
 | Glider PRO 1.1.2 | 143 | `A260` | `PBDirCreate` (HFSDispatch selector 6) to create a "Preferences" folder; the file system has one flat directory, so this needs a hierarchy, not a one-off |
-| Glider Edit 1.1.1 | 36 | idles at its menu bar (File, Edit) | headless frames, 9 Nov 2026: with Gestalt `stdf` now answered (bit 0 only: `StandardPutFile` and `StandardGetFile` exist; `CustomPutFile` and `CustomGetFile`, selectors 7 and 8, halt by name) the alert is gone. The next halt was `MaxSizeRsrc` (`$A821`), now answered like `SizeResource` (an assumption that our resource files carry no slack; I could not open a description of it). The app then shows its menu bar and waits; File > Open... opens a `StandardGetFile` dialog (centred, empty list: no matching files on the volume). I have not opened a file or looked at anything past that dialog |
+| Glider Edit 1.1.1 | 36 | halts at `DialogDispatch` (`AA68`, selector `$0203`) after opening a house | headless frames, 9 Nov 2026: menu bar, File > Open... dialog (empty for the Glider PRO houses we have: this old editor asks for type `gliH`, ours are `GLhs`). With a copy of a PRO house retyped `gliH` it opens the file (FSpOpenDF, PBRead), then needed `PurgeSpace` (`A162`), SANE `FSUBX` and `FX2S`, and finally shows its own error dialog through `ParamText`, `GetStdFilterProc` (`AA68`, `$0203`: my reading, from the call sequence) and `GetNewDialog`. Next is the real Dialog Manager. Note the file was the wrong format, so this is an error path, not a normal open |
 
 The window-colour change cleared Glider 4.10's `wctb 128` (content, frame and text black;
 parts 3 and 4 are documented as reserved). A pixel dump of the screen at the halt is entirely
@@ -230,6 +230,16 @@ the probe, not a window I watched, and I have not listened to any audio.
   {vRefNum $FFFF, parID 2, name}; `sfReplacing` is always 0 (no replace alert), and a file filter on `StandardGetFile` halts. Mutation
   checks: 13 of 14 killed after two test fixes; the survivor is a stack-room boundary for `StandardPutFile` that changes no outcome I can
   construct. `MaxSizeRsrc` answers like `SizeResource`.
+- **Past the Glider Edit open dialog (headless frames):** with a copy of a Glider PRO house retyped `gliH` (this old editor lists only
+  `gliH`), choosing it ran into `PurgeSpace` (`A162`: D0 = total free, A0 = largest block, MemError left alone; both memory models), then
+  SANE `FSUBX`. The runtime had only SANE conversions, so I added extended-precision `FADDX`, `FSUBX`, `FMULX`, `FDIVX` in
+  `src/mac_sane_arith.c`, 128-bit integer arithmetic with all four rounding directions and no host floating point, plus `FX2S`, `FX2D`
+  and `FD2X`. Zeros and normal numbers only: infinities, NaNs, denormals, division by zero, overflow and underflow halt by name, as do
+  the double-precision rounding setting and an enabled inexact halt. Checked against 232 arithmetic, 228 float and 86 double-to-extended
+  vectors from a separate exact reference written in Python (`tests/sane_*_vectors.h`); 20 of 21 mutants killed (the survivor is the
+  sticky bit of a division quotient, which only matters for an exact tie I could not construct). After that the app reads the file and
+  shows an error dialog of its own (the file is the wrong format), which needs `GetStdFilterProc` and `GetNewDialog`: the real Dialog
+  Manager is the next piece.
 - **Parity:** Monkey Island and Monkey Island 2 are byte-identical to the previous baseline; `make test` exits 0; ASan on Castle (90 s with
   the menu script) and on the new and touched menu, window and utility tests reports nothing.
 

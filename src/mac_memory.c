@@ -215,6 +215,12 @@ int mac_memory_service(MacRuntime *rt, uint16_t opcode) {
         result(cpu, 0);
         return 1;
     }
+    if (call == 0x62 && !(opcode & 0x400)) { /* PurgeSpace: D0 = total free after a purge, A0 = largest contiguous block after one.
+                                              * Nothing is purgeable here and free space is one tail, so both equal what is free. Leaves MemError alone. */
+        mac_cpu_set(cpu, MAC_D0, available(rt));
+        mac_cpu_set(cpu, MAC_A0, available(rt));
+        return 1;
+    }
     if (call == 0x1c || call == 0x1d || call == 0x61) { /* FreeMem / MaxMem / MaxBlock. */
         result(cpu, 0);
         mac_cpu_set(cpu, MAC_D0, available(rt));

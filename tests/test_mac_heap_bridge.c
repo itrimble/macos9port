@@ -172,6 +172,10 @@ static void memory_reports(void) {
     uint32_t h = new_handle(&rt, 10000, 1);
     CHECK(call(&rt, 0xa01c, 0, 0) == 1 && d0(&rt) < free0);
     CHECK(call(&rt, 0xa061, 0, 0) == 1 && d0(&rt) > 0 && d0(&rt) <= free0);   /* MaxBlock */
+    {uint32_t free_now, block; CHECK(call(&rt, 0xa01c, 0, 0) == 1); free_now = d0(&rt); CHECK(call(&rt, 0xa061, 0, 0) == 1); block = d0(&rt);
+     mac_cpu_write(rt.cpu, 0x220, 2, 0xfffc);                                                         /* MemError = -4: PurgeSpace must not touch it */
+     CHECK(call(&rt, 0xa162, 0, 0) == 1 && d0(&rt) == free_now && mac_cpu_get(rt.cpu, MAC_A0) == block && mac_cpu_read(rt.cpu, 0x220, 2) == 0xfffc);
+     CHECK(call(&rt, 0xa562, 0, 0) == 0);}                                                            /* the system-zone form is not modelled */
     CHECK(call(&rt, 0xa040, 0, 1000) == 1 && err(&rt) == 0);                   /* ReserveMem */
     CHECK(call(&rt, 0xa040, 0, HI) == 1 && err(&rt) == -108);
     CHECK(call(&rt, 0xa04d, 0, 1000) == 1 && err(&rt) == 0);                   /* PurgeMem */
