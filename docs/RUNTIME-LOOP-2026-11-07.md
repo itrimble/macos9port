@@ -554,3 +554,16 @@ the probe, not a window I watched, and I have not listened to any audio.
   Monkey Island and Monkey Island 2 identical; Castle refreshed. **Next halt (headless):** `$A954` = **NewControl**: the editor's windows carry controls (scroll bars, buttons); there is
   **no Control Manager in this runtime at all** (no NewControl/DrawControls/TrackControl/SetCtlValue...). That is the next large subsystem, and it also blocks the writable-resource work from
   being exercised: the New House flow stops there after opening the house file.
+
+- **Control Manager subset (headless).** Glider PRO's editor halted at `NewControl` (`$A954`): the runtime had no Control Manager. New `src/mac_controls.c` + `src/mac_control_draw.c`:
+  NewControl, GetNewControl (CNTL layout from memory: rect, value, visible, max, min, procID, refCon, title), DisposeControl, KillControls, Show/HideControl, Move/SizeControl,
+  Get/SetCTitle, Get/SetCtlValue, Get/SetMinCtl/MaxCtl, Get/SetCRefCon, Get/SetCtlAction (stored, never called), HiliteControl, DrawControls, UpdateControls, TestControl, FindControl;
+  DrawGrowIcon (`$A904`) validates the window and draws nothing (no window kind we create has a grow box). Standard procIDs 0, 1, 2, 16 (+8 useWFont) only, drawn natively with
+  the dialog pen (this project's own look). **Not done:** TrackControl and DragControl halt by name; custom CDEFs halt by name. Stated differences from a real Mac: the procID lives in
+  the record's contrlData long (contrlDefProc is nil); redraw erases to the lightest palette entry, not the window background; windows in front of the owner are ignored when drawing.
+  Handles are checked against the runtime's own table (type, master pointer), the owner against the window registry, lists are bounded at 512 and a loop halts. Test
+  `tests/test_mac_controls.c` has 16 corrupted-input cases (forged/odd/stale/foreign-type handle, moved master pointer, bad owner, bad window, bad rect/title pointers, max<min, bad stack,
+  bad destination, zero size, bad FindControl pointer, cyclic list), the part boundaries of a scroll bar, a GetNewControl from a synthesized fork, and the supported and refused procIDs.
+  Mutants killed except one equivalent (the odd-handle test: the table lookup rejects odd handles anyway). ASan clean; `make test` 0; MI and MI2 identical; Castle refreshed.
+  **Next halt (headless):** Glider PRO's New House flow now halts in `NewControl` from `GetNewControl` id 129: **procID 2050 = the application's own CDEF 128** (CNTL 128 and 129 both).
+  Running a program's CDEF means executing guest code through `mac_guest_call` for draw/hit-test/calc messages: that is the next design step, and it is also what the parked guest-WDEF item needs.
