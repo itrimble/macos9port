@@ -45,6 +45,7 @@ R04 and G02. Items stay unchecked.
 | `c93f5ea` | `mac_guest_call`: a native trap service can call a guest Pascal routine and resume afterwards. It builds `[return address = native stub of key 0xFE][arguments][result slot]` below the trap's stack, jumps to the routine, and recognises the routine's `RTS` into that stub, then restores A7 and PC and runs a completion callback that may chain the next call. Nested calls, odd or low targets, a missing stack, and unbalanced returns halt with a named message. First consumer will be Standard File's filter procedure and Room Editor's WDEF. Not covered: a call started through a guest-patched trap vector (the stub path), which only has a guard | `test_mac_guestcall` |
 | `da132c5` | `mac_ditl`: bounded `DLOG` and `DITL` parsers (item kinds user, help, button, check, radio, control, static, edit, icon, PICT; disabled bit; even padding; exact-consumption rules; at most 40 items). Run over every `DLOG`/`DITL` in six real apps (Room Editor, Glider Edit, Glider 4.10, Glider PRO, Monkey Island, Castle of Dr. Brain; 26+25+16+82+8+18 resources) with a throwaway harness outside the repo; that run found the Help Manager item kind (`0x01`, 4 bytes) that the synthetic test had not covered. No runtime caller yet | `test_mac_ditl` |
 | `ddc9fa1` | Standard File groundwork, no guest-visible change yet. `mac_files_entries`: one-pass listing of the merged data+saves volume (regular files only, sorted, with the Finder type/creator/flags the guest has set, zero otherwise); a save that shares a data file's name is listed once and reports the save, as `PBGetFInfo` does. `MacSfList`: the dialog's list logic with no CPU or drawing: case-insensitive order, selection, double-click, arrow keys, paging, scroll clamp, type-ahead (the one-second letter window is our choice, not Apple's). Two mutants are equivalent or race-only (a second guard behind `listing()`, and a file vanishing between listing and open) | `test_mac_files_entries`, `test_mac_stdfile_list` |
+| (next commit) | Native Standard File dialog: Pack3 `SFGetFile` (selector 2) and `SFPGetFile` (selector 4) as a modal drawn into the 640x480 indexed screen with our own chrome, a template from the app's `DLOG`/`DITL` (or a built-in layout for `SFGetFile` and dialogID -4000), our file list with type filter (`numTypes`, a type never set matches nothing), invisible files hidden, the app's file-filter routine called per file through `mac_guest_call` (TRUE hides), mouse and keyboard handling (row click, double click, buttons act on mouse-up, scroll arrows and page regions, arrows, Return, Escape, Cmd-period, type-ahead), `SFReply` written, arguments popped, backdrop restored. The trap rewinds and yields while the dialog is open, so with no input a run stays in the dialog. Halts with a named message: selectors other than 2 and 4, dialog hooks, dialog filter procedures, a template without items 1/3/7/8, a non-640x480x8 display, a call through a patched trap vector, a second call while open. Eject and Drive are drawn dimmed (one volume that cannot do either). Not done: scroll thumb dragging, auto-repeat, the icon item, a popup for the disk name. Also `_FSDispatch` `$A060` selector `$1A` (`PBOpenDF`), which opens like `PBOpen` | `test_mac_stdfile`, `test_mac_files` |
 
 ## Compatibility profile decision
 
@@ -58,7 +59,7 @@ off and no Help menu exists; Gestalt `help`, `stdf`, `evnt` remain unanswered.
 ## Evidence at `507c06b`
 
 - `BUILDFLEET_LOCAL=1 make test-memory` exit 0; `BUILDFLEET_LOCAL=1 make test` exit 0 with 127
-  test binaries and no failure line (132 at `bf35f9b`, 134 at `f25ae66`, 136 at `acfe6f8`, 137 with guest calls, 138 with the DITL parser, 140 with the Standard File groundwork). No source or test file reaches 500 lines.
+  test binaries and no failure line (132 at `bf35f9b`, 134 at `f25ae66`, 136 at `acfe6f8`, 137 with guest calls, 138 with the DITL parser, 140 with the Standard File groundwork, 141 with the dialog). No source or test file reaches 500 lines.
 - Every new test file was mutation-checked (deliberate breakage, rebuild with a forced object
   refresh, confirm a test fails). Weak cases found that way were fixed: the pixel-depth and
   trailing-bytes cases, a source-span off-by-one in Pack7, and one redundant read-only check
@@ -78,9 +79,9 @@ None of these has reached its main loop. "Traps" is the count before the halt.
 | App | Traps | Stops at | What it is |
 | --- | --- | --- | --- |
 | Glider 4.10 | 1249 | `A204` | a Device Manager `Control` (PBControlImmed) on driver reference number -4, csCode 2, csParam 3, reached from library glue. Glider's source calls `GetSoundVol`/`SetSoundVol`, which are glue in MPW, so that is the likely cause; I did not find a source that confirms it, so it is unimplemented, not guessed |
-| Room Editor 1.06 | 439 | Pack3 (`A9EA`) selector 4 | Standard File `SFPGetFile`: the app opens a file dialog at startup, the same subsystem Glider Edit stops at. Needs a modal dialog with a file list, buttons and a reply record, so it is a design-first item. WIND 128 (procID 160, the app's own WDEF 10) is still ahead |
+| Room Editor 1.06 | (dialog) | Alert 128 (`A985`) | with scripted input (probe, headless): it reaches the Standard File dialog and waits; clicking a row and Open lets it continue, opening the file through `PBOpenDF`, and it then shows its own alert ("Ye intruders desist - this house protected by the Wicked Witch of the West!"), which needs the Dialog Manager `Alert`. A headless frame of the dialog (probe PPM, not a windowed run) shows our list, the app's "Which house to Open?" text and its relabelled "New House" Cancel button. WIND 128 (procID 160, the app's own WDEF 10) is still ahead |
 | Glider PRO 1.1.2 | 143 | `A260` | `PBDirCreate` (HFSDispatch selector 6) to create a "Preferences" folder; the file system has one flat directory, so this needs a hierarchy, not a one-off |
-| Glider Edit 1.1.1 | 36 | Gestalt `stdf` | Standard File dialogs; `GetNewMBar` was exercised only with `stdf` faked locally, not committed |
+| Glider Edit 1.1.1 | 36 | Alert 920 (`A985`) | it asks Gestalt `stdf` (Standard File 3.0), gets "undefined", and shows its own alert, "the new filesystem (system 7.0 or higher)". Moving on needs the System 7 Standard File calls (Pack3 selectors 5 to 8) and the Dialog Manager `Alert`; classic `SFGetFile` alone does not change this halt |
 
 The window-colour change cleared Glider 4.10's `wctb 128` (content, frame and text black;
 parts 3 and 4 are documented as reserved). A pixel dump of the screen at the halt is entirely
@@ -144,10 +145,5 @@ screen black and the real run cannot show the colour work. The unit tests carry 
    decide whether it is a small answer or a driver subsystem. Palette activation is done; a windowed run
    and screenshot are still owed once it reaches its loop.
 2. Glider PRO: a hierarchical file system for `PBDirCreate` (HFSDispatch selector 6) and its siblings.
-3. Standard File (Pack3) and Room Editor's window definition share two missing mechanisms; build them first:
-   (a) a way to call guest code from inside a trap and resume afterwards (built: `mac_guest_call`, see the commit table); (b) a Dialog Manager that draws `DITL` items. Room Editor's request, decoded
-   from its stack at the halt, is `SFPGetFile` with `dialogID` 256 (the app has its own `DLOG`/`DITL` 256), a
-   non-nil file-filter procedure (an address in its jump table), `numTypes` -1 and no dialog hook, so it needs both.
-   Host files carry no Finder type unless the guest set one, so a typed filter honestly matches nothing.
-   A canned "Cancel" reply is not an acceptable shortcut: it would invent a user action.
+3. Dialog Manager `Alert`/`StopAlert`/`NoteAlert`/`CautionAlert` (`A985`..`A988`) from `ALRT` + `DITL`, reusing the dialog drawing: it is the next halt for Room Editor and for Glider Edit. Then Pack3 selectors 5 to 8 (`StandardGetFile`) for Glider Edit, and Room Editor's custom WDEF mechanism (guest callbacks from the Window Manager, now possible through `mac_guest_call`).
 4. Exercise compaction with a real fragmenting program, or a purpose-built guest.

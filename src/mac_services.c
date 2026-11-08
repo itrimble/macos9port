@@ -42,7 +42,7 @@ static int implemented(unsigned key) {
     case 0xa931: case 0xa932: case 0xa933: case 0xa934: case 0xa935: case 0xa936: case 0xa93c: case 0xa9c0:
     case 0xa939: case 0xa93a: case 0xa945: case 0xa947: case 0xa949: case 0xa94d:
     case 0xa950: case 0xa9bf: case 0xa9bc:
-    case 0xa9f0: case 0xa9f1: case 0xa9f4: case 0xa9a0: case 0xa81f: case 0xa99d:
+    case 0xa9ea: case 0xa9f0: case 0xa9f1: case 0xa9f4: case 0xa9a0: case 0xa81f: case 0xa99d:
     case 0xa99c: case 0xa9a5: case 0xa9a6: case 0xa9a8: case 0xa9af:
     case 0xa9a2: case 0xa9a3: case 0xa992: case 0xa970: case 0xa971:
     case 0xa976: case 0xa860: case 0xa975: case 0xa972: case 0xa974: case 0xa86e: case 0xa870: case 0xa871: case 0xa878:
@@ -167,6 +167,8 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (ccursor) return ccursor > 0 ? 0 : -1;
     int dialog = mac_dialog_service(rt, opcode);
     if (dialog) return dialog > 0 ? 0 : -1;
+    int stdfile = mac_stdfile_service(rt, opcode);
+    if (stdfile) return stdfile > 0 ? 0 : -1;
     int color_port = mac_color_port_service(rt, opcode);
     if (color_port) return color_port > 0 ? 0 : -1;
     int color = mac_color_service(rt, opcode);

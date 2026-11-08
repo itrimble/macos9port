@@ -355,7 +355,7 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode) {
     case 0xa000: case 0xa001: case 0xa002: case 0xa003: case 0xa008: case 0xa009:
     case 0xa00b: case 0xa00c: case 0xa00d: case 0xa011: case 0xa012: case 0xa013:
     case 0xa014: case 0xa015: case 0xa018: case 0xa044: case 0xa207: case 0xa209:
-    case 0xa260: break;
+    case 0xa060: case 0xa260: break;
     default: return 0;
     }
     if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1;
@@ -363,6 +363,7 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode) {
     int wd = base == 0xa260;
     unsigned selector = mac_cpu_get(cpu, MAC_D0) & 0xffff;
     if (wd && selector != 7 && selector != 9) return 0;
+    if (base == 0xa060 && selector != 0x1a) return 0; /* _FSDispatch: only PBOpenDF so far */
     uint32_t pb = mac_cpu_get(cpu, MAC_A0);
     if ((pb & 1) || !valid(cpu, pb, block_size(base, wd, selector))) {
         mac_cpu_halt(cpu, "Invalid File Manager parameter block."); return -1;
@@ -381,7 +382,7 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode) {
     }
     case 0xa014: return result(cpu, pb, get_volume(rt, pb));
     case 0xa015: return result(cpu, pb, mac_files_set_vol(rt, pb));
-    case 0xa000: return result(cpu, pb, open_file(rt, pb));
+    case 0xa000: case 0xa060: return result(cpu, pb, open_file(rt, pb)); /* PBOpen, and PBOpenDF (data fork) */
     case 0xa008: return result(cpu, pb, mac_files_create(rt, pb));
     case 0xa009: return result(cpu, pb, mac_files_delete(rt, pb, 0));
     case 0xa209: return result(cpu, pb, mac_files_delete(rt, pb, 1));

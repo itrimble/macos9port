@@ -29,6 +29,15 @@ static int open_name(MacRuntime *rt, const char *name, int permission) {
     put(rt,18,4,NAME); put(rt,22,2,0); put(rt,27,1,permission);
     return call(rt,0xa000);
 }
+/* PBOpenDF: _FSDispatch ($A060), selector $1A in D0, the same block layout as PBOpen. */
+static int open_df(MacRuntime *rt, const char *name, int permission) {
+    size_t n = strlen(name);
+    mac_cpu_ram(rt->cpu)[NAME] = (uint8_t)n;
+    memcpy(mac_cpu_ram(rt->cpu)+NAME+1,name,n);
+    put(rt,18,4,NAME); put(rt,22,2,0); put(rt,27,1,permission);
+    mac_cpu_set(rt->cpu,MAC_D0,0x1a);
+    return call(rt,0xa060);
+}
 static int read_at(MacRuntime *rt, int mode, int offset, int count) {
     put(rt,32,4,DATA); put(rt,36,4,(uint32_t)count);
     put(rt,44,2,(uint16_t)mode); put(rt,46,4,(uint32_t)offset);
@@ -166,6 +175,18 @@ int main(void) {
     CHECK(open_name(&rt,"fifo",1)==-50);
     CHECK(open_name(&rt,"Game Data",1)==0);
     CHECK(call(&rt,0xa001)==0);
+    /* PBOpenDF opens the same file as PBOpen and returns a usable reference; it fails exactly like PBOpen. */
+    CHECK(open_df(&rt,"Game Data",1)==0);
+    uint32_t df_ref=mac_cpu_read(rt.cpu,PB+24,2);CHECK(df_ref>=128);
+    put(&rt,24,2,df_ref);CHECK(call(&rt,0xa001)==0);
+    CHECK(open_df(&rt,"missing",1)==-43);
+    CHECK(open_df(&rt,"../escape",1)==-50);
+    CHECK(open_df(&rt,"Game Data",3)==-54);
+    put(&rt,22,2,5);mac_cpu_set(rt.cpu,MAC_D0,0x1a);CHECK(call(&rt,0xa060)==-35);put(&rt,22,2,0); /* wrong volume */
+    mac_cpu_set(rt.cpu,MAC_D0,0x1a);CHECK(call(&rt,0xa460)==-50);              /* async unsupported */
+    mac_cpu_set(rt.cpu,MAC_D0,0x1b);mac_cpu_set(rt.cpu,MAC_A0,PB);
+    CHECK(mac_file_service(&rt,0xa060)==0);                                     /* other FSDispatch selectors are not ours */
+    put(&rt,27,1,1);                                                            /* back to the original block state */
     put(&rt,22,2,0xffff); CHECK(call(&rt,0xa000)==0);
     CHECK(call(&rt,0xa001)==0);
     put(&rt,22,2,0xfffe); CHECK(call(&rt,0xa000)==-35);
