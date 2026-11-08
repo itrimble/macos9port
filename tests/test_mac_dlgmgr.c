@@ -252,14 +252,14 @@ static void hidden_moved_and_items(void) {
     CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc);
     wr(&g.rt, SP, 4, d); CHECK(trap(&g, 0xa873, SP) == 1);
     {static const struct { unsigned op, args; } sw[] = { {0xa8b0,8},{0xa8b1,8},{0xa8b2,8},{0xa8b3,8},{0xa8a1,4},{0xa8a2,4},{0xa8a3,4},{0xa8a4,4},{0xa8a5,8},{0xa8b7,4},{0xa8b8,4},{0xa8b9,4},{0xa8ba,4},
-        {0xa884,4},{0xa883,2},{0xa89b,4},{0xa89c,2},{0xa89d,4},{0xa89e,0},{0xa893,4},{0xa894,4},{0xa891,4},{0xa892,4},{0xa862,4},{0xa863,4},{0xa87c,4},{0xa864,2},{0xa896,0},{0xa897,0},{0xa887,2},{0xa888,2},{0xa889,2},{0xa88a,2} };
+        {0xa884,4},{0xa883,2},{0xa8f6,8},{0xa89b,4},{0xa89c,2},{0xa89d,4},{0xa89e,0},{0xa893,4},{0xa894,4},{0xa891,4},{0xa892,4},{0xa862,4},{0xa863,4},{0xa87c,4},{0xa864,2},{0xa896,0},{0xa897,0},{0xa887,2},{0xa888,2},{0xa889,2},{0xa88a,2} };
      for (unsigned i = 0; i < sizeof sw / sizeof *sw; i++) { mac_cpu_set(g.rt.cpu, MAC_A7, SP); CHECK(mac_dlgmgr_service(&g.rt, (uint16_t)sw[i].op) == 1 && mac_cpu_get(g.rt.cpu, MAC_A7) == SP + sw[i].args); }}
     CHECK(trap(&g, 0xa8a9, SP) == 0);                                                                                 /* InsetRect is not drawing: not ours */
     wr(&g.rt, SP, 4, 0x31500); CHECK(trap(&g, 0xa873, SP) == 0);                                                      /* another SetPort ends it */
     mac_cpu_set(g.rt.cpu, MAC_A7, SP); CHECK(mac_dlgmgr_service(&g.rt, 0xa8b0) == 0);
     mac_runtime_destroy(&g.rt);
-    for (unsigned k = 0; k < 9; k++) {
-        static const unsigned unsup[] = { 0xa8f6, 0xa8ec, 0xa8ef, 0xa885, 0xa8c6, 0xa8d2, 0xa8be, 0xa8bb, 0xa8b4 };
+    for (unsigned k = 0; k < 8; k++) {
+        static const unsigned unsup[] = { 0xa8ec, 0xa8ef, 0xa885, 0xa8c6, 0xa8d2, 0xa8be, 0xa8bb, 0xa8b4 };
         CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); wr(&g.rt, SP, 4, d); trap(&g, 0xa873, SP);
         mac_cpu_set(g.rt.cpu, MAC_A7, SP); CHECK(mac_dlgmgr_service(&g.rt, (uint16_t)unsup[k]) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
     }

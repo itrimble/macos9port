@@ -345,3 +345,11 @@ the probe, not a window I watched, and I have not listened to any audio.
   directory-ID table, parID handling in create/open/GetCatInfo/enumeration); that is the next real piece of work for this app. Halts of
   unhandled A-line traps now print D0, so a dispatching trap's selector shows in the message (`make test` 0; Monkey Island and Monkey
   Island 2 identical to baseline; `test_mac_cpu` clean under ASan).
+
+- **Room Editor 1.06: DrawPicture into a dialog.** The editor's password alert is followed by a dialog whose code draws PICT 300 with `DrawPicture`
+  ($A8F6) while the dialog is the current port. Dialogs here have no drawable port (they are painted from their DITLs), so `DrawPicture` is
+  now accepted and ignored with the other decoration calls: **the picture is not shown**. That is a stated approximation, not support; a real
+  dialog port is still to do. `test_mac_dlgmgr` pins the new behaviour (clean under ASan; `make test` 0; Monkey Island and Monkey Island 2
+  identical). Headless frame at 60 s: the editor's "New Room" window with the Wicked Witch alert. The next halt is **ModalDialog filter
+  procedures are unsupported**: running a guest filter procedure from inside ModalDialog (there is a guest-call helper, `mac_guestcall.c`)
+  is the next piece.

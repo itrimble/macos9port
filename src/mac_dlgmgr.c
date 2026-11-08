@@ -302,7 +302,7 @@ static int dialog_select(MacRuntime *rt, uint32_t sp, uint32_t pc) {
 }
 
 /* While a dialog is the current port, drawing the application does into it is not shown: our dialogs are drawn from their DITLs, and
- * nothing here gives a dialog a port to draw in. The small set of QuickDraw calls that only decorate (outlining the default button with
+ * nothing here gives a dialog a port to draw in. The small set of QuickDraw calls that only decorate (and DrawPicture, which is not shown; outlining the default button with
  * FrameRoundRect, a frame, an erase, a string) and the pen and text state calls that go with them are accepted and ignored, so they do
  * not land on the application's own window port; every other drawing call halts by name. */
 static int swallowed_args(uint16_t op) {
@@ -317,6 +317,7 @@ static int swallowed_args(uint16_t op) {
     case 0xa8a5: return 8;                                                                                  /* FillRect */
     case 0xa8b0: case 0xa8b1: case 0xa8b2: case 0xa8b3: return 8;                                           /* Frame/Paint/Erase/Invert RoundRect */
     case 0xa883: return 2;                                                                                  /* DrawChar */
+    case 0xa8f6: return 8;                                                                                  /* DrawPicture: NOT shown (a picture is content, not decoration; accepted so the program can run on) */
     default: return -1;
     }
 }
