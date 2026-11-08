@@ -246,3 +246,16 @@ build/test_quake_surface: tests/test_quake_surface.c src/quake_session.c src/nat
 test-quake-surface: build/test_quake_surface
 	./build/test_quake_surface
 test: test-quake-surface
+
+build/fixture_cdev.so: tests/fixture_cdev_plugin.c include/os999_cdev.h include/control_panel_store.h include/draw.h include/ospi.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -shared -fPIC tests/fixture_cdev_plugin.c -o $@
+
+build/test_controlpanels: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_controlpanels.c $(HDRS) include/os999_startup.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_controlpanels.c $(FT_LIBS) -lm $(NET_LIBS)
+
+.PHONY: test-controlpanels
+test-controlpanels: build/test_controlpanels build/fixture_cdev.so
+	./build/test_controlpanels build/fixture_cdev.so assets/icons/ospi-icons.icl8
+test: test-controlpanels

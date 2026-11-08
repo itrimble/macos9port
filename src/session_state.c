@@ -6,6 +6,7 @@
 #include "app_switcher.h"
 #include "desktop_theme.h"
 #include "appearance_panel.h"
+#include "control_panels.h"
 #include "desktop_context.h"
 #include "ospi.h"
 #include "desktop_wallpaper.h"
@@ -104,6 +105,7 @@ Session *session_create(const char *root) {
     if (finder_desktop_init(s)) fprintf(stderr, "OS999: Desktop folder unavailable.\n");
     if (finder_state_load(s) <= 0) open_folder(s, "");
     if (app_switcher_load(s) < 0) fprintf(stderr, "OS999: Application Switcher settings could not be read.\n");
+    control_panels_session_init(s);
     s->sound_event[0] = 0;
     return s;
 }
@@ -122,6 +124,7 @@ void session_destroy(Session *s) {
     if (s && finder_state_save(s)) fprintf(stderr, "OS999: Finder window settings could not be saved.\n");
     if (s && app_switcher_save(s)) fprintf(stderr, "OS999: Application Switcher settings could not be saved.\n");
     context_close(); appearance_panel_close();
+    control_panels_session_shutdown(s);
     if (g_media_hooks && g_media_hooks->quit) g_media_hooks->quit(s);
     else if (g_media_hooks && g_media_hooks->close) g_media_hooks->close();
     desktop_theme_shutdown(); desktop_wallpaper_shutdown(); if (s) { free(s->expanded_undo); free(s->clipboard_large_in); free(s->clipboard_large_out); } free(s);

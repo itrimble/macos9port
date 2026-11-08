@@ -14,6 +14,7 @@
 #include "desktop_help.h"
 #include "desktop_theme.h"
 #include "appearance_panel.h"
+#include "control_panels.h"
 #include "desktop_context.h"
 #include "desktop_wallpaper.h"
 #include "ospi.h"
@@ -269,7 +270,12 @@ void session_command(Session *s, int cmd) {
     case CMD_CONTROL_PANELS:
         context_close();
         finder_apps_command(s, CMD_APP_FINDER);
-        appearance_panel_open_controls(s); break;
+        control_panels_open(s); break;
+    case CMD_CP_GENERAL:
+    case CMD_CP_SOUND:
+        context_close();
+        finder_apps_command(s, CMD_APP_FINDER);
+        control_panels_open_module(s, cmd == CMD_CP_GENERAL ? "general" : "sound"); break;
     case CMD_APPEARANCE_DESKTOP:
     case CMD_APPEARANCE_THEMES:
         context_close();

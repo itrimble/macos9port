@@ -13,6 +13,7 @@
 #include "folder_view.h"
 #include "folder_navigation.h"
 #include "appearance_panel.h"
+#include "control_panels.h"
 #include "desktop_context.h"
 #include "movie_window.h"
 #include "finder_edit.h"
@@ -25,6 +26,7 @@
 
 void session_wheel(Session *s, int dy) {
     s->click_valid = 0;
+    if (control_panels_wheel(s, dy)) return;
     if (session_overlay_active(s) || s->desktop_focus || s->nwin <= 0) {
         return;
     }
@@ -255,6 +257,7 @@ void session_move(Session *s, int x, int y) {
     if (s->menu >= 0) {
         menu_hover(s, x, y);
     }
+    if (s->menu < 0 && control_panels_move(s, x, y)) return;
     if (s->menu < 0 && session_media_hooks() && session_media_hooks()->move &&
         session_media_hooks()->move(s, x, y)) return;
     if (!s->down || s->dialog) {
@@ -302,6 +305,7 @@ void session_up(Session *s, int x, int y) {
     if (finder_settings_move(s, x, y)) { s->down = s->drag = 0; return; }
     s->switcher.tear_armed = 0;
     if (app_switcher_up(s, x, y)) return;
+    if (control_panels_up(s, x, y)) return;
     if (session_media_hooks() && session_media_hooks()->up &&
         session_media_hooks()->up(s, x, y)) return;
     if (s->dialog) {

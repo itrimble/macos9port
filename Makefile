@@ -5,7 +5,7 @@ QUAKE_BUILD ?= $(QUAKE_SRC)/build/darwin
 CC ?= cc
 # Prefer the maintained, separately installed curl on macOS; never replace /usr/bin/curl.
 CURL_PKG_PATH := $(firstword $(wildcard /opt/homebrew/opt/curl/lib/pkgconfig /usr/local/opt/curl/lib/pkgconfig))
-NET_LIBS := $(shell PKG_CONFIG_PATH=$(CURL_PKG_PATH):$(PKG_CONFIG_PATH) pkg-config --libs libcurl) -pthread
+NET_LIBS := $(shell PKG_CONFIG_PATH=$(CURL_PKG_PATH):$(PKG_CONFIG_PATH) pkg-config --libs libcurl) -pthread $(if $(filter Darwin,$(shell uname -s)),,-ldl)
 CURL_CFLAGS := $(shell PKG_CONFIG_PATH=$(CURL_PKG_PATH):$(PKG_CONFIG_PATH) pkg-config --cflags libcurl)
 
 CFLAGS ?= -std=c11 -Wall -Wextra -O2 -Iinclude -Iassets/icons/c -D_DEFAULT_SOURCE
@@ -32,7 +32,7 @@ AUDIO_SRC := src/audio_decoder.c src/audio_dsp.c src/audio_midi.c src/audio_outp
 AUDIO_HDRS := include/volume_directory.h include/audio_decoder.h include/audio_dsp.h include/audio_midi.h include/audio_output.h include/audio_service.h
 
 include config/core-sources.mk
-HDRS := include/quake_launch.h include/term_font.h include/tailnet.h include/finder_edit.h include/app_switcher.h include/desktop_gesture.h include/finder_apps.h include/finder_print.h include/finder_recent.h include/finder_batch.h include/finder_drag.h include/finder_selection.h include/finder_popup.h include/finder_state.h include/finder_settings.h include/finder_search.h include/finder_files.h include/desktop_finder.h include/modern_network.h include/folder_navigation.h include/desktop_commands.h include/desktop_help.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h include/term.h include/mac_movie.h include/movie_window.h
+HDRS := include/control_panel_store.h include/os999_cdev.h include/control_panels.h src/cdev_ui.h src/control_panels_int.h include/quake_launch.h include/term_font.h include/tailnet.h include/finder_edit.h include/app_switcher.h include/desktop_gesture.h include/finder_apps.h include/finder_print.h include/finder_recent.h include/finder_batch.h include/finder_drag.h include/finder_selection.h include/finder_popup.h include/finder_state.h include/finder_settings.h include/finder_search.h include/finder_files.h include/desktop_finder.h include/modern_network.h include/folder_navigation.h include/desktop_commands.h include/desktop_help.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h include/term.h include/mac_movie.h include/movie_window.h
 
 PRINT_HOST := src/desktop_print_stub.c
 SHORTCUT_HOST := src/desktop_shortcuts_stub.c
@@ -80,7 +80,7 @@ build/test_movie_window: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_mov
 
 build/test_archive_install: tests/install_network_stub.c $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_archive_install.c $(HDRS) include/os999_startup.h
 	mkdir -p build
-	$(CC) $(CFLAGS) -o $@ $(filter-out src/modern_network.c,$(CORE) $(STORAGE_LINK)) $(STORAGE_LINK) tests/install_network_stub.c src/os999_startup.c tests/test_archive_install.c $(FT_LIBS) -lm
+	$(CC) $(CFLAGS) -o $@ $(filter-out src/modern_network.c,$(CORE) $(STORAGE_LINK)) $(STORAGE_LINK) tests/install_network_stub.c src/os999_startup.c tests/test_archive_install.c $(FT_LIBS) -pthread $(if $(filter Darwin,$(shell uname -s)),,-ldl) -lm
 
 # Independent classic runtime. Musashi supplies only CPU instruction execution.
 # Its pinned source and generated tables remain in ignored build/deps/.

@@ -11,6 +11,11 @@ static Session *owner;
 static int mode, tab, page, theme_page, panel_focus;
 static int context_kind;
 static Rect context_box;
+static const AppearancePanelDelegate *g_delegate;
+
+void appearance_panel_set_delegate(const AppearancePanelDelegate *delegate) {
+    g_delegate = delegate;
+}
 
 static uint32_t selection_color(void) {
     return desktop_theme_current() ? desktop_theme_color(THEME_ACCENT) : 0xFF344768u;
@@ -57,6 +62,10 @@ static Rect panel_rect(const Session *s) {
 
 static Rect close_rect(Rect r) { return (Rect){r.x + 8, r.y + 5, 12, 12}; }
 int appearance_panel_regions(const Session *s, Rect out[2]) {
+    if (g_delegate && g_delegate->regions) {
+        int delegated = g_delegate->regions(s, out);
+        if (delegated > 0) return delegated;
+    }
     if (owner != s || mode == PANEL_CLOSED || s->finder_hidden) return 0;
     out[0] = panel_rect(s);
     out[0].w += 3; out[0].h += 3;
@@ -73,23 +82,41 @@ static Rect list_rect(Rect r) { return (Rect){r.x + 18, r.y + 96, r.w - 36, 233}
 static Rect previous_rect(Rect r) { return (Rect){r.x + 18, r.y + 345, 105, 27}; }
 static Rect next_rect(Rect r) { return (Rect){r.x + r.w - 123, r.y + 345, 105, 27}; }
 
-void appearance_panel_close(void) {
+void appearance_panel_close_local(void) {
     if (owner) owner->down = owner->drag = 0;
     owner = NULL;
     mode = PANEL_CLOSED;
     tab = page = theme_page = context_kind = panel_focus = 0;
 }
 
-void appearance_panel_deactivate(void) { context_kind = 0; }
-void appearance_panel_blur(void) { panel_focus = context_kind = 0; }
-int appearance_panel_active(void) {
+void appearance_panel_close(void) {
+    appearance_panel_close_local();
+    if (g_delegate && g_delegate->close) g_delegate->close();
+}
+
+void appearance_panel_deactivate(void) {
+    context_kind = 0;
+    if (g_delegate && g_delegate->deactivate) g_delegate->deactivate();
+}
+void appearance_panel_blur(void) {
+    panel_focus = context_kind = 0;
+    if (g_delegate && g_delegate->blur) g_delegate->blur();
+}
+static int local_active(void) {
     return mode != PANEL_CLOSED && panel_focus && owner && !owner->media_focused &&
            !owner->browser_focused && !owner->guest_focused && !owner->finder_hidden;
 }
-int appearance_panel_can_open(void) { return mode == PANEL_CONTROLS && appearance_panel_active(); }
+int appearance_panel_active(void) {
+    return (g_delegate && g_delegate->active && g_delegate->active()) || local_active();
+}
+int appearance_panel_can_open(void) {
+    if (g_delegate && g_delegate->can_open && g_delegate->can_open()) return 1;
+    return mode == PANEL_CONTROLS && local_active();
+}
 
 void appearance_panel_open_controls(Session *s) {
     if (!s) return;
+    if (g_delegate && g_delegate->close) g_delegate->close();
     owner = s;
     panel_focus = 1; context_kind = 0;
     s->down = s->drag = 0;
@@ -99,6 +126,7 @@ void appearance_panel_open_controls(Session *s) {
 
 void appearance_panel_open(Session *s, int selected_tab) {
     if (!s) return;
+    if (g_delegate && g_delegate->close) g_delegate->close();
     owner = s;
     panel_focus = 1; context_kind = 0;
     s->down = s->drag = 0;
@@ -215,7 +243,8 @@ static void context_draw(Session *s, Fb *fb) {
 }
 
 int appearance_panel_context(Session *s, int x, int y) {
-    if (!s || owner != s || !appearance_panel_active()) return 0;
+    if (g_delegate && g_delegate->context && g_delegate->context(s, x, y)) return 1;
+    if (!s || owner != s || !local_active()) return 0;
     s->down = s->drag = 0;
     s->menu = s->menu_hot = -1;
     context_kind = 0;
@@ -233,6 +262,7 @@ int appearance_panel_context(Session *s, int x, int y) {
 }
 
 void appearance_panel_draw(Session *s, Fb *fb) {
+    if (g_delegate && g_delegate->draw) g_delegate->draw(s, fb);
     if (!s || owner != s || mode == PANEL_CLOSED || s->finder_hidden || !fb) return;
     Rect r = panel_rect(s);
     frame(fb, r, mode == PANEL_CONTROLS ? "Control Panels" : "Appearance");
@@ -261,10 +291,13 @@ void appearance_panel_draw(Session *s, Fb *fb) {
 }
 
 int appearance_panel_down(Session *s, int x, int y) {
+    if (g_delegate && g_delegate->down &&
+        g_delegate->down(s, x, y, (s && s->press_clicks > 0) ? s->press_clicks : 1))
+        return 1;
     if (!s || owner != s || mode == PANEL_CLOSED || s->finder_hidden) return 0;
     Rect r = panel_rect(s);
     if (!context_kind && (y < TITLE_H || !rect_has(r, x, y) || finder_apps_occluded(s, 1, x, y))) return 0;
-    if (!appearance_panel_active()) {
+    if (!local_active()) {
         if (s->media_focused || s->browser_focused || s->guest_focused) session_command(s, CMD_APP_FINDER);
         panel_focus = 1;
     }
@@ -313,7 +346,8 @@ int appearance_panel_down(Session *s, int x, int y) {
 }
 
 int appearance_panel_key(Session *s, int key, int mods) {
-    if (!s || owner != s || !appearance_panel_active()) return 0;
+    if (g_delegate && g_delegate->key && g_delegate->key(s, key, mods)) return 1;
+    if (!s || owner != s || !local_active()) return 0;
     if ((mods & MOD_CMD) && (key == 'o' || key == 'O') && mode == PANEL_CONTROLS) return 0;
     if ((mods & MOD_CMD) && (key == 'q' || key == 'Q' || key == 't' || key == 'T')) return 0;
     if (context_kind && key == 27) { context_kind = 0; return 1; }
