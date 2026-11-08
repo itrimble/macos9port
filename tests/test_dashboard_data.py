@@ -66,5 +66,23 @@ class EvidenceTests(unittest.TestCase):
             (state / 'queue/promoted.json').write_text(json.dumps({'number': 9, 'status': 'merged'}))
             self.assertEqual(collect(root, state)['builds'], [{'number': 9, 'status': 'merged'}])
 
+    def test_recorded_failure_keeps_specific_explanation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'docs').mkdir()
+            (root / 'docs/DEVELOPMENT-CHECKLIST.md').write_text('- [ ] V01 Open\n')
+            state = root / 'state'
+            run = state / 'runs/build11'
+            run.mkdir(parents=True)
+            record = {'kind': 'manual_snapshot_validation', 'number': 11,
+                      'status': 'failed', 'run': str(run), 'error': 'Missing quota helper'}
+            (run / 'build-state.json').write_text(json.dumps(record))
+            (run / 'progress.json').write_text(json.dumps({
+                'status': 'failed', 'steps': [], 'reason': 'Gate exited with status 2'}))
+            self.assertEqual(collect(root, state)['builds'][0]['error'], 'Missing quota helper')
+            record['status'] = 'running'
+            (run / 'build-state.json').write_text(json.dumps(record))
+            self.assertEqual(collect(root, state)['builds'][0]['error'], 'Gate exited with status 2')
+
 if __name__ == '__main__':
     unittest.main()

@@ -121,9 +121,10 @@ def collect(repo, state):
                 item['run_id'] = run.name
                 item['progress'] = progress_for(run, item.get('source_tree'))
                 if (item['progress'] or {}).get('status') == 'failed' and item.get('status') != 'merged':
+                    recorded_error = item.get('error') if item.get('status') == 'failed' else None
                     item['recorded_status'] = item.get('status')
                     item['status'] = 'failed'
-                    item['error'] = item['progress'].get('reason', 'Build stage failed')
+                    item['error'] = recorded_error or item['progress'].get('reason', 'Build stage failed')
             except (ValueError, OSError, KeyError, TypeError) as error:
                 item['progress_error'] = str(error)
         if item.get('status') == 'failed':
