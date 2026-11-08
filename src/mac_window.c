@@ -77,7 +77,7 @@ static void restore_background(MacRuntime *rt) {
 static void visibility(MacRuntime *rt,int show,int notify) {
     MacWindowState *w=&rt->window;
     if(w->visible==show)return;
-    if(!show)restore_background(rt);
+    if(!show){if(mac_window_front(rt)==w->address)restore_background(rt);}   /* a window under the front one changes no pixel (see mac_window_stack.c) */
     else memcpy(mac_cpu_ram(rt->cpu)+w->backdrop,mac_cpu_ram(rt->cpu)+rt->screen_base,307200);
     w->visible=show;wr(rt,w->address+110,1,(unsigned)show);
     int t=w->bounds[0],l=w->bounds[1],b=w->bounds[2],r=w->bounds[3];
@@ -93,7 +93,7 @@ static int create_window(MacRuntime *rt,uint32_t sp) {
     int proc=(int16_t)rd(rt,sp+10,2),visible=!!rd(rt,sp+12,1),close=!!rd(rt,sp+4,1);
     if(!mac_window_registry_valid(rt))return fail(rt,"Window list registry is invalid.");
     if(rt->window_count>=8)return fail(rt,"Owned window registry capacity is exhausted.");
-    if(visible && mac_window_front(rt))return fail(rt,"Multiple visible windows require unsupported clipping and compositing.");
+    if(visible && mac_window_front(rt) && behind!=UINT32_MAX)return fail(rt,"A visible window created behind another visible window needs compositing.");
     if(visible && rt->event_count>=64)return fail(rt,"NewCWindow cannot publish its activation event because the queue is full.");
     if((proc!=12 && proc!=4 && proc!=2 && proc!=1) || (behind!=0 && behind!=UINT32_MAX))return fail(rt,"Only standard zoomNoGrow, noGrowDocProc, plainDBox and dBoxProc windows with native chrome are supported; custom WDEFs are unsupported.");
     if(!valid(rt,bounds,8,1) || !valid(rt,text,1,0) || !valid(rt,text,(size_t)rd(rt,text,1)+1,0) ||
@@ -192,7 +192,8 @@ static int close_window(MacRuntime *rt,uint32_t sp,int dispose_storage) {
     if(dispose_storage && !w->owns_storage)return fail(rt,"DisposeWindow cannot release caller-owned window storage; use CloseWindow.");
     if(w->updating)return fail(rt,"CloseWindow cannot interrupt an unmatched BeginUpdate.");
     int was_current=rt->current_port==w->address;
-    if(w->visible)restore_background(rt);
+    if(w->visible && !mac_window_stack_ok(rt,w->address,0))return fail(rt,"Closing a visible window that is not frontmost needs compositing.");
+    if(w->visible && mac_window_front(rt)==w->address)restore_background(rt);
     if(mac_color_port_service(rt,0xaa02)!=1)return -1;
     for(unsigned i=8;i<13;i++) {
         MacHandle *m=record(rt,w->handles[i],1);wr(rt,m->handle,4,0);memset(m,0,sizeof(*m));
@@ -467,16 +468,14 @@ int mac_window_service(MacRuntime *rt,uint16_t opcode) {
         if(w->updating)return fail(rt,"Window visibility cannot change inside BeginUpdate.");
         int show=opcode==0xa915;
         if(show && mac_palette_check(rt,w))return -1; /* a palette we cannot realize refuses before the window shows */
-        uint32_t front=mac_window_front(rt);
-        if(show && front && front!=w->address)return fail(rt,"Showing a second visible window requires unsupported compositing.");
+        if(w->visible!=show && !mac_window_stack_ok(rt,w->address,show))return fail(rt,"Windows can only be shown or hidden in stacking order (frontmost first); anything else needs compositing.");
         if(w->active!=show && rt->event_count>=64)return fail(rt,"Window activation event queue is full.");
         visibility(rt,show,1);if(show && w->palette_handle && mac_palette_activate(rt,w))return -1;
     } else if(opcode==0xa908) { /* ShowHide(window, showFlag): visibility only; the window is neither activated nor reordered */
         if(w->updating)return fail(rt,"Window visibility cannot change inside BeginUpdate.");
         int show=rd(rt,sp,1)!=0;
         if(show && mac_palette_check(rt,w))return -1;
-        uint32_t front=mac_window_front(rt);
-        if(show && front && front!=w->address)return fail(rt,"Showing a second visible window requires unsupported compositing.");
+        if(w->visible!=show && !mac_window_stack_ok(rt,w->address,show))return fail(rt,"Windows can only be shown or hidden in stacking order (frontmost first); anything else needs compositing.");
         visibility(rt,show,0);
     } else if(opcode==0xa91f || opcode==0xa920) {
         if(opcode==0xa920 && !w->visible)mac_window_to_front(rt,w->address);

@@ -384,3 +384,17 @@ the probe, not a window I watched, and I have not listened to any audio.
   clipping, update regions through the existing PaintBehind/CalcVisBehind pieces) is the shared blocker for both; that is the next piece to
   scope. Glider 4.10 again: a headless run with mouse sweeps and the keys A, S, Z, X, comma, period, space and the up/down arrows (held one
   at a time, released) changed frames but I could not tie any of it to glider motion, so its controls are still unidentified.
+
+- **Stacked visible windows (`src/mac_window_stack.c`).** Design: visible windows share the one screen; each keeps the screen snapshot taken when it
+  was shown (its backdrop), so they behave like a stack. A window may be **shown** (or created visible in front) only when it is first in the
+  WindowList; it may be **hidden or closed** while it is the frontmost visible window (its backdrop is restored, as before), or while it sits
+  wholly under the frontmost window's frame, in which case no pixel changes and its backdrop (what lay behind it) is copied into the front
+  window's backdrop over its frame so that hiding the front window later reveals the right thing. Anything else (showing a window that is not
+  frontmost, creating one behind a visible window, hiding or closing a window that sticks out from under the front one) still halts with a
+  message: that needs real clipping and compositing. This is my design, not a copy of the Window Manager's. The two old halts that said "second
+  visible window" are gone. Tests: `test_mac_window` and `test_mac_multi_window` now check the screen byte for byte after each step (hide covered,
+  hide front, close covered; 12 mutants over the guards, the cover test, the backdrop patch and the restore conditions all killed), ASan clean,
+  `make test` 0, Monkey Island and Monkey Island 2 identical, Castle baseline refreshed (instruction count 416905336, noise as before).
+  Headless: **Castle's Hide Desktop** now runs: the menu bar and desktop go black and the game window sits centred (320x200-ish) on black, no
+  halt in 120 s. I did not script the reverse (Show Desktop) and a windowed run is untested. Room Editor still stops at its custom WDEF tools
+  window; clipping between windows that overlap partly is still unimplemented.

@@ -48,11 +48,40 @@ static void show_hide_checks(void) {
     CHECK(show_hide(&rt,STORAGE,1)==1 && call(&rt,0xa922,STORAGE)==1);
     CHECK(show_hide(&rt,STORAGE,0)==-1 && mac_cpu_halted(rt.cpu));
     mac_cpu_destroy(rt.cpu);
-    /* A second window cannot be shown over a visible one (no compositing yet). */
+    /* A second window may be shown over a visible one when it is frontmost in the WindowList; the screen is restored in stacking order. */
     rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);
-    new_args(&rt,STORAGE+0x400,0);CHECK(mac_window_service(&rt,0xaa45)==1);
-    CHECK(show_hide(&rt,STORAGE+0x400,1)==-1 && mac_cpu_halted(rt.cpu));
+    {const uint8_t *scr=mac_cpu_ram(rt.cpu)+rt.screen_base;static uint8_t before[307200];memcpy(before,scr,307200);
+     new_args(&rt,STORAGE+0x400,0);CHECK(mac_window_service(&rt,0xaa45)==1);
+     CHECK(show_hide(&rt,STORAGE+0x400,1)==1 && mac_window_front(&rt)==STORAGE+0x400 && rd(&rt,STORAGE+110,1)==1 && rd(&rt,STORAGE+0x400+110,1)==1);   /* both visible */
+     static uint8_t covered[307200];memcpy(covered,scr,307200);
+     CHECK(memcmp(covered,before,307200)!=0);                                                                                                            /* the new window drew over the screen */
+     /* hiding the covered window (same frame as the front one: nothing on screen changes) is allowed, and hiding the front one afterwards shows what was behind both */
+     CHECK(show_hide(&rt,STORAGE,0)==1 && memcmp(scr,covered,307200)==0 && mac_window_front(&rt)==STORAGE+0x400 && rd(&rt,STORAGE+110,1)==0);
+     {static uint8_t blank[307200];memset(blank,77,sizeof blank);CHECK(show_hide(&rt,STORAGE+0x400,0)==1 && memcmp(scr,blank,307200)==0 && mac_window_front(&rt)==0);}}
     mac_cpu_destroy(rt.cpu);
+    /* a covered window that sticks out from under the front one cannot be hidden without compositing */
+    rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);
+    new_args(&rt,STORAGE+0x400,1);wr(&rt,0x4100,2,100);wr(&rt,0x4102,2,100);wr(&rt,0x4104,2,200);wr(&rt,0x4106,2,300);CHECK(mac_window_service(&rt,0xaa45)==1);
+    CHECK(show_hide(&rt,STORAGE,0)==-1 && mac_cpu_halted(rt.cpu));mac_cpu_destroy(rt.cpu);
+    /* the same rule for closing: a window wholly under the front one may be closed, leaving the screen alone */
+    rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);
+    {const uint8_t *scr=mac_cpu_ram(rt.cpu)+rt.screen_base;static uint8_t before[307200];memcpy(before,scr,307200);
+     new_args(&rt,STORAGE+0x400,1);CHECK(mac_window_service(&rt,0xaa45)==1);static uint8_t covered[307200];memcpy(covered,scr,307200);
+     mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,4,STORAGE);CHECK(mac_window_service(&rt,0xa92d)==1 && memcmp(scr,covered,307200)==0 && mac_window_front(&rt)==STORAGE+0x400);
+     {static uint8_t blank[307200];memset(blank,77,sizeof blank);CHECK(show_hide(&rt,STORAGE+0x400,0)==1 && memcmp(scr,blank,307200)==0);}}
+    mac_cpu_destroy(rt.cpu);
+    rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);
+    {const uint8_t *scr=mac_cpu_ram(rt.cpu)+rt.screen_base;static uint8_t before[307200];memcpy(before,scr,307200);
+     new_args(&rt,STORAGE+0x400,1);CHECK(mac_window_service(&rt,0xaa45)==1 && mac_window_front(&rt)==STORAGE+0x400);                                      /* created visible in front */
+     CHECK(show_hide(&rt,STORAGE+0x400,0)==1 && mac_window_front(&rt)==STORAGE && memcmp(scr,before,307200)==0);}                                       /* hiding the front one restores the screen exactly */
+    mac_cpu_destroy(rt.cpu);
+    /* A window that is not first in the WindowList cannot be shown over a visible one; neither can one created behind it; nor can a covered one be closed. */
+    rt=fresh();new_args(&rt,STORAGE,0);CHECK(mac_window_service(&rt,0xaa45)==1);new_args(&rt,STORAGE+0x400,1);CHECK(mac_window_service(&rt,0xaa45)==1);
+    CHECK(show_hide(&rt,STORAGE,1)==-1 && mac_cpu_halted(rt.cpu));mac_cpu_destroy(rt.cpu);
+    rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);new_args(&rt,STORAGE+0x400,1);wr(&rt,SP+6,4,0);
+    CHECK(mac_window_service(&rt,0xaa45)==-1 && mac_cpu_halted(rt.cpu));mac_cpu_destroy(rt.cpu);
+    rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);new_args(&rt,STORAGE+0x400,1);wr(&rt,0x4100,2,100);wr(&rt,0x4102,2,100);wr(&rt,0x4104,2,200);wr(&rt,0x4106,2,300);CHECK(mac_window_service(&rt,0xaa45)==1);
+    {mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,4,STORAGE);CHECK(mac_window_service(&rt,0xa92d)==-1 && mac_cpu_halted(rt.cpu));}mac_cpu_destroy(rt.cpu);
     /* An unknown window halts before anything changes. */
     rt=fresh();new_args(&rt,STORAGE,0);CHECK(mac_window_service(&rt,0xaa45)==1);
     CHECK(show_hide(&rt,STORAGE+0x400,0)==-1 && mac_cpu_halted(rt.cpu));
@@ -132,8 +161,8 @@ static void failures(void) {
     rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);
     CHECK(call(&rt,0xa914,STORAGE)==-1 && rt.window.address==STORAGE);mac_cpu_destroy(rt.cpu);
     rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);
-    uint32_t heap=rt.heap_next;new_args(&rt,STORAGE+512,1);
-    CHECK(mac_window_service(&rt,0xaa45)==-1 && rt.heap_next==heap && rt.window.address==STORAGE);
+    new_args(&rt,STORAGE+512,1);                                                  /* a second visible window in front is now allowed (stacking order) */
+    CHECK(mac_window_service(&rt,0xaa45)==1 && mac_window_front(&rt)==STORAGE+512);
     mac_cpu_destroy(rt.cpu);
 }
 /* CalcVisBehind(startWindow, clobberedRgn) recomputes the one window's visRgn like CalcVis; a NIL start does nothing; the region is only popped. */

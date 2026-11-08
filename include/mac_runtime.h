@@ -272,6 +272,9 @@ int mac_regions_service(MacRuntime *rt, uint16_t opcode);
 int mac_window_resource_service(MacRuntime *rt, uint16_t opcode);
 MacWindowState *mac_window_find(MacRuntime *rt, uint32_t address);
 uint32_t mac_window_front(MacRuntime *rt);
+/* Visible windows stack like saved backdrops: a window may be shown only when it is first in the WindowList (it covers what is visible and its
+ * backdrop restores it), and hidden or closed only while it is the frontmost visible window. 1 if the change keeps that order. */
+int mac_window_stack_ok(MacRuntime *rt, uint32_t address, int show);
 int mac_window_service(MacRuntime *rt, uint16_t opcode);
 int mac_window_update_event(MacRuntime *rt, uint16_t mask, MacEvent *out);
 

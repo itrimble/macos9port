@@ -48,8 +48,8 @@ static void registry(void) {
 static void overlap(void){
  MacRuntime r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
  new_args(&r,STORAGE+0x100,0);CHECK(mac_window_service(&r,0xaa45)==1);
- uint32_t heap=r.heap_next;CHECK(call(&r,0xa915,STORAGE+0x100)==-1);
- CHECK(r.window_count==2 && r.heap_next==heap && !r.window.visible);mac_cpu_destroy(r.cpu);
+ CHECK(call(&r,0xa915,STORAGE+0x100)==1 && mac_window_front(&r)==STORAGE+0x100);   /* frontmost in the list: allowed, covering the first */
+ CHECK(r.window_count==2 && r.window.visible && mac_window_find(&r,STORAGE)->visible);mac_cpu_destroy(r.cpu);
 }
 static void hidden_capacity(void){
  MacRuntime r=fresh();for(unsigned i=0;i<8;i++){new_args(&r,STORAGE+i*256,0);wr(&r,SP+10,2,2);CHECK(mac_window_service(&r,0xaa45)==1);}
