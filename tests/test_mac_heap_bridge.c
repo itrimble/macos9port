@@ -55,6 +55,28 @@ static void handle_lifecycle(void) {
     mac_runtime_destroy(&rt);
 }
 
+static const MacHandle *record(MacRuntime *rt, uint32_t h) {
+    for (size_t i = 0; i < rt->handle_count; i++) if (rt->handles[i].handle == h) return &rt->handles[i];
+    return NULL;
+}
+
+static void legacy_managers_can_see_handles(void) {
+    MacRuntime rt; CHECK(setup(&rt));
+    uint32_t a = new_handle(&rt, 100, 1), b = new_handle(&rt, 100, 2), x = new_handle(&rt, 100, 3);
+    const MacHandle *m = record(&rt, a);
+    CHECK(m && m->pointer == mac_cpu_read(rt.cpu, a, 4) && m->size == 100 && !m->resource && !m->type && !m->loaded_code);
+    CHECK(call(&rt, 0xa024, a, 24) == 1 && err(&rt) == 0);               /* resize */
+    m = record(&rt, a); CHECK(m && m->size == 24 && m->pointer == mac_cpu_read(rt.cpu, a, 4));
+    CHECK(call(&rt, 0xa029, b, 0) == 1);                                 /* lock */
+    m = record(&rt, b); CHECK(m && (m->state & 0x80));
+    CHECK(call(&rt, 0xa023, x, 0) == 1 && err(&rt) == 0);                /* dispose clears the record */
+    CHECK(record(&rt, x) == NULL);
+    CHECK(call(&rt, 0xa04c, 0, 0) == 1);                                 /* compaction moves a... */
+    m = record(&rt, a); CHECK(m && m->pointer == mac_cpu_read(rt.cpu, a, 4));   /* ...record follows */
+    m = record(&rt, b); CHECK(m && m->pointer == mac_cpu_read(rt.cpu, b, 4));
+    mac_runtime_destroy(&rt);
+}
+
 static void pointers_and_protection(void) {
     MacRuntime rt; CHECK(setup(&rt));
     uint32_t h = new_handle(&rt, 16, 1);                  /* first master == start of a master page */
@@ -66,7 +88,14 @@ static void pointers_and_protection(void) {
     CHECK(call(&rt, 0xa01f, h, 0) == 1 && err(&rt) == -109);           /* page base is not a pointer */
     CHECK(call(&rt, 0xa01f, mac_cpu_read(rt.cpu, h, 4), 0) == 1 && err(&rt) == -109); /* data of a handle */
     CHECK(intact(&rt, h, 16, 1));                                       /* handle survived */
+    {   /* legacy managers see pointers as {handle 0, pointer, size} */
+        size_t found = 0;
+        for (size_t i = 0; i < rt.handle_count; i++)
+            if (!rt.handles[i].handle && rt.handles[i].pointer == p) { found++; CHECK(rt.handles[i].size == 40); }
+        CHECK(found == 1);
+    }
     CHECK(call(&rt, 0xa01f, p, 0) == 1 && err(&rt) == 0);
+    for (size_t i = 0; i < rt.handle_count; i++) CHECK(!(rt.handles[i].pointer == p));   /* record cleared */
     CHECK(call(&rt, 0xa01f, p, 0) == 1 && err(&rt) == -109);
     CHECK(call(&rt, 0xa11e, 0, 0x7fffffff) == 1 && err(&rt) == -108 && a0(&rt) == 0);
     CHECK(!mac_cpu_halted(rt.cpu));
@@ -81,7 +110,7 @@ static void dynamic_and_reclaiming(void) {
         hs[i] = new_handle(&rt, 16, (uint8_t)i);
         if (!hs[i]) { CHECK(hs[i] != 0); break; }
     }
-    CHECK(rt.handle_count == 0);                          /* legacy table untouched */
+    CHECK(rt.handle_count <= MAC_RUNTIME_HANDLES);        /* mirror table is capped; the heap is not */
     for (int i = 0; i < N; i++) CHECK(intact(&rt, hs[i], 16, (uint8_t)i));
     for (int i = 0; i < N; i += 2) CHECK(call(&rt, 0xa023, hs[i], 0) == 1 && err(&rt) == 0);
     for (int i = 1; i < N; i += 2) CHECK(intact(&rt, hs[i], 16, (uint8_t)i));
@@ -172,6 +201,40 @@ static void guest_cannot_corrupt_bookkeeping(void) {
     mac_runtime_destroy(&rt);
 }
 
+static void runtime_owned_data(void) {
+    MacRuntime rt; CHECK(setup(&rt));
+    uint32_t p = mac_runtime_alloc_data(&rt, 300);
+    CHECK(mac_heap_owns(&rt, p));
+    mac_cpu_ram(rt.cpu)[p] = 0x5a;
+    CHECK(call(&rt, 0xa021, p, 0) == 1 && err(&rt) == -109);          /* guest can't size it */
+    CHECK(call(&rt, 0xa01f, p, 0) == 1 && err(&rt) == -109);          /* ...or free it */
+    CHECK(mac_cpu_ram(rt.cpu)[p] == 0x5a);
+    {   /* a legacy resource-style record whose body lives in the heap: MoveHHi is accepted as a no-op */
+        rt.heap_next = 0x1000; rt.heap_limit = 0x8000;                  /* bump area holds masters, as in a real runtime */
+        uint32_t master = mac_runtime_alloc(&rt, 4);
+        CHECK(master == 0x1000 && !mac_heap_owns(&rt, master));
+        mac_cpu_write(rt.cpu, master, 4, p);
+        rt.handles[0] = (MacHandle){.handle = master, .pointer = p, .size = 300, .type = 0x54455354, .resource = 1};
+        rt.handle_count = 1;
+        CHECK(call(&rt, 0xa064, master, 0) == 1 && err(&rt) == 0 && !mac_cpu_halted(rt.cpu));
+        CHECK(mac_cpu_read(rt.cpu, master, 4) == p);
+        memset(&rt.handles[0], 0, sizeof rt.handles[0]); rt.handle_count = 0;
+    }
+    mac_runtime_free_data(&rt, p);
+    CHECK(mac_cpu_ram(rt.cpu)[p] == 0);                                 /* freed storage is wiped */
+    mac_runtime_free_data(&rt, p);                                      /* double free is harmless */
+    mac_runtime_free_data(&rt, 0x1234);                                 /* foreign address ignored */
+    mac_runtime_destroy(&rt);
+
+    MacRuntime bare = {0};                                              /* no heap: falls back to bump */
+    bare.cpu = mac_cpu_create(65536); bare.heap_next = 0x1000; bare.heap_limit = 0x8000;
+    uint32_t q = mac_runtime_alloc_data(&bare, 64);
+    CHECK(q == 0x1000 && bare.heap_next == 0x1040);
+    mac_runtime_free_data(&bare, q);                                    /* no-op: bump never reclaims */
+    CHECK(bare.heap_next == 0x1040);
+    mac_runtime_destroy(&bare);
+}
+
 static void legacy_untouched(void) {
     MacRuntime rt = {0};
     rt.cpu = mac_cpu_create(65536);
@@ -184,9 +247,9 @@ static void legacy_untouched(void) {
 }
 
 int main(void) {
-    handle_lifecycle(); pointers_and_protection(); dynamic_and_reclaiming();
+    handle_lifecycle(); legacy_managers_can_see_handles(); pointers_and_protection(); dynamic_and_reclaiming();
     compaction_updates_masters(); resize_and_state(); memory_reports();
-    guest_cannot_corrupt_bookkeeping(); legacy_untouched();
+    guest_cannot_corrupt_bookkeeping(); runtime_owned_data(); legacy_untouched();
     if (fails) { fprintf(stderr, "%d failure(s)\n", fails); return 1; }
     puts("heap bridge: all checks passed");
     return 0;

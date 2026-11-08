@@ -116,8 +116,10 @@ static int open_resource(MacRuntime *rt,uint32_t pointer,int16_t *ref) {
         if((r.attributes&4)&&!mac_runtime_resource_owned(rt,r.type,r.id,opened.ref)){error=-108;break;}
     }
     if(error) {
-        for(size_t i=0;i<rt->handle_count;i++)if(rt->handles[i].resource_owner==opened.ref)
+        for(size_t i=0;i<rt->handle_count;i++)if(rt->handles[i].resource_owner==opened.ref) {
+            mac_runtime_free_data(rt,rt->handles[i].pointer);
             memset(&rt->handles[i],0,sizeof rt->handles[i]);
+        }
         rt->heap_next=heap;rt->handle_count=handles;
         free(opened.bytes);memset(&c->files[slot],0,sizeof c->files[slot]);return error;
     }
@@ -139,7 +141,7 @@ static int close_resource(MacRuntime *rt,int16_t ref) {
     }
     for(size_t i=0;i<rt->handle_count;i++) {
         MacHandle *h=&rt->handles[i];
-        if(h->resource&&h->resource_owner==ref){mac_cpu_write(rt->cpu,h->handle,4,0);memset(h,0,sizeof *h);}
+        if(h->resource&&h->resource_owner==ref){mac_cpu_write(rt->cpu,h->handle,4,0);mac_runtime_free_data(rt,h->pointer);memset(h,0,sizeof *h);}
     }
     free(file->bytes);memset(file,0,sizeof *file);
     if(c->current==ref) {

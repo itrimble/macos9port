@@ -144,6 +144,23 @@ static void boundaries(void) {
     os999_space_destroy(s);
 }
 
+static void internal_blocks(void) {
+    Os999Space *s = make(PG, PG, 16 * PG, 0);
+    Os999Heap *h = os999_space_heap(s);
+    uint32_t in = 0, g = 0, sz, hd;
+    CHECK(os999_new_internal(h, 100, &in) == OS999_OK && os999_new_ptr(h, 100, &g) == OS999_OK);
+    CHECK(os999_ptr_size(h, in, &sz) == OS999_ERR_NILHANDLE);        /* guest calls cannot see it */
+    CHECK(os999_dispose_ptr(h, in) == OS999_ERR_NILHANDLE);
+    CHECK(os999_dispose_internal(h, g) == OS999_ERR_NILHANDLE);      /* and runtime calls cannot free guest blocks */
+    CHECK(os999_new_handle(h, 8, &hd) == OS999_OK);
+    CHECK(os999_dispose_internal(h, hd) == OS999_ERR_NILHANDLE);
+    CHECK(os999_dispose_internal(h, in + 8) == OS999_ERR_NILHANDLE);
+    CHECK(os999_dispose_internal(h, in) == OS999_OK);
+    CHECK(os999_dispose_internal(h, in) == OS999_ERR_NILHANDLE);
+    CHECK(os999_ptr_size(h, g, &sz) == OS999_OK && sz == 100 && os999_heap_check(h));
+    os999_space_destroy(s);
+}
+
 static void handles(void) {
     Os999Space *s = make(PG, PG, 16 * PG, 0);
     Os999Heap *h = os999_space_heap(s);
@@ -390,7 +407,7 @@ static void stress(void) {
 
 int main(void) {
     size_t spaces0 = os999_live_spaces(), bytes0 = os999_reserved_bytes();
-    basics(); limits(); auto_grow(); boundaries(); handles(); resize_and_lock();
+    basics(); limits(); auto_grow(); boundaries(); internal_blocks(); handles(); resize_and_lock();
     defragmentation(); external_memory(); fault_containment(); hardware_fault(); stress();
     CHECK(os999_live_spaces() == spaces0 && os999_reserved_bytes() == bytes0);
     if (fails) { fprintf(stderr, "%d failure(s)\n", fails); return 1; }

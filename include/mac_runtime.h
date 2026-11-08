@@ -100,7 +100,16 @@ void mac_memory_result(MacCpu *cpu, int16_t err);
 int mac_heap_attach(MacRuntime *rt, uint32_t lo, uint32_t hi);
 void mac_heap_detach(MacRuntime *rt);
 int mac_heap_owns(const MacRuntime *rt, uint32_t address);
+/* Runtime-owned, zeroed, non-relocatable storage in the protected heap (0 on failure);
+ * guests cannot dispose or size it. mac_heap_free ignores addresses it does not own. */
+uint32_t mac_heap_alloc(MacRuntime *rt, uint32_t size);
+void mac_heap_free(MacRuntime *rt, uint32_t address);
+/* Bulk data (resource bodies): protected heap when attached, else the bump allocator. */
+uint32_t mac_runtime_alloc_data(MacRuntime *rt, uint32_t size);
+void mac_runtime_free_data(MacRuntime *rt, uint32_t address);
 int mac_heap_service(MacRuntime *rt, uint16_t opcode);
+/* One-line usage summary for diagnostics (bump area and protected heap). */
+void mac_heap_report(const MacRuntime *rt, char *out, size_t n);
 int mac_resource_service(MacRuntime *rt, uint16_t opcode);
 int mac_runtime_load_segment(MacRuntime *rt, int16_t id);
 void mac_traps_init(MacRuntime *rt);

@@ -140,7 +140,24 @@ static void high_heap(void) {
     mac_runtime_destroy(&rt);
 }
 
+static void master_and_grow_zone(void) {
+    MacRuntime rt = {0}; rt.cpu = mac_cpu_create(65536);
+    CHECK(rt.cpu != NULL); if (!rt.cpu) return;
+    rt.heap_next = 0x1000; rt.heap_limit = 0x8000;
+    uint32_t next = rt.heap_next;
+    mac_cpu_write(rt.cpu, 0x220, 2, 0xff94);
+    CHECK(call(&rt, 0xa036, 0, 0) == 1);                       /* MoreMasters */
+    error_is(&rt, 0);
+    CHECK(rt.heap_next == next && !mac_cpu_halted(rt.cpu));     /* reserves nothing */
+    CHECK(call(&rt, 0xa04b, 0x4242, 0) == 1);                  /* SetGrowZone */
+    error_is(&rt, 0);
+    CHECK(mac_cpu_read(rt.cpu, 0x1f4, 4) == 0x4242);
+    CHECK(call(&rt, 0xa04b, 0, 0) == 1 && mac_cpu_read(rt.cpu, 0x1f4, 4) == 0);  /* NIL clears it */
+    mac_runtime_destroy(&rt);
+}
+
 int main(void) {
+    master_and_grow_zone();
     bounded_reclamation();
     high_heap();
     MacRuntime rt = {0};

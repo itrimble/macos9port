@@ -151,6 +151,11 @@ int main(int argc, char **argv) {
     printf("instructions=%llu cycles=%llu traps=%llu pc=%08x last_trap=%04x last_trap_pc=%08x\n",
            (unsigned long long)rt.instructions, (unsigned long long)mac_cpu_cycles(rt.cpu),
            (unsigned long long)rt.traps, mac_cpu_get(rt.cpu, MAC_PC), rt.last_trap, rt.last_trap_pc);
+    if (getenv("OSPI_HEAP_STATS")) {
+        char line[320];
+        mac_heap_report(&rt, line, sizeof line);
+        fprintf(stderr, "%s\n", line);
+    }
     if (trace) {
         for (int r = MAC_D0; r <= MAC_A7; r++)
             fprintf(stderr, "%c%d=%08x%c", r < MAC_A0 ? 'd' : 'a', r % 8,

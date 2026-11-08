@@ -1,6 +1,7 @@
 #include "mac_runtime.h"
 #include "os999_heap.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -17,6 +18,7 @@ typedef struct {
     uint32_t base;
     uint32_t token[SLOTS]; /* 0 = free slot */
     uint8_t state[SLOTS];  /* HGetState byte; 0x80 mirrors the heap lock */
+    uint16_t mirror[SLOTS]; /* 1 + index of the rt->handles[] record shadowing this handle; 0 = none */
 } Page;
 
 struct MacHeapBridge {
@@ -32,10 +34,63 @@ struct MacHeapBridge {
     size_t nfree, fcap;
 };
 
+static Page *find_slot(const MacHeapBridge *b, uint32_t master, unsigned *slot);
+
+/* Other managers (menus, resources, windows...) validate guest handles by looking
+ * them up in rt->handles[]. Each heap handle is therefore shadowed by a record
+ * there, kept in step on move, resize, lock and dispose. When the table is full the
+ * handle still works for the traps served here but is invisible to those managers. */
+static MacHandle *shadow(MacHeapBridge *b, const Page *p, unsigned slot) {
+    return p->mirror[slot] ? &b->rt->handles[p->mirror[slot] - 1] : NULL;
+}
+
+static void shadow_create(MacHeapBridge *b, Page *p, unsigned slot, uint32_t master) {
+    MacRuntime *rt = b->rt;
+    size_t i;
+    for (i = 0; i < rt->handle_count; i++) if (!rt->handles[i].handle && !rt->handles[i].pointer) break;
+    if (i == rt->handle_count) { if (i == MAC_RUNTIME_HANDLES) return; rt->handle_count++; }
+    rt->handles[i] = (MacHandle){.handle = master};
+    p->mirror[slot] = (uint16_t)(i + 1);
+}
+
+static void shadow_sync(MacHeapBridge *b, const Page *p, unsigned slot) {
+    MacHandle *m = shadow(b, p, slot);
+    uint32_t addr, size;
+    if (!m || os999_deref(b->heap, p->token[slot], &addr) || os999_handle_size(b->heap, p->token[slot], &size)) return;
+    m->pointer = addr; m->size = size; m->state = p->state[slot];
+}
+
+static void shadow_drop(MacHeapBridge *b, Page *p, unsigned slot) {
+    MacHandle *m = shadow(b, p, slot);
+    if (m) memset(m, 0, sizeof *m);
+    p->mirror[slot] = 0;
+}
+
+/* Pointers are shadowed the same way ({handle 0, pointer, size}); they never move. */
+static void ptr_shadow_create(MacHeapBridge *b, uint32_t address, uint32_t size) {
+    MacRuntime *rt = b->rt;
+    size_t i;
+    for (i = 0; i < rt->handle_count; i++) if (!rt->handles[i].handle && !rt->handles[i].pointer) break;
+    if (i == rt->handle_count) { if (i == MAC_RUNTIME_HANDLES) return; rt->handle_count++; }
+    rt->handles[i] = (MacHandle){.pointer = address, .size = size};
+}
+
+static void ptr_shadow_drop(MacHeapBridge *b, uint32_t address) {
+    MacRuntime *rt = b->rt;
+    for (size_t i = 0; i < rt->handle_count; i++)
+        if (!rt->handles[i].handle && rt->handles[i].pointer == address) { memset(&rt->handles[i], 0, sizeof rt->handles[i]); return; }
+}
+
 static void move_cb(void *user, uint32_t token, uint32_t address) {
     MacHeapBridge *b = user;
     size_t idx = (token & 0xfffffu) - 1;
-    if (idx < b->mcap && b->master_of[idx]) mac_cpu_write(b->rt->cpu, b->master_of[idx], 4, address);
+    if (idx >= b->mcap || !b->master_of[idx]) return;
+    uint32_t master = b->master_of[idx];
+    mac_cpu_write(b->rt->cpu, master, 4, address);
+    unsigned slot;
+    Page *p = find_slot(b, master, &slot);
+    MacHandle *m = p ? shadow(b, p, slot) : NULL;
+    if (m) m->pointer = address;
 }
 
 int mac_heap_attach(MacRuntime *rt, uint32_t lo, uint32_t hi) {
@@ -64,6 +119,26 @@ void mac_heap_detach(MacRuntime *rt) {
     rt->heap_bridge = NULL;
 }
 
+uint32_t mac_heap_alloc(MacRuntime *rt, uint32_t size) {
+    uint32_t address;
+    if (!rt || !rt->heap_bridge || os999_new_internal(rt->heap_bridge->heap, size, &address)) return 0;
+    return address;
+}
+
+void mac_heap_free(MacRuntime *rt, uint32_t address) {
+    if (rt && rt->heap_bridge && address) os999_dispose_internal(rt->heap_bridge->heap, address);
+}
+
+void mac_heap_report(const MacRuntime *rt, char *out, size_t n) {
+    const MacHeapBridge *b = rt ? rt->heap_bridge : NULL;
+    Os999Stats st;
+    if (!b) { snprintf(out, n, "heap: legacy bump only, bump_used=%u", rt ? rt->heap_next - 0x100000u : 0u); return; }
+    os999_heap_stats(b->heap, &st);
+    snprintf(out, n, "heap: bump_used=%u of %u; protected used=%zu committed=%zu of %zu, blocks=%zu, compactions=%zu, grows=%zu, shadow_records=%zu",
+             rt->heap_next - 0x100000u, rt->heap_limit - 0x100000u, st.used, st.committed, st.max_bytes,
+             st.live_blocks, st.compactions, st.grows, rt->handle_count);
+}
+
 int mac_heap_owns(const MacRuntime *rt, uint32_t address) {
     return rt && rt->heap_bridge && address >= rt->heap_bridge->lo && address < rt->heap_bridge->hi;
 }
@@ -78,11 +153,6 @@ static int grow_array(void **arr, size_t *cap, size_t need, size_t elem) {
     return 1;
 }
 
-static int is_page_base(const MacHeapBridge *b, uint32_t a) {
-    for (size_t i = 0; i < b->npages; i++) if (b->pages[i]->base == a) return 1;
-    return 0;
-}
-
 static Page *find_slot(const MacHeapBridge *b, uint32_t master, unsigned *slot) {
     if (master & 3) return NULL;
     for (size_t i = 0; i < b->npages; i++) {
@@ -95,11 +165,11 @@ static Page *find_slot(const MacHeapBridge *b, uint32_t master, unsigned *slot) 
 static int take_slot(MacHeapBridge *b, uint32_t *master) {
     if (!b->nfree) {
         uint32_t base;
-        if (os999_new_ptr(b->heap, PAGE_BYTES, &base) != OS999_OK) return 0;
+        if (os999_new_internal(b->heap, PAGE_BYTES, &base) != OS999_OK) return 0;
         Page *p = calloc(1, sizeof *p);
         if (!p || !grow_array((void **)&b->pages, &b->cap, b->npages + 1, sizeof *b->pages) ||
             !grow_array((void **)&b->freestack, &b->fcap, (b->npages + 1) * SLOTS, sizeof *b->freestack)) { /* room for every slot: pushes can't fail */
-            free(p); os999_dispose_ptr(b->heap, base); return 0;
+            free(p); os999_dispose_internal(b->heap, base); return 0;
         }
         p->base = base;
         b->pages[b->npages++] = p;
@@ -137,6 +207,7 @@ int mac_heap_service(MacRuntime *rt, uint16_t opcode) {
         rc = os999_new_ptr(b->heap, d0, &addr);
         mac_cpu_set(cpu, MAC_A0, rc ? 0 : addr);
         if (rc) return fail_code(rt, rc);
+        ptr_shadow_create(b, addr, d0);
         result(rt, 0); return 1;
     case 0x22: { /* NewHandle */
         uint32_t master, token;
@@ -152,14 +223,16 @@ int mac_heap_service(MacRuntime *rt, uint16_t opcode) {
         p->token[slot] = token; p->state[slot] = 0; b->master_of[idx] = master;
         os999_deref(b->heap, token, &addr);
         mac_cpu_write(cpu, master, 4, addr);
+        shadow_create(b, p, slot, master);
+        shadow_sync(b, p, slot);
         mac_cpu_set(cpu, MAC_A0, master);
         result(rt, 0); return 1;
     }
     case 0x1f: case 0x21: /* DisposePtr / GetPtrSize */
         if (!mac_heap_owns(rt, a0)) return 0;
-        if (is_page_base(b, a0)) { result(rt, -109); return 1; } /* master pages are not guest pointers */
         rc = call == 0x1f ? os999_dispose_ptr(b->heap, a0) : os999_ptr_size(b->heap, a0, &v);
         if (rc) return fail_code(rt, rc);
+        if (call == 0x1f) ptr_shadow_drop(b, a0);
         result(rt, 0);
         if (call == 0x21) mac_cpu_set(cpu, MAC_D0, v);
         return 1;
@@ -174,6 +247,7 @@ int mac_heap_service(MacRuntime *rt, uint16_t opcode) {
             rc = os999_dispose_handle(b->heap, token);
             if (rc) return fail_code(rt, rc);
             b->master_of[(token & 0xfffffu) - 1] = 0;
+            shadow_drop(b, p, slot);
             p->token[slot] = 0; *st8 = 0;
             b->freestack[b->nfree++] = a0;
             mac_cpu_write(cpu, a0, 4, 0);
@@ -185,6 +259,7 @@ int mac_heap_service(MacRuntime *rt, uint16_t opcode) {
         } else if (call == 0x24) {
             rc = os999_set_handle_size(b->heap, token, d0); /* master is fixed up by move_cb */
             if (rc) return fail_code(rt, rc);
+            shadow_sync(b, p, slot);
             result(rt, 0);
         } else if (call == 0x64) {
             result(rt, 0); /* MoveHHi is a hint: this heap compacts on its own */
@@ -197,6 +272,7 @@ int mac_heap_service(MacRuntime *rt, uint16_t opcode) {
             if (call == 0x6a) ns = (uint8_t)d0;
             if (ns & 0x80) os999_lock(b->heap, token); else os999_unlock(b->heap, token);
             *st8 = ns;
+            shadow_sync(b, p, slot);
             result(rt, 0);
             if (call == 0x69) mac_cpu_set(cpu, MAC_D0, ns);
         }

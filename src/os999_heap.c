@@ -14,7 +14,7 @@
 typedef struct {
     uint32_t off, size, alen; /* offset in arena, requested size, aligned length */
     uint16_t gen;
-    uint8_t used, locked, fixed;
+    uint8_t used, locked, fixed, internal; /* internal: runtime-owned, not guest-disposable */
 } Entry;
 
 struct Os999Heap {
@@ -207,7 +207,7 @@ static int aligned_len(const Os999Heap *h, uint32_t size, uint32_t *alen) {
     return OS999_OK;
 }
 
-static int new_block(Os999Heap *h, uint32_t size, int fixed, uint32_t *idx_out) {
+static int new_block(Os999Heap *h, uint32_t size, int kind, uint32_t *idx_out) { /* 0 handle, 1 ptr, 2 internal ptr */
     if (!h || !h->base) return OS999_ERR_DEAD;
     uint32_t alen, off; size_t pos;
     int rc = aligned_len(h, size, &alen);
@@ -236,7 +236,8 @@ static int new_block(Os999Heap *h, uint32_t size, int fixed, uint32_t *idx_out) 
     if (rc) { h->e[idx].used = 0; h->freelist[h->nfree++] = idx; return rc; }
     zero(h, off, (size_t)off + alen); /* never trust free space: a guest may write through stale pointers */
     Entry *e = &h->e[idx];
-    *e = (Entry){.off = off, .size = size, .alen = alen, .gen = e->gen, .used = 1, .fixed = (uint8_t)fixed};
+    *e = (Entry){.off = off, .size = size, .alen = alen, .gen = e->gen, .used = 1,
+                 .fixed = kind > 0, .internal = kind == 2};
     memmove(&h->order[pos + 1], &h->order[pos], (h->nlive - pos) * sizeof *h->order);
     h->order[pos] = idx;
     h->nlive++;
@@ -352,6 +353,14 @@ int os999_new_ptr(Os999Heap *h, uint32_t size, uint32_t *address) {
     return OS999_OK;
 }
 
+int os999_new_internal(Os999Heap *h, uint32_t size, uint32_t *address) {
+    uint32_t idx;
+    int rc = new_block(h, size, 2, &idx);
+    if (rc) { if (address) *address = 0; return rc; }
+    *address = h->guest_base + h->e[idx].off;
+    return OS999_OK;
+}
+
 int os999_dispose_ptr(Os999Heap *h, uint32_t address) {
     if (!h || !h->base) return OS999_ERR_DEAD;
     if (address < h->guest_base) return OS999_ERR_NILHANDLE;
@@ -359,7 +368,19 @@ int os999_dispose_ptr(Os999Heap *h, uint32_t address) {
     size_t pos = lower_bound(h, off);
     if (pos >= h->nlive) return OS999_ERR_NILHANDLE;
     Entry *e = &h->e[h->order[pos]];
-    if (e->off != off || !e->fixed) return OS999_ERR_NILHANDLE;
+    if (e->off != off || !e->fixed || e->internal) return OS999_ERR_NILHANDLE;
+    free_block(h, h->order[pos]);
+    return OS999_OK;
+}
+
+int os999_dispose_internal(Os999Heap *h, uint32_t address) {
+    if (!h || !h->base) return OS999_ERR_DEAD;
+    if (address < h->guest_base) return OS999_ERR_NILHANDLE;
+    uint32_t off = address - h->guest_base;
+    size_t pos = lower_bound(h, off);
+    if (pos >= h->nlive) return OS999_ERR_NILHANDLE;
+    Entry *e = &h->e[h->order[pos]];
+    if (e->off != off || !e->fixed || !e->internal) return OS999_ERR_NILHANDLE;
     free_block(h, h->order[pos]);
     return OS999_OK;
 }
@@ -370,7 +391,7 @@ int os999_ptr_size(const Os999Heap *h, uint32_t address, uint32_t *size) {
     size_t pos = lower_bound(h, address - h->guest_base);
     if (pos >= h->nlive) return OS999_ERR_NILHANDLE;
     const Entry *e = &h->e[h->order[pos]];
-    if (e->off != address - h->guest_base || !e->fixed) return OS999_ERR_NILHANDLE;
+    if (e->off != address - h->guest_base || !e->fixed || e->internal) return OS999_ERR_NILHANDLE;
     *size = e->size;
     return OS999_OK;
 }

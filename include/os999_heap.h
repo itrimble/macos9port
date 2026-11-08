@@ -82,6 +82,9 @@ int os999_unlock(Os999Heap *h, uint32_t handle);
 int os999_new_ptr(Os999Heap *h, uint32_t size, uint32_t *address);
 int os999_dispose_ptr(Os999Heap *h, uint32_t address);
 int os999_ptr_size(const Os999Heap *h, uint32_t address, uint32_t *size);
+/* Runtime-owned fixed blocks: invisible to the guest-facing dispose/size calls above. */
+int os999_new_internal(Os999Heap *h, uint32_t size, uint32_t *address);
+int os999_dispose_internal(Os999Heap *h, uint32_t address);
 
 /* Defragmentation: slide unlocked blocks down, at most ~budget bytes moved per
  * call (at least one block when work exists). Returns bytes moved; 0 = done. */

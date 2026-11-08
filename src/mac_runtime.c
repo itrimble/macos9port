@@ -37,6 +37,14 @@ uint32_t mac_runtime_alloc(MacRuntime *rt, uint32_t size) {
     return result;
 }
 
+uint32_t mac_runtime_alloc_data(MacRuntime *rt, uint32_t size) {
+    return rt->heap_bridge ? mac_heap_alloc(rt, size) : mac_runtime_alloc(rt, size);
+}
+
+void mac_runtime_free_data(MacRuntime *rt, uint32_t address) {
+    if (mac_heap_owns(rt, address)) mac_heap_free(rt, address); /* bump storage is never reclaimed */
+}
+
 uint32_t mac_runtime_resource(MacRuntime *rt, uint32_t type, int16_t id) {
     return mac_runtime_resource_owned(rt, type, id, 0);
 }
@@ -54,8 +62,8 @@ uint32_t mac_runtime_resource_owned(MacRuntime *rt, uint32_t type, int16_t id, i
     while (slot < rt->handle_count && (rt->handles[slot].handle || rt->handles[slot].pointer)) slot++;
     if (slot == MAC_RUNTIME_HANDLES) return 0;
     uint32_t old_heap = rt->heap_next;
-    uint32_t h = mac_runtime_alloc(rt, 4), p = mac_runtime_alloc(rt, (uint32_t)r.size);
-    if (!h || !p) { rt->heap_next = old_heap; return 0; }
+    uint32_t h = mac_runtime_alloc(rt, 4), p = mac_runtime_alloc_data(rt, (uint32_t)r.size);
+    if (!h || !p) { rt->heap_next = old_heap; mac_runtime_free_data(rt, p); return 0; }
     memcpy(mac_cpu_ram(rt->cpu) + p, r.data, r.size);
     mac_cpu_write(rt->cpu, h, 4, p);
     if (slot == rt->handle_count) rt->handle_count++;

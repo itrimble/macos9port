@@ -47,7 +47,7 @@ static int load(MacRuntime *rt, MacHandle *h, const MacResource *r) {
         return -1;
     }
     if (mac_cpu_read(rt->cpu, h->handle, 4) == 0) {
-        uint32_t pointer = mac_runtime_alloc(rt, (uint32_t)r->size);
+        uint32_t pointer = mac_runtime_alloc_data(rt, (uint32_t)r->size);
         if (!pointer) return MEM_FULL;
         memcpy(mac_cpu_ram(rt->cpu) + pointer, r->data, r->size);
         h->pointer = pointer;
@@ -167,6 +167,7 @@ int mac_resource_service(MacRuntime *rt, uint16_t opcode) {
     if (!(r.attributes & 2) && !h->resource_changed) {
         if (!valid(rt->cpu, h->handle, 4, 1)) return -1;
         mac_cpu_write(rt->cpu, h->handle, 4, 0);
+        mac_runtime_free_data(rt, h->pointer); /* heap storage is reclaimed (and zeroed); bump storage is not */
         h->resource = 0;
         h->pointer = h->size = 0;
     }

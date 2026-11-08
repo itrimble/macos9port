@@ -49,6 +49,7 @@ static int move_high(MacRuntime *rt, uint32_t address) {
     MacHandle *h = lookup(rt, address, 1);
     if (!h || !h->pointer) { result(cpu, -109); return 1; }
     if (h->loaded_code || (h->state & 0x80)) { result(cpu, -117); return 1; }
+    if (mac_heap_owns(rt, h->pointer)) { result(cpu, 0); return 1; } /* heap storage is already out of the low heap's way */
     if (h->size > UINT32_MAX - 3) { result(cpu, -108); return 1; }
     uint32_t amount = (h->size + 3) & ~UINT32_C(3);
     if (!amount) amount = 4;
@@ -103,6 +104,16 @@ int mac_memory_service(MacRuntime *rt, uint16_t opcode) {
         return 1;
     }
     if (call == 0x64) return move_high(rt, a0);
+    if (call == 0x36) { /* MoreMasters: master pointers are provisioned on demand, so there is nothing to reserve. */
+        result(cpu, 0);
+        return 1;
+    }
+    if (call == 0x4b) { /* SetGrowZone: record GZProc (low-memory GZProc, $1F4). It is not called yet: a failed
+                         * allocation reports memFullErr directly instead of asking the application to free memory. */
+        mac_cpu_write(cpu, 0x1f4, 4, a0);
+        result(cpu, 0);
+        return 1;
+    }
     if (call == 0x55) { /* StripAddress in our initial 24-bit guest mode. */
         mac_cpu_set(cpu, MAC_A0, a0 & 0xffffffu);
         return 1;
@@ -138,7 +149,7 @@ int mac_memory_service(MacRuntime *rt, uint16_t opcode) {
         if (!h) result(cpu, -109);
         else if (h->loaded_code) result(cpu, -117);
         else {
-            if (h->handle) mac_cpu_write(cpu, h->handle, 4, 0);
+            if (h->handle) { mac_cpu_write(cpu, h->handle, 4, 0); mac_runtime_free_data(rt, h->pointer); }
             memset(h, 0, sizeof *h);
             result(cpu, 0);
         }

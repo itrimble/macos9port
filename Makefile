@@ -170,6 +170,11 @@ build/softfloat.o: $(MUSASHI)/m68kops.c Makefile
 build/ospi-runtime: $(RUNTIME_OBJ) src/runtime_main.c src/runtime_video.c src/runtime_audio.c src/runtime_perf.c src/runtime_keys.c src/runtime_bridge.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(SDL_CFLAGS) $(RUNTIME_OBJ) src/runtime_main.c src/runtime_video.c src/runtime_audio.c src/runtime_perf.c src/runtime_keys.c src/runtime_bridge.c $(CPUOBJ) $(SDL_LIBS) -pthread -lm -o $@
 
+# Headless probe with the protected heap and its bridge built under ASan/UBSan, for running real guest apps.
+# (SDL is not linked: the SDL runtime deadlocks during Cocoa start-up under ASan on this host.)
+build/ospi-runtime-probe-asan: $(RUNTIME_OBJ) src/os999_heap.c src/mac_heap_bridge.c src/runtime_probe.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) -Isrc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined $(filter-out build/runtime/os999_heap.o build/runtime/mac_heap_bridge.o,$(RUNTIME_OBJ)) src/os999_heap.c src/mac_heap_bridge.c src/runtime_probe.c $(CPUOBJ) -lm -o $@
+
 # Headless deterministic probe: scripted input, fixed 60 Hz clock, production
 # sound poll/render chain to WAV, periodic PPM frames. No SDL.
 build/ospi-runtime-probe: $(RUNTIME_OBJ) src/runtime_probe.c $(RUNTIME_HDRS) $(CPUOBJ)
