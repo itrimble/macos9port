@@ -1,6 +1,31 @@
 # OS999 master tracker
 
-## Current checkpoint — 7 November 2026
+## Current integration status
+
+Build 8 remains the last promoted baseline. Later runs are separate candidates;
+none of the following changes imply promotion, GUI acceptance or listening tests.
+
+| Candidate | Recorded outcome | Remaining work |
+| --- | --- | --- |
+| Build 9 | Complete gate and relocated packaged Quake frame/input probe passed | Local main promotion remains pending |
+| Build 10 | All 15 gate stages passed; later review found movie/audio teardown use-after-free | Diagnostic artifact only; correction carried into the next candidate |
+| Build 11 | Desktop test gate failed because the direct Finder test omitted quota-helper link dependencies | No package assembled; dependency correction carried into R2 |
+| R2 candidate | Sound defaults, native applications/quit/recent tracking and Notes/docs combined focused checks pass | Fonts/About handoff, final combined suite and a new numbered package gate pending |
+
+R2 interface effects default off, startup chime off and system gain 20 percent;
+explicit saved preferences survive. Effect toggles no longer mute music/movie
+output. Its separate full desktop/movie suite and mobile 592 checks plus host
+simulator build passed. Combined native-app and Notes regression checks pass,
+including 51 document checks and core/movie-window tests. The Notes producer's
+mobile routing suite passed 596 checks. These are source/headless results.
+
+The next build number must be allocated under the integration state lock.
+Preserve Build 11's failed receipt and Build 10's needs-repair history. Current
+receipts live under `~/Library/Application Support/OS999/Integration/runs/`.
+Main promotion, actual font/About interaction, listening, sustained gameplay,
+Bluetooth hardware and native mobile-device acceptance remain separate gates.
+
+## Last promoted checkpoint — Build 8 (historical)
 
 Build 8 passed the complete gate and its source was fast-forwarded into local
 main as `f19ead673186885108b2717d20b79e28ded77151`. The tested tree is
@@ -24,8 +49,9 @@ native iOS/Android execution remain unresolved.
 
 Dashboard and watcher now run from main under their existing launchd services.
 Dashboard tests (5), watcher tests (10), HTTP assets and foreign-Host rejection
-pass. The watcher is configured and idle for explicit ready commits; its next
-number is 9. Failed Build 7 remains recorded. Original main edits are retained
+pass. At that checkpoint the watcher was idle for explicit ready commits and
+its next number was 9. Later reservations are described above. Failed Build 7
+remains recorded. Original main edits are retained
 in stash `3e965471d1e0890b8874585528194ccabcebb3cd` and the verified backup
 `../macos9port-backups/main-promotion-20261107-173017`; 82 colliding source files
 were preserved there before promotion. Local evidence and nested worktrees

@@ -17,6 +17,7 @@ if actual_links != record['links']:
     raise SystemExit('Private SDL2 installation symlinks changed')
 clients = ['build/ospi', 'build/ospi-runtime', 'build/test_desktop_sound',
            'build/test_audio_engine', 'build/test_runtime_audio', 'build/test_quicktime', 'build/test_quicktime_lifecycle',
+           'build/test_native_host',
            'keyboard/build/test_kbd_sdl', 'build/mobile-gate/os999-mobile-sim',
            str(Path(os.environ['OS999_QUAKE_BUILD']) / 'quake3')]
 links = {}
