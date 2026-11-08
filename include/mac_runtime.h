@@ -81,6 +81,8 @@ typedef struct {
     uint32_t vbl_tasks[32], vbl_last_tick, vbl_due[32];
     unsigned vbl_count, vbl_due_count, vbl_due_cursor;
     int vbl_active;
+    uint32_t hier_menus[32]; /* submenus registered with InsertMenu(menu, -1); never drawn in the bar */
+    unsigned hier_count;
     struct MacResEdits *res_edits; /* resource edits layered over the fork (host memory) */
     MacHeapBridge *heap_bridge; /* protected heap over [lo,hi) of guest RAM; NULL = legacy bump only */
     MacHandle handles[MAC_RUNTIME_HANDLES];
