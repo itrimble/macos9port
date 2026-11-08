@@ -1,5 +1,7 @@
 #include "desktop_commands.h"
 #include "session_int.h"
+#include "volume_directory.h"
+#include <dirent.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -98,6 +100,42 @@ static int metadata(const char *root, const char *relative, struct stat *st) {
     return result;
 }
 
+/* Sizes read like the Finder: "12.3 KB (12,345 bytes)". */
+static void format_size(unsigned long long n, char *out, size_t cap) {
+    char grouped[48]; char digits[32]; snprintf(digits, sizeof digits, "%llu", n);
+    size_t len = strlen(digits), j = 0;
+    for (size_t i = 0; i < len && j + 2 < sizeof grouped; i++) {
+        if (i && (len - i) % 3 == 0) grouped[j++] = ',';
+        grouped[j++] = digits[i];
+    }
+    grouped[j] = 0;
+    if (n < 1024) snprintf(out, cap, "%s bytes", grouped);
+    else if (n < 1024ULL * 1024) snprintf(out, cap, "%.1f KB (%s bytes)", n / 1024.0, grouped);
+    else if (n < 1024ULL * 1024 * 1024) snprintf(out, cap, "%.1f MB (%s bytes)", n / 1048576.0, grouped);
+    else snprintf(out, cap, "%.2f GB (%s bytes)", n / 1073741824.0, grouped);
+}
+/* Immediate children only, through the no-link opener; hidden names and
+ * resource-fork sidecars are not counted, matching the Finder listing. */
+static int count_items(const char *root, const char *rel) {
+    int fd = volume_directory_open(root, rel);
+    if (fd < 0) return -1;
+    DIR *dir = fdopendir(fd);
+    if (!dir) { close(fd); return -1; }
+    int count = 0;
+    for (struct dirent *e; (e = readdir(dir)); ) {
+        size_t n = strlen(e->d_name);
+        if (e->d_name[0] == '.') continue;
+        if (n > 5 && !strcmp(e->d_name + n - 5, ".rsrc")) continue;
+        count++;
+    }
+    closedir(dir);
+    return count;
+}
+static void format_when(time_t t, char *out, size_t cap) {
+    struct tm when;
+    if (!localtime_r(&t, &when) || !strftime(out, cap, "%Y-%m-%d %H:%M", &when)) snprintf(out, cap, "unknown");
+}
+
 static void get_info(Session *s, Window *w) {
     char rel[OSPI_PATH] = {0}, name[OSPI_NAME] = "OS999 HD";
     int special = 0; s->info_rel[0] = 0;
@@ -131,16 +169,29 @@ static void get_info(Session *s, Window *w) {
     const char *kind = S_ISLNK(st.st_mode) ? "Symbolic link (not followed)" :
         S_ISDIR(st.st_mode) ? disk ? "Volume" : "Folder" :
         S_ISREG(st.st_mode) ? application ? "Classic application" : "File" : "Special file";
-    char body[384];
-    if (S_ISREG(st.st_mode))
-        snprintf(body, sizeof body, "Name: %s\nKind: %s\nData size: %llu bytes\n\nResource forks are not included in this size.",
-                 name, kind, (unsigned long long)st.st_size);
-    else snprintf(body, sizeof body, "Name: %s\nKind: %s\n\nContents and link targets were not read.", name, kind);
-    char modified[48] = "", details[OSPI_PATH + 64];
-    struct tm when;
-    if (localtime_r(&st.st_mtime, &when)) strftime(modified, sizeof modified, "%Y-%m-%d %H:%M", &when);
-    snprintf(details, sizeof details, "\nWhere: OS999 HD%s%s\nModified: %s", rel[0] ? ": " : "", rel, modified);
-    strncat(body, details, sizeof body - strlen(body) - 1);
+    char body[640], size_line[96] = "", modified[48], created[48];
+    format_when(st.st_mtime, modified, sizeof modified);
+#ifdef __APPLE__
+    format_when(st.st_birthtime, created, sizeof created);
+#else
+    format_when(st.st_ctime, created, sizeof created);
+#endif
+    if (S_ISREG(st.st_mode)) {
+        char data[80]; format_size((unsigned long long)st.st_size, data, sizeof data);
+        snprintf(size_line, sizeof size_line, "Size: %s", data);
+        char sidecar[OSPI_PATH]; struct stat fork;
+        if (snprintf(sidecar, sizeof sidecar, "%s.rsrc", rel) < (int)sizeof sidecar &&
+            !metadata(s->root, sidecar, &fork) && S_ISREG(fork.st_mode)) {
+            char r[80]; format_size((unsigned long long)fork.st_size, r, sizeof r);
+            snprintf(size_line + strlen(size_line), sizeof size_line - strlen(size_line), "\nResource fork: %s", r);
+        }
+    } else if (S_ISDIR(st.st_mode)) {
+        int items = count_items(s->root, rel);
+        if (items >= 0) snprintf(size_line, sizeof size_line, "Items: %d", items);
+        else snprintf(size_line, sizeof size_line, "Items: unavailable");
+    } else if (S_ISLNK(st.st_mode)) snprintf(size_line, sizeof size_line, "Link target was not followed.");
+    snprintf(body, sizeof body, "Name: %s\nKind: %s\n%s\nWhere: OS999 HD%s%s\nCreated: %s\nModified: %s",
+             name, kind, size_line, rel[0] ? ": " : "", rel, created, modified);
     if (special && S_ISDIR(st.st_mode)) {
         snprintf(s->info_rel, sizeof s->info_rel, "%s", rel);
         strncat(body, "\nKept its special icon when renamed. OK restores the standard icon.", sizeof body - strlen(body) - 1);

@@ -32,6 +32,9 @@ build/test_mac_quickdraw_accel: $(RUNTIME_OBJ) tests/test_mac_quickdraw_accel.c 
 build/test_desktop_themes: assets/icons/c/ospi_icon_hd.c src/archive_fs.c tests/test_desktop_themes.c assets/icons/c/ospi_icon_hd.h include/archive_fs.h
 	$(CC) $(CFLAGS) -o $@ assets/icons/c/ospi_icon_hd.c src/archive_fs.c tests/test_desktop_themes.c
 
+build/test_browser_stage: src/browser_stage.c tests/test_browser_stage.c include/browser_stage.h
+	$(CC) $(CFLAGS) -o $@ src/browser_stage.c tests/test_browser_stage.c
+
 PHASE_STANDALONE_TESTS := build/test_mac_quicktime build/test_browser_ipc build/test_mac_network_policy build/test_mac_pef_cfm build/test_browser_media_gateway build/test_cleanroom_release_gate
 $(PHASE_STANDALONE_TESTS): build/%: tests/%.c
 	$(CC) $(CFLAGS) -o $@ $<
@@ -42,7 +45,7 @@ build/test_mac_fuzz_soak: src/mac_resource.c src/mac_icon.c src/mac_icon_palette
 build/test_platform_sandbox_audit: build/runtime/mac_cpu.o build/runtime/mac_resource.o src/hostinfo.c src/archive_fs.c src/volume.c src/volume_folders.c src/native_catalog.c src/mac_icon.c src/mac_icon_palette.c tests/test_platform_sandbox_audit.c $(CPUOBJ) $(HDRS) include/mac_cpu.h
 	$(CC) $(CFLAGS) $(CPUFLAGS) build/runtime/mac_cpu.o build/runtime/mac_resource.o src/hostinfo.c src/archive_fs.c src/volume.c src/volume_folders.c src/native_catalog.c src/mac_icon.c src/mac_icon_palette.c tests/test_platform_sandbox_audit.c $(CPUOBJ) -lm -o $@
 
-test: build/test_appearance build/test_mac_containers build/test_mac_writable_files build/test_mac_controls_textedit build/test_mac_quickdraw_accel build/test_desktop_themes build/test_mac_perf_audio_gates build/test_mac_fuzz_soak build/test_platform_sandbox_audit $(PHASE_STANDALONE_TESTS)
+test: build/test_appearance build/test_mac_containers build/test_mac_writable_files build/test_mac_controls_textedit build/test_mac_quickdraw_accel build/test_desktop_themes build/test_mac_perf_audio_gates build/test_mac_fuzz_soak build/test_platform_sandbox_audit build/test_browser_stage $(PHASE_STANDALONE_TESTS)
 
 
 build/test_appearance_panel: src/appearance_panel.c tests/test_appearance_panel.c $(HDRS)

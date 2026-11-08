@@ -52,7 +52,7 @@ endif
 all: build/ospi build/ospi-runtime build/os999-tailnet
 
 # Embedded Chromium window (browser/). macOS presents its GPU frames zero-copy.
-BROWSER_SRC := src/browser_window.c src/browser_input.c src/browser_host.c src/browser_paint.c src/browser_script.c src/browser_occlusion.c
+BROWSER_SRC := src/browser_window.c src/browser_input.c src/browser_host.c src/browser_stage.c src/browser_paint.c src/browser_script.c src/browser_occlusion.c
 BROWSER_HDRS := include/browser_window.h include/browser_overlay.h include/os999_browser_ipc.h src/browser_window_int.h
 ifeq ($(shell uname -s),Darwin)
 BROWSER_OVERLAY := build/browser_overlay_mac.o
@@ -427,6 +427,7 @@ test: build/test_os999_startup build/test_os999_startup_bar build/test_ospi buil
 	./build/test_desktop_themes
 	./build/test_mac_quicktime
 	./build/test_browser_ipc
+	./build/test_browser_stage
 	./build/test_mac_network_policy
 	./build/test_mac_pef_cfm
 	./build/test_mac_perf_audio_gates

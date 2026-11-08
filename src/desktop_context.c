@@ -123,6 +123,9 @@ static void dispatch(Session *s, int command) {
     snprintf(item, sizeof item, "%s", popup.item);
     context_close();
     if (command == CONTEXT_APPEARANCE) { session_command(s, command); return; }
+    /* A Finder context row is a Finder command: choosing it activates the Finder, so
+     * New Folder cannot be turned into "New Window" while the Browser is frontmost. */
+    if (s->media_focused || s->browser_focused || s->guest_focused) session_command(s, CMD_APP_FINDER);
     if (target == CONTEXT_DISK || target == CONTEXT_TRASH) {
         if (command == CMD_GET_INFO) { s->desk_sel = target == CONTEXT_DISK ? 0 : 1; session_command(s, command); return; }
         if (command == CMD_OPEN && open_folder(s, target == CONTEXT_DISK ? "" : "Trash"))

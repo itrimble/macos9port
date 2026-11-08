@@ -397,6 +397,41 @@ static void test_utilities_launcher_and_login_zsh(void) {
     term_pty_close(&pty); term_vt_free(&vt); unlink(rc); rmdir(zd);
 }
 
+/* `history` must show this volume's commands, never the host user's own. */
+static void test_shell_history_is_per_volume(void) {
+    if (access("/bin/zsh", X_OK)) return;
+    char home[] = "/tmp/os999-hist-home-XXXXXX"; CHECK(mkdtemp(home) != NULL);
+    char vol[] = "/tmp/os999-hist-vol-XXXXXX"; CHECK(mkdtemp(vol) != NULL);
+    char path[600];
+    snprintf(path, sizeof path, "%s/.zsh_history", home);
+    FILE *f = fopen(path, "w"); CHECK(f != NULL); if (!f) return;
+    fputs(": 1700000000:0;echo HOST_SECRET_COMMAND\n", f); fclose(f);
+    snprintf(path, sizeof path, "%s/.zshrc", home);
+    f = fopen(path, "w"); CHECK(f != NULL); if (!f) return;
+    fputs("HISTFILE=$HOME/.zsh_history; HISTSIZE=1000; SAVEHIST=1000\nsetopt SHARE_HISTORY\n", f); fclose(f);
+    char *old_shell = getenv("SHELL") ? strdup(getenv("SHELL")) : NULL;
+    char *old_home = getenv("HOME") ? strdup(getenv("HOME")) : NULL;
+    char *old_zd = getenv("ZDOTDIR") ? strdup(getenv("ZDOTDIR")) : NULL;
+    setenv("SHELL", "/bin/zsh", 1); setenv("HOME", home, 1); unsetenv("ZDOTDIR");
+    TermPty pty; TermVt vt; term_vt_init(&vt, 24, 200);
+    CHECK(term_pty_open_shell(&pty, 24, 200, vol) == 0);
+    if (old_shell) setenv("SHELL", old_shell, 1); else unsetenv("SHELL");
+    if (old_home) setenv("HOME", old_home, 1); else unsetenv("HOME");
+    if (old_zd) setenv("ZDOTDIR", old_zd, 1);
+    free(old_shell); free(old_home); free(old_zd);
+    const char *cmd = "print -r -- HFD=${${HISTFILE:h}:t} HFN=${HISTFILE:t}; fc -l 1 > fc-out.txt 2>&1; print -r -- DONE_FC\n";
+    term_pty_write(&pty, cmd, strlen(cmd));
+    CHECK(pump_pty_until(&pty, &vt, "HFD=.os999-terminal HFN=history", 4000));
+    CHECK(pump_pty_until(&pty, &vt, "DONE_FC", 4000));
+    char outp[700]; snprintf(outp, sizeof outp, "%s/fc-out.txt", vol);
+    char got[2048] = {0}; FILE *o = fopen(outp, "r");
+    if (o) { size_t r = fread(got, 1, sizeof got - 1, o); got[r] = 0; fclose(o); }
+    if (strstr(got, "HOST_SECRET")) fprintf(stderr, "host history leaked: [%s]\n", got);
+    CHECK(strstr(got, "HOST_SECRET") == NULL);
+    term_pty_close(&pty); term_vt_free(&vt);
+    char rm[1300]; snprintf(rm, sizeof rm, "rm -rf '%s' '%s'", home, vol); (void)system(rm);
+}
+
 static void test_nerd_glyphs_and_clipping(void) {
 #ifdef OSPI_FREETYPE
     const uint32_t glyphs[] = {0xe0b0, 0xe0a0, 0xf120, 0x256d, 0x2713};
@@ -464,6 +499,7 @@ static void test_copy_visible_scrollback(void) {
 int main(void) {
     test_copy_visible_scrollback();
     test_utilities_launcher_and_login_zsh();
+    test_shell_history_is_per_volume();
     test_nerd_glyphs_and_clipping();
     test_vt_basic_and_colors();
     test_vt_cursor_clear_and_split_escapes();

@@ -39,6 +39,8 @@ int main(void) {
     session_key(s,'i',MOD_CMD);
     CHECK(s->dialog && !strcmp(s->dialog_title,"Get Info"));
     CHECK(strstr(s->dialog_body,root)==NULL);
+    CHECK(strstr(s->dialog_body,"Items: ") && strstr(s->dialog_body,"Created: ") && strstr(s->dialog_body,"Modified: "));
+    CHECK(strstr(s->dialog_body,"were not read")==NULL);
     session_key(s,27,0);
     Layout layout; window_layout(w,&layout);
     char selected[OSPI_NAME]; strcpy(selected,w->items[0].name);
@@ -236,6 +238,18 @@ int main(void) {
     CHECK(action(1,CMD_QUIT)->flags & MI_DISABLED);
     session_command(s,CMD_QUIT); CHECK(!s->quit && guest_calls == 3);
     s->guest_active = s->guest_focused = 0;
+    /* Choosing New Folder from the desktop menu while the Browser is frontmost must
+     * make a folder, not a browser window. */
+    session_command(s,CMD_CLOSE_ALL);
+    s->browser_action = 0; s->browser_active = s->browser_focused = 1;
+    session_context(s,s->sw/2,s->sh/2);
+    CHECK(s->browser_focused);                  /* opening the menu leaves the Browser frontmost */
+    CHECK(context_key(s,'n',MOD_CMD));
+    CHECK(!s->browser_focused);
+    CHECK(s->browser_action != BROWSER_NEW_WINDOW);
+    char made[OSPI_PATH]; snprintf(made,sizeof made,"%s/untitled folder",root);
+    CHECK(access(made,F_OK)==0);
+    s->browser_active = 0; context_close();
     session_destroy(s);
     printf("menu integration: %s\n",failures?"FAILED":"ok");return !!failures;
 }

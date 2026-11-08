@@ -13,6 +13,14 @@ void BrowserApp::OnBeforeCommandLineProcessing(
   if (!command_line->HasSwitch("ozone-platform"))
     command_line->AppendSwitchWithValue("ozone-platform", "headless");
 #endif
+#if defined(OS_MAC)
+  // Chromium would otherwise create a "Chromium Safe Storage" login-keychain item and macOS
+  // would ask for the user's password. The embedded browser must open without that prompt, so
+  // the profile's cookie key stays in the profile. The trade-off: saved cookies are protected
+  // by the profile folder's permissions, not by the keychain.
+  if (!command_line->HasSwitch("use-mock-keychain"))
+    command_line->AppendSwitch("use-mock-keychain");
+#endif
 #ifdef OS999_ENABLE_TEST_HOOKS
   if (test_autoplay_ && !command_line->HasSwitch("autoplay-policy")) {
     // Measurement runs only (--os999-test): lets a scripted YouTube load start

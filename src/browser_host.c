@@ -1,3 +1,4 @@
+#include "browser_stage.h"
 #include "browser_window_int.h"
 #include "browser_overlay.h"
 
@@ -58,7 +59,7 @@ static int exe_dir(char *out, size_t n) {
     return 0;
 }
 
-static int find_helper(char *out, size_t n) {
+static int find_helper_raw(char *out, size_t n) {
     const char *env = getenv("OSPI_BROWSER");
     if (env && access(env, X_OK) == 0) { snprintf(out, n, "%s", env); return 0; }
     char dir[PATH_MAX];
@@ -78,6 +79,17 @@ static int find_helper(char *out, size_t n) {
         if (access(out, X_OK) == 0) return 0;
     }
     return -1;
+}
+
+/* Nested inside another .app the helper crashes on macOS 27, so prefer a clone
+ * outside any .app; OSPI_BROWSER stays an explicit override and is not staged. */
+static int find_helper(char *out, size_t n) {
+    if (find_helper_raw(out, n) != 0) return -1;
+    const char *env = getenv("OSPI_BROWSER");
+    if (env && !strcmp(env, out)) return 0;
+    char staged[PATH_MAX];
+    if (browser_stage_helper(out, NULL, staged, sizeof staged) == 0) snprintf(out, n, "%s", staged);
+    return 0;
 }
 
 int bh_ensure(const char *root) {

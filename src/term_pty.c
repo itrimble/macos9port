@@ -1,3 +1,5 @@
+#include <stdio.h>
+#include <sys/stat.h>
 #include "term.h"
 
 #include <errno.h>
@@ -36,7 +38,8 @@ static void check_child_reap(TermPty *pty) {
     }
 }
 
-int term_pty_open(TermPty *pty, int rows, int cols, const char *working_dir, char *const argv[]) {
+static int pty_open_env(TermPty *pty, int rows, int cols, const char *working_dir, char *const argv[],
+                        const char *const env[]) {
     if (!pty || !argv || !argv[0]) return -1;
     memset(pty, 0, sizeof(*pty));
     pty->master_fd = -1;
@@ -68,6 +71,14 @@ int term_pty_open(TermPty *pty, int rows, int cols, const char *working_dir, cha
         setenv("TERM", "xterm-256color", 1);
         setenv("COLORTERM", "truecolor", 1);
         setenv("TERM_PROGRAM", "OS999_Terminal", 1);
+        for (int i = 0; env && env[i]; i++) {
+            const char *eq = strchr(env[i], '=');
+            if (!eq || eq == env[i]) continue;
+            char key[64]; size_t kn = (size_t)(eq - env[i]);
+            if (kn >= sizeof key) continue;
+            memcpy(key, env[i], kn); key[kn] = 0;
+            setenv(key, eq + 1, 1);
+        }
         execvp(argv[0], argv);
         _exit(127);
     }
@@ -84,6 +95,42 @@ int term_pty_open(TermPty *pty, int rows, int cols, const char *working_dir, cha
     return 0;
 }
 
+int term_pty_open(TermPty *pty, int rows, int cols, const char *working_dir, char *const argv[]) {
+    return pty_open_env(pty, rows, cols, working_dir, argv, NULL);
+}
+
+/* The shell is the host's, but its history must belong to this volume: without
+ * this, `history` replays the host user's own commands. zsh reads stub rc files
+ * from a hidden volume folder; each sources the user's real file (honouring a
+ * ZDOTDIR the user already set) and .zshrc then moves HISTFILE into the volume. */
+static int write_stub(const char *dir, const char *name, const char *body) {
+    char path[OSPI_PATH + 64];
+    if (snprintf(path, sizeof path, "%s/%s", dir, name) >= (int)sizeof path) return -1;
+    FILE *f = fopen(path, "w");
+    if (!f) return -1;
+    int ok = fputs(body, f) >= 0;
+    return fclose(f) == 0 && ok ? 0 : -1;
+}
+static int prepare_history(const char *root, char *zdotdir, size_t zn, char *histfile, size_t hn) {
+    if (!root || !*root) return -1;
+    char base[OSPI_PATH + 32];
+    if (snprintf(base, sizeof base, "%s/.os999-terminal", root) >= (int)sizeof base) return -1;
+    if (mkdir(base, 0700) != 0 && errno != EEXIST) return -1;
+    if (snprintf(zdotdir, zn, "%s/zsh", base) >= (int)zn) return -1;
+    if (mkdir(zdotdir, 0700) != 0 && errno != EEXIST) return -1;
+    if (snprintf(histfile, hn, "%s/history", base) >= (int)hn) return -1;
+    static const char *src = "[ -r \"${OS999_REAL_ZDOTDIR:-$HOME}/%s\" ] && . \"${OS999_REAL_ZDOTDIR:-$HOME}/%s\"\n";
+    static const char *files[] = { ".zshenv", ".zprofile", ".zlogin", ".zlogout" };
+    for (size_t i = 0; i < sizeof files / sizeof files[0]; i++) {
+        char body[256]; snprintf(body, sizeof body, src, files[i], files[i]);
+        if (write_stub(zdotdir, files[i], body)) return -1;
+    }
+    char rc[512]; snprintf(rc, sizeof rc, src, ".zshrc", ".zshrc");
+    strncat(rc, "HISTFILE=\"$OS999_HISTFILE\"; HISTSIZE=5000; SAVEHIST=5000\n"
+                "fc -p \"$HISTFILE\" 5000 5000 2>/dev/null\n", sizeof rc - strlen(rc) - 1);
+    return write_stub(zdotdir, ".zshrc", rc);
+}
+
 int term_pty_open_shell(TermPty *pty, int rows, int cols, const char *working_dir) {
     const char *sh = getenv("SHELL");
     struct passwd *pw = getpwuid(getuid());
@@ -94,7 +141,20 @@ int term_pty_open_shell(TermPty *pty, int rows, int cols, const char *working_di
         else sh = "/bin/sh";
     }
     char *const argv[] = { (char *)sh, "-l", "-i", NULL };
-    return term_pty_open(pty, rows, cols, working_dir, argv);
+    char zdotdir[OSPI_PATH + 64], histfile[OSPI_PATH + 64];
+    if (prepare_history(working_dir, zdotdir, sizeof zdotdir, histfile, sizeof histfile) != 0)
+        return pty_open_env(pty, rows, cols, working_dir, argv, NULL);
+    char e_hist[OSPI_PATH + 80], e_osh[OSPI_PATH + 80], e_zd[OSPI_PATH + 80], e_real[OSPI_PATH + 80];
+    snprintf(e_hist, sizeof e_hist, "HISTFILE=%s", histfile);
+    snprintf(e_osh, sizeof e_osh, "OS999_HISTFILE=%s", histfile);
+    const char *real = getenv("ZDOTDIR");
+    snprintf(e_real, sizeof e_real, "OS999_REAL_ZDOTDIR=%s", real && *real ? real : "");
+    snprintf(e_zd, sizeof e_zd, "ZDOTDIR=%s", zdotdir);
+    const char *base = strrchr(sh, '/'); base = base ? base + 1 : sh;
+    int zsh = !strcmp(base, "zsh");
+    const char *const env_zsh[] = { e_hist, e_osh, e_real, e_zd, NULL };
+    const char *const env_other[] = { e_hist, NULL };
+    return pty_open_env(pty, rows, cols, working_dir, argv, zsh ? env_zsh : env_other);
 }
 
 ssize_t term_pty_read(TermPty *pty, char *buf, size_t n) {
