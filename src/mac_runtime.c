@@ -97,7 +97,8 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
     rt->heap_limit = 0x700000;
     /* Upper half of the old fixed heap becomes the auto-growing protected heap;
      * the bump allocator keeps [0x100000, 0x400000) for runtime-internal records. */
-    if (mac_heap_attach(rt, 0x400000, 0x700000)) return fail(rt, err, n, "Could not create the protected guest heap.");
+    rt->stack_base = rt->a5 - below;
+    if (mac_heap_attach(rt, 0x400000, mac_partition_heap_hi(fork, 0x400000, 0x700000, rt->stack_base > 0x30000 ? rt->stack_base - 0x30000 : 0x700000))) return fail(rt, err, n, "Could not create the protected guest heap.");
     rt->heap_limit = 0x400000;
     rt->stack_base = rt->a5 - below;
     rt->screen_base = 0xe00000;

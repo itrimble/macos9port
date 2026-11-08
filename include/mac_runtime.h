@@ -201,6 +201,7 @@ void mac_alert_destroy(MacRuntime *rt);
 void mac_cdef_destroy(MacRuntime *rt);
 int mac_sysbeep_service(MacRuntime *rt, uint16_t opcode); /* SysBeep (mac_sysbeep.c) */
 int mac_textbox_service(MacRuntime *rt, uint16_t opcode); /* TextBox (mac_textbox.c) */
+uint32_t mac_partition_heap_hi(const MacResourceFork *fork, uint32_t lo, uint32_t floor_hi, uint32_t ceiling);   /* heap end from the SIZE resource (mac_partition.c) */
 int mac_cicn_service(MacRuntime *rt, uint16_t opcode); /* GetCIcon/PlotCIcon/DisposeCIcon (mac_cicn.c) */
 int mac_controls_service(MacRuntime *rt, uint16_t opcode); /* Control Manager subset (mac_controls.c) */
 int mac_alias_service(MacRuntime *rt, uint16_t opcode); /* AliasDispatch $A823 (mac_alias.c) */
