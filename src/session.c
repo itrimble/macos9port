@@ -273,9 +273,20 @@ void session_command(Session *s, int cmd) {
         control_panels_open(s); break;
     case CMD_CP_GENERAL:
     case CMD_CP_SOUND:
+    case CMD_CP_MONITORS:
+    case CMD_CP_KEYBOARD:
+    case CMD_CP_ENERGY:
+    case CMD_CP_MEMORY:
+    case CMD_CP_NETWORK: {
+        static const char *const ids[] = {
+            "general", "sound", "monitors", "keyboard_mouse",
+            "energy_saver", "memory", "network"
+        };
         context_close();
         finder_apps_command(s, CMD_APP_FINDER);
-        control_panels_open_module(s, cmd == CMD_CP_GENERAL ? "general" : "sound"); break;
+        control_panels_open_module(s, ids[cmd - CMD_CP_GENERAL]);
+        break;
+    }
     case CMD_APPEARANCE_DESKTOP:
     case CMD_APPEARANCE_THEMES:
         context_close();
@@ -295,6 +306,14 @@ void session_command(Session *s, int cmd) {
         s->sound_toggle_request = 1;
         break;
     case CMD_BROWSER:
+        session_note_network_activity(s);
+        if (s->net_connect_via == 2) {
+            dialog_info(s, "Network Offline",
+                        "TCP/IP & Network is set to Offline.\n\n"
+                        "Choose Host HTTPS or Tailscale in\n"
+                        "TCP/IP & Network to browse online.");
+            break;
+        }
         s->browser_request = 1;
         break;
     case CMD_STARTUP_TOGGLE:
@@ -306,7 +325,10 @@ void session_command(Session *s, int cmd) {
     case CMD_CLOSE_ALL:
         context_close(); appearance_panel_close();
         while (s->nwin) close_index(s, s->nwin - 1); break;
-    case CMD_TAILSCALE: terminal_tailnet_open(s); break;
+    case CMD_TAILSCALE:
+        session_note_network_activity(s);
+        terminal_tailnet_open(s);
+        break;
     case CMD_QUAKE3_DEMO: session_open_quake_demo(s); break;
     case CMD_QUAKE3: session_open_quake(s); break;
     case CMD_TERMINAL_SHELL:
@@ -426,6 +448,13 @@ void session_command(Session *s, int cmd) {
         break;
     }
     case CMD_INSTALL: {
+        session_note_network_activity(s);
+        if (s->net_connect_via == 2) {
+            dialog_info(s, "Network Offline",
+                        "TCP/IP & Network is set to Offline.\n\n"
+                        "Choose Host HTTPS or Tailscale first.");
+            break;
+        }
         if (!garden_page_ok(s->clip)) {
             dialog_info(s, "Install",
                         "Copy an app or game link from\n"

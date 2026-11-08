@@ -318,7 +318,13 @@ build/test_controlpanels: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_control
 	mkdir -p build
 	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_controlpanels.c $(FT_LIBS) -lm $(NET_LIBS)
 
+build/test_controlpanels_fx: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_controlpanels_fx.c $(HDRS) include/os999_startup.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_controlpanels_fx.c $(FT_LIBS) -lm $(NET_LIBS)
+
 .PHONY: test-controlpanels
-test-controlpanels: build/test_controlpanels build/fixture_cdev.so
+test-controlpanels: build/test_controlpanels build/test_controlpanels_fx build/test_mac_memory build/fixture_cdev.so
 	./build/test_controlpanels build/fixture_cdev.so assets/icons/ospi-icons.icl8
+	./build/test_controlpanels_fx assets/icons/ospi-icons.icl8
+	./build/test_mac_memory
 test: test-controlpanels

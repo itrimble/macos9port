@@ -90,6 +90,28 @@ void cdev_ui_icon(Fb *fb, int x, int y, const char *icon_name) {
         fb_fill(fb, x + 14, y + 25, 4, 3, fg);
         fb_fill(fb, x + 4, y + 14, 3, 4, fg);
         fb_fill(fb, x + 25, y + 14, 3, 4, fg);
+    } else if (strcmp(name, "monitor") == 0) {
+        fb_frame(fb, x + 4, y + 5, 24, 17, fg);
+        fb_fill(fb, x + 6, y + 7, 20, 13, cdev_ui_selection_color());
+        fb_fill(fb, x + 13, y + 22, 6, 3, fg);
+        fb_fill(fb, x + 9, y + 25, 14, 2, fg);
+    } else if (strcmp(name, "keyboard") == 0 || strcmp(name, "mouse") == 0) {
+        fb_frame(fb, x + 4, y + 9, 24, 14, fg);
+        for (int r = 0; r < 2; r++)
+            for (int k = 0; k < 5; k++)
+                fb_fill(fb, x + 6 + k * 4, y + 12 + r * 4, 3, 2, fg);
+    } else if (strcmp(name, "battery") == 0) {
+        fb_frame(fb, x + 5, y + 9, 20, 14, fg);
+        fb_fill(fb, x + 25, y + 13, 2, 6, fg);
+        fb_fill(fb, x + 7, y + 11, 14, 10, 0xFF28A448u);
+    } else if (strcmp(name, "cpu") == 0) {
+        fb_frame(fb, x + 7, y + 7, 18, 18, fg);
+        fb_fill(fb, x + 10, y + 10, 12, 12, cdev_ui_selection_color());
+    } else if (strcmp(name, "network") == 0 || strcmp(name, "wireless") == 0) {
+        fb_frame(fb, x + 11, y + 5, 10, 8, fg);
+        fb_frame(fb, x + 4, y + 19, 10, 8, fg);
+        fb_frame(fb, x + 18, y + 19, 10, 8, fg);
+        fb_hline(fb, x + 9, y + 16, 14, cdev_ui_selection_color());
     } else {
         for (int i = 0; i < 3; i++) {
             fb_fill(fb, x + 7 + i * 8, y + 6, 2, 20, fg);

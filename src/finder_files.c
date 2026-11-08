@@ -4,7 +4,9 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/stat.h>
 #include <sys/xattr.h>
 #include <unistd.h>
@@ -83,7 +85,7 @@ done:
     close(fd); return result;
 }
 
-typedef struct { unsigned files; uint64_t bytes; } Budget;
+typedef struct { unsigned files; uint64_t bytes, limit; int has_limit; } Budget;
 static void remove_owned(int fd, const char *name, int depth) {
     if (depth > 18) return;
     int child = openat(fd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
@@ -124,7 +126,8 @@ static int copy_entry(int from, const char *name, int to, const char *next, int 
         fchmod(out, st.st_mode & 0777);
         close(out); closedir(dir);
     } else {
-        if (st.st_size < 0 || (uint64_t)st.st_size > 512ull * 1024 * 1024 - budget->bytes) { close(in); return -1; }
+        uint64_t cap = budget->has_limit ? budget->limit : 512ull * 1024 * 1024;
+        if (st.st_size < 0 || budget->bytes > cap || (uint64_t)st.st_size > cap - budget->bytes) { close(in); return -1; }
         budget->bytes += (uint64_t)st.st_size;
         int out = openat(to, next, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
         if (out < 0) { close(in); return -1; }
@@ -169,6 +172,45 @@ static int inside_source(int from, const char *name, int to) {
     }
     close(current); return 1;
 }
+static uint64_t fd_dir_bytes(int dir_fd, int depth) {
+    if (depth > 16) { close(dir_fd); return 0; }
+    DIR *d = fdopendir(dir_fd);
+    if (!d) { close(dir_fd); return 0; }
+    uint64_t sum = 0;
+    struct dirent *e;
+    while ((e = readdir(d))) {
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..") ||
+            !strcmp(e->d_name, ".os999-ramdisk-mb") || !strcmp(e->d_name, ".os999-folder"))
+            continue;
+        struct stat st;
+        if (fstatat(dirfd(d), e->d_name, &st, AT_SYMLINK_NOFOLLOW)) continue;
+        if (S_ISDIR(st.st_mode)) {
+            int sub = openat(dirfd(d), e->d_name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+            if (sub >= 0) sum += fd_dir_bytes(sub, depth + 1);
+        } else if (S_ISREG(st.st_mode) && st.st_size > 0) sum += (uint64_t)st.st_size;
+    }
+    closedir(d);
+    return sum;
+}
+
+static int ramdisk_remaining(const char *root, const char *dest, uint64_t *avail) {
+    if (!dest || (strcasecmp(dest, "RAM Disk") != 0 && strncasecmp(dest, "RAM Disk/", 9) != 0))
+        return 0;
+    int rd = finder_directory_open(root, "RAM Disk");
+    if (rd < 0) return 0;
+    int qfd = openat(rd, ".os999-ramdisk-mb", O_RDONLY | O_NOFOLLOW);
+    if (qfd < 0) { close(rd); return 0; }
+    char buf[32] = {0};
+    ssize_t got = read(qfd, buf, sizeof buf - 1);
+    close(qfd);
+    int mb = got > 0 ? atoi(buf) : 0;
+    if (mb <= 0) { close(rd); return 0; }
+    uint64_t used = fd_dir_bytes(rd, 0);
+    uint64_t quota = (uint64_t)mb * 1024ull * 1024ull;
+    *avail = quota > used ? quota - used : 0;
+    return 1;
+}
+
 static int copy_to(const char *root, const char *rel, const char *name, const char *destination,
                    int duplicate, char out[OSPI_NAME]) {
     if (!name_ok(name) || !out || !strcmp(name, "Trash")) return -1;
@@ -177,6 +219,8 @@ static int copy_to(const char *root, const char *rel, const char *name, const ch
     char sourcefork[OSPI_NAME + 6], destfork[OSPI_NAME + 6], next[OSPI_NAME];
     sidecar(sourcefork, name); int result = -1;
     if (inside_source(from, name, to)) goto done;
+    uint64_t rd_avail = 0;
+    int rd_lim = ramdisk_remaining(root, destination, &rd_avail);
     for (int i = duplicate ? 1 : 0; i <= 100; i++) {
         int n = i == 0 ? snprintf(next, sizeof next, "%s", name) :
                 i == 1 ? snprintf(next, sizeof next, "%s copy", name) :
@@ -184,7 +228,7 @@ static int copy_to(const char *root, const char *rel, const char *name, const ch
         if (n < 0 || (size_t)n >= sizeof next) break;
         sidecar(destfork, next);
         if (!absent(to, next) || !absent(to, destfork)) continue;
-        Budget budget = {0};
+        Budget budget = {.limit = rd_avail, .has_limit = rd_lim};
         if (copy_entry(from, name, to, next, 0, &budget)) break;
         if (!absent(from, sourcefork) && copy_entry(from, sourcefork, to, destfork, 0, &budget)) {
             remove_owned(to, next, 0); break;
@@ -299,7 +343,13 @@ int finder_move(const char *root, const char *rel, const char *name, const char 
         (!strcmp(name, "Trash") || !strcmp(name, "System Folder")))) return -1;
     int from = finder_directory_open(root, rel), to = finder_directory_open(root, destination);
     if (from < 0 || to < 0) { if (from >= 0) close(from); if (to >= 0) close(to); return -1; }
-    struct stat a, b; int result = -1;
+    struct stat a, b, src_st; int result = -1;
+    uint64_t rd_avail = 0;
+    if (ramdisk_remaining(root, destination, &rd_avail) &&
+        !fstatat(from, name, &src_st, AT_SYMLINK_NOFOLLOW) &&
+        S_ISREG(src_st.st_mode) && src_st.st_size > 0 && (uint64_t)src_st.st_size > rd_avail) {
+        close(from); close(to); return -1;
+    }
     if (!fstat(from, &a) && !fstat(to, &b) && a.st_dev == b.st_dev && a.st_ino == b.st_ino) result = 0;
     else if (!inside_source(from, name, to)) result = move_pair(from, name, to, name);
     close(from); close(to); return result;

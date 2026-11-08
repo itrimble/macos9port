@@ -13,7 +13,7 @@ static const IconName folders[] = {
     {"Startup Items", "startup_items_folder"}, {"Home", "home_folder"},
     {"Music", "music_folder"}, {"Pictures", "pictures_folder"},
     {"Movies", "movies_folder"}, {"Utilities", "utilities_folder"},
-    {"Shared", "shared_folder"}
+    {"Shared", "shared_folder"}, {"RAM Disk", "hard_disk"}
 };
 static const IconName extensions[] = {
     {"txt", "text_document"}, {"text", "text_document"}, {"md", "text_document"},

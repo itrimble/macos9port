@@ -49,3 +49,22 @@ void menu_paint_popup(Fb *fb, int menu, int hot_row) {
         }
     }
 }
+
+void menu_paint_flash(Fb *fb, const Session *s) {
+    if (!fb || !s || s->menu >= 0) return;
+    if (s->menu_flash_end_ms <= s->menu_flash_start_ms ||
+        s->input_now_ms < s->menu_flash_start_ms ||
+        s->input_now_ms >= s->menu_flash_end_ms)
+        return;
+    int on = (((s->input_now_ms - s->menu_flash_start_ms) / 45u) & 1u) == 0;
+    menu_paint_popup(fb, s->menu_flash_menu, on ? s->menu_flash_row : -1);
+}
+
+void menu_paint_dialog_caret(Fb *fb, const Session *s, int x, int y) {
+    if (!fb || !s || s->edit_selected) return;
+    uint32_t period = s->cursor_blink_set
+                          ? (uint32_t)(s->cursor_blink_ms > 0 ? s->cursor_blink_ms : 0)
+                          : 530u;
+    if (period == 0 || ((s->input_now_ms / period) & 1u) == 0)
+        fb_fill(fb, x, y, 2, 16, C_BLACK);
+}

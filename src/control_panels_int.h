@@ -42,6 +42,9 @@ static inline Rect cp_grid_rect(Rect r) { return (Rect){r.x + 16, r.y + 60, r.w 
 static inline Rect cp_back_btn_rect(Rect r) { return (Rect){r.x + 16, r.y + 27, 112, 26}; }
 static inline Rect cp_save_btn_rect(Rect r) { return (Rect){r.x + r.w - 88, r.y + 27, 72, 26}; }
 static inline Rect cp_content_rect(Rect r) { return (Rect){r.x + 16, r.y + 60, r.w - 32, r.h - 76}; }
+static inline Rect cp_scrollbar_rect(Rect grid) {
+    return (Rect){grid.x + grid.w - 15, grid.y + 1, 14, grid.h - 2};
+}
 
 static inline Rect cp_card_rect(Rect grid, int slot, int scroll) {
     return (Rect){

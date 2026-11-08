@@ -6,7 +6,15 @@
 #include "mac_drive_queue.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+static int g_policy_heap_mb = 8, g_policy_guard = 0;
+
+void mac_runtime_set_memory_policy(int heap_mb, int guard_allocs) {
+    g_policy_heap_mb = (heap_mb == 2 || heap_mb == 4 || heap_mb == 8 || heap_mb == 12) ? heap_mb : 8;
+    g_policy_guard = !!guard_allocs;
+}
 
 /* Independently implemented from the CODE resource/jump-table format described
  * by W. E. Woody, comp.sys.mac.misc, 17 March 1991 ("CODE 0"). No ROM loaded.
@@ -24,16 +32,19 @@ static int fail(MacRuntime *rt, char *err, size_t n, const char *message) {
 }
 
 uint32_t mac_runtime_alloc(MacRuntime *rt, uint32_t size) {
-    if (size > UINT32_MAX - 3) return 0;
+    if (size > UINT32_MAX - 32) return 0;
     uint32_t aligned = (size + 3) & ~UINT32_C(3);
     if (!aligned) aligned = 4;
+    uint32_t guard = rt->guard_allocs ? 16u : 0u;
+    uint32_t total = aligned + guard;
     uint32_t ceiling = rt->heap_limit;
     if (rt->heap_high && rt->heap_high < ceiling) ceiling = rt->heap_high;
     if (ceiling > mac_cpu_ram_size(rt->cpu)) ceiling = (uint32_t)mac_cpu_ram_size(rt->cpu);
-    if (rt->heap_next > ceiling || aligned > ceiling - rt->heap_next) return 0;
+    if (rt->heap_next > ceiling || total > ceiling - rt->heap_next) return 0;
     uint32_t result = rt->heap_next;
-    rt->heap_next += aligned;
+    rt->heap_next += total;
     memset(mac_cpu_ram(rt->cpu) + result, 0, aligned);
+    if (guard) memset(mac_cpu_ram(rt->cpu) + result + aligned, 0xA5, guard);
     return result;
 }
 
@@ -79,11 +90,20 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
         return fail(rt, err, n, "Unsupported or invalid CODE 0 layout.");
     rt->cpu = mac_cpu_create_model(MAC_RUNTIME_RAM, MAC_CPU_68020);
     if (!rt->cpu) return fail(rt, err, n, "Could not allocate guest memory.");
-    rt->a5 = 0x800000;
+    int heap_mb = g_policy_heap_mb;
+    const char *env_mb = getenv("OS999_GUEST_HEAP_MB");
+    if (env_mb && env_mb[0]) heap_mb = atoi(env_mb);
+    const char *env_guard = getenv("OS999_GUEST_GUARD");
+    rt->guard_allocs = (env_guard && env_guard[0]) ? (atoi(env_guard) != 0) : g_policy_guard;
+    if (heap_mb == 2) { rt->a5 = 0x200000; rt->heap_limit = 0x1c0000; }
+    else if (heap_mb == 4) { rt->a5 = 0x400000; rt->heap_limit = 0x300000; }
+    else if (heap_mb == 12) { rt->a5 = 0xc00000; rt->heap_limit = 0xb00000; }
+    else { rt->a5 = 0x800000; rt->heap_limit = 0x700000; }
+    if (rt->a5 < below + 0x140000) { rt->a5 = 0x800000; rt->heap_limit = 0x700000; }
+    else if (rt->heap_limit > rt->a5 - below - 0x10000) rt->heap_limit = rt->a5 - below - 0x10000;
     rt->jump_table = rt->a5 + offset;
     rt->jump_size = length;
     rt->heap_next = 0x100000;
-    rt->heap_limit = 0x700000;
     rt->stack_base = rt->a5 - below;
     rt->screen_base = 0xe00000;
     rt->screen_width = 640;
@@ -121,7 +141,7 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
     mac_cpu_write(rt->cpu, 0x934, 2, offset); /* CurJTOffset */
     mac_cpu_write(rt->cpu, 0x15a, 2, 0x0607); /* Guest compatibility profile, not host OS. */
     mac_cpu_write(rt->cpu, 0x12f, 1, 2); /* 68020 */
-    mac_cpu_write(rt->cpu, 0x108, 4, 0x800000); /* Guest MemTop */
+    mac_cpu_write(rt->cpu, 0x108, 4, rt->a5); /* Guest MemTop */
     mac_cpu_write(rt->cpu, 0x130, 4, rt->heap_limit); /* ApplLimit */
     rt->system_volume = mac_system_volume_create(rt);
     if (!rt->system_volume) return fail(rt, err, n, "Could not create authored System volume.");

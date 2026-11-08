@@ -40,6 +40,27 @@ static uint32_t available(MacRuntime *rt) {
     return rt->heap_next <= limit ? limit - rt->heap_next : 0;
 }
 
+static void stamp_guard(MacRuntime *rt, uint32_t pointer, uint32_t size) {
+    if (!rt->guard_allocs || !pointer) return;
+    uint32_t aligned = (size + 3) & ~UINT32_C(3);
+    if (!aligned) aligned = 4;
+    uint32_t end = pointer + aligned + 16u;
+    if (end <= mac_cpu_ram_size(rt->cpu) && pointer + size <= end)
+        memset(mac_cpu_ram(rt->cpu) + pointer + size, 0xA5, end - (pointer + size));
+}
+
+static int verify_guard(MacRuntime *rt, const MacHandle *h) {
+    if (!rt->guard_allocs || !h || h->resource || !h->pointer) return 0;
+    uint32_t aligned = (h->size + 3) & ~UINT32_C(3);
+    if (!aligned) aligned = 4;
+    uint32_t end = h->pointer + aligned + 16u;
+    if (end > mac_cpu_ram_size(rt->cpu)) return -1;
+    const uint8_t *ram = mac_cpu_ram(rt->cpu);
+    for (uint32_t p = h->pointer + h->size; p < end; p++)
+        if (ram[p] != 0xA5) return -1;
+    return 0;
+}
+
 /* Bounded MoveHHi: the trailing movable block has no intervening allocation
  * barriers. Other low-heap layouts need compaction, which we do not fake. */
 static int move_high(MacRuntime *rt, uint32_t address) {
@@ -47,23 +68,25 @@ static int move_high(MacRuntime *rt, uint32_t address) {
     MacHandle *h = lookup(rt, address, 1);
     if (!h || !h->pointer) { result(cpu, -109); return 1; }
     if (h->loaded_code || (h->state & 0x80)) { result(cpu, -117); return 1; }
-    if (h->size > UINT32_MAX - 3) { result(cpu, -108); return 1; }
+    if (h->size > UINT32_MAX - 32) { result(cpu, -108); return 1; }
     uint32_t amount = (h->size + 3) & ~UINT32_C(3);
     if (!amount) amount = 4;
+    uint32_t stride = amount + (rt->guard_allocs ? 16u : 0u);
     size_t ram = mac_cpu_ram_size(cpu);
     if ((h->handle & 1) || h->handle > ram || ram - h->handle < 4 ||
-        h->pointer > ram || amount > ram - h->pointer ||
+        h->pointer > ram || stride > ram - h->pointer ||
         mac_cpu_read(cpu, h->handle, 4) != h->pointer) {
         mac_cpu_halt(cpu, "MoveHHi handle storage is invalid."); return -1;
     }
     if (rt->heap_high && h->pointer >= rt->heap_high) { result(cpu, 0); return 1; }
-    if (h->pointer + amount != rt->heap_next) {
+    if (h->pointer + stride != rt->heap_next) {
         mac_cpu_halt(cpu, "MoveHHi nontrailing blocks require heap compaction."); return -1;
     }
     uint32_t top = ceiling(rt) & ~UINT32_C(3);
-    if (top < amount || top - amount < h->pointer) { result(cpu, -108); return 1; }
-    uint32_t destination = top - amount;
+    if (top < stride || top - stride < h->pointer) { result(cpu, -108); return 1; }
+    uint32_t destination = top - stride;
     memmove(mac_cpu_ram(cpu) + destination, mac_cpu_ram(cpu) + h->pointer, h->size);
+    stamp_guard(rt, destination, h->size);
     rt->heap_next = h->pointer; /* Reclaim the known trailing low allocation. */
     rt->heap_high = destination;
     if (top > rt->heap_high_end) rt->heap_high_end = top;
@@ -124,6 +147,7 @@ int mac_memory_service(MacRuntime *rt, uint16_t opcode) {
             result(cpu, -108);
         } else {
             *h = (MacHandle){.handle = handle, .pointer = pointer, .size = d0};
+            stamp_guard(rt, pointer, d0);
             if (handle) mac_cpu_write(cpu, handle, 4, pointer);
             mac_cpu_set(cpu, MAC_A0, handle ? handle : pointer);
             result(cpu, 0);
@@ -134,7 +158,10 @@ int mac_memory_service(MacRuntime *rt, uint16_t opcode) {
         MacHandle *h = lookup(rt, a0, call == 0x23);
         if (!h) result(cpu, -109);
         else if (h->loaded_code) result(cpu, -117);
-        else {
+        else if (verify_guard(rt, h) != 0) {
+            mac_cpu_halt(cpu, "Guest heap guard redzone corrupted.");
+            return -1;
+        } else {
             if (h->handle) mac_cpu_write(cpu, h->handle, 4, 0);
             memset(h, 0, sizeof *h);
             result(cpu, 0);
@@ -151,13 +178,14 @@ int mac_memory_service(MacRuntime *rt, uint16_t opcode) {
         MacHandle *h = lookup(rt, a0, 1);
         if (!h) result(cpu, -109);
         else if (h->loaded_code && d0 != h->size) result(cpu, -117);
-        else if (d0 <= h->size) { h->size = d0; result(cpu, 0); }
+        else if (d0 <= h->size) { h->size = d0; stamp_guard(rt, h->pointer, d0); result(cpu, 0); }
         else if (h->state & 0x80) result(cpu, -117);
         else {
             uint32_t p = mac_runtime_alloc(rt, d0);
             if (!p) result(cpu, -108);
             else {
                 memcpy(mac_cpu_ram(cpu) + p, mac_cpu_ram(cpu) + h->pointer, h->size);
+                stamp_guard(rt, p, d0);
                 h->pointer = p;
                 h->size = d0;
                 mac_cpu_write(cpu, h->handle, 4, p);

@@ -55,6 +55,7 @@ static int host_set_startup_intro(Session *s, int enabled) {
     if (!s) return -1;
     int on = !!enabled;
     s->host_startup_enabled = on;
+    s->startup_sync_request = 1;
     return os999_startup_pref_write(s->root, on);
 }
 
@@ -96,12 +97,20 @@ static const AppearancePanelDelegate k_delegate = {
 };
 
 static void ensure_builtin_modules(void) {
-    if (!os999_cdev_find("general"))
-        os999_cdev_register(os999_cdev_general_module());
-    if (!os999_cdev_find("sound"))
-        os999_cdev_register(os999_cdev_sound_module());
-    if (!os999_cdev_find("appearance"))
-        os999_cdev_register(os999_cdev_appearance_module());
+    const os999_cdev_t *const mods[] = {
+        os999_cdev_general_module(),
+        os999_cdev_sound_module(),
+        os999_cdev_appearance_module(),
+        os999_cdev_monitors_module(),
+        os999_cdev_keyboard_module(),
+        os999_cdev_energy_module(),
+        os999_cdev_memory_module(),
+        os999_cdev_network_module()
+    };
+    for (unsigned i = 0; i < sizeof mods / sizeof *mods; i++) {
+        if (mods[i] && !os999_cdev_find(mods[i]->id))
+            os999_cdev_register(mods[i]);
+    }
 }
 
 int control_panels_session_init(Session *s) {
@@ -133,6 +142,28 @@ int control_panels_session_init(Session *s) {
     s->host_startup_enabled = os999_cp_store_get_bool(store, "sound", "startup_intro", intro_pref);
     os999_cp_store_get_str(store, "sound", "alert_sound",
                            s->alert_sound, sizeof s->alert_sound, "alert.beep");
+    s->display_color_mode = cp_clamp(
+        os999_cp_store_get_int(store, "monitors", "color_mode", 0), 0, 3);
+    s->display_brightness = cp_clamp(
+        os999_cp_store_get_int(store, "monitors", "brightness", 100), 50, 120);
+    s->display_gamma = cp_clamp(
+        os999_cp_store_get_int(store, "monitors", "gamma_preset", 0), 0, 2);
+    s->display_scanlines = os999_cp_store_get_bool(store, "monitors", "scanlines", 0);
+    s->display_integer_scale = os999_cp_store_get_bool(store, "monitors", "integer_scale", 1);
+    s->key_repeat_rate = cp_clamp(
+        os999_cp_store_get_int(store, "keyboard_mouse", "key_repeat_rate", 2), 0, 3);
+    s->key_repeat_delay_ms = cp_clamp(
+        os999_cp_store_get_int(store, "keyboard_mouse", "key_repeat_delay_ms", 400), 200, 1000);
+    s->double_click_ms = cp_clamp(
+        os999_cp_store_get_int(store, "keyboard_mouse", "double_click_ms", 500), 200, 1000);
+    s->wheel_speed = cp_clamp(
+        os999_cp_store_get_int(store, "keyboard_mouse", "wheel_speed", 2), 1, 3);
+    s->natural_scroll = os999_cp_store_get_bool(store, "keyboard_mouse", "natural_scroll", 0);
+    s->energy_sleep_mins = cp_clamp(
+        os999_cp_store_get_int(store, "energy_saver", "sleep_minutes", 15), 0, 120);
+    s->power_profile = cp_clamp(
+        os999_cp_store_get_int(store, "energy_saver", "power_profile", 0), 0, 2);
+    s->energy_dim_before_sleep = os999_cp_store_get_bool(store, "energy_saver", "dim_before_sleep", 1);
 
     ensure_builtin_modules();
     char plugin_dir[OSPI_PATH + 64];
@@ -145,12 +176,24 @@ int control_panels_session_init(Session *s) {
         os999_cdev_t *m = os999_cdev_at(i);
         if (m && m->init) m->init(m, host);
     }
+    const char *auto_open = getenv("OSPI_OPEN_PANEL");
+    if (auto_open && auto_open[0]) {
+        if (strcmp(auto_open, "grid") == 0) control_panels_open(s);
+        else if (strcmp(auto_open, "grid:scroll") == 0) {
+            control_panels_open(s);
+            g_cp_ui.selected_slot = os999_cdev_count() - 1;
+            cp_clamp_grid_state(s);
+            cp_ensure_slot_visible(s, g_cp_ui.selected_slot);
+        } else control_panels_open_module(s, auto_open);
+    }
     return 0;
 }
 
 void control_panels_session_shutdown(Session *s) {
     if (!s) return;
     if (g_cp_ui.owner == s) control_panels_close();
+    if (s->ram_disk_clear_on_quit && s->ram_disk_mb > 0)
+        (void)volume_ram_disk_sync(s->root, 1, s->ram_disk_mb, 1);
     os999_cp_store_t *store = control_panels_store(s);
     if (store) {
         os999_cp_store_destroy(store);
@@ -334,6 +377,16 @@ static void draw_chrome(Fb *fb, Rect r, const char *title, int focused) {
     }
 }
 
+static int cp_clip_sub(Fb *fb, Rect outer, Rect sub) {
+    int x0 = sub.x > outer.x ? sub.x : outer.x;
+    int y0 = sub.y > outer.y ? sub.y : outer.y;
+    int x1 = sub.x + sub.w < outer.x + outer.w ? sub.x + sub.w : outer.x + outer.w;
+    int y1 = sub.y + sub.h < outer.y + outer.h ? sub.y + sub.h : outer.y + outer.h;
+    if (x1 <= x0 || y1 <= y0) return 0;
+    fb_clip(fb, x0, y0, x1 - x0, y1 - y0);
+    return 1;
+}
+
 static void draw_grid(Fb *fb, Rect r) {
     uint32_t fg = desktop_theme_color(THEME_FOREGROUND);
     for (int c = 0; c < CP_CAT_COUNT; c++)
@@ -343,13 +396,14 @@ static void draw_grid(Fb *fb, Rect r) {
     cdev_ui_button(fb, cp_open_btn_rect(r), "Open", 0, n > 0);
 
     Rect grid = cp_grid_rect(r);
+    Rect inner = {grid.x + 1, grid.y + 1, grid.w - 2, grid.h - 2};
     fb_fill(fb, grid.x, grid.y, grid.w, grid.h, desktop_theme_color(THEME_PANEL));
     fb_frame(fb, grid.x, grid.y, grid.w, grid.h, desktop_theme_color(THEME_FRAME));
-    fb_clip(fb, grid.x + 1, grid.y + 1, grid.w - 2, grid.h - 2);
+    fb_clip(fb, inner.x, inner.y, inner.w, inner.h);
     for (int slot = 0; slot < n; slot++) {
         os999_cdev_t *m = os999_cdev_at(indices[slot]);
         Rect card = cp_card_rect(grid, slot, g_cp_ui.scroll);
-        if (card.y + card.h < grid.y || card.y > grid.y + grid.h) continue;
+        if (card.y + card.h <= inner.y || card.y >= inner.y + inner.h) continue;
         int sel = (slot == g_cp_ui.selected_slot);
         fb_fill(fb, card.x, card.y, card.w, card.h,
                 sel ? desktop_theme_color(THEME_MENU) : desktop_theme_color(THEME_PANEL));
@@ -363,21 +417,32 @@ static void draw_grid(Fb *fb, Rect r) {
             fb_fill(fb, card.x + (card.w - bw) / 2, card.y + 50, bw,
                     typeface_line_height(0) + 4, cdev_ui_selection_color());
         }
-        fb_clip(fb, card.x + 6, card.y + 48, card.w - 12, 24);
-        fb_text(fb, card.x + (card.w - tw) / 2, card.y + 52, sel ? cdev_ui_accent_text() : fg, m->title);
-        fb_unclip(fb);
-        fb_clip(fb, grid.x + 1, grid.y + 1, grid.w - 2, grid.h - 2);
+        if (cp_clip_sub(fb, inner, (Rect){card.x + 6, card.y + 48, card.w - 12, 24}))
+            fb_text(fb, card.x + (card.w - tw) / 2, card.y + 52, sel ? cdev_ui_accent_text() : fg, m->title);
+        fb_clip(fb, inner.x, inner.y, inner.w, inner.h);
         const char *cat = os999_cdev_category_label(m->category);
-        fb_text(fb, card.x + (card.w - fb_text_width(cat)) / 2, card.y + 74,
-                desktop_theme_color(THEME_DISABLED), cat);
+        if (cp_clip_sub(fb, inner, (Rect){card.x + 6, card.y + 72, card.w - 12, 20}))
+            fb_text(fb, card.x + (card.w - fb_text_width(cat)) / 2, card.y + 74,
+                    desktop_theme_color(THEME_DISABLED), cat);
+        fb_clip(fb, inner.x, inner.y, inner.w, inner.h);
         if (m->summary && m->summary[0]) {
-            fb_clip(fb, card.x + 8, card.y + 94, card.w - 16, 46);
-            text_draw(fb, card.x + 10, card.y + 96, card.w - 20, fg, m->summary);
-            fb_unclip(fb);
-            fb_clip(fb, grid.x + 1, grid.y + 1, grid.w - 2, grid.h - 2);
+            if (cp_clip_sub(fb, inner, (Rect){card.x + 6, card.y + 94, card.w - 12, 48}))
+                text_draw(fb, card.x + 10, card.y + 96, card.w - 24, fg, m->summary);
+            fb_clip(fb, inner.x, inner.y, inner.w, inner.h);
         }
     }
     fb_unclip(fb);
+    int max_sc = cp_max_grid_scroll(grid, n);
+    if (max_sc > 0) {
+        Rect sb = cp_scrollbar_rect(grid);
+        fb_fill(fb, sb.x, sb.y, sb.w, sb.h, desktop_theme_color(THEME_TRACK));
+        fb_fill(fb, sb.x, sb.y, 1, sb.h, desktop_theme_color(THEME_FRAME));
+        int th = sb.h * grid.h / (grid.h + max_sc);
+        if (th < 28) th = 28;
+        int ty = sb.y + (sb.h - th) * g_cp_ui.scroll / max_sc;
+        fb_fill(fb, sb.x + 1, ty, sb.w - 1, th, cdev_ui_selection_color());
+        fb_frame(fb, sb.x, ty, sb.w, th, desktop_theme_color(THEME_FRAME));
+    }
     char footer[96];
     snprintf(footer, sizeof footer, "%d control panel%s — Double-click or press Return to open",
              n, n == 1 ? "" : "s");

@@ -79,7 +79,12 @@ typedef struct {
     unsigned window_count;
     int exited;
     int trace;
+    int guard_allocs;
 } MacRuntime;
+
+/* Configure default guest RAM partition (2..12 MiB; 0 = 8 MiB baseline) and
+ * 16-byte heap guard redzones for subsequent mac_runtime_init calls. */
+void mac_runtime_set_memory_policy(int heap_mb, int guard_allocs);
 
 /* The fork's backing bytes must outlive the runtime. This is a development
  * runtime, not a sandbox or a claim of complete Macintosh compatibility. */

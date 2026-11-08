@@ -93,5 +93,10 @@ const char *os999_cdev_category_label(int category);
 const os999_cdev_t *os999_cdev_general_module(void);
 const os999_cdev_t *os999_cdev_sound_module(void);
 const os999_cdev_t *os999_cdev_appearance_module(void);
+const os999_cdev_t *os999_cdev_monitors_module(void);
+const os999_cdev_t *os999_cdev_keyboard_module(void);
+const os999_cdev_t *os999_cdev_energy_module(void);
+const os999_cdev_t *os999_cdev_memory_module(void);
+const os999_cdev_t *os999_cdev_network_module(void);
 
 #endif

@@ -9,7 +9,27 @@
 #include <pthread.h>
 
 static pthread_once_t init_once = PTHREAD_ONCE_INIT;
+static pthread_mutex_t cfg_lock = PTHREAD_MUTEX_INITIALIZER;
+static Os999NetConfig g_net_cfg = {0, 1, 1, 1, 20};
 static int init_result = -1;
+
+void net_set_config(const Os999NetConfig *cfg) {
+    if (!cfg) return;
+    pthread_mutex_lock(&cfg_lock);
+    g_net_cfg.connect_via = (cfg->connect_via >= 0 && cfg->connect_via <= 2) ? cfg->connect_via : 0;
+    g_net_cfg.https_only = 1;
+    g_net_cfg.allow_redirects = !!cfg->allow_redirects;
+    g_net_cfg.guest_isolated = !!cfg->guest_isolated;
+    g_net_cfg.timeout_sec = (cfg->timeout_sec >= 5 && cfg->timeout_sec <= 300) ? cfg->timeout_sec : 20;
+    pthread_mutex_unlock(&cfg_lock);
+}
+
+void net_get_config(Os999NetConfig *out) {
+    if (!out) return;
+    pthread_mutex_lock(&cfg_lock);
+    *out = g_net_cfg;
+    pthread_mutex_unlock(&cfg_lock);
+}
 static void initialize(void) {
     init_result = curl_global_init(CURL_GLOBAL_DEFAULT) == CURLE_OK ? 0 : -1;
 }
@@ -75,8 +95,10 @@ static long long monotonic_ms(void) {
 
 NetResult net_download(const char *url, const char *dest, const NetPolicy *p) {
     Transfer t = {.policy = p, .result = {.status = NET_POLICY}};
-    if (!p || !dest || !*dest || strlen(dest) > 4096 || !net_https_url(url) || !p->allow_url ||
-        !p->allow_url(url, p->context) || !p->max_bytes || p->max_bytes > 1000000000 ||
+    Os999NetConfig cfg;
+    net_get_config(&cfg);
+    if (cfg.connect_via == 2 || !p || !dest || !*dest || strlen(dest) > 4096 || !net_https_url(url) ||
+        !p->allow_url || !p->allow_url(url, p->context) || !p->max_bytes || p->max_bytes > 1000000000 ||
         p->timeout_ms < 1 || p->timeout_ms > 600000 ||
         (p->referer && !net_https_url(p->referer)) ||
         (!!p->client_cert != !!p->client_key)) return t.result;
@@ -91,8 +113,9 @@ NetResult net_download(const char *url, const char *dest, const NetPolicy *p) {
     if (fd < 0) goto done;
     t.file = fdopen(fd, "w+b");
     if (!t.file) { close(fd); unlink(temp); goto done; }
+    int max_hops = cfg.allow_redirects ? 5 : 0;
     long long deadline = monotonic_ms() + p->timeout_ms;
-    for (int hop = 0; hop <= 5; hop++) {
+    for (int hop = 0; hop <= max_hops; hop++) {
         if (!net_https_url(current) || !p->allow_url(current, p->context)) {
             t.result.status = NET_POLICY; break;
         }
@@ -149,7 +172,7 @@ NetResult net_download(const char *url, const char *dest, const NetPolicy *p) {
         if (status == 301 || status == 302 || status == 303 || status == 307 || status == 308) {
             char *redirect = NULL;
             curl_easy_getinfo(curl, CURLINFO_REDIRECT_URL, &redirect);
-            if (!redirect || hop == 5 || p->client_cert) { t.result.status = NET_POLICY; break; }
+            if (!redirect || hop == max_hops || p->client_cert) { t.result.status = NET_POLICY; break; }
             char *next = strdup(redirect);
             if (!next) { t.result.status = NET_IO; break; }
             free(current); current = next;

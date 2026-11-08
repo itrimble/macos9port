@@ -30,6 +30,17 @@ typedef struct {
     int transport_code;
 } NetResult;
 
+typedef struct {
+    int connect_via;       /* 0 = Host HTTPS, 1 = Tailscale, 2 = Offline */
+    int https_only;        /* 1 = verified HTTPS/TLS required */
+    int allow_redirects;   /* 1 = allow verified HTTPS redirect hops (up to 5) */
+    int guest_isolated;    /* 1 = isolate classic MacTCP guests */
+    int timeout_sec;       /* default transfer timeout in seconds (10..60) */
+} Os999NetConfig;
+
+void net_set_config(const Os999NetConfig *cfg);
+void net_get_config(Os999NetConfig *out);
+
 /* Call once at host startup, before worker threads. */
 int net_init(void);
 int net_https_url(const char *url);

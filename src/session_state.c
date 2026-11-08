@@ -146,8 +146,60 @@ int session_take_startup_preview(Session *s) {
 
 int session_quit(const Session *s) { return s && s->quit; }
 
+void session_key_hold(Session *s, int key, int mods, const char *utf8, uint32_t now_ms) {
+    if (!s || (mods & MOD_CMD) || key == 0 || key == 27) return;
+    s->held_key_active = 1;
+    s->held_key = key;
+    s->held_mods = mods;
+    s->held_since_ms = now_ms;
+    s->held_last_repeat_ms = 0;
+    if (utf8 && utf8[0]) snprintf(s->held_text, sizeof s->held_text, "%s", utf8);
+    else s->held_text[0] = 0;
+}
+
+void session_key_release(Session *s, int key) {
+    if (!s) return;
+    if (key == 0 || s->held_key == key) {
+        s->held_key_active = 0;
+        s->held_text[0] = 0;
+    }
+}
+
+void session_note_network_activity(Session *s) {
+    if (!s) return;
+    if (s->energy_wake_on_net) {
+        s->display_dimmed = 0;
+        s->last_activity_ms = s->input_now_ms;
+    }
+}
+
 void session_tick(Session *s, uint32_t now_ms) {
     s->input_now_ms = now_ms;
+    if (s->menu_flash_end_ms && now_ms >= s->menu_flash_end_ms)
+        s->menu_flash_end_ms = 0;
+    if (s->held_key_active && s->key_repeat_rate > 0) {
+        uint32_t delay = s->key_repeat_delay_ms > 0 ? (uint32_t)s->key_repeat_delay_ms : 400u;
+        uint32_t interval = s->key_repeat_rate == 1 ? 180u : s->key_repeat_rate == 3 ? 38u : 90u;
+        if (now_ms >= s->held_since_ms + delay &&
+            (s->held_last_repeat_ms == 0 || now_ms - s->held_last_repeat_ms >= interval)) {
+            s->held_last_repeat_ms = now_ms;
+            if (s->held_text[0]) {
+                if (session_editing(s)) session_text(s, s->held_text);
+                else if (s->dialog == 3 || s->dialog == 5) session_text_input(s, s->held_text);
+                else if (!session_overlay_active(s)) terminal_text_input(s, s->held_text);
+            } else {
+                session_key(s, s->held_key, s->held_mods);
+            }
+        }
+    }
+    if (s->energy_prevent_guest_sleep && (s->guest_running || s->guest_focused)) {
+        s->display_dimmed = 0;
+        s->last_activity_ms = now_ms;
+    } else if (s->energy_dim_before_sleep && s->energy_sleep_mins > 0 &&
+               now_ms > s->last_activity_ms &&
+               now_ms - s->last_activity_ms >= (uint32_t)s->energy_sleep_mins * 60000u) {
+        s->display_dimmed = 1;
+    }
     finder_spring_tick(s, now_ms);
     terminal_tick(s);
     movie_windows_tick(s, now_ms);

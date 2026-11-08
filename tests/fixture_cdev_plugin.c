@@ -3,75 +3,74 @@
 
 typedef struct {
     int initialized;
-    int sleep_minutes;
-    int low_power;
-} EnergySaverState;
+    int use_24_hour;
+    int utc_offset_min;
+} DateTimePluginState;
 
-static EnergySaverState g_energy;
+static DateTimePluginState g_dt;
 
-static int energy_load(os999_cdev_t *self, const os999_cdev_host_t *host) {
+static int dt_load(os999_cdev_t *self, const os999_cdev_host_t *host) {
     (void)self;
     if (host && host->store) {
-        if (host->get_int)
-            g_energy.sleep_minutes = host->get_int(host->store, "energy_saver", "sleep_minutes", 15);
         if (host->get_bool)
-            g_energy.low_power = host->get_bool(host->store, "energy_saver", "low_power", 0);
+            g_dt.use_24_hour = host->get_bool(host->store, "date_time", "use_24_hour", 0);
+        if (host->get_int)
+            g_dt.utc_offset_min = host->get_int(host->store, "date_time", "utc_offset_min", -360);
     }
     return 0;
 }
 
-static int energy_init(os999_cdev_t *self, const os999_cdev_host_t *host) {
-    g_energy.initialized = 1;
-    g_energy.sleep_minutes = 15;
-    g_energy.low_power = 0;
-    self->priv = &g_energy;
-    return energy_load(self, host);
+static int dt_init(os999_cdev_t *self, const os999_cdev_host_t *host) {
+    g_dt.initialized = 1;
+    g_dt.use_24_hour = 0;
+    g_dt.utc_offset_min = -360;
+    self->priv = &g_dt;
+    return dt_load(self, host);
 }
 
-static void energy_shutdown(os999_cdev_t *self) {
-    g_energy.initialized = 0;
+static void dt_shutdown(os999_cdev_t *self) {
+    g_dt.initialized = 0;
     self->priv = NULL;
 }
 
-static int energy_save(os999_cdev_t *self, const os999_cdev_host_t *host) {
+static int dt_save(os999_cdev_t *self, const os999_cdev_host_t *host) {
     (void)self;
     if (!host || !host->store || !host->flush_store) return -1;
-    if (host->set_int)
-        host->set_int(host->store, "energy_saver", "sleep_minutes", g_energy.sleep_minutes);
     if (host->set_bool)
-        host->set_bool(host->store, "energy_saver", "low_power", g_energy.low_power);
+        host->set_bool(host->store, "date_time", "use_24_hour", g_dt.use_24_hour);
+    if (host->set_int)
+        host->set_int(host->store, "date_time", "utc_offset_min", g_dt.utc_offset_min);
     return host->flush_store(host->store);
 }
 
-static int energy_event(os999_cdev_t *self, const os999_cdev_host_t *host,
-                        const os999_cdev_event_t *ev, Rect content) {
+static int dt_event(os999_cdev_t *self, const os999_cdev_host_t *host,
+                    const os999_cdev_event_t *ev, Rect content) {
     if (!ev) return 0;
     if (ev->type == OS999_CDEV_EV_DOWN) {
         if (ev->x >= content.x && ev->x < content.x + content.w &&
             ev->y >= content.y && ev->y < content.y + content.h) {
-            g_energy.sleep_minutes += 5;
-            if (g_energy.sleep_minutes > 120) g_energy.sleep_minutes = 5;
+            g_dt.utc_offset_min += 60;
             if (host && host->play_sound) host->play_sound(host->session, "window.zoom");
-            energy_save(self, host);
+            dt_save(self, host);
             return 1;
         }
     } else if (ev->type == OS999_CDEV_EV_KEY) {
-        if (ev->key == '+' || ev->key == '=') {
-            g_energy.sleep_minutes += 5;
-            energy_save(self, host);
+        if (ev->key == '+') {
+            g_dt.utc_offset_min += 60;
+            dt_save(self, host);
             return 1;
         }
-        if (ev->key == 'p') {
-            g_energy.low_power = !g_energy.low_power;
-            energy_save(self, host);
+        if (ev->key == 't') {
+            g_dt.use_24_hour = !g_dt.use_24_hour;
+            dt_save(self, host);
             return 1;
         }
     }
     return 0;
 }
 
-static void energy_render(os999_cdev_t *self, const os999_cdev_host_t *host,
-                          Fb *fb, Rect content) {
+static void dt_render(os999_cdev_t *self, const os999_cdev_host_t *host,
+                      Fb *fb, Rect content) {
     (void)self;
     (void)host;
     if (!fb || !fb->px) return;
@@ -81,7 +80,7 @@ static void energy_render(os999_cdev_t *self, const os999_cdev_host_t *host,
     if (y0 < 0) y0 = 0;
     if (x1 > fb->w) x1 = fb->w;
     if (y1 > fb->h) y1 = fb->h;
-    uint32_t color = g_energy.low_power ? 0xFF2088C8u : 0xFF28A448u;
+    uint32_t color = g_dt.use_24_hour ? 0xFF2088C8u : 0xFF28A448u;
     for (int y = y0; y < y1; y++) {
         for (int x = x0; x < x1; x++)
             fb->px[y * fb->w + x] = color;
@@ -90,17 +89,17 @@ static void energy_render(os999_cdev_t *self, const os999_cdev_host_t *host,
 
 static const os999_cdev_t k_plugin_cdev = {
     .api_version = OS999_CDEV_API_VERSION,
-    .id = "energy_saver",
-    .title = "Energy Saver",
-    .summary = "Display sleep timer and hardware power saving mode",
-    .icon_name = "battery",
-    .category = OS999_CDEV_CAT_HARDWARE,
-    .init = energy_init,
-    .shutdown = energy_shutdown,
-    .load_state = energy_load,
-    .save_state = energy_save,
-    .handle_event = energy_event,
-    .render = energy_render,
+    .id = "date_time",
+    .title = "Date & Time",
+    .summary = "Menu bar clock format and UTC time-zone offset",
+    .icon_name = "clock",
+    .category = OS999_CDEV_CAT_SYSTEM,
+    .init = dt_init,
+    .shutdown = dt_shutdown,
+    .load_state = dt_load,
+    .save_state = dt_save,
+    .handle_event = dt_event,
+    .render = dt_render,
     .priv = NULL
 };
 

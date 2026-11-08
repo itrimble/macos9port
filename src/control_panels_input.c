@@ -64,13 +64,23 @@ int control_panels_down(Session *s, int x, int y, int clicks) {
         if (rect_has(grid, x, y)) {
             int indices[OS999_CDEV_MAX_MODULES];
             int n = cp_filtered_modules(indices);
+            int max_sc = cp_max_grid_scroll(grid, n);
+            Rect sb = cp_scrollbar_rect(grid);
+            if (max_sc > 0 && rect_has(sb, x, y)) {
+                int rel = cp_clamp(y - sb.y, 0, sb.h);
+                g_cp_ui.scroll = (rel * max_sc) / (sb.h > 1 ? sb.h : 1);
+                return 1;
+            }
+            uint32_t dbl_win = s->double_click_ms > 0 ? (uint32_t)s->double_click_ms : 500u;
             for (int slot = 0; slot < n; slot++) {
                 if (rect_has(cp_card_rect(grid, slot, g_cp_ui.scroll), x, y)) {
                     uint32_t dt = s->input_now_ms - g_cp_ui.last_ms;
                     int dx = x - g_cp_ui.last_x, dy = y - g_cp_ui.last_y;
-                    int dbl = clicks >= 2 ||
-                              (g_cp_ui.last_slot == slot && dt > 0 && dt <= 500 &&
-                               dx >= -6 && dx <= 6 && dy >= -6 && dy <= 6);
+                    int repeat = g_cp_ui.last_slot == slot && dt > 0 && dt <= dbl_win &&
+                                 dx >= -6 && dx <= 6 && dy >= -6 && dy <= 6;
+                    int dbl = (g_cp_ui.last_slot >= 0 && s->input_now_ms > 0)
+                                  ? repeat
+                                  : (clicks >= 2 || repeat);
                     g_cp_ui.selected_slot = slot;
                     g_cp_ui.last_slot = slot;
                     g_cp_ui.last_ms = s->input_now_ms;
@@ -154,7 +164,8 @@ int control_panels_wheel(Session *s, int dy) {
         int indices[OS999_CDEV_MAX_MODULES];
         int n = cp_filtered_modules(indices);
         Rect grid = cp_grid_rect(r);
-        g_cp_ui.scroll = cp_clamp(g_cp_ui.scroll - dy * 24, 0, cp_max_grid_scroll(grid, n));
+        int step = s->wheel_speed == 1 ? 14 : s->wheel_speed == 3 ? 42 : 24;
+        g_cp_ui.scroll = cp_clamp(g_cp_ui.scroll - dy * step, 0, cp_max_grid_scroll(grid, n));
         return 1;
     }
     os999_cdev_t *m = os999_cdev_at(g_cp_ui.open_module);

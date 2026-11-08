@@ -24,6 +24,8 @@
 #include <time.h>
 
 void menu_paint_popup(Fb *fb, int menu, int hot_row);
+void menu_paint_flash(Fb *fb, const Session *s);
+void menu_paint_dialog_caret(Fb *fb, const Session *s, int x, int y);
 
 static void format_space(char *out, size_t n, uint64_t b) {
     if (b >= 10000000000ull) {
@@ -418,17 +420,13 @@ static void paint_menus(Fb *fb, Session *s) {
     }
     if (s->sw - finder_w - 28 - clock_w >= menus_right + 8)
         fb_text(fb, s->sw - finder_w - 28 - clock_w, my, desktop_theme_color(THEME_FOREGROUND), clk);
-    if (s->menu < 0) {
-        return;
-    }
+    if (s->menu < 0) { menu_paint_flash(fb, s); return; }
     menu_paint_popup(fb, s->menu, s->menu_hot);
     if (s->menu_child) menu_paint_popup(fb, s->menu_child, s->menu_child_hot);
 }
 
 static void paint_dialog(Fb *fb, const Session *s) {
-    if (!s->dialog) {
-        return;
-    }
+    if (!s->dialog) return;
     Rect box, cancel, ok;
     dialog_layout(s, &box, &cancel, &ok);
     fb_fill(fb, box.x + 3, box.y + 3, box.w, box.h, 0xFF6A6A6Au);
@@ -449,6 +447,7 @@ static void paint_dialog(Fb *fb, const Session *s) {
         if (offset < 0) offset = 0;
         fb_text(fb, x + 5 - offset, y + 7, C_BLACK, s->edit_text);
         if (s->edit_selected) fb_invert(fb, x + 3, y + 3, width - 6, 22);
+        else menu_paint_dialog_caret(fb, s, x + 5 - offset + fb_text_width(s->edit_text), y + 6);
         fb_unclip(fb);
     }
     finder_settings_paint(fb, s, box);

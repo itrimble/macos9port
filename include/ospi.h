@@ -52,6 +52,8 @@ enum { CMD_WALLPAPER_BASE = 300, CMD_WALLPAPER_LAST = 359,
        CMD_WALLPAPER_PREVIOUS = 400, CMD_WALLPAPER_NEXT = 401,
        CMD_APPEARANCE_DESKTOP = 410, CMD_CONTROL_PANELS = 411,
        CMD_APPEARANCE_THEMES = 412, CMD_CP_GENERAL = 413, CMD_CP_SOUND = 414,
+       CMD_CP_MONITORS = 415, CMD_CP_KEYBOARD = 416, CMD_CP_ENERGY = 417,
+       CMD_CP_MEMORY = 418, CMD_CP_NETWORK = 419,
        MENU_APPEARANCE = 6, WALLPAPERS_PER_PAGE = 10 };
 enum { CMD_GET_INFO = 420, CMD_SELECT_ALL = 421, CMD_COPY = 422, CMD_CLOSE_ALL = 423, CMD_STANDARD_ICON = 424,
        CMD_VIEW_ICONS = 430, CMD_VIEW_LIST = 431, CMD_SORT_NAME = 432, CMD_SORT_KIND = 433,
@@ -254,8 +256,20 @@ struct Session {
     char info_rel[OSPI_PATH];
     void *cp_store;
     int cursor_blink_ms, cursor_blink_set, menu_blink_count, desktop_pattern;
-    int system_volume, sound_muted, startup_chime_enabled, volume_sync_request;
+    int menu_flash_menu, menu_flash_row;
+    uint32_t menu_flash_start_ms, menu_flash_end_ms;
+    int system_volume, sound_muted, startup_chime_enabled, volume_sync_request, startup_sync_request;
     char alert_sound[32];
+    int display_color_mode, display_brightness, display_gamma, display_scanlines, display_integer_scale;
+    int key_repeat_rate, key_repeat_delay_ms, double_click_ms, wheel_speed, natural_scroll;
+    int held_key_active, held_key, held_mods;
+    uint32_t held_since_ms, held_last_repeat_ms;
+    char held_text[8];
+    int energy_sleep_mins, power_profile, energy_dim_before_sleep, display_dimmed;
+    int energy_prevent_guest_sleep, energy_wake_on_net, guest_running;
+    uint32_t last_activity_ms;
+    int disk_cache_kb, guest_ram_mb, guest_guard_pages, ram_disk_mb, ram_disk_clear_on_quit;
+    int net_connect_via, net_https_only, net_allow_redirects, net_guest_isolated, net_timeout_sec;
 };
 
 typedef struct {
@@ -351,6 +365,10 @@ int volume_mkdir_unique(const char *root, const char *rel, const char *base,
 int volume_trash(const char *root, const char *rel, const char *name);
 int volume_count(const char *root, const char *rel);
 int volume_empty_trash(const char *root);
+int volume_ram_disk_sync(const char *root, int enabled, int quota_mb, int wipe_contents);
+int volume_ram_disk_usage(const char *root, uint64_t *used_bytes, int *quota_mb);
+void volume_disk_cache_set_kb(int kb);
+void volume_disk_cache_stats(size_t *used_bytes, size_t *cap_bytes, unsigned *hits);
 int volume_join(char *out, size_t n, const char *root, const char *rel);
 
 uint64_t host_ram(void);
@@ -369,6 +387,9 @@ void session_up(Session *s, int x, int y);
 void session_move(Session *s, int x, int y);
 void session_wheel(Session *s, int dy);
 void session_key(Session *s, int key, int mods);
+void session_key_hold(Session *s, int key, int mods, const char *utf8, uint32_t now_ms);
+void session_key_release(Session *s, int key);
+void session_note_network_activity(Session *s);
 void session_text_input(Session *s, const char *text);
 void session_tick(Session *s, uint32_t now_ms);
 int session_quit(const Session *s);

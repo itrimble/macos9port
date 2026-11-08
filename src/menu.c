@@ -70,8 +70,14 @@ static MenuItem k_labels[] = {
 static MenuItem k_panels[] = {
     ITEM("Open Control Panels", CMD_CONTROL_PANELS), SEP,
     ITEM("General Controls", CMD_CP_GENERAL),
+    ITEM("Appearance", CMD_APPEARANCE_DESKTOP),
     ITEM("Sound & Startup", CMD_CP_SOUND),
-    ITEM("Appearance", CMD_APPEARANCE_DESKTOP), ITEM("Finder Preferences", CMD_PREFERENCES),
+    ITEM("Monitors & Display", CMD_CP_MONITORS),
+    ITEM("Keyboard & Mouse", CMD_CP_KEYBOARD),
+    ITEM("Energy Saver", CMD_CP_ENERGY),
+    ITEM("Memory", CMD_CP_MEMORY),
+    ITEM("TCP/IP & Network", CMD_CP_NETWORK), SEP,
+    ITEM("Finder Preferences", CMD_PREFERENCES),
 };
 static MenuItem k_recent[2][18];
 static char recent_labels[16][OSPI_PATH];
@@ -117,6 +123,8 @@ static void update_items(Session *s, MenuItem *items, int count) {
         case CMD_MENU_PANELS: case CMD_MENU_RECENT_APPS: case CMD_MENU_RECENT_DOCS: yes = 1; break;
         case CMD_NEW_FOLDER: yes = !w || !w->search_results; break;
         case CMD_ABOUT: case CMD_CONTROL_PANELS: case CMD_CP_GENERAL: case CMD_CP_SOUND:
+        case CMD_CP_MONITORS: case CMD_CP_KEYBOARD: case CMD_CP_ENERGY:
+        case CMD_CP_MEMORY: case CMD_CP_NETWORK:
         case CMD_APPEARANCE_DESKTOP: case CMD_INSTALL:
         case CMD_QUIT: case CMD_SHUTDOWN: case CMD_STARTUP_PREVIEW:
         case CMD_HELP: case CMD_HELP_KEYS: case CMD_HELP_STATUS: yes = 1; break;

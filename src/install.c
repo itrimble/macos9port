@@ -21,26 +21,16 @@
 extern char **environ;
 
 static void set_err(char *err, size_t n, const char *msg) {
-    if (err && n) {
-        snprintf(err, n, "%s", msg);
-    }
+    if (err && n) snprintf(err, n, "%s", msg);
 }
 
 int garden_page_ok(const char *url) {
     const char *path = NULL;
-    if (!url) {
-        return 0;
-    }
-    if (strncmp(url, "https://macintoshgarden.org/", 28) == 0) {
-        path = url + 28;
-    } else if (strncmp(url, "https://www.macintoshgarden.org/", 32) == 0) {
-        path = url + 32;
-    } else {
-        return 0;
-    }
-    if (!path[0]) {
-        return 0;
-    }
+    if (!url) return 0;
+    if (strncmp(url, "https://macintoshgarden.org/", 28) == 0) path = url + 28;
+    else if (strncmp(url, "https://www.macintoshgarden.org/", 32) == 0) path = url + 32;
+    else return 0;
+    if (!path[0]) return 0;
     const char *p = path;
     while (*p) {
         unsigned char c = (unsigned char)*p++;
@@ -282,18 +272,14 @@ static int curl_archive(const char *page, const char *url, const char *dest) {
 
 static int fetch_archive(const char *page, const char *file_url, const char *dest) {
     char alt[2048];
-    int i;
-    if (curl_archive(page, file_url, dest) == 0) {
-        return 0;
-    }
-    for (i = 0; i < 2; i++) {
+    if (curl_archive(page, file_url, dest) == 0) return 0;
+    Os999NetConfig cfg;
+    net_get_config(&cfg);
+    if (!cfg.allow_redirects) return -1;
+    for (int i = 0; i < 2; i++) {
         unlink(dest);
-        if (garden_alt_url(file_url, i, alt, sizeof alt) != 0) {
-            continue;
-        }
-        if (curl_archive(page, alt, dest) == 0) {
-            return 0;
-        }
+        if (garden_alt_url(file_url, i, alt, sizeof alt) != 0) continue;
+        if (curl_archive(page, alt, dest) == 0) return 0;
     }
     return -1;
 }
@@ -335,6 +321,12 @@ int install_garden(const char *root, const char *page_url, char *created_rel, si
         set_err(err, err_n, "That link is not a macintoshgarden.org page.");
         return -1;
     }
+    Os999NetConfig cfg;
+    net_get_config(&cfg);
+    if (cfg.connect_via == 2) {
+        set_err(err, err_n, "Network is set to Offline in TCP/IP & Network.");
+        return -1;
+    }
     char page_tmp[OSPI_PATH];
     int pfd = install_tempfile(page_tmp, sizeof page_tmp, "page");
     if (pfd < 0) {
@@ -342,7 +334,8 @@ int install_garden(const char *root, const char *page_url, char *created_rel, si
         return -1;
     }
     close(pfd);
-    if (secure_fetch(page_url, page_tmp, 2000000, 60000, NULL) != 0) {
+    long page_timeout = cfg.timeout_sec > 0 ? (long)cfg.timeout_sec * 1000L : 60000L;
+    if (secure_fetch(page_url, page_tmp, 2000000, page_timeout, NULL) != 0) {
         unlink(page_tmp);
         set_err(err, err_n, "Could not open that Macintosh Garden page.");
         return -1;

@@ -31,11 +31,8 @@ static void *create_session_worker(void *context) {
     return NULL;
 }
 static const char *flag_arg(int argc, char **argv, const char *flag) {
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], flag) == 0 && i + 1 < argc) {
-            return argv[i + 1];
-        }
-    }
+    for (int i = 1; i < argc; i++)
+        if (strcmp(argv[i], flag) == 0 && i + 1 < argc) return argv[i + 1];
     return NULL;
 }
 static void take_clip(Session *s) {
@@ -44,15 +41,10 @@ static void take_clip(Session *s) {
     SDL_free(text);
 }
 static void logical_point(SDL_Window *win, int x, int y, int *ox, int *oy) {
-    int ww = 1;
-    int wh = 1;
+    int ww = 1, wh = 1;
     SDL_GetWindowSize(win, &ww, &wh);
-    if (ww < 1) {
-        ww = 1;
-    }
-    if (wh < 1) {
-        wh = 1;
-    }
+    if (ww < 1) ww = 1;
+    if (wh < 1) wh = 1;
     *ox = x * OSPI_W / ww;
     *oy = y * OSPI_H / wh;
 }
@@ -105,10 +97,7 @@ int main(int argc, char **argv) {
         SDL_Quit();
         return 1;
     }
-    int ww = 0;
-    int wh = 0;
-    int rw = 0;
-    int rh = 0;
+    int ww = 0, wh = 0, rw = 0, rh = 0;
     SDL_GetWindowSize(win, &ww, &wh);
     SDL_GetRendererOutputSize(ren, &rw, &rh);
     fprintf(stderr, "OS999 Stylized window %dx%d  drawable %dx%d\n", ww, wh, rw, rh);
@@ -391,6 +380,10 @@ int main(int argc, char **argv) {
             } else if (ev.type == SDL_MOUSEWHEEL) {
                 session_wheel(s, ev.wheel.y);
             } else if (ev.type == SDL_TEXTINPUT && (!guest_focus || session_overlay_active(s))) {
+                if (s->held_key_active) {
+                    if (!s->held_text[0]) snprintf(s->held_text, sizeof s->held_text, "%s", ev.text.text);
+                    else if (strcmp(s->held_text, ev.text.text) == 0) continue;
+                }
                 if (session_editing(s)) session_text(s, ev.text.text);
                 else if (s->dialog == 3 || s->dialog == 5) session_text_input(s, ev.text.text);
                 else if (!session_overlay_active(s) && !(SDL_GetModState() & (KMOD_GUI | KMOD_CTRL | KMOD_ALT)))
@@ -402,29 +395,30 @@ int main(int argc, char **argv) {
                         (uint32_t)ev.key.keysym.mod});
                     continue;
                 }
-                int key = ev.key.keysym.sym;
-                if (key == SDLK_KP_ENTER) key = '\r';
+                if (ev.key.repeat) continue;
+                int key = ev.key.keysym.sym == SDLK_KP_ENTER ? '\r' : ev.key.keysym.sym;
                 int mods = ((ev.key.keysym.mod & KMOD_GUI) ? MOD_CMD : 0) |
                            ((ev.key.keysym.mod & KMOD_SHIFT) ? TERM_MOD_SHIFT : 0) |
                            ((ev.key.keysym.mod & KMOD_CTRL) ? TERM_MOD_CTRL : 0) |
                            ((ev.key.keysym.mod & KMOD_ALT) ? TERM_MOD_ALT : 0);
                 if ((mods & MOD_CMD) && (key == 'v' || key == 'V')) take_clip(s);
+                if (ev.key.keysym.mod & (KMOD_CTRL | KMOD_ALT)) mods |= MOD_OTHER;
+                session_key_hold(s, key, mods, NULL, SDL_GetTicks());
                 if (!session_overlay_active(s) && terminal_front(s) &&
                     !(mods & (MOD_CMD | TERM_MOD_CTRL | TERM_MOD_ALT)) &&
-                    key >= 32 && key < 127) {
-                    continue;
-                }
-                if (ev.key.keysym.mod & (KMOD_CTRL | KMOD_ALT)) mods |= MOD_OTHER;
+                    key >= 32 && key < 127) continue;
                 session_key(s, key, mods);
                 if ((mods & MOD_CMD) && (key == 'c' || key == 'C') && s->clip[0])
                     SDL_SetClipboardText(s->clip);
                 if (session_take_clip_out(s)) SDL_SetClipboardText(s->clip);
-            } else if (ev.type == SDL_KEYUP && guest_focus && native_surface_active() && !session_overlay_active(s)) {
-                native_surface_push((RuntimeBridgeInput){RUNTIME_BRIDGE_KEY_UP,
-                    0, 0, (uint32_t)ev.key.keysym.sym,
-                    (uint32_t)ev.key.keysym.mod});
+            } else if (ev.type == SDL_KEYUP) {
+                session_key_release(s, ev.key.keysym.sym == SDLK_KP_ENTER ? '\r' : ev.key.keysym.sym);
+                if (guest_focus && native_surface_active() && !session_overlay_active(s))
+                    native_surface_push((RuntimeBridgeInput){RUNTIME_BRIDGE_KEY_UP,
+                        0, 0, (uint32_t)ev.key.keysym.sym, (uint32_t)ev.key.keysym.mod});
             } else if (ev.type == SDL_WINDOWEVENT &&
                        ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+                session_key_release(s, 0);
                 if (guest_focus) native_surface_push((RuntimeBridgeInput){.kind=RUNTIME_BRIDGE_FOCUS_LOST});
                 guest_focus = guest_mouse_capture = s->app_switch_tab = 0; s->down = s->drag = s->switcher.gesture = s->switcher.tear_armed = 0;
             }
@@ -439,6 +433,7 @@ int main(int argc, char **argv) {
         }
         if (session_take_startup_preview(s) && startup_desktop)
             os999_startup_begin(&startup, SDL_GetTicks(), reduce_motion && strcmp(reduce_motion, "1") == 0);
+        desktop_host_sync_present(s, ren, tex, volume, &boot_enabled);
         s->host_startup_enabled = boot_enabled;
         desktop_host_tick(s, native_surface_active());
         osa_ipc_poll(s);
@@ -475,8 +470,7 @@ int main(int argc, char **argv) {
         }
         SDL_UpdateTexture(tex, NULL, frame, OSPI_W * (int)sizeof *frame);
         SDL_RenderClear(ren);
-        int rw = OSPI_W;
-        int rh = OSPI_H;
+        int rw = OSPI_W, rh = OSPI_H;
         SDL_GetRendererOutputSize(ren, &rw, &rh);
         SDL_Rect dst = {0, 0, rw, rh};
         SDL_RenderCopy(ren, tex, NULL, &dst);

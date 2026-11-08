@@ -296,6 +296,7 @@ int volume_read(const char *root, const char *rel, char *buf, size_t n) {
     if (!buf || n < 2 || volume_join(full, sizeof full, root, rel) != 0) {
         return -1;
     }
+    if (volume_disk_cache_lookup(full, n, buf) == 0) return 0;
     FILE *f = fopen(full, "rb");
     if (!f) {
         return -1;
@@ -311,9 +312,11 @@ int volume_read(const char *root, const char *rel, char *buf, size_t n) {
                      "Double-click a StuffIt, MacBinary,\n"
                      "or disk image to open it in\n"
                      "Systemless. Other files stay put.\n");
+            volume_disk_cache_store(full, n, buf);
             return 0;
         }
     }
+    volume_disk_cache_store(full, n, buf);
     return 0;
 }
 

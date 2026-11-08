@@ -22,6 +22,20 @@ static int advance(int menu, int current, int step) {
     return -1;
 }
 
+static void activate_row(Session *s, int menu, int row) {
+    int command = menu_at(menu, row)->cmd;
+    if (command && s->menu_blink_count > 0 && s->input_now_ms > 0) {
+        s->menu_flash_menu = menu;
+        s->menu_flash_row = row;
+        s->menu_flash_start_ms = s->input_now_ms;
+        s->menu_flash_end_ms = s->input_now_ms + (uint32_t)s->menu_blink_count * 90u;
+    } else {
+        s->menu_flash_end_ms = 0;
+    }
+    dismiss(s);
+    if (command) session_command(s, command);
+}
+
 int menu_navigation_key(Session *s, int key, int mods) {
     if (!s || s->menu < 0) return 0;
     if (mods & MOD_CMD) { dismiss(s); return 0; }
@@ -40,8 +54,10 @@ int menu_navigation_key(Session *s, int key, int mods) {
             return 1;
         }
         if (key == '\r' || key == '\n') {
-            int cmd = selectable(s->menu_child, s->menu_child_hot) ? menu_at(s->menu_child, s->menu_child_hot)->cmd : CMD_NONE;
-            dismiss(s); if (cmd) session_command(s, cmd); return 1;
+            if (selectable(s->menu_child, s->menu_child_hot))
+                activate_row(s, s->menu_child, s->menu_child_hot);
+            else dismiss(s);
+            return 1;
         }
         return 1;
     }
@@ -61,10 +77,8 @@ int menu_navigation_key(Session *s, int key, int mods) {
                                         (s->menu + count - 1) % count;
         s->menu_hot = advance(s->menu, -1, 1);
     } else if (key == '\r' || key == '\n') {
-        int command = CMD_NONE;
-        if (selectable(s->menu, s->menu_hot)) command = menu_at(s->menu, s->menu_hot)->cmd;
-        dismiss(s);
-        if (command != CMD_NONE) session_command(s, command);
+        if (selectable(s->menu, s->menu_hot)) activate_row(s, s->menu, s->menu_hot);
+        else dismiss(s);
     }
     return 1;
 }

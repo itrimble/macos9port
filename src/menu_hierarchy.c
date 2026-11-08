@@ -9,6 +9,14 @@ int menu_activate(Session *s, int menu, int row) {
         return 1;
     }
     int command = item->cmd;
+    if (command && s->menu_blink_count > 0 && s->input_now_ms > 0) {
+        s->menu_flash_menu = menu;
+        s->menu_flash_row = row;
+        s->menu_flash_start_ms = s->input_now_ms;
+        s->menu_flash_end_ms = s->input_now_ms + (uint32_t)s->menu_blink_count * 90u;
+    } else {
+        s->menu_flash_end_ms = 0;
+    }
     s->menu = s->menu_hot = -1; s->menu_child = 0; s->menu_child_hot = -1;
     s->down = 0;
     if (command) session_command(s, command);

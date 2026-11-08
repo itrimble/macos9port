@@ -52,7 +52,7 @@ int mac_system_service(MacRuntime *rt, uint16_t opcode) {
     switch (selector) {
     case 0x73797376: response = 0x0607; break; /* sysv */
     case 0x70726f63: response = 3; break; /* proc: MC68020 */
-    case 0x72616d20: response = 0x800000; break; /* ram : application address space */
+    case 0x72616d20: response = rt->a5 ? rt->a5 : 0x800000; break; /* ram : application address space */
     case 0x66707520: break; /* fpu : no floating point unit */
     case 0x71642020: /* Selected drawing profile; unsupported calls still halt. */
         response = rt->main_device && rt->screen_depth == 8 ? 0x100 : 0; break;

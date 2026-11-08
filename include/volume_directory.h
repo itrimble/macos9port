@@ -30,4 +30,7 @@ static inline int volume_directory_open(const char *root, const char *rel) {
     }
     return fd;
 }
+
+int volume_disk_cache_lookup(const char *full, size_t req_n, char *buf);
+void volume_disk_cache_store(const char *full, size_t req_n, const char *buf);
 #endif

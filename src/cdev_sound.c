@@ -47,6 +47,7 @@ static void sync_session(const SoundState *st, const os999_cdev_host_t *host) {
     s->host_sound_enabled = !st->muted;
     s->startup_chime_enabled = !!st->startup_chime;
     s->host_startup_enabled = !!st->startup_intro;
+    s->startup_sync_request = 1;
     snprintf(s->alert_sound, sizeof s->alert_sound, "%s", k_alerts[st->alert_index].id);
 }
 
@@ -273,7 +274,7 @@ static const os999_cdev_t k_sound_cdev = {
     .api_version = OS999_CDEV_API_VERSION,
     .id = "sound",
     .title = "Sound & Startup",
-    .summary = "System volume, classic alert sounds, and startup chime",
+    .summary = "Output volume, alert sounds, and boot chime",
     .icon_name = "speaker",
     .category = OS999_CDEV_CAT_SOUND,
     .init = sound_init,

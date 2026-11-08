@@ -1,6 +1,7 @@
 #include "mac_runtime.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int fails;
@@ -140,9 +141,89 @@ static void high_heap(void) {
     mac_runtime_destroy(&rt);
 }
 
+static void put16(uint8_t *p, uint16_t v) { p[0] = v >> 8; p[1] = v; }
+static void put32(uint8_t *p, uint32_t v) { put16(p, v >> 16); put16(p + 2, v); }
+
+static void runtime_policy_and_guard_checks(void) {
+    enum { DATA = 256, MAP = 384, ZERO = DATA + 4, SEG = DATA + 32, TOTAL = MAP + 62 };
+    uint8_t b[TOTAL] = {0};
+    put32(b, DATA); put32(b + 4, MAP); put32(b + 8, 44); put32(b + 12, 62);
+    put32(b + DATA, 24);
+    put32(b + ZERO, 0x100); put32(b + ZERO + 4, 0x100);
+    put32(b + ZERO + 8, 8); put32(b + ZERO + 12, 32);
+    put16(b + ZERO + 16, 0); put16(b + ZERO + 18, 0x3f3c);
+    put16(b + ZERO + 20, 1); put16(b + ZERO + 22, 0xa9f0);
+    put32(b + DATA + 28, 12);
+    put16(b + SEG, 0); put16(b + SEG + 2, 1);
+    put16(b + SEG + 4, 0x7007); put16(b + SEG + 6, 0xa9f4);
+    put16(b + SEG + 8, 0x4e71); put16(b + SEG + 10, 0x4e71);
+    put16(b + MAP + 24, 28); put16(b + MAP + 26, 62);
+    put32(b + MAP + 30, MAC_CODE_TYPE);
+    put16(b + MAP + 34, 1); put16(b + MAP + 36, 10);
+    put16(b + MAP + 40, 0xffff);
+    put16(b + MAP + 50, 1); put16(b + MAP + 52, 0xffff);
+    b[MAP + 57] = 28;
+
+    MacResourceFork f;
+    char err[240];
+    CHECK(mac_resource_open(&f, b, TOTAL, err, sizeof err) == 0);
+
+    unsetenv("OS999_GUEST_HEAP_MB");
+    unsetenv("OS999_GUEST_GUARD");
+    mac_runtime_set_memory_policy(2, 0);
+    MacRuntime rt;
+    CHECK(mac_runtime_init(&rt, &f, err, sizeof err) == 0);
+    CHECK(rt.a5 == 0x200000 && rt.guard_allocs == 0);
+    CHECK(mac_cpu_read(rt.cpu, 0x108, 4) == 0x200000);
+    mac_cpu_set(rt.cpu, MAC_D0, 0x72616d20);
+    CHECK(mac_system_service(&rt, 0xa1ad) == 1);
+    CHECK(mac_cpu_get(rt.cpu, MAC_D0) == 0 && mac_cpu_get(rt.cpu, MAC_A0) == 0x200000);
+    mac_runtime_destroy(&rt);
+
+    setenv("OS999_GUEST_HEAP_MB", "12", 1);
+    setenv("OS999_GUEST_GUARD", "1", 1);
+    CHECK(mac_runtime_init(&rt, &f, err, sizeof err) == 0);
+    CHECK(rt.a5 == 0xc00000 && rt.guard_allocs == 1);
+    CHECK(mac_cpu_read(rt.cpu, 0x108, 4) == 0xc00000);
+    mac_cpu_set(rt.cpu, MAC_D0, 0x72616d20);
+    CHECK(mac_system_service(&rt, 0xa1ad) == 1);
+    CHECK(mac_cpu_get(rt.cpu, MAC_A0) == 0xc00000);
+    CHECK(call(&rt, 0xa01c, 0, 0) == 1 && mac_cpu_get(rt.cpu, MAC_D0) > 0x900000);
+
+    CHECK(call(&rt, 0xa01e, 0, 13) == 1); error_is(&rt, 0);
+    uint32_t p_ok = mac_cpu_get(rt.cpu, MAC_A0);
+    memset(mac_cpu_ram(rt.cpu) + p_ok, 0x55, 13);
+    CHECK(mac_cpu_ram(rt.cpu)[p_ok + 13] == 0xa5);
+    CHECK(call(&rt, 0xa01f, p_ok, 0) == 1); error_is(&rt, 0);
+
+    CHECK(call(&rt, 0xa022, 0, 10) == 1); error_is(&rt, 0);
+    uint32_t h_ok = mac_cpu_get(rt.cpu, MAC_A0);
+    CHECK(call(&rt, 0xa024, h_ok, 18) == 1); error_is(&rt, 0);
+    CHECK(call(&rt, 0xa064, h_ok, 0) == 1); error_is(&rt, 0);
+    uint32_t hp = mac_cpu_read(rt.cpu, h_ok, 4);
+    memset(mac_cpu_ram(rt.cpu) + hp, 0x33, 18);
+    CHECK(mac_cpu_ram(rt.cpu)[hp + 18] == 0xa5);
+    CHECK(call(&rt, 0xa024, h_ok, 6) == 1); error_is(&rt, 0);
+    CHECK(mac_cpu_ram(rt.cpu)[hp + 6] == 0xa5);
+    CHECK(call(&rt, 0xa023, h_ok, 0) == 1); error_is(&rt, 0);
+
+    CHECK(call(&rt, 0xa01e, 0, 13) == 1); error_is(&rt, 0);
+    uint32_t p_bad = mac_cpu_get(rt.cpu, MAC_A0);
+    mac_cpu_ram(rt.cpu)[p_bad + 13] = 0x42;
+    CHECK(call(&rt, 0xa01f, p_bad, 0) == -1);
+    CHECK(mac_cpu_halted(rt.cpu));
+    CHECK(strstr(mac_cpu_error(rt.cpu), "redzone") != NULL);
+    mac_runtime_destroy(&rt);
+
+    unsetenv("OS999_GUEST_HEAP_MB");
+    unsetenv("OS999_GUEST_GUARD");
+    mac_runtime_set_memory_policy(0, 0);
+}
+
 int main(void) {
     bounded_reclamation();
     high_heap();
+    runtime_policy_and_guard_checks();
     MacRuntime rt = {0};
     rt.cpu = mac_cpu_create(65536);
     CHECK(rt.cpu != NULL);

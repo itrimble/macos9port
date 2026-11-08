@@ -8,6 +8,7 @@
 #include "desktop_host.h"
 #include "desktop_sound.h"
 #include "media_player_panel.h"
+#include "os999_startup.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,6 +22,7 @@
 #endif
 
 static int previous_menu = -1, previous_dialog;
+static int prev_scale_mode = -1, prev_vsync_mode = -1;
 
 static int sound_directory(const char *directory) {
     char path[4096];
@@ -74,6 +76,7 @@ void desktop_host_init(const char *volume) {
     char sounds[4096], preference[OSPI_PATH + 32];
     previous_menu = -1;
     previous_dialog = 0;
+    prev_scale_mode = prev_vsync_mode = -1;
     find_sounds(sounds, sizeof sounds);
     media_panel_init_hooks();
     desktop_bt_host_init();
@@ -101,6 +104,7 @@ void desktop_host_init(const char *volume) {
 
 void desktop_host_tick(Session *s, int guest_active) {
     if (!s) return;
+    s->guest_running = !!guest_active;
     media_panel_tick();
     desktop_bt_host_tick();
     if (s->clipboard_write_request) {
@@ -119,6 +123,8 @@ void desktop_host_tick(Session *s, int guest_active) {
         s->volume_sync_request = 0;
         cp_audio_set_volume(s->system_volume);
     }
+    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, s->display_integer_scale ? "0" : "1");
+    if (s->power_profile == 1 && !guest_active) SDL_Delay(14);
     if (s->sound_preview_request >= 0) {
         int ev = s->sound_preview_request;
         s->sound_preview_request = -1;
@@ -137,6 +143,30 @@ void desktop_host_tick(Session *s, int guest_active) {
     s->sound_event[0] = 0;
     previous_dialog = s->dialog;
     previous_menu = s->menu;
+}
+
+void desktop_host_sync_present(Session *s, SDL_Renderer *ren, SDL_Texture *tex,
+                               const char *volume, int *boot_enabled) {
+    if (!s) return;
+    if (s->startup_sync_request && volume && boot_enabled) {
+        s->startup_sync_request = 0;
+        *boot_enabled = os999_startup_pref_read(volume);
+        s->host_startup_enabled = *boot_enabled;
+    }
+    int nearest = s->display_integer_scale ? 1 : 0;
+    if (tex && nearest != prev_scale_mode) {
+#if SDL_VERSION_ATLEAST(2, 0, 12)
+        SDL_SetTextureScaleMode(tex, nearest ? SDL_ScaleModeNearest : SDL_ScaleModeLinear);
+#endif
+        prev_scale_mode = nearest;
+    }
+    int vsync = s->power_profile == 2 ? 0 : 1;
+    if (ren && vsync != prev_vsync_mode) {
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+        (void)SDL_RenderSetVSync(ren, vsync);
+#endif
+        prev_vsync_mode = vsync;
+    }
 }
 
 void desktop_host_shutdown(void) {
