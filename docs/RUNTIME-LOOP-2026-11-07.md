@@ -313,7 +313,14 @@ the probe, not a window I watched, and I have not listened to any audio.
   without FreeType or the file it halts by name. Strikes are cached for the process. Link lines for the runtime tests now carry `$(FT_LIBS)`.
   Mutation checks on the test: bit position, row offset, advance rounding and size bound were each killed (two survived an ink-count-only
   test; I added a per-row check for the 'I' stem). Headless: Glider 4.10's **New Game?** now draws its first room (a table, a Mac, a clock);
-  the next halt is `$A02F` (PostEvent), not yet implemented.
+  the next halt was `$A02F` (PostEvent).
+- **PostEvent (`$A02F`, in `src/mac_events.c`).** A0 = event code, D0 = message (the register ABI is from memory, not from a source I opened);
+  D0 returns 0, or -1 (evQErr) when the 64-entry queue is full or the code is 0 or above 15 (the whole A0 register is tested, so a value
+  with high bits is refused rather than truncated). The event takes the current mouse, modifiers and tick count and is queued behind
+  earlier ones. Tests: order, wrap-around of the ring, full queue, bad codes, GetNextEvent filtering; mutants for null, upper bound, full
+  and `where` killed (a mask-to-word mutant was equivalent once I stopped masking). Headless: Glider 4.10 **New Game?** now starts a game
+  (glider and two reserve gliders on screen at 45 s, no input beyond the menu click) and then returns to its attract screen, with no halt in
+  90 s. I did not steer the glider, so gameplay is not verified.
 - **Parity:** Monkey Island and Monkey Island 2 are byte-identical to the previous baseline; `make test` exits 0; ASan on Castle (90 s with
   the menu script) and on the new and touched menu, window and utility tests reports nothing.
 

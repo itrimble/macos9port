@@ -110,6 +110,16 @@ int mac_event_service(MacRuntime *rt, uint16_t opcode) {
         mac_cpu_write(cpu, sp, 1, !(rt->modifiers & 0x80));
         return 1;
     }
+    if (opcode < 0xa800 && (opcode & 0xff) == 0x2f) { /* PostEvent (from memory of the ABI): A0 = event code, D0 = message, result in D0 (evQErr -1 when full) */
+        uint32_t code = mac_cpu_get(cpu, MAC_A0);   /* the whole register: a value above the word range is refused, not truncated */
+        if (code == 0 || code >= 16) { mac_cpu_set(cpu, MAC_D0, (uint32_t)-1); return 1; } /* not a postable event: refused with an error, nothing queued */
+        if (rt->event_count == 64) { mac_cpu_set(cpu, MAC_D0, (uint32_t)-1); return 1; }
+        unsigned slot = (rt->event_head + rt->event_count) % 64;
+        rt->events[slot] = (MacEvent){(uint16_t)code, rt->modifiers, mac_cpu_get(cpu, MAC_D0), rt->ticks, rt->mouse_x, rt->mouse_y};
+        rt->event_count++;
+        mac_cpu_set(cpu, MAC_D0, 0);
+        return 1;
+    }
     if (opcode < 0xa800 && (opcode & 0xff) == 0x32) { /* FlushEvents */
         uint16_t mask = (uint16_t)mac_cpu_get(cpu, MAC_D0);
         uint16_t stop = (uint16_t)(mac_cpu_get(cpu, MAC_D0) >> 16);
