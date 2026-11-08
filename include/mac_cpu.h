@@ -37,6 +37,7 @@ size_t mac_cpu_run(MacCpu *cpu, size_t instruction_budget);
 size_t mac_cpu_run_cycles(MacCpu *cpu, uint64_t cycle_budget);
 /* Ends the current mac_cpu_run/mac_cpu_run_cycles slice early (from a trap callback). Registers are untouched. */
 void mac_cpu_yield(MacCpu *cpu);
+void mac_cpu_cancel_yield(MacCpu *cpu);   /* withdraws a yield requested earlier in the same trap (a guest call is about to run and will yield itself) */
 void mac_cpu_halt(MacCpu *cpu, const char *reason);
 int mac_cpu_halted(const MacCpu *cpu);
 const char *mac_cpu_error(const MacCpu *cpu);

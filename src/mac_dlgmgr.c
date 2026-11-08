@@ -1,6 +1,7 @@
-#include "mac_dialog_draw.h"
+#include "mac_dlg_int.h"
+#include "mac_dlgwindow.h"
+#include "mac_cdef.h"
 #include "mac_dlgswallow.h"
-#include "mac_ditl.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,51 +22,14 @@
  * Not supported, and halting by name: user items and SetDItem, control items, filter procedures (other than the one GetStdFilterProc
  * hands out), NewDialog, a dStorage that is not zeroable RAM, more than four open
  * dialogs. Icons draw the application's ICON resource when it has one; PICT items are left blank. */
-enum { DLOG_TYPE = 0x444c4f47, DITL_TYPE = 0x4449544c, ICON_TYPE = 0x49434f4e, MAX_OPEN = 4, TEXT_CAP = 255, RECORD = 170, FILTER_KEY = 0xbf1, FILTER_OP = 0xabf1 };
-#define STD_FILTER mac_native_stub(FILTER_KEY)   /* a guest-callable stub: the standard ModalFilterProc */
-typedef struct {
-    uint32_t ptr; int16_t id; int left, top, width, height; int visible_flag;
-    MacDitl ditl; uint8_t length[MAC_DITL_MAX_ITEMS]; char text[MAC_DITL_MAX_ITEMS][TEXT_CAP + 1]; int16_t value[MAC_DITL_MAX_ITEMS];
-    uint32_t handle[MAC_DITL_MAX_ITEMS], block[MAC_DITL_MAX_ITEMS];   /* item handles and the text blocks they point at: the host's own record of both */
-    uint32_t region[3];                                            /* strucRgn, contRgn, updateRgn handles, owned as ordinary regions */
-    uint8_t item_hidden[MAC_DITL_MAX_ITEMS];                       /* HideDItem: not drawn, not hit, and its box reports 16384 pixels to the right */
-    int edit_item, sel_start, sel_end, def_item, cancel_item, hidden;   /* hidden: drawn nothing until ShowWindow */
-    uint8_t *backdrop; int drawn;
-    int modal, pressed; uint32_t sp, pc, hit_ptr;
-    uint32_t filter, scratch; MacEvent pend; int pend_real;     /* ModalDialog filterProc: the guest routine, its scratch (event + itemHit) and the event it is looking at */
-    int select_busy; uint32_t select_dlg_ptr;                    /* DialogSelect waiting for the mouse-up of a press */
-} Dlg;
-typedef struct MacDlgMgr { Dlg *open[MAX_OPEN]; uint32_t port; /* the dialog SetPort last named, 0 once any other port is set */ } Mgr;
-#define M(rt) ((Mgr *)(rt)->dlgmgr)
-
 static int fail(MacRuntime *rt, const char *why) { mac_cpu_halt(rt->cpu, why); return -1; }
 static int valid(MacRuntime *rt, uint32_t p, size_t n) { size_t z = mac_cpu_ram_size(rt->cpu); return p >= 0x400 && p <= z && n <= z - p; }
 static uint32_t rd(MacRuntime *rt, uint32_t p, unsigned n) { return mac_cpu_read(rt->cpu, p, n); }
 static void wr(MacRuntime *rt, uint32_t p, unsigned n, uint32_t v) { mac_cpu_write(rt->cpu, p, n, v); }
-static unsigned be16(const uint8_t *p) { return (unsigned)(p[0] << 8 | p[1]); }
 
-#define REGION_OWNED UINT32_C(0x4f52474e)
-/* A rectangular region of our own in the handle table, so the guest's region calls on a dialog's window regions work like any other. */
-static uint32_t new_rect_region(MacRuntime *rt, int t, int l, int b, int r) {
-    size_t slot = 0; while (slot < MAC_RUNTIME_HANDLES && (rt->handles[slot].handle || rt->handles[slot].pointer)) slot++;
-    uint32_t block = slot < MAC_RUNTIME_HANDLES ? mac_runtime_alloc(rt, 16) : 0;
-    if (!block) return 0;
-    uint32_t p = block + 4; wr(rt, block, 4, p); wr(rt, p, 2, 10);
-    wr(rt, p + 2, 2, (uint16_t)t); wr(rt, p + 4, 2, (uint16_t)l); wr(rt, p + 6, 2, (uint16_t)b); wr(rt, p + 8, 2, (uint16_t)r);
-    rt->handles[slot] = (MacHandle){.handle = block, .pointer = p, .size = 10, .type = REGION_OWNED};
-    if (rt->handle_count <= slot) rt->handle_count = (unsigned)slot + 1;
-    return block;
-}
-static void set_region(MacRuntime *rt, uint32_t h, int t, int l, int b, int r) {   /* rewrite our own rectangular region, found through the host's table */
-    for (size_t i = 0; h && i < rt->handle_count; i++) if (rt->handles[i].handle == h && rt->handles[i].size >= 10) {
-        uint32_t p = rt->handles[i].pointer; wr(rt, p, 2, 10); wr(rt, p + 2, 2, (uint16_t)t); wr(rt, p + 4, 2, (uint16_t)l); wr(rt, p + 6, 2, (uint16_t)b); wr(rt, p + 8, 2, (uint16_t)r);
-    }
-}
-static void free_region(MacRuntime *rt, uint32_t h) {
-    for (size_t i = 0; h && i < rt->handle_count; i++) if (rt->handles[i].handle == h) rt->handles[i] = (MacHandle){0};
-}
 static void dispose(MacRuntime *rt, Dlg *d, int restore) {
-    for (unsigned i = 0; i < 3; i++) free_region(rt, d->region[i]);
+    if (d->port_window) mac_dlgwin_destroy(rt, d->port_window);
+    for (unsigned i = 0; i < 3; i++) mac_dlg_free_region(rt, d->region[i]);
     if (restore && d->drawn && d->backdrop) { MacPen pen; mac_pen_init(&pen, rt, d->left, d->top, d->width, d->height); mac_pen_restore(&pen, d->backdrop); }
     for (unsigned i = 0; i < MAX_OPEN; i++) if (M(rt) && M(rt)->open[i] == d) M(rt)->open[i] = NULL;
     free(d->backdrop); free(d);
@@ -92,7 +56,6 @@ static Dlg *front(MacRuntime *rt) {
     for (int i = MAX_OPEN - 1; rt->dlgmgr && i >= 0; i--) if (M(rt)->open[i]) return M(rt)->open[i];
     return NULL;
 }
-static int has_text(const MacDitlItem *it) { return it->kind == MAC_ITEM_STATIC || it->kind == MAC_ITEM_EDIT || it->kind == MAC_ITEM_BUTTON || it->kind == MAC_ITEM_CHECK || it->kind == MAC_ITEM_RADIO; }
 static int enabled(const Dlg *d, unsigned k) { const MacDitlItem *it = &d->ditl.items[k]; return !it->disabled && (it->kind == MAC_ITEM_BUTTON || it->kind == MAC_ITEM_CHECK || it->kind == MAC_ITEM_RADIO || it->kind == MAC_ITEM_EDIT); }
 static void mirror(MacRuntime *rt, const Dlg *d, unsigned k) {
     if (!d->handle[k]) return;
@@ -100,44 +63,7 @@ static void mirror(MacRuntime *rt, const Dlg *d, unsigned k) {
     if (block) { wr(rt, d->handle[k], 4, block); memset(mac_cpu_ram(rt->cpu) + block, 0, TEXT_CAP + 1); memcpy(mac_cpu_ram(rt->cpu) + block, d->text[k], d->length[k]); }
 }
 
-static unsigned expand(const MacRuntime *rt, const Dlg *d, unsigned k, char *out, unsigned cap) {
-    unsigned n = 0;
-    for (unsigned i = 0; i < d->length[k] && n + 1 < cap; i++) {
-        char c = d->text[k][i];
-        if (c == '^' && i + 1 < d->length[k] && d->text[k][i + 1] >= '0' && d->text[k][i + 1] <= '3') {
-            const unsigned char *param = (const unsigned char *)rt->dialog_params[d->text[k][++i] - '0'];
-            for (unsigned q = 0; q < param[0] && n + 1 < cap; q++) out[n++] = (char)param[q + 1];
-        } else out[n++] = c;
-    }
-    return n;
-}
-static void draw(MacRuntime *rt, Dlg *d) {
-    if (d->hidden) return;
-    MacPen pen; mac_pen_init(&pen, rt, d->left, d->top, d->width, d->height);
-    if (!d->drawn) { mac_pen_save(&pen, d->backdrop); d->drawn = 1; }
-    mac_pen_frame(&pen);
-    for (unsigned k = 0; k < d->ditl.count; k++) {
-        const MacDitlItem *it = &d->ditl.items[k];
-        if (d->item_hidden[k]) continue;
-        int l = d->left + it->left, t = d->top + it->top, r = d->left + it->right, b = d->top + it->bottom;
-        char text[512]; unsigned n = has_text(it) ? expand(rt, d, k, text, sizeof text) : 0;
-        if (it->kind == MAC_ITEM_BUTTON) mac_pen_button(&pen, l, t, r, b, (const uint8_t *)text, n, !it->disabled, d->modal && d->pressed == (int)k + 1, (int)k + 1 == d->def_item);
-        else if (it->kind == MAC_ITEM_STATIC) mac_pen_wrap(&pen, l, t, r, b, text, n);
-        else if (it->kind == MAC_ITEM_EDIT) {
-            mac_pen_box(&pen, l - 2, t - 2, r + 2, b + 2, pen.dark);
-            mac_pen_text(&pen, l, t, text, n, pen.dark, 0);
-            if ((int)k + 1 == d->edit_item) mac_pen_fill(&pen, l + (int)n * 8, t, l + (int)n * 8 + 2, t + 9, pen.dark);
-        } else if (it->kind == MAC_ITEM_CHECK || it->kind == MAC_ITEM_RADIO) {
-            mac_pen_box(&pen, l, t + 1, l + 10, t + 11, pen.dark);
-            if (d->value[k]) mac_pen_fill(&pen, l + 3, t + 4, l + 7, t + 8, pen.dark);
-            mac_pen_text(&pen, l + 16, t + 2, text, n, pen.dark, it->disabled);
-        } else if (it->kind == MAC_ITEM_ICON) {
-            MacResource icon;
-            if (!mac_resource_find(&rt->fork, ICON_TYPE, (int16_t)be16(it->data), &icon) && icon.size == 128) mac_pen_icon(&pen, l, t, icon.data);
-        }
-    }
-}
-
+static void draw(MacRuntime *rt, Dlg *d) { mac_dlg_draw(rt, d); if (d->port_window) { mac_dlgwin_shown(rt, d->port_window, !d->hidden); if (!d->hidden) d->ctl_pending = 1; } }
 static int screen_ok(MacRuntime *rt) {
     return rt->screen_depth == 8 && rt->screen_width == 640 && rt->screen_height == 480 && rt->screen_row_bytes == 640 && valid(rt, rt->screen_base, 640 * 480);
 }
@@ -156,10 +82,11 @@ static int get_new_dialog(MacRuntime *rt, uint32_t sp) {
         return fail(rt, why ? why : "The dialog's item list (DITL) is missing.");
     int w = g.right - g.left, h = g.bottom - g.top;
     if (w < 16 || h < 16 || w > 640 || h > 480) return fail(rt, "The dialog size is unsupported.");
+    int has_ctl = 0;
     for (unsigned k = 0; k < list.count; k++) {
         const MacDitlItem *it = &list.items[k];
         /* a user item (type 0) is accepted but its draw procedure is never called: it stays blank; if enabled it still counts as a hit */
-        if (it->kind == MAC_ITEM_CONTROL) return fail(rt, "Dialog control items are unsupported.");
+        if (it->kind == MAC_ITEM_CONTROL) has_ctl = 1;
         if (it->kind != MAC_ITEM_HELP && (it->right <= it->left || it->bottom <= it->top)) return fail(rt, "A dialog item has an empty rectangle.");
     }
     uint32_t ptr = storage;
@@ -184,15 +111,22 @@ static int get_new_dialog(MacRuntime *rt, uint32_t sp) {
         if (master && block) { wr(rt, master, 4, block); d->handle[k] = master; d->block[k] = block; mirror(rt, d, k); }
     }
     d->sel_start = d->sel_end = 0; d->def_item = 1;
-    d->region[0] = new_rect_region(rt, d->top - 1, d->left - 1, d->top + h + 1, d->left + w + 1);   /* structure */
-    d->region[1] = new_rect_region(rt, d->top, d->left, d->top + h, d->left + w);                   /* content */
-    d->region[2] = new_rect_region(rt, 0, 0, 0, 0);                                                 /* update: nothing to draw */
+    d->region[0] = mac_dlg_new_rect_region(rt, d->top - 1, d->left - 1, d->top + h + 1, d->left + w + 1);   /* structure */
+    d->region[1] = mac_dlg_new_rect_region(rt, d->top, d->left, d->top + h, d->left + w);                   /* content */
+    d->region[2] = mac_dlg_new_rect_region(rt, 0, 0, 0, 0);                                                 /* update: nothing to draw */
     if (!d->region[0] || !d->region[1] || !d->region[2]) { dispose(rt, d, 0); return fail(rt, "GetNewDialog could not allocate the window regions."); }
     wr(rt, ptr + 110, 1, d->hidden ? 0 : 1); wr(rt, ptr + 111, 1, d->hidden ? 0 : 1);               /* visible, hilited */
     wr(rt, ptr + 114, 4, d->region[0]); wr(rt, ptr + 118, 4, d->region[1]); wr(rt, ptr + 122, 4, d->region[2]);
     wr(rt, ptr + 16, 2, 0); wr(rt, ptr + 18, 2, 0); wr(rt, ptr + 20, 2, (uint16_t)h); wr(rt, ptr + 22, 2, (uint16_t)w);   /* portRect, local */
+    if (has_ctl) {                                                                                  /* control items: a hidden port window owns the controls; the CDEF messages run as a job that ends the trap */
+        if (mac_cdef_job_new(rt, sp, 10, mac_cdef_finish_result) < 0) { dispose(rt, d, 0); return -1; }
+        d->port_window = mac_dlgwin_create(rt, d->top, d->left, h, w);
+        if (!d->port_window || mac_dlgwin_items(rt, d) < 0) { dispose(rt, d, 0); return mac_cpu_halted(rt->cpu) ? -1 : fail(rt, "GetNewDialog could not create its port window or controls."); }
+    }
     M(rt)->open[slot] = d;
     draw(rt, d);
+    if (has_ctl && d->hidden) mac_cdef_drop(rt, CDEF_DRAW);   /* (the dialog's own draw() has just told its port window whether it is shown) */                                          /* a hidden dialog is not drawn, controls included, until ShowWindow */
+    if (has_ctl) { d->ctl_pending = 0; rt->cdef->user[0] = sp + 10; rt->cdef->user[1] = ptr; rt->cdef->user[2] = 4; return mac_cdef_start(rt); }
     wr(rt, sp + 10, 4, ptr); mac_cpu_set(rt->cpu, MAC_A7, sp + 10);
     return 1;
 }
@@ -252,7 +186,7 @@ static int filter_done(void *vrt, void *ctx, uint32_t result) {
     for (unsigned k = 0; k < d->ditl.count; k++) mirror(rt, d, k);
     draw(rt, d);
     mac_cpu_set(rt->cpu, MAC_A7, d->sp); mac_cpu_set(rt->cpu, MAC_PC, d->pc); mac_cpu_yield(rt->cpu);
-    return 0;
+    return mac_dlgwin_flush(rt) < 0 ? -1 : 0;                                       /* the repaint covered the controls: draw them again (a guest call, resuming at the trap) */
 }
 /* Offers one event (or a null event) to the guest filter: writes an EventRecord and a zero itemHit into scratch below the stack and calls
  * filter(theDialog, VAR event, VAR itemHit): Boolean. */
@@ -342,8 +276,8 @@ static int dialog_select(MacRuntime *rt, uint32_t sp, uint32_t pc) {
     return 1;
 }
 
-int mac_dlgmgr_service(MacRuntime *rt, uint16_t opcode) {
-    if (rt && rt->dlgmgr && M(rt)->port && rt->cpu && !mac_cpu_halted(rt->cpu) && find(rt, M(rt)->port) && (mac_dlg_drawing_trap(opcode) || mac_dlg_swallowed_args(opcode) >= 0)) {
+static int dlg_service(MacRuntime *rt, uint16_t opcode) {
+    if (rt && rt->dlgmgr && M(rt)->port && rt->cpu && !mac_cpu_halted(rt->cpu) && !mac_cdef_busy(rt) && find(rt, M(rt)->port) &&   /* (a CDEF running for a dialog's control draws in the port window) */ (mac_dlg_drawing_trap(opcode) || mac_dlg_swallowed_args(opcode) >= 0)) {
         int args = mac_dlg_swallowed_args(opcode);
         uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7);
         if (args >= 0 && !(sp & 1) && valid(rt, sp, (size_t)args + 2)) { mac_cpu_set(rt->cpu, MAC_A7, sp + (uint32_t)args); return 1; }
@@ -397,8 +331,8 @@ int mac_dlgmgr_service(MacRuntime *rt, uint16_t opcode) {
         int was = d->drawn;
         if (was) mac_pen_restore(&pen, d->backdrop);
         d->drawn = 0; d->left = left; d->top = top;
-        set_region(rt, d->region[0], top - 1, left - 1, top + d->height + 1, left + d->width + 1);
-        set_region(rt, d->region[1], top, left, top + d->height, left + d->width);
+        mac_dlg_set_region(rt, d->region[0], top - 1, left - 1, top + d->height + 1, left + d->width + 1);
+        mac_dlg_set_region(rt, d->region[1], top, left, top + d->height, left + d->width);
         if (was) draw(rt, d);
         pop = 10; break; }
     case 0xa827: case 0xa828: {                      /* HideDItem(dialog, item) / ShowDItem(dialog, item) */
@@ -423,7 +357,7 @@ int mac_dlgmgr_service(MacRuntime *rt, uint16_t opcode) {
             if (d->modal || d->select_busy) return fail(rt, "A dialog was hidden while it was being used.");
             MacPen pen; mac_pen_init(&pen, rt, d->left, d->top, d->width, d->height);
             if (d->drawn) mac_pen_restore(&pen, d->backdrop);
-            d->drawn = 0; d->hidden = 1; wr(rt, d->ptr + 110, 1, 0); wr(rt, d->ptr + 111, 1, 0);
+            d->drawn = 0; d->hidden = 1; wr(rt, d->ptr + 110, 1, 0); wr(rt, d->ptr + 111, 1, 0); if (d->port_window) mac_dlgwin_shown(rt, d->port_window, 0);
         }
         pop = 4; break; }
     case 0xa97f: return is_dialog_event(rt, sp);
@@ -494,5 +428,27 @@ int mac_dlgmgr_service(MacRuntime *rt, uint16_t opcode) {
         char m[96]; snprintf(m, sizeof m, "Dialog Manager trap $%04x is unsupported.", opcode); return fail(rt, m); }
     }
     mac_cpu_set(rt->cpu, MAC_A7, sp + pop);
+    return 1;
+}
+
+/* The entry point: a call that completed may have repainted a dialog over its controls, so they are redrawn (see mac_dlgwin_flush). */
+int mac_dlgmgr_service(MacRuntime *rt, uint16_t opcode) {
+    int rc = dlg_service(rt, opcode);
+    return rc > 0 && rt && rt->dlgmgr ? mac_dlgwin_flush(rt) : rc;
+}
+
+/* GetCtlValue / SetCtlValue / HiliteControl on the handle GetDItem gave for a button, check box or radio button item (a real dialog's items are controls). A value
+ * is 0 or 1 (a radio button or check box); HiliteControl 255 dims a button and stops it responding, 0 restores it. Other control calls on such a handle halt by name. */
+int mac_dlgmgr_item_control(MacRuntime *rt, uint16_t op, uint32_t h, uint32_t sp, unsigned args) {
+    unsigned k = 0; Dlg *d = find_handle(rt, h, &k);
+    if (!d || d->ditl.items[k].kind == MAC_ITEM_CONTROL) return 0;
+    MacDitlItem *it = &d->ditl.items[k];
+    int toggle = it->kind == MAC_ITEM_CHECK || it->kind == MAC_ITEM_RADIO;
+    if (op == 0xa963 && toggle) d->value[k] = (int16_t)rd(rt, sp, 2) != 0;
+    else if (op == 0xa960 && toggle) wr(rt, sp + args, 2, (uint16_t)d->value[k]);
+    else if (op == 0xa95d && (toggle || it->kind == MAC_ITEM_BUTTON)) it->disabled = (rd(rt, sp, 2) & 0xff) == 255;
+    else { char m[112]; snprintf(m, sizeof m, "Control trap $%04x on a dialog item handle is unsupported.", op); return fail(rt, m); }
+    mac_cpu_set(rt->cpu, MAC_A7, sp + args);
+    if (op != 0xa960 && d->drawn) draw(rt, d);
     return 1;
 }

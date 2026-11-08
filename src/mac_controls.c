@@ -115,13 +115,29 @@ static int new_control(MacRuntime *rt, uint32_t sp) {
 }
 /* GetNewControl(controlID, owner): the CNTL resource is bounds (8), value (2), visible (1) + filler (1), max (2), min (2), procID (2), refCon (4), title (Pascal);
  * this layout is from memory of Inside Macintosh. The resource is read from the application's own fork. */
-static int get_new_control(MacRuntime *rt, uint32_t sp) {
-    int16_t id = (int16_t)rd(rt, sp + 4, 2); MacResource res;
-    if (mac_resource_find(&rt->fork, 0x434e544c, id, &res)) { wr(rt, 0xa60, 2, (uint16_t)-192); wr(rt, sp + 6, 4, 0); mac_cpu_set(rt->cpu, MAC_A7, sp + 6); return 1; }
+/* The control a CNTL resource describes, owned by `win` (steps are added to the current job); `rect` (4 big-endian int16 values, or NULL) replaces the resource's own
+ * rectangle, as the Dialog Manager does for a control item. Returns the handle, 0 for a missing CNTL (ResError -192) or no memory, -1 after halting. */
+int64_t mac_control_from_cntl(MacRuntime *rt, uint32_t win, int16_t id, const uint8_t *rect) {
+    MacResource res;
+    if (mac_resource_find(&rt->fork, 0x434e544c, id, &res)) { wr(rt, 0xa60, 2, (uint16_t)-192); return 0; }
     if (res.size < 23 || res.size < 23u + res.data[22]) return fail(rt, "GetNewControl: the CNTL resource is too short.");
     const uint8_t *d = res.data;
-    int64_t h = make_control(rt, rd(rt, sp, 4), d, d + 22, d[10] != 0, (int16_t)(d[8] << 8 | d[9]), (int16_t)(d[14] << 8 | d[15]), (int16_t)(d[12] << 8 | d[13]),
-                             (unsigned)(d[16] << 8 | d[17]), (uint32_t)d[18] << 24 | d[19] << 16 | d[20] << 8 | d[21]);
+    return make_control(rt, win, rect ? rect : d, d + 22, d[10] != 0, (int16_t)(d[8] << 8 | d[9]), (int16_t)(d[14] << 8 | d[15]), (int16_t)(d[12] << 8 | d[13]),
+                        (unsigned)(d[16] << 8 | d[17]), (uint32_t)d[18] << 24 | d[19] << 16 | d[20] << 8 | d[21]);
+}
+/* Frees every control a window owns without sending dispCntl (the caller is tearing the window down; a CDEF's own storage is not released). */
+void mac_controls_release(MacRuntime *rt, uint32_t win) {
+    MacWindowState *w = mac_window_find(rt, win);
+    for (unsigned guard = 0; w && guard < 512; guard++) {
+        uint32_t h = rd(rt, w->address + 140, 4);
+        if (!h || !record(rt, h)) break;
+        if (dispose(rt, h) < 0) break;
+    }
+}
+static int get_new_control(MacRuntime *rt, uint32_t sp) {
+    int16_t id = (int16_t)rd(rt, sp + 4, 2);
+    int64_t h = mac_control_from_cntl(rt, rd(rt, sp, 4), id, NULL);
+    if (h == 0 && !mac_cpu_halted(rt->cpu) && (int16_t)rd(rt, 0xa60, 2) == -192) { wr(rt, sp + 6, 4, 0); mac_cpu_set(rt->cpu, MAC_A7, sp + 6); return 1; }
     if (h < 0) return -1;
     rt->cdef->user[0] = sp + 6; rt->cdef->user[1] = (uint32_t)h; rt->cdef->user[2] = 4;
     return mac_cdef_start(rt);
@@ -201,6 +217,7 @@ int mac_controls_service(MacRuntime *rt, uint16_t op) {
     default: break;
     }
     h = rd(rt, sp + args - 4, 4);                                                    /* the control handle is the first argument (deepest) */
+    { int item = mac_dlgmgr_item_control(rt, op, h, sp, args); if (item) return item; }
     p = record(rt, h); if (!p) return -1;
     switch (op) {
     case 0xa955: rt->cdef->finish = fin_dispose; mac_cdef_add(rt, h, CDEF_DISP, 0); break;

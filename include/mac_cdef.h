@@ -19,10 +19,12 @@ struct MacCdefJob {
     uint32_t user[4];                        /* finish's private values */
     int cur_message, part; uint32_t found;                /* result of a testCntl step that answered non-zero */
 };
+int mac_cdef_finish_result(MacRuntime *rt, MacCdefJob *job);   /* a finish that writes user[2] bytes of user[1] at user[0] */
 int mac_cdef_custom_id(unsigned proc);       /* the CDEF id for a procID, or 0 for the standard definitions */
 uint32_t mac_cdef_load(MacRuntime *rt, unsigned id);   /* a locked resource handle for CDEF id, or 0 */
 int mac_cdef_job_new(MacRuntime *rt, uint32_t sp, uint32_t args, MacCdefFinish finish);   /* -1 (halted) on failure */
 int mac_cdef_add(MacRuntime *rt, uint32_t handle, int message, uint32_t param);          /* -1 (halted) when full */
 int mac_cdef_start(MacRuntime *rt);          /* runs the job: 1 handled (a guest call is under way or the job finished), -1 halted */
+void mac_cdef_drop(MacRuntime *rt, int message);   /* removes the queued steps with this message */
 int mac_cdef_busy(const MacRuntime *rt);
 #endif

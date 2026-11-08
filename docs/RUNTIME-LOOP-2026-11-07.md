@@ -608,3 +608,22 @@ the probe, not a window I watched, and I have not listened to any audio.
   **control item (type 7, CNTL 128 = the CDEF pop-up)**, two PICT items, user items and edit text. The native dialogs have no real GrafPort, so a CDEF control cannot draw in one; this is the
   parked "real dialog GrafPort" step and is now on the critical path (creating a room, then Save House). The idle loop of the editor runs ~2.6M instructions per virtual second in the probe;
   whether the windowed desktop burns a core there was NOT checked.
+
+- **Dialog control items: Glider PRO's Room Info dialog works and a room is created (headless).** A dialog whose DITL has control items (type 7, CNTL id in the item data) now owns a
+  HIDDEN registered window (proc 1, `MacWindowState.port_only` 1 = dialog hidden, 2 = shown) covering the dialog rectangle with the dialog's coordinates as its local ones: it is only the
+  controls' owner and colour port (new `src/mac_dlgwindow.c`; drawing and region helpers moved to `src/mac_dlgdraw.c`, shared struct in `include/mac_dlg_int.h`, which also brought
+  `mac_dlgmgr.c` from 498 to 454 lines). Each control item becomes a real control from its CNTL with the item's rectangle; GetDItem returns the control handle; a CDEF runs in the port window.
+  `GetNewDialog` ends through the CDEF job (initCntl, drawCntl, then the result and the stack pop). The native repaint overwrites the controls, so after every Dialog Manager call that
+  completed (and after each filter step of ModalDialog) the controls get drawCntl again (`mac_dlgwin_flush`), and the pending yield is cancelled so the host never sees the repainted-but-not-
+  redrawn screen (frames are taken at yields: they showed no pop-up until this was fixed; a windowed run would have flickered). Also: **Get/SetCtlValue and HiliteControl on a
+  button, check box or radio item handle** (a real dialog's items are controls; Glider calls SetCtlValue on its checkbox), and the Dialog Manager's QuickDraw "swallow" no longer eats the CDEF's
+  own drawing. Not done: dispCntl is NOT sent when a dialog is disposed (the controls are freed natively), clicks on a control item do nothing (TrackControl is not implemented), PICT items and
+  user items still draw nothing, the dialog is placed at its DLOG rectangle (0,0 here) instead of being centred.
+  **Seen (frames, headless):** Room Info shows Room Name edit text, Location, Floor/Suite, 'Number of Objects', 'First Room' checked, 'Bounds' dimmed, Cancel/Okay and **'Tiles: [Simple Room v]'**,
+  the pop-up drawn by Glider's own CDEF. Clicking Okay (346,248) closes it and the editor title becomes 'Untitled House - Untitled Room (1, 61)'. **House > Save House** then runs Glider's own
+  'Checking House File' pass and reports 'You have no stars in the house!': a house needs a star object before it can be saved (a Glider rule, not ours), so nothing new is written
+  ('Untitled House' 0 bytes and an empty 286-byte '.rsrc' from New House are all that exist in the saves dir). To get further the editor needs a star placed: that means the Tools pop-up
+  ('Blowers') must be clickable (TrackControl/pop-up menus).
+  Tests: `tests/test_mac_dlgwindow.c` (standard and custom control items, hidden dialogs, ShowWindow/HideWindow, DrawDialog repaint, DisposeDialog cleanup, item-handle control calls, refusals,
+  the swallow exemption); mutants killed except four equivalents (the control item's data-length check is also enforced by the DITL parser, the hidden-flush check is defensive, cancel-yield is
+  not observable through the API, and dropping the hidden dialog's draw steps is redundant with the port_only gate). ASan clean; `make test` 0; MI and MI2 identical; Castle refreshed.

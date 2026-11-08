@@ -12,6 +12,11 @@ static uint32_t rd(MacRuntime *rt, uint32_t a, unsigned n) { return mac_cpu_read
 static void wr(MacRuntime *rt, uint32_t a, unsigned n, uint32_t v) { mac_cpu_write(rt->cpu, a, n, v); }
 
 int mac_cdef_custom_id(unsigned proc) { return (proc >> 4) >= 2 ? (int)(proc >> 4) : 0; }
+void mac_cdef_drop(MacRuntime *rt, int message) {
+    MacCdefJob *j = rt->cdef; unsigned out = 0;
+    for (unsigned i = 0; j && i < j->count; i++) if (j->step[i].message != message) j->step[out++] = j->step[i];
+    if (j) j->count = out;
+}
 int mac_cdef_busy(const MacRuntime *rt) { return rt->cdef && rt->cdef->active; }
 void mac_cdef_destroy(MacRuntime *rt) { free(rt->cdef); rt->cdef = NULL; }
 
@@ -44,6 +49,7 @@ int mac_cdef_add(MacRuntime *rt, uint32_t handle, int message, uint32_t param) {
     return 0;
 }
 
+int mac_cdef_finish_result(MacRuntime *rt, MacCdefJob *j) { if (j->user[2]) wr(rt, j->user[0], j->user[2], j->user[1]); return 0; }
 static int complete(MacRuntime *rt) {
     MacCdefJob *j = rt->cdef;
     j->active = 0;
@@ -69,7 +75,7 @@ static int advance(MacRuntime *rt) {
         if (!w) return fail(rt, "A control's owner window is not a registered window.");
         uint32_t def = rd(rt, p + CTL_DEFPROC, 4);
         if (message == CDEF_TEST && (!rd(rt, p + CTL_VIS, 1) || rd(rt, p + CTL_HILITE, 1) == 255)) continue;   /* hidden and inactive controls are not hit */
-        if (message == CDEF_DRAW && (!w->visible || !rd(rt, p + CTL_VIS, 1))) continue;   /* only visible controls in visible windows are drawn */
+        if (message == CDEF_DRAW && ((!w->visible && w->port_only != 2) || !rd(rt, p + CTL_VIS, 1))) continue;   /* only visible controls in visible windows are drawn */
         if (message == CDEF_DISP && !def) continue;                         /* standard controls have nothing to dispose */
         if (!def) {                                                         /* a standard control: drawn and tested natively */
             if (message == CDEF_DRAW) mac_control_draw(rt, w, p, 0);

@@ -44,6 +44,7 @@ typedef struct {
     uint16_t palette_updates;
     uint8_t title[256];
     int visible, active, updating, owns_storage;
+    int port_only; /* a hidden window kept only as a dialog's colour port: 1 = its dialog is not shown (controls are not drawn), 2 = shown (they are, although the window is not visible) */
     /* 'wctb' overrides applied at creation. Bit n of color_set: part n is overridden (0 content-region background,
      * 1 window frame, 2 title text); color_rgb[n] holds its 16-bit RGB, matched to the nearest palette entry at draw
      * time so palette changes (e.g. the gray mode) stay correct. Zero = the native default colors. */

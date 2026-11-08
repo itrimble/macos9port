@@ -50,6 +50,7 @@ void mac_cpu_halt(MacCpu *cpu, const char *reason) {
     }
 }
 
+void mac_cpu_cancel_yield(MacCpu *cpu) { if (cpu) cpu->yielded = 0; }
 void mac_cpu_yield(MacCpu *cpu) {
     if (!cpu || cpu->halted) return;
     cpu->yielded = 1;
