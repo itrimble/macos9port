@@ -4,6 +4,9 @@
 #include "mac_cpu.h"
 #include "mac_resource.h"
 #include "runtime_bridge.h"
+/* Completion of a guest call started by mac_guest_call: `rt` is the MacRuntime, `result` the routine's return value
+ * (0 if none). Return < 0 to halt. It may start another guest call; otherwise execution resumes after the trap. */
+typedef int (*MacGuestDone)(void *rt, void *ctx, uint32_t result);
 
 #define MAC_CODE_TYPE UINT32_C(0x434f4445)
 #define MAC_RUNTIME_RAM (16u * 1024u * 1024u)
@@ -110,6 +113,7 @@ typedef struct {
     unsigned window_count;
     int exited;
     int trace;
+    struct { int active; MacGuestDone done; void *ctx; uint32_t sp, resume_pc, result_bytes; } guest; /* mac_guestcall.c */
     struct { int active; uint32_t deadline, pc, sp; } delay; /* _Delay in progress (mac_delay.c); host memory only */
     MacAppleEvents appleevents; /* Apple Event Manager handler tables, host memory only (mac_appleevents.c) */
 } MacRuntime;
@@ -173,6 +177,11 @@ int mac_appleevents_service(MacRuntime *rt, uint16_t opcode); /* Apple Event Man
 /* Host-side lookup for a future dispatcher (application table, then system table; exact, class+'****', '****'+id,
  * '****'+'****'). Returns 1 and fills the outputs on a hit, 0 otherwise. Nothing in the runtime calls it yet. */
 int mac_ae_find_handler(const MacRuntime *rt, uint32_t event_class, uint32_t event_id, uint32_t *handler, uint32_t *refcon);
+/* Call guest code from inside a trap service (see mac_guestcall.c). Returns 0 once the call is set up (the service must
+ * then return handled without touching PC or A7), -1 after halting. */
+int mac_guest_call(MacRuntime *rt, uint32_t routine, const uint8_t *args, unsigned arg_bytes,
+                   unsigned result_bytes, MacGuestDone done, void *ctx);
+int mac_guest_return(MacRuntime *rt); /* trap handler hook: the routine returned to the call stub */
 int mac_delay_service(MacRuntime *rt, uint16_t opcode); /* Time Manager _Delay, $A03B */
 int mac_menu_service(MacRuntime *rt, uint16_t opcode);
 int mac_toolbox_service(MacRuntime *rt, uint16_t opcode);

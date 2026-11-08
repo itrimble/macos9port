@@ -212,13 +212,14 @@ int mac_runtime_trap(MacCpu *cpu, uint16_t opcode, uint32_t pc, void *user) {
     unsigned key = trap_key(opcode);
     uint32_t stub = native_stub(key);
     uint32_t sp = mac_cpu_get(cpu, MAC_A7);
+    if (rt->guest.active && pc == native_stub(0xfe) && opcode == 0xa0fe) return mac_guest_return(rt);
     if (pc == stub) {
         /* A guest JMP/JSR to its predecessor handler has a real continuation
          * on the stack. Native services expose only Pascal arguments. */
         uint32_t continuation = mac_cpu_read(cpu, sp, 4);
         mac_cpu_set(cpu, MAC_A7, sp + 4);
         int rc = dispatch(rt, opcode, pc, continuation);
-        if (!rc && !mac_cpu_halted(cpu) && opcode != 0xa9f0)
+        if (!rc && !mac_cpu_halted(cpu) && opcode != 0xa9f0 && !rt->guest.active)
             mac_cpu_set(cpu, MAC_PC, continuation);
         return rc;
     }
