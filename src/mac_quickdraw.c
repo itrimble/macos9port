@@ -49,6 +49,22 @@ static int set_port(MacRuntime *rt, uint32_t port) {
     return 1;
 }
 
+/* SetPortBits (bm): the current port's portBits (baseAddr, rowBytes, bounds: the 14 bytes at port+2) become bm. The
+ * portRect, visRgn and clipRgn are left alone, so a program that moves drawing to an offscreen bitmap sets those itself.
+ * A color port keeps a PixMap handle where portBits would be, so it is refused rather than overwritten. */
+static int set_port_bits(MacRuntime *rt, uint32_t bits) {
+    uint32_t port = rt->qd_globals && range(rt, rt->qd_globals, 4) ? rd(rt, rt->qd_globals, 4) : 0;
+    if (!port) { mac_cpu_halt(rt->cpu, "SetPortBits needs a current port."); return -1; }
+    if (!bits) { mac_cpu_halt(rt->cpu, "SetPortBits was given a nil BitMap pointer."); return -1; }
+    if (!range(rt, bits, 14) || !range(rt, port, 108)) return -1;
+    if ((rd(rt, port + 6, 2) & 0xc000) == 0xc000) {
+        mac_cpu_halt(rt->cpu, "SetPortBits on a color port is not supported."); return -1;
+    }
+    wr(rt, port + 2, 4, rd(rt, bits, 4));
+    for (unsigned offset = 4; offset < 14; offset += 2) wr(rt, port + 2 + offset, 2, rd(rt, bits + offset, 2));
+    return 1;
+}
+
 static int init_port(MacRuntime *rt, uint32_t port, int open) {
     if (!rt->qd_globals || !port || !range(rt, port, 108)) return -1;
     uint32_t visible = open ? region(rt, 0, 0, rt->screen_height, rt->screen_width) : rd(rt, port + 24, 4);
@@ -149,7 +165,7 @@ int mac_quickdraw_service(MacRuntime *rt, uint16_t opcode) {
     switch (opcode) {
         case 0xa870: case 0xa871: case 0xa878: args = 4; break;
         case 0xa8a9: args = 8; break;
-        case 0xa86e: case 0xa86d: case 0xa86f: case 0xa873: case 0xa874: case 0xa87d: args = 4; break;
+        case 0xa86e: case 0xa86d: case 0xa86f: case 0xa873: case 0xa874: case 0xa875: case 0xa87d: args = 4; break;
         case 0xa8a7: args = 12; break;
         case 0xa850: args = 0; break;
         default: return 0;
@@ -179,6 +195,7 @@ int mac_quickdraw_service(MacRuntime *rt, uint16_t opcode) {
         case 0xa86e: rc = init_graf(rt, p); break;
         case 0xa86f: case 0xa86d: rc = init_port(rt, p, opcode == 0xa86f); break;
         case 0xa873: rc = set_port(rt, p); break;
+        case 0xa875: rc = set_port_bits(rt, p); break;
         case 0xa874:
             if (!rt->qd_globals || !p || !range(rt, p, 4)) return -1;
             rt->current_port = rd(rt, rt->qd_globals, 4);

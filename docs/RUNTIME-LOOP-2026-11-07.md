@@ -6,7 +6,7 @@ R04 and G02. Items stay unchecked.
 
 ## Scope and revision
 
-- Branch `feature/memory-integration`, code head `29edb96`, cut from `main` `a14d464`. `main` is
+- Branch `feature/memory-integration`, code head recorded in the git log (last verified revision: the commit that adds SetPortBits), cut from `main` `a14d464`. `main` is
   untouched and nothing is pushed.
 - Host: Apple silicon (arm64), macOS 26.6.2 (Darwin 25.6.0), Apple clang 21.0.0.
 - Builds and tests ran locally with `BUILDFLEET_LOCAL=1` per the project override.
@@ -37,6 +37,8 @@ R04 and G02. Items stay unchecked.
 | `6923cd5` | GetNewPalette `$AA92` from a `pltt` resource; NewPalette's allocator shared | `test_mac_getnewpalette` |
 | `2040404` | Palette activation on the 8-bit main device: SetPalette on a visible frontmost window, ShowWindow of a window that has a palette, ActivatePalette `$AA94`; tolerant and courteous usages, 8-bit inhibit bits; unsupported usages refused before any change | `test_mac_palette_activation`, `test_mac_palette_manager` |
 | `b95dc4d` (merged `29edb96`) | Apple Event Manager handler table (`$A816`): AEInstallEventHandler, AERemoveEventHandler, AEGetEventHandler, AESet/GetInteractionAllowed; handlers are recorded, never called. Built by a separate agent in its own worktree and verified here | `test_mac_appleevents` |
+| `473e9be` | PICT decoder accepts 1, 2, 4 and 8-bit indexed PackBitsRect PixMaps (Glider 4.10's `PICT 140` is 4-bit); padding bits are not treated as colour | `test_mac_pict_depths` |
+| (this commit) | GetClip, SetClip and ClipRect work on colour ports (clipRgn is at port+28 in both port kinds); SetPortBits `$A875` for basic ports | `test_mac_raster`, `test_mac_setportbits` |
 
 ## Compatibility profile decision
 
@@ -50,7 +52,7 @@ off and no Help menu exists; Gestalt `help`, `stdf`, `evnt` remain unanswered.
 ## Evidence at `507c06b`
 
 - `BUILDFLEET_LOCAL=1 make test-memory` exit 0; `BUILDFLEET_LOCAL=1 make test` exit 0 with 127
-  test binaries and no failure line (129 at `29edb96`). No source or test file reaches 500 lines.
+  test binaries and no failure line (131 at the SetPortBits commit). No source or test file reaches 500 lines.
 - Every new test file was mutation-checked (deliberate breakage, rebuild with a forced object
   refresh, confirm a test fails). Weak cases found that way were fixed: the pixel-depth and
   trailing-bytes cases, a source-span off-by-one in Pack7, and one redundant read-only check
@@ -69,7 +71,7 @@ None of these has reached its main loop. "Traps" is the count before the halt.
 
 | App | Traps | Stops at | What it is |
 | --- | --- | --- | --- |
-| Glider 4.10 | 514 | PICT decoder | a `PICT` whose PackBitsRect PixMap is 4 bits per pixel (`pixelSize 4`); the decoder accepts only 8-bit, default-packed PixMaps |
+| Glider 4.10 | 1249 | `A204` | a Device Manager `Control` (PBControlImmed) on driver reference number -4, csCode 2, csParam 3; which driver that is was not confirmed from a source I could open, so it is unimplemented, not guessed |
 | Room Editor 1.06 | 148 | GetNewCWindow | custom window definition (WDEF 10, "Tools" palette) and `noGrowDocProc` |
 | Glider PRO 1.1.2 | 124 | `A03B` | `_Delay` (Time Manager); its five Apple Event startup calls now succeed |
 | Glider Edit 1.1.1 | 36 | Gestalt `stdf` | Standard File dialogs; `GetNewMBar` was exercised only with `stdf` faked locally, not committed |
@@ -124,7 +126,10 @@ screen black and the real run cannot show the colour work. The unit tests carry 
 - Apple Events: handlers are recorded and never called (nothing sends an event). Descriptors,
   AEProcessAppleEvent, replies and Gestalt `evnt` are absent. The wildcard lookup order, the missing-handler
   error for Remove and the table capacity (64) are conventions, not taken from the interface text.
-- Subsystems that are entirely absent: custom WDEFs, SetOrigin, Apple Events, Standard File,
+- PICT: only PackBitsRect indexed PixMaps with default packing and srcCopy; direct-colour PixMaps, other packing
+  modes, other opcodes and complex clips are refused with a message. SetPortBits refuses colour ports. ClipRect,
+  GetClip and SetClip on a colour port were checked with a hand-built port, not with a real CGrafPort from an app.
+- Subsystems that are entirely absent: the Device Manager (Control/Status/Open on drivers), custom WDEFs, Apple Event delivery, Standard File,
   pop-up and hierarchical menu drawing, balloon help, GWorlds backed by handles.
 
 ## Next reproducible steps
@@ -132,7 +137,8 @@ screen black and the real run cannot show the colour work. The unit tests carry 
 1. Palette Manager activation (SetPalette/ActivatePalette on a visible window) for Glider 4.10: a design
    for how palettes map onto the device's colour table, then a windowed run and screenshot once it
    reaches its loop.
-2. Glider PRO: `_Delay` and whatever follows. Glider 4.10: the PICT decoder for 4-bit PixMaps.
+2. Glider PRO: `_Delay` (a separate agent is on it). Glider 4.10: identify the Device Manager call on refnum -4
+   from a public source, then decide whether it is a small answer or a driver subsystem.
 3. Room Editor: `noGrowDocProc`, then the custom WDEF mechanism (guest callbacks from the
    Window Manager) as its own design.
 4. Standard File for Glider Edit: a UI contract, design before code.

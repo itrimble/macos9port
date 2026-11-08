@@ -125,6 +125,26 @@ int main(void) {
     if(init(&rt))return 1;
     mac_cpu_write(rt.cpu,PORT+2,4,0xfffffe);rect(&rt,RECT,0,0,8,8);
     CHECK(call(&rt,0xa8a2,RECT)==-1);CHECK(mac_cpu_halted(rt.cpu));mac_runtime_destroy(&rt);
+    /* A color port (portVersion 0xC000 at +6): the clip traps work, drawing and pen traps still refuse. */
+    if(init(&rt))return 1;
+    mac_cpu_write(rt.cpu,PORT+6,2,0xc000);
+    rect(&rt,RECT,3,4,50,60);CHECK(call(&rt,0xa87b,RECT)==1);
+    {   uint32_t clip=mac_cpu_read(rt.cpu,mac_cpu_read(rt.cpu,PORT+28,4),4);
+        CHECK(mac_cpu_read(rt.cpu,clip+2,4)==0x00030004 && mac_cpu_read(rt.cpu,clip+6,4)==0x0032003c);
+        CHECK(mac_cpu_get(rt.cpu,MAC_A7)==STACK+4);
+        mac_cpu_write(rt.cpu,AUX,4,AUX+16);mac_cpu_write(rt.cpu,AUX+16,2,10);rect(&rt,AUX+18,0,0,0,0);
+        CHECK(call(&rt,0xa87a,AUX)==1);                                  /* GetClip copies the clip out */
+        CHECK(mac_cpu_read(rt.cpu,AUX+18,4)==0x00030004 && mac_cpu_read(rt.cpu,AUX+22,4)==0x0032003c);
+        rect(&rt,AUX+18,7,8,9,10);CHECK(call(&rt,0xa879,AUX)==1);        /* SetClip copies one in */
+        CHECK(mac_cpu_read(rt.cpu,clip+2,4)==0x00070008 && mac_cpu_read(rt.cpu,clip+6,4)==0x0009000a); }
+    CHECK(!mac_cpu_halted(rt.cpu));
+    const unsigned refused[]={0xa8a2,0xa8a1,0xa891,0xa89b,0xa89c,0xa89d,0xa87c};
+    for(unsigned i=0;i<sizeof refused/sizeof *refused;i++){
+        MacRuntime c;if(init(&c))return 1;mac_cpu_write(c.cpu,PORT+6,2,0xc000);
+        rect(&c,RECT,0,0,8,8);CHECK(call(&c,refused[i],RECT)==-1);
+        CHECK(mac_cpu_halted(c.cpu) && strstr(mac_cpu_error(c.cpu),"color ports")!=NULL);mac_runtime_destroy(&c);
+    }
+    mac_runtime_destroy(&rt);
     printf("Mono raster checks: %s\n",fails?"FAILED":"ok");
     return fails?1:0;
 }

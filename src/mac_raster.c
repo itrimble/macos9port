@@ -141,7 +141,10 @@ int mac_raster_service(MacRuntime *rt,uint16_t opcode) {
     }
     uint32_t sp=mac_cpu_get(rt->cpu,MAC_A7),port;
     if (range(rt,sp,args,1)<0 || current_port(rt,&port)<0) return -1;
-    if ((rd(rt,port+6,2)&0xc000)==0xc000)
+    /* GetClip, SetClip and ClipRect only move the clip region, and clipRgn sits at port+28 in both a GrafPort and a
+     * CGrafPort, so they work on either. Everything else here reads pen or pattern fields whose offsets differ. */
+    int clip_only=opcode==0xa879 || opcode==0xa87a || opcode==0xa87b;
+    if (!clip_only && (rd(rt,port+6,2)&0xc000)==0xc000)
         return fail(rt,"This pen or drawing operation is not implemented for color ports yet.");
     uint32_t arg=args>=4?rd(rt,sp,4):0;
     int rc=1;
