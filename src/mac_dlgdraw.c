@@ -51,7 +51,12 @@ void mac_dlg_draw(MacRuntime *rt, Dlg *d) {
         else if (it->kind == MAC_ITEM_EDIT) {
             mac_pen_box(&pen, l - 2, t - 2, r + 2, b + 2, pen.dark);
             mac_pen_text(&pen, l, t, text, n, pen.dark, 0);
-            if ((int)k + 1 == d->edit_item) mac_pen_fill(&pen, l + (int)n * 8, t, l + (int)n * 8 + 2, t + 9, pen.dark);
+            if ((int)k + 1 == d->edit_item) {
+                int a = d->sel_start, b = d->sel_end; if (b < a) { int x = a; a = b; b = x; }
+                if (b > (int)n) b = (int)n;
+                if (a < b) { mac_pen_fill(&pen, l + a * 8, t, l + b * 8, t + 9, pen.dark); mac_pen_text(&pen, l + a * 8, t, text + a, (unsigned)(b - a), pen.light, 0); }   /* the selection, inverted */
+                else mac_pen_fill(&pen, l + (int)n * 8, t, l + (int)n * 8 + 2, t + 9, pen.dark);
+            }
         } else if (it->kind == MAC_ITEM_CHECK || it->kind == MAC_ITEM_RADIO) {
             mac_pen_box(&pen, l, t + 1, l + 10, t + 11, pen.dark);
             if (d->value[k]) mac_pen_fill(&pen, l + 3, t + 4, l + 7, t + 8, pen.dark);

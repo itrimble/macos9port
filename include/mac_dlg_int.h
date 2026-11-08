@@ -25,6 +25,7 @@ typedef struct MacDlgMgr { Dlg *open[MAX_OPEN]; uint32_t port; /* the dialog Set
 #define M(rt) ((Mgr *)(rt)->dlgmgr)
 
 
+int mac_dlg_edit_char(Dlg *d, unsigned k, unsigned ch);   /* typing / Backspace in an edit item, with SelIText selections (mac_dlgedit.c) */
 void mac_dlg_draw_pict(MacRuntime *rt, int l, int t, int r, int b, int16_t id);   /* a PICT item, scaled to its rectangle (mac_dlgpict.c) */
 static inline int has_text(const MacDitlItem *it) { return it->kind == MAC_ITEM_STATIC || it->kind == MAC_ITEM_EDIT || it->kind == MAC_ITEM_BUTTON || it->kind == MAC_ITEM_CHECK || it->kind == MAC_ITEM_RADIO; }
 uint32_t mac_dlg_new_rect_region(MacRuntime *rt, int t, int l, int b, int r);

@@ -1,5 +1,6 @@
 /* Alert / StopAlert / NoteAlert / CautionAlert: the native modal alert, driven through the real trap path. */
 #include "mac_dialog_draw.h"
+#include "mac_dlg_int.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -178,6 +179,13 @@ static void items(void) {
     /* SelIText */
     CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc);
     wr(&g.rt, SP, 2, 3); wr(&g.rt, SP + 2, 2, 0); wr(&g.rt, SP + 4, 2, 6); wr(&g.rt, SP + 6, 4, d); CHECK(trap(&g, 0xa97e, SP) == 1 && mac_cpu_get(g.rt.cpu, MAC_A7) == SP + 10);
+    {   /* the range of SelIText: characters, 32767 = to the end, ordered and clamped (item 5 holds "abc") */
+        const struct { int s, e, want_s, want_e; } r[] = {{1, 32767, 1, 3}, {0, 32767, 0, 3}, {9, 2, 2, 3}, {-5, -1, 0, 0}, {2, 2, 2, 2}, {3, 1, 1, 3}};
+        for (unsigned i = 0; i < 6; i++) {
+            wr(&g.rt, SP, 2, (uint16_t)r[i].e); wr(&g.rt, SP + 2, 2, (uint16_t)r[i].s); wr(&g.rt, SP + 4, 2, 5); wr(&g.rt, SP + 6, 4, d); CHECK(trap(&g, 0xa97e, SP) == 1);
+            CHECK(M(&g.rt)->open[0] && M(&g.rt)->open[0]->edit_item == 5 && M(&g.rt)->open[0]->sel_start == r[i].want_s && M(&g.rt)->open[0]->sel_end == r[i].want_e);
+        }
+    }
     wr(&g.rt, SP + 4, 2, 1); wr(&g.rt, SP + 6, 4, d); CHECK(trap(&g, 0xa97e, SP) == -1 && mac_cpu_halted(g.rt.cpu));   /* item 1 is a button */
     mac_runtime_destroy(&g.rt);
 }

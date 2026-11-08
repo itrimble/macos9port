@@ -154,8 +154,7 @@ static unsigned handle_event(Dlg *d, const MacEvent *e) {
         if (!d->edit_item || (e->modifiers & 0x100)) return 0;
         unsigned k = (unsigned)d->edit_item - 1;
         if (ch == 9) { for (unsigned i = 1; i <= d->ditl.count; i++) { unsigned n = (k + i) % d->ditl.count; if (d->ditl.items[n].kind == MAC_ITEM_EDIT) { select_edit(d, (int)n + 1); break; } } }
-        else if (ch == 8 || ch == 0x7f) { if (d->length[k]) d->length[k]--; }
-        else if (ch >= 32 && ch < 127 && d->length[k] < TEXT_CAP) d->text[k][d->length[k]++] = (char)ch;
+        else if (mac_dlg_edit_char(d, k, ch)) return 0;
         d->sel_start = d->sel_end = d->length[k];
         return 0;
     }
@@ -417,7 +416,11 @@ static int dlg_service(MacRuntime *rt, uint16_t opcode) {
         if (!valid(rt, sp, 10)) return fail(rt, "SelIText stack is invalid.");
         Dlg *d = find(rt, rd(rt, sp + 6, 4)); int item = (int16_t)rd(rt, sp + 4, 2);
         if (!d || item < 1 || (unsigned)item > d->ditl.count || d->ditl.items[item - 1].kind != MAC_ITEM_EDIT) return fail(rt, "SelIText names a dialog or edit item that does not exist.");
-        select_edit(d, item); draw(rt, d);
+        select_edit(d, item);
+        { int s = (int16_t)rd(rt, sp + 2, 2), e = (int16_t)rd(rt, sp, 2), len = (int)d->length[item - 1];   /* the range, in characters; 32767 means 'to the end' */
+          if (s > e) { int x = s; s = e; e = x; }
+          d->sel_start = s < 0 ? 0 : s > len ? len : s; d->sel_end = e < 0 ? 0 : e > len ? len : e; }
+        draw(rt, d);
         pop = 10; break; }
     case 0xaa68: {                                                                                   /* DialogDispatch: D0 selects */
         uint32_t sel = mac_cpu_get(rt->cpu, MAC_D0) & 0xffff;
