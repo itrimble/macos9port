@@ -28,7 +28,10 @@ static uint32_t rd(MacRuntime *rt, uint32_t p, unsigned n) { return mac_cpu_read
 static void wr(MacRuntime *rt, uint32_t p, unsigned n, uint32_t v) { mac_cpu_write(rt->cpu, p, n, v); }
 
 static void dispose(MacRuntime *rt, Dlg *d, int restore) {
-    if (d->port_window) mac_dlgwin_destroy(rt, d->port_window);
+    if (d->port_window) {
+        if (rt->current_port == d->port_window) { uint32_t fw = mac_window_front(rt); rt->current_port = fw != d->port_window ? fw : 0; if (rt->qd_globals) wr(rt, rt->qd_globals, 4, rt->current_port); }
+        mac_dlgwin_destroy(rt, d->port_window);
+    }
     for (unsigned i = 0; i < 3; i++) mac_dlg_free_region(rt, d->region[i]);
     if (restore && d->drawn && d->backdrop) { MacPen pen; mac_pen_init(&pen, rt, d->left, d->top, d->width, d->height); mac_pen_restore(&pen, d->backdrop); }
     for (unsigned i = 0; i < MAX_OPEN; i++) if (M(rt) && M(rt)->open[i] == d) M(rt)->open[i] = NULL;
@@ -63,7 +66,10 @@ static void mirror(MacRuntime *rt, const Dlg *d, unsigned k) {
     if (block) { wr(rt, d->handle[k], 4, block); memset(mac_cpu_ram(rt->cpu) + block, 0, TEXT_CAP + 1); memcpy(mac_cpu_ram(rt->cpu) + block, d->text[k], d->length[k]); }
 }
 
-static void draw(MacRuntime *rt, Dlg *d) { mac_dlg_draw(rt, d); if (d->port_window) { mac_dlgwin_shown(rt, d->port_window, !d->hidden); if (!d->hidden) d->ctl_pending = 1; } }
+static void draw(MacRuntime *rt, Dlg *d) { mac_dlg_draw(rt, d); d->last_hash = mac_dlg_state_hash(rt, d); if (d->port_window) { mac_dlgwin_shown(rt, d->port_window, !d->hidden); if (!d->hidden) d->ctl_pending = 1; } }
+/* The repaint of a dialog that is merely waiting: only when its state changed (a program that draws into the dialog itself, e.g. a house list, must not be wiped every step). */
+static void redraw_changed(MacRuntime *rt, Dlg *d) { if (!d->drawn || mac_dlg_state_hash(rt, d) != d->last_hash) draw(rt, d); }
+static int swallowing(MacRuntime *rt) { Dlg *pd = find(rt, M(rt)->port); return pd && !pd->port_window; }   /* only a dialog without a port window has its QuickDraw discarded */
 static int screen_ok(MacRuntime *rt) {
     return rt->screen_depth == 8 && rt->screen_width == 640 && rt->screen_height == 480 && rt->screen_row_bytes == 640 && valid(rt, rt->screen_base, 640 * 480);
 }
@@ -184,7 +190,7 @@ static int filter_done(void *vrt, void *ctx, uint32_t result) {
     if (d->pend_real) chosen = handle_event(d, &d->pend);
     if (chosen) { finish_modal(rt, d, chosen, 1); return 0; }
     for (unsigned k = 0; k < d->ditl.count; k++) mirror(rt, d, k);
-    draw(rt, d);
+    redraw_changed(rt, d);
     mac_cpu_set(rt->cpu, MAC_A7, d->sp); mac_cpu_set(rt->cpu, MAC_PC, d->pc); mac_cpu_yield(rt->cpu);
     return mac_dlgwin_flush(rt) < 0 ? -1 : 0;                                       /* the repaint covered the controls: draw them again (a guest call, resuming at the trap) */
 }
@@ -210,7 +216,7 @@ static int modal_dialog(MacRuntime *rt, uint32_t sp, uint32_t pc) {
         if (filter == STD_FILTER) filter = 0;                                                          /* the standard filter is what the dialog does anyway */
         else if (filter && (filter & 1 || filter < 0x400 || filter >= mac_cpu_ram_size(rt->cpu) - 2)) return fail(rt, "ModalDialog filter procedure is outside guest memory.");
         if (!valid(rt, hit, 2)) return fail(rt, "ModalDialog itemHit pointer is invalid.");
-        d->modal = 1; d->sp = sp; d->pc = pc; d->hit_ptr = hit; d->filter = filter; draw(rt, d);
+        d->modal = 1; d->sp = sp; d->pc = pc; d->hit_ptr = hit; d->filter = filter; redraw_changed(rt, d);
     } else if (pc != d->pc || sp != d->sp) return fail(rt, "ModalDialog called again while a dialog is in progress.");
     unsigned chosen = 0; MacEvent e; int before = d->pressed;
     if (d->filter) {                                                                                    /* one event (or a null event) per pass through the guest filter */
@@ -221,7 +227,7 @@ static int modal_dialog(MacRuntime *rt, uint32_t sp, uint32_t pc) {
     while (!chosen && mac_dialog_next_event(rt, &e)) chosen = handle_event(d, &e);
     if (!chosen) {
         for (unsigned k = 0; k < d->ditl.count; k++) mirror(rt, d, k);
-        draw(rt, d); (void)before;
+        redraw_changed(rt, d); (void)before;
         mac_cpu_set(rt->cpu, MAC_PC, d->pc); mac_cpu_yield(rt->cpu);
         return 1;
     }
@@ -255,7 +261,7 @@ static int dialog_select(MacRuntime *rt, uint32_t sp, uint32_t pc) {
         if (pc != d->pc || sp != d->sp) return fail(rt, "DialogSelect called again while a press is being tracked.");
         MacEvent e;
         while (!handled && mac_dialog_next_event(rt, &e)) if (e.what == 2) { chosen = handle_event(d, &e); handled = 1; }
-        if (!handled) { draw(rt, d); mac_cpu_set(rt->cpu, MAC_PC, d->pc); mac_cpu_yield(rt->cpu); return 1; }
+        if (!handled) { redraw_changed(rt, d); mac_cpu_set(rt->cpu, MAC_PC, d->pc); mac_cpu_yield(rt->cpu); return 1; }
         d->select_busy = 0;
     } else {
         MacEvent e = { (uint16_t)rd(rt, ev, 2), (uint16_t)rd(rt, ev + 14, 2), rd(rt, ev + 2, 4), rd(rt, ev + 6, 4), (int16_t)rd(rt, ev + 12, 2), (int16_t)rd(rt, ev + 10, 2) };
@@ -277,7 +283,7 @@ static int dialog_select(MacRuntime *rt, uint32_t sp, uint32_t pc) {
 }
 
 static int dlg_service(MacRuntime *rt, uint16_t opcode) {
-    if (rt && rt->dlgmgr && M(rt)->port && rt->cpu && !mac_cpu_halted(rt->cpu) && !mac_cdef_busy(rt) && find(rt, M(rt)->port) &&   /* (a CDEF running for a dialog's control draws in the port window) */ (mac_dlg_drawing_trap(opcode) || mac_dlg_swallowed_args(opcode) >= 0)) {
+    if (rt && rt->dlgmgr && M(rt)->port && rt->cpu && !mac_cpu_halted(rt->cpu) && !mac_cdef_busy(rt) && swallowing(rt) &&   /* (a CDEF running for a dialog's control draws in the port window) */ (mac_dlg_drawing_trap(opcode) || mac_dlg_swallowed_args(opcode) >= 0)) {
         int args = mac_dlg_swallowed_args(opcode);
         uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7);
         if (args >= 0 && !(sp & 1) && valid(rt, sp, (size_t)args + 2)) { mac_cpu_set(rt->cpu, MAC_A7, sp + (uint32_t)args); return 1; }
@@ -303,8 +309,12 @@ static int dlg_service(MacRuntime *rt, uint16_t opcode) {
         if (!valid(rt, sp, 4)) return fail(rt, "FrontWindow stack is invalid.");
         wr(rt, sp, 4, d->ptr); return 1; }
     case 0xa873: {                                    /* SetPort on an open dialog: nothing is drawn through the port, so accept it */
-        if (!find(rt, rd(rt, sp, 4))) { if (rt->dlgmgr) M(rt)->port = 0; return 0; }
+        Dlg *sd = find(rt, rd(rt, sp, 4));
+        if (!sd) { if (rt->dlgmgr) M(rt)->port = 0; return 0; }
         M(rt)->port = rd(rt, sp, 4);
+        if (!mac_dlgwin_available(rt) && !sd->port_window) { pop = 4; break; }                      /* no colour window machinery: the port stays a name and QuickDraw on it is swallowed */
+        if (!mac_dlgwin_ensure(rt, sd)) return -1;                                                   /* the dialog's drawing goes to its port window (QuickDraw draws there, in dialog coordinates) */
+        rt->current_port = sd->port_window; if (rt->qd_globals) wr(rt, rt->qd_globals, 4, sd->port_window);
         pop = 4; break; }
     case 0xabf1: {                                    /* the standard filter, called by the guest: theDialog, VAR event, VAR itemHit -> Boolean */
         if (!valid(rt, sp, 14)) return fail(rt, "The standard filter procedure has an invalid stack.");

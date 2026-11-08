@@ -63,3 +63,17 @@ void mac_dlg_draw(MacRuntime *rt, Dlg *d) {
     }
 }
 
+
+/* FNV-1a over everything mac_dlg_draw reads, so the Dialog Manager can repaint only when something changed (and not wipe what the program drew itself into the dialog). */
+unsigned mac_dlg_state_hash(const MacRuntime *rt, const Dlg *d) {
+    unsigned h = 2166136261u;
+#define MIX(v) do { h ^= (unsigned)(v) & 0xffu; h *= 16777619u; } while (0)
+    for (unsigned k = 0; k < d->ditl.count; k++) {
+        MIX(d->length[k]); for (unsigned i = 0; i < d->length[k]; i++) MIX(d->text[k][i]);
+        MIX(d->value[k]); MIX(d->item_hidden[k]); MIX(d->ditl.items[k].disabled);
+    }
+    MIX(d->edit_item); MIX(d->sel_start); MIX(d->sel_end); MIX(d->def_item); MIX(d->hidden); MIX(d->modal ? d->pressed : 0);
+    for (unsigned p = 0; p < 4; p++) for (unsigned i = 0; i <= (unsigned char)rt->dialog_params[p][0]; i++) MIX(rt->dialog_params[p][i]);
+#undef MIX
+    return h;
+}

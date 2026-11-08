@@ -16,7 +16,8 @@ typedef struct {
     uint8_t *backdrop; int drawn;
     int modal, pressed; uint32_t sp, pc, hit_ptr;
     uint32_t filter, scratch; MacEvent pend; int pend_real;     /* ModalDialog filterProc: the guest routine, its scratch (event + itemHit) and the event it is looking at */
-    uint32_t port_window; int ctl_pending;                      /* a hidden registered window that is the dialog's colour port (control items), and a redraw of its controls owed */
+    uint32_t port_window; int ctl_pending; unsigned last_hash;   /* last_hash: the state the native drawing last showed */
+                         /* a hidden registered window that is the dialog's colour port (control items), and a redraw of its controls owed */
     int select_busy; uint32_t select_dlg_ptr;                    /* DialogSelect waiting for the mouse-up of a press */
 } Dlg;
 typedef struct MacDlgMgr { Dlg *open[MAX_OPEN]; uint32_t port; /* the dialog SetPort last named, 0 once any other port is set */ } Mgr;
@@ -29,4 +30,5 @@ void mac_dlg_set_region(MacRuntime *rt, uint32_t h, int t, int l, int b, int r);
 void mac_dlg_free_region(MacRuntime *rt, uint32_t h);
 unsigned mac_dlg_expand(const MacRuntime *rt, const Dlg *d, unsigned k, char *out, unsigned cap);
 void mac_dlg_draw(MacRuntime *rt, Dlg *d);
+unsigned mac_dlg_state_hash(const MacRuntime *rt, const Dlg *d);   /* everything the native drawing depends on */
 #endif

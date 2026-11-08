@@ -644,3 +644,15 @@ the probe, not a window I watched, and I have not listened to any audio.
   refusals, re-entry, menu deleted under the tracker), TrackControl cases in `test_mac_cdef.c`, raw-menu adoption in `test_mac_menu_records.c`. Equivalent mutants: the initial highlight of
   the pop-up item (the tracker recomputes it from the pointer at once), re-checking `resource==1` in adoption, and keep_going on native steps. ASan clean (it found a wrong loop bound in my
   own test edit); `make test` 0; MI and MI2 identical; Castle refreshed.
+
+- **Dialogs get a real port when the program draws in them (headless).** Glider's Load House dialog (DITL 1000) is 24 user items that the program fills by drawing straight into the dialog's
+  port with QuickDraw; our Dialog Manager discarded all of it ('swallowed'). Now `SetPort(dialog)` creates the dialog's port window on first use (`mac_dlgwin_ensure`; when the colour window
+  machinery is not up the old swallow stays: `mac_dlgwin_available`) and makes it the current port, so QuickDraw, PlotCIcon and the rest draw in dialog coordinates. The app sees the port WINDOW
+  from GetPort, not the dialog pointer (stated difference). DisposeDialog restores a sensible current port. The waiting loops of ModalDialog/DialogSelect (and the filter step) used to repaint the
+  whole dialog every step, which also wiped the program's own drawing: they now repaint only when the state the native drawing depends on changed (`mac_dlg_state_hash`: items' text, values,
+  hidden/disabled, edit selection, default item, hidden flag, ParamText, pressed state). **Seen:** the Load House dialog now shows the program's own drawing (the down-arrow cicn); its 12 house slots
+  are empty and the header PICT (item 3) is blank: the program found no houses (its list is built at launch from a folder scan; our application volume exposes no house files, and the file in the
+  saves overlay is only published at close), and PICT items are still not drawn. Tests: SetPort(dialog) creates/reuses/removes the port window and current port, fallback without the
+  colour machinery, repaint-only-on-change (a pixel drawn into the dialog survives waiting passes and is repainted after a ParamText change). Survivors are equivalent or not observable through the
+  API: the explicit current-port assignment (NewCWindow already makes the new window current), most hash terms (every other state change also calls draw() itself), the `drawn` flag.
+  The old swallow path is now only reachable without the colour machinery. ASan clean; `make test` 0; MI and MI2 identical; Castle refreshed.

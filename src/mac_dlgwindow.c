@@ -34,6 +34,14 @@ uint32_t mac_dlgwin_create(MacRuntime *rt, int top, int left, int height, int wi
     wr(rt, vis, 2, 10); wr(rt, vis + 2, 2, 0); wr(rt, vis + 4, 2, 0); wr(rt, vis + 6, 2, (uint16_t)height); wr(rt, vis + 8, 2, (uint16_t)width);
     return win;
 }
+int mac_dlgwin_available(const MacRuntime *rt) { return rt->main_device && (rt->manager_flags & 2) && rt->qd_globals && rt->window_count < 7; }
+uint32_t mac_dlgwin_ensure(MacRuntime *rt, Dlg *d) {
+    if (!d->port_window) {
+        d->port_window = mac_dlgwin_create(rt, d->top, d->left, d->height, d->width);
+        if (d->port_window) mac_dlgwin_shown(rt, d->port_window, !d->hidden);
+    }
+    return d->port_window;
+}
 void mac_dlgwin_shown(MacRuntime *rt, uint32_t window, int shown) { MacWindowState *w = mac_window_find(rt, window); if (w && w->port_only) w->port_only = shown ? 2 : 1; }
 void mac_dlgwin_destroy(MacRuntime *rt, uint32_t window) {
     if (!window || mac_cpu_halted(rt->cpu)) return;

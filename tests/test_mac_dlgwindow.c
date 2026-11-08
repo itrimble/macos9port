@@ -146,10 +146,35 @@ int main(void) {
         mac_cpu_destroy(rt.cpu); }
     {   MacRuntime rt = fresh(); CHECK(get_new(&rt, 307) == 1 && !rt.guest.active && a7(&rt) == SP + 10);                      /* a standard control in a hidden dialog */
         CHECK(all_back(&rt)); mac_cpu_destroy(rt.cpu); }
-    /* While a CDEF runs for a dialog's control, QuickDraw calls are the CDEF's (drawing in the port window), not the swallowed ones of an application that set the dialog as its port. */
+    /* SetPort(dialog) gives the dialog its port window: QuickDraw is no longer swallowed, thePort is the port window, DisposeDialog puts the port back. */
+    {   MacRuntime rt = fresh(); CHECK(get_new(&rt, 304) == 1); uint32_t d = raw(&rt, SP + 10, 4);
+        uint32_t before_port = rt.current_port; CHECK(rt.window_count == 0);
+        wr(&rt, SP, 4, d); CHECK(trap(&rt, 0xa873, SP) == 1 && a7(&rt) == SP + 4 && rt.window_count == 1);
+        MacWindowState *w = mac_window_find(&rt, rt.current_port);
+        CHECK(w && w->port_only == 2 && !w->visible && rt.current_port != d && raw(&rt, rt.qd_globals, 4) == rt.current_port && w->bounds[0] == 40 && w->bounds[1] == 50);
+        mac_cpu_set(rt.cpu, MAC_A7, SP); wr(&rt, SP, 4, 0x4100); CHECK(mac_dlgmgr_service(&rt, 0xa8a1) == 0);                   /* FrameRect now goes to the port window's QuickDraw */
+        uint32_t win = rt.current_port;
+        wr(&rt, SP, 4, d); CHECK(trap(&rt, 0xa873, SP) == 1 && rt.window_count == 1 && rt.current_port == win);                 /* a second SetPort(dialog) reuses it */
+        wr(&rt, SP, 4, d); CHECK(trap(&rt, 0xa983, SP) == 1 && rt.window_count == 0 && rt.current_port != win && mac_window_find(&rt, win) == NULL && raw(&rt, rt.qd_globals, 4) == rt.current_port);
+        (void)before_port; mac_cpu_destroy(rt.cpu); }
+    /* Without the colour window machinery SetPort(dialog) keeps the old behaviour: no port window, QuickDraw on the dialog is swallowed. */
+    {   MacRuntime rt = fresh(); CHECK(get_new(&rt, 304) == 1); uint32_t d = raw(&rt, SP + 10, 4); uint32_t port = rt.current_port; rt.manager_flags &= ~2u;
+        wr(&rt, SP, 4, d); CHECK(trap(&rt, 0xa873, SP) == 1 && a7(&rt) == SP + 4 && rt.window_count == 0 && rt.current_port == port);
+        mac_cpu_set(rt.cpu, MAC_A7, SP); wr(&rt, SP, 4, 0x4100); CHECK(mac_dlgmgr_service(&rt, 0xa8a1) == 1 && a7(&rt) == SP + 4);
+        mac_cpu_destroy(rt.cpu); }
+    /* ModalDialog repaints only when the dialog's state changed, so what the program drew into the dialog itself survives the waiting loop. */
+    {   MacRuntime rt = fresh(); CHECK(get_new(&rt, 304) == 1); uint32_t d = raw(&rt, SP + 10, 4);
+        uint8_t *s = mac_cpu_ram(rt.cpu) + rt.screen_base; const unsigned at = 100 * 640 + 100;                                  /* inside the dialog (50..330 x 40..140), clear of its items */
+        CHECK(s[at] != 0x13); s[at] = 0x13;
+        wr(&rt, SP, 4, 0x4000); wr(&rt, SP + 4, 4, 0); CHECK(trap(&rt, 0xa991, SP) == 1); CHECK(s[at] == 0x13);                    /* begin: unchanged state, no repaint */
+        for (unsigned k = 0; k < 3; k++) { CHECK(trap(&rt, 0xa991, SP) == 1); CHECK(s[at] == 0x13); }                          /* waiting passes */
+        memcpy(rt.dialog_params[0], "\003Bob", 4); (void)d;                                                                       /* ParamText changes what the dialog shows: the next pass repaints */
+        wr(&rt, SP, 4, 0x4000); wr(&rt, SP + 4, 4, 0); CHECK(trap(&rt, 0xa991, SP) == 1); CHECK(s[at] != 0x13);
+        mac_cpu_destroy(rt.cpu); }
+    /* While a CDEF runs for a dialog's control, QuickDraw calls are the CDEF's (drawing in the port window). */
     {   MacRuntime rt = fresh(); CHECK(get_new(&rt, 301) == 1 && running(&rt)); CHECK(ret(&rt, 0) == 0 && ret(&rt, 0) == 0 && !rt.guest.active);
         uint32_t d = raw(&rt, SP + 10, 4); wr(&rt, SP, 4, d); CHECK(trap(&rt, 0xa873, SP) == 1);                                       /* SetPort(dialog) */
-        mac_cpu_set(rt.cpu, MAC_A7, SP); wr(&rt, SP, 4, 0x4100); CHECK(mac_dlgmgr_service(&rt, 0xa8a1) == 1 && a7(&rt) == SP + 4);   /* FrameRect on the dialog port: swallowed */
+        mac_cpu_set(rt.cpu, MAC_A7, SP); wr(&rt, SP, 4, 0x4100); CHECK(mac_dlgmgr_service(&rt, 0xa8a1) == 0);   /* FrameRect on the dialog port: the QuickDraw service's, not swallowed (the dialog has its port window) */
         wr(&rt, SP, 4, d); CHECK(trap(&rt, 0xa981, SP) == 1 && running(&rt));                                                          /* DrawDialog: the CDEF runs */
         mac_cpu_set(rt.cpu, MAC_A7, SP - 0x100); CHECK(mac_dlgmgr_service(&rt, 0xa8a1) == 0);                                          /* ... and its FrameRect is not swallowed */
         mac_cpu_destroy(rt.cpu); }
