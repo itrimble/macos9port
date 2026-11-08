@@ -156,7 +156,17 @@ screen black and the real run cannot show the colour work. The unit tests carry 
 Startup completes and the game no longer halts: the 20 s probe ran to its budget (61,675,482 instructions, result 4, "gameplay
 unverified"), up from 2.7 s before this session's InvalRect work. The window (title bar, menus, content area) appears at 4 s and the
 frame changes once more at 6 s, then stays identical to 20 s. The content area is black and the Edit menu is dimmed: the game is
-sitting in its event loop, and why it draws nothing is not yet known. The 20 s capture is silent (peak 0 over 960,000 frames), so
+sitting in its event loop, and why it draws nothing is not yet known. Investigation so far (headless, all measured):
+the 2 s frame is the game's own splash picture (PICT 200, "Castle of Dr. Brain Macintosh Version 1.0") drawn correctly; the
+black window follows it. Ruled out: a long delay (70 s of guest time, frames identical, still silent); a missing update event
+(the game calls BeginUpdate/EndUpdate itself, so an empty update region is correct; `WaitNextEvent` returns one activate event
+at tick 304 and null events after that); a broken colour remap (the cel decoder at `004adab0` reads an identity table at
+`004388db`, and maps colour 0 to black by design); missing data (RESOURCE.MAP/.000/.001, 7.pat, 0.tex, VERSION and
+resource.cfg all open and read). Observed: the game stops reading resources after about 6 s (it never opens RESOURCE.002 or
+.003, which presumably hold the first room's pictures), the offscreen it copies to the window is all index 255 from 3 s on,
+and `AnimatePalette` is called once (254 entries, from the colour table at `00417294`). My reading, not verified: the SCI
+interpreter is parked before the first room, perhaps waiting on a kernel call (sound driver status, a cue, or a clock) that
+we answer differently from a real Mac. Next lead: log the interpreter's kernel-call dispatch to see which call repeats. The 20 s capture is silent (peak 0 over 960,000 frames), so
 nothing is claimed about audio. No input was sent: input and play are unverified. Parity: Monkey Island and Monkey Island 2 are
 byte-identical to `baseline/games-outputs-regions`; ASan on Castle (10 s) and on the new tests reports nothing; `make test` exits 0.
 
