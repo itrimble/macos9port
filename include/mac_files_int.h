@@ -55,6 +55,12 @@ int mac_files_overlay_count(const FileState *s, unsigned *count);
 int mac_files_create(MacRuntime *rt, uint32_t pb);
 int mac_files_delete(MacRuntime *rt, uint32_t pb, int hfs);
 int mac_files_rename(MacRuntime *rt, uint32_t pb);
+/* Name-based cores (host names already validated for characters; State is mounted). create_name: quota,
+ * duplicate and name rules; delete_name and rename_names: lock, busy and absence rules. open_name: PBOpen. */
+int mac_files_create_name(MacRuntime *rt, const char *name);
+int mac_files_delete_name(MacRuntime *rt, const char *name);
+int mac_files_rename_names(MacRuntime *rt, const char *from, const char *to);
+int mac_files_open_name(MacRuntime *rt, const char *name, unsigned permission, int *ref);
 int mac_files_write(MacRuntime *rt, uint32_t pb, GuestFile *f);
 int mac_files_set_eof(MacRuntime *rt, uint32_t pb, GuestFile *f);
 int mac_files_set_fpos(MacRuntime *rt, uint32_t pb, GuestFile *f, int query);

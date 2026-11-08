@@ -62,6 +62,10 @@ int mac_system_service(MacRuntime *rt, uint16_t opcode) {
     case 0x71647277: /* qdrw: only gestaltHasColor (bit 0), under the same condition as 'qd  '. No deep GWorlds,
                      * direct pixmaps or other features are claimed. */
         response = rt->main_device && rt->screen_depth == 8 ? 1 : 0; break;
+    case 0x66732020: /* fs  : gestaltHasFSSpecCalls (bit 1) only. The FSp calls dispatch through $AA52 (mac_fsspec.c).
+                     * Not claimed: gestaltFullExtFSDispatching (bit 0, all HFSDispatch selectors), the File System
+                     * Manager (bit 2) and every volume-size/format bit. */
+        response = 1u << 1; break;
     default: error = -5551; break;
     }
     mac_cpu_set(rt->cpu, MAC_A0, response);

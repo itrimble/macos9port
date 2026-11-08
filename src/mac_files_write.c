@@ -293,18 +293,16 @@ int mac_files_locked_error(const FileState *s, int kind) {
     return 0;
 }
 
-int mac_files_create(MacRuntime *rt, uint32_t pb) {
+/* The *_name cores are shared by the PB calls (parameter-block names) and the FSSpec calls. */
+int mac_files_create_name(MacRuntime *rt, const char *name) {
     FileState *s = rt->file_state;
-    char name[256];
-    int error = mac_files_read_name(rt->cpu, mac_cpu_read(rt->cpu, pb + 18, 4), name, sizeof name);
-    if (error) return error;
     if (!s) return -35;
-    if ((error = mac_files_volume_ok(rt->cpu, pb))) return error;
     if (s->saves < 0) return -46;
     if (!mac_files_save_name_ok(name)) return -50;
     if (mac_files_classify(s, name) != FILE_NONE) return -48;
     unsigned files; uint64_t bytes;
-    if ((error = usage(s, &files, &bytes))) return error;
+    int error = usage(s, &files, &bytes);
+    if (error) return error;
     if (files >= s->max_files) return -34;
     int fd = openat(s->saves, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
     if (fd < 0) return errno == EEXIST ? -48 : -36;
@@ -313,39 +311,58 @@ int mac_files_create(MacRuntime *rt, uint32_t pb) {
     return 0;
 }
 
-int mac_files_delete(MacRuntime *rt, uint32_t pb, int hfs) {
-    FileState *s = rt->file_state;
+int mac_files_create(MacRuntime *rt, uint32_t pb) {
     char name[256];
     int error = mac_files_read_name(rt->cpu, mac_cpu_read(rt->cpu, pb + 18, 4), name, sizeof name);
     if (error) return error;
-    if (!s) return -35;
+    if (!rt->file_state) return -35;
     if ((error = mac_files_volume_ok(rt->cpu, pb))) return error;
-    if (hfs) {
-        uint32_t directory = mac_cpu_read(rt->cpu, pb + 48, 4);
-        if (directory != 0 && directory != 2) return -120;
-    }
-    if ((error = mac_files_locked_error(s, mac_files_classify(s, name)))) return error;
+    return mac_files_create_name(rt, name);
+}
+
+int mac_files_delete_name(MacRuntime *rt, const char *name) {
+    FileState *s = rt->file_state;
+    int error = mac_files_locked_error(s, mac_files_classify(s, name));
+    if (error) return error;
     if (mac_files_open_by_name(s, name)) return -47;
     if (unlinkat(s->saves, name, 0)) return errno == ENOENT ? -43 : -36;
     fsync(s->saves);
     return 0;
 }
 
-int mac_files_rename(MacRuntime *rt, uint32_t pb) {
-    FileState *s = rt->file_state;
-    char from[256], to[256];
-    int error = mac_files_read_name(rt->cpu, mac_cpu_read(rt->cpu, pb + 18, 4), from, sizeof from);
+int mac_files_delete(MacRuntime *rt, uint32_t pb, int hfs) {
+    char name[256];
+    int error = mac_files_read_name(rt->cpu, mac_cpu_read(rt->cpu, pb + 18, 4), name, sizeof name);
     if (error) return error;
-    if (!s) return -35;
+    if (!rt->file_state) return -35;
     if ((error = mac_files_volume_ok(rt->cpu, pb))) return error;
-    if ((error = mac_files_read_name(rt->cpu, mac_cpu_read(rt->cpu, pb + 28, 4), to, sizeof to))) return error;
-    if ((error = mac_files_locked_error(s, mac_files_classify(s, from)))) return error;
+    if (hfs) {
+        uint32_t directory = mac_cpu_read(rt->cpu, pb + 48, 4);
+        if (directory != 0 && directory != 2) return -120;
+    }
+    return mac_files_delete_name(rt, name);
+}
+
+int mac_files_rename_names(MacRuntime *rt, const char *from, const char *to) {
+    FileState *s = rt->file_state;
+    int error = mac_files_locked_error(s, mac_files_classify(s, from));
+    if (error) return error;
     if (!mac_files_save_name_ok(to)) return -50;
     if (mac_files_classify(s, to) != FILE_NONE) return -48;
     if (mac_files_open_by_name(s, from)) return -47;
     if (renameat(s->saves, from, s->saves, to)) return errno == ENOENT ? -43 : -36;
     fsync(s->saves);
     return 0;
+}
+
+int mac_files_rename(MacRuntime *rt, uint32_t pb) {
+    char from[256], to[256];
+    int error = mac_files_read_name(rt->cpu, mac_cpu_read(rt->cpu, pb + 18, 4), from, sizeof from);
+    if (error) return error;
+    if (!rt->file_state) return -35;
+    if ((error = mac_files_volume_ok(rt->cpu, pb))) return error;
+    if ((error = mac_files_read_name(rt->cpu, mac_cpu_read(rt->cpu, pb + 28, 4), to, sizeof to))) return error;
+    return mac_files_rename_names(rt, from, to);
 }
 
 static int position(MacCpu *cpu, uint32_t pb, const GuestFile *f, int64_t size, int64_t *mark) {

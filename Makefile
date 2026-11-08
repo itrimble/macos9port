@@ -98,7 +98,7 @@ RUNTIME += src/mac_sound.c src/mac_sound_render.c
 RUNTIME += src/mac_sound_double.c
 RUNTIME += src/mac_sound_resample.c
 RUNTIME += src/mac_time.c
-RUNTIME += src/mac_files_write.c src/mac_files_info.c
+RUNTIME += src/mac_files_write.c src/mac_files_info.c src/mac_fsspec.c
 RUNTIME_HDRS += include/mac_files_int.h
 RUNTIME_HDRS += include/mac_time.h
 RUNTIME_HDRS += include/mac_sound_double.h
@@ -357,6 +357,19 @@ build/test_mac_files: $(RUNTIME_OBJ) tests/test_mac_files.c $(RUNTIME_HDRS) $(CP
 
 build/test_mac_files_write: $(RUNTIME_OBJ) tests/test_mac_files_write.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_files_write.c $(CPUOBJ) -lm -o $@
+
+# FSSpec calls (HighLevelFSDispatch) and Gestalt 'fs  '; `test` depends on this aggregate.
+.PHONY: test-fsspec
+test-fsspec: build/test_mac_fsspec build/test_mac_fsspec_write
+	./build/test_mac_fsspec
+	./build/test_mac_fsspec_write
+test: test-fsspec
+
+build/test_mac_fsspec: $(RUNTIME_OBJ) tests/test_mac_fsspec.c tests/fsspec_test.h $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_fsspec.c $(CPUOBJ) -lm -o $@
+
+build/test_mac_fsspec_write: $(RUNTIME_OBJ) tests/test_mac_fsspec_write.c tests/fsspec_test.h $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_fsspec_write.c $(CPUOBJ) -lm -o $@
 
 build/test_mac_geometry: $(RUNTIME_OBJ) tests/test_mac_geometry.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_geometry.c $(CPUOBJ) -lm -o $@
