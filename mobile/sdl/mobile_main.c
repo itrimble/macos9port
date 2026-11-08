@@ -284,13 +284,22 @@ int main(int argc, char **argv) {
     SDL_ShowCursor(h->sim && !h->sim_pointer ? SDL_ENABLE : SDL_DISABLE);
     desktop_host_init(volume);
     Session *s = session_create(volume);
-    if (!s) { fprintf(stderr, "OS999: could not open %s\n", volume); return 1; }
+    if (!s) {
+        fprintf(stderr, "OS999: could not open %s\n", volume);
+        desktop_host_end_session(NULL); SDL_Quit(); return 1;
+    }
     kbd_load_fonts("fonts/ChicagoFLF.ttf");
     mobile_pointer_load("assets/icons/cursors/arrow.curs");
     h->audio = kbd_audio_open();
     h->haptics = h->sim ? kbd_haptics_open() : NULL;
     MobileShellHost cb = {on_haptic, on_kbd_event, on_clipboard, h};
-    if (mobile_shell_init(&h->shell, s, cb, volume) != 0) return 1;
+    if (mobile_shell_init(&h->shell, s, cb, volume) != 0) {
+        mobile_shell_free(&h->shell);
+        desktop_host_end_session(s);
+        if (h->audio) kbd_audio_close(h->audio);
+        if (h->haptics) kbd_haptics_close(h->haptics);
+        SDL_Quit(); return 1;
+    }
 #if defined(__ANDROID__)
     /* Android hardware keyboards are PC-ordered (Ctrl, Win, Alt): swap so the
      * key beside the space bar, Alt, is Command and Win is Option, as on a Mac. */
@@ -332,10 +341,9 @@ int main(int argc, char **argv) {
         SDL_RenderPresent(h->ren);
     }
     mobile_shell_free(&h->shell);
-    session_destroy(s);
+    desktop_host_end_session(s);
     if (h->audio) kbd_audio_close(h->audio);
     if (h->haptics) kbd_haptics_close(h->haptics);
-    desktop_host_shutdown();
     SDL_Quit();
     return 0;
 }

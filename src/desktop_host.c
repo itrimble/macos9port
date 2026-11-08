@@ -232,3 +232,8 @@ void desktop_trace_input(Session *s, SDL_Window *win, SDL_Renderer *ren,
             raw_x, raw_y, x, y, clicks, ww, wh, rw, rh,
             active ? active->rel : "-", selected);
 }
+
+void desktop_host_end_session(Session *session) {
+    if (session) session_destroy(session);
+    desktop_host_shutdown();
+}

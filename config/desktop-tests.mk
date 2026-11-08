@@ -328,3 +328,8 @@ test-controlpanels: build/test_controlpanels build/test_controlpanels_fx build/t
 	./build/test_controlpanels_fx assets/icons/ospi-icons.icl8
 	./build/test_mac_memory
 test: test-controlpanels
+
+QT_LIFECYCLE_SRC := $(CORE) $(AUDIO_SRC) $(VIDEO_SRC) src/desktop_host.c src/desktop_sound.c src/media_player_panel.c src/winamp_skin.c $(STARTUP_SRC)
+build/test_quicktime_lifecycle: $(QT_LIFECYCLE_SRC) $(STORAGE_A) tests/test_quicktime_lifecycle.c $(HDRS) $(AUDIO_HDRS) include/desktop_host.h
+	$(CC) $(CFLAGS) $(SDL_CFLAGS) $(FFMPEG_CFLAGS) -o $@ $(QT_LIFECYCLE_SRC) $(STORAGE_LINK) tests/test_quicktime_lifecycle.c $(SDL_LIBS) $(FFMPEG_LIBS) $(FT_LIBS) $(NET_LIBS) -pthread -lm
+test-quicktime: build/test_quicktime_lifecycle

@@ -205,9 +205,8 @@ int main(int argc, char **argv) {
         s = init.session;
     }
     if (startup_quit || startup_failed || !s) {
-        desktop_host_shutdown();
+        desktop_host_end_session(s);
         os999_startup_release();
-        if (s) session_destroy(s);
         free(startup_desktop); free(guest_pixels); free(frame);
         SDL_DestroyTexture(tex); SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
         return startup_failed || !s ? 1 : 0;
@@ -479,12 +478,11 @@ int main(int argc, char **argv) {
     osa_ipc_close();
     native_surface_close();
     browser_window_close();
-    desktop_host_shutdown();
+    desktop_host_end_session(s);
     os999_startup_release();
     free(startup_desktop);
     free(guest_pixels);
     free(frame);
-    session_destroy(s);
     SDL_DestroyTexture(tex);
     SDL_DestroyRenderer(ren);
     SDL_DestroyWindow(win);
