@@ -2405,13 +2405,15 @@ int main(void) {
 In `config/desktop-tests.mk`, inside the existing `ifeq ($(shell uname -s),Darwin)` block (line 146), add:
 
 ```make
-build/test_desktop_bt_darwin: src/desktop_bt_darwin.m tests/test_desktop_bt_darwin.m src/desktop_bluetooth.c src/desktop_bt_none.c include/desktop_bluetooth.h $(BT_OUT)/libos999bt.a $(BT_OUT)/bt_darwin.o $(NET_OUT)/libos999net.a
-	$(CC) $(CFLAGS) -I$(NET_DIR)/include -I$(BT_DIR)/include -I$(BT_DIR)/src -fobjc-arc -o $@ src/desktop_bt_darwin.m tests/test_desktop_bt_darwin.m src/desktop_bluetooth.c src/desktop_bt_none.c $(BT_OUT)/libos999bt.a $(BT_OUT)/bt_darwin.o $(NET_OUT)/libos999net.a $(GUEST_NET_LIBS)
+build/test_desktop_bt_darwin: src/desktop_bt_darwin.m tests/test_desktop_bt_darwin.m src/desktop_bluetooth.c $(BT_OUT)/libos999bt.a $(BT_OUT)/bt_darwin.o $(NET_OUT)/libos999net.a
+	$(CC) $(CFLAGS) -I$(NET_DIR)/include -I$(BT_DIR)/include -I$(BT_DIR)/src -fobjc-arc -o $@ src/desktop_bt_darwin.m tests/test_desktop_bt_darwin.m src/desktop_bluetooth.c $(BT_OUT)/libos999bt.a $(BT_OUT)/bt_darwin.o $(NET_OUT)/libos999net.a $(GUEST_NET_LIBS)
 .PHONY: test-desktop-bt-darwin
 test-desktop-bt-darwin: build/test_desktop_bt_darwin
 	./build/test_desktop_bt_darwin
 test: test-desktop-bt-darwin
 ```
+
+`src/desktop_bt_none.c` is deliberately not in this recipe: it defines the same `desktop_bt_platform_ops`, `desktop_bt_available` and `desktop_bt_unavailable_reason` as the macOS driver, so linking both would give duplicate symbols.
 
 - [ ] **Step 5: Run the test to verify it passes**
 
@@ -2653,6 +2655,10 @@ static void sim_poll(DesktopBtDriver *driver) {
     SimDriver *d = (SimDriver *)driver;
     if (!d || !d->host) return;
     bt_stack_pump(d->host, 0);
+    /* Both ends move the frames that arrived on the link into their guest
+     * stack: without the host's own pump nothing the peer sends reaches
+     * the guest. */
+    if (d->host_if) bt_panif_pump(d->host_if);
     if (d->peer_if) bt_panif_pump(d->peer_if);
 }
 
@@ -2848,23 +2854,26 @@ and the recipe becomes:
 In `Makefile`, in the `ifeq ($(shell uname -s),Darwin)` block (line 39), add:
 
 ```make
-BT_HOST_SRC := src/desktop_bt_darwin.m
 BT_HOST_OBJ := build/desktop_bt_darwin.o
 BT_HOST_LIBS := -framework IOBluetooth -framework Foundation
-build/desktop_bt_darwin.o: src/desktop_bt_darwin.m include/desktop_bluetooth.h bluetooth/src/bt_darwin.h
+build/desktop_bt_darwin.o: src/desktop_bt_darwin.m include/desktop_bluetooth.h $(BT_DIR)/src/bt_darwin.h
 	mkdir -p build
-	$(CC) $(CFLAGS) -I$(BT_DIR)/include -I$(BT_DIR)/src -fobjc-arc -c $< -o $@
+	$(CC) $(CFLAGS) -I$(BT_DIR)/src -fobjc-arc -c $< -o $@
 ```
 
 and in the `else` branch (after line 60) add:
 
 ```make
-BT_HOST_SRC := src/desktop_bt_none.c
-BT_HOST_OBJ :=
+BT_HOST_OBJ := build/desktop_bt_none.o
 BT_HOST_LIBS :=
+build/desktop_bt_none.o: src/desktop_bt_none.c include/desktop_bluetooth.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -c $< -o $@
 ```
 
-Then replace `src/desktop_bt_none.c` in the `build/ospi` rule with `$(BT_HOST_SRC)` and add `$(BT_HOST_OBJ)` to the prerequisites and `$(BT_HOST_LIBS)` to the recipe. On macOS `src/desktop_bt_none.c` is still compiled by the `none` driver file for the tests, but the desktop binary uses the macOS driver, so `desktop_bt_platform_ops()` must come from the macOS driver. Both files define `desktop_bt_platform_ops()`, so only one may be linked into `build/ospi`: link `$(BT_HOST_SRC)` and not `src/desktop_bt_none.c`.
+Then replace `src/desktop_bt_none.c` in the `build/ospi` rule with `$(BT_HOST_OBJ)`, add `$(BT_HOST_OBJ)` to the prerequisites and `$(BT_HOST_LIBS)` to the recipe.
+
+The driver is always linked as an object, never as a source, because the macOS driver is Objective-C and needs `-fobjc-arc`; the object rule above compiles it that way on every build. `src/desktop_bt_none.c` is still compiled directly by the test targets, which never link the macOS driver, so the two definitions of `desktop_bt_platform_ops` never meet in one binary.
 
 - [ ] **Step 4: Register the panel at startup**
 
