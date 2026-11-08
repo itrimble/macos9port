@@ -12,6 +12,7 @@ import time
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from dashboard_data import collect, load_json, source_text
+from build_progress import log_excerpt
 
 
 class Dashboard:
@@ -131,6 +132,15 @@ def handler_for(dashboard):
                 except (BrokenPipeError, ConnectionResetError):
                     pass
                 self.close_connection = True
+                return
+            if url.path == '/api/build-log':
+                try:
+                    query = parse_qs(url.query)
+                    excerpt = log_excerpt(dashboard.state, query.get('run', [''])[0],
+                                          query.get('step', [''])[0])
+                    self.respond(200, json.dumps(excerpt))
+                except (ValueError, OSError, KeyError, TypeError) as error:
+                    self.respond(404, json.dumps({'error': str(error)}))
                 return
             if url.path == '/api/source':
                 try:

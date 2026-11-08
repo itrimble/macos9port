@@ -1,3 +1,4 @@
+import {renderBuildProgress} from './build-progress.js';
 const $ = (selector) => document.querySelector(selector);
 const colors = {verified:'#69e3b4',implemented:'#6cb7ff',in_progress:'#e5c476',blocked:'#ff929c',pending:'#687d94'};
 const labels = {verified:'Accepted',implemented:'Implemented',in_progress:'In progress',blocked:'Blocked',pending:'Pending'};
@@ -97,7 +98,7 @@ function renderAnatomy(){
 }
 function renderBuilds(){
   renderWorkerHealth();
-  $('#build-list').innerHTML=data.builds.length?data.builds.map(b=>`<article class="build-card"><div class="build-number">${b.number?'#'+b.number:'Queue'}</div><div><h3>${escape(b.title || 'Feature integration')}</h3><p class="mono">${escape(b.commit?.slice(0,12))} · attempt ${b.attempts || 0}</p><p>${stamp(b.started || b.submitted)}</p>${b.error?`<p class="build-error">${escape(b.error)}</p>`:''}${b.run?`<p>Receipt directory: ${escape(b.run)}</p>`:''}</div><span class="state-label">${icon(b.status==='merged'?'verified':b.status==='failed'?'blocked':'in_progress')}${escape(b.status)}</span></article>`).join(''):'<p class="empty">No automated builds have been queued yet. Existing build logs and the historical receipt remain separate from this numbered queue.</p>';
+  renderBuildProgress($('#build-list'),data.builds);
   $('#worktrees').innerHTML=table(['Worktree','Branch','Revision'],data.git.worktrees.map(w=>[escape(w.name),escape(w.branch),`<code>${escape(w.head)}</code>`]));
   $('#sources').innerHTML=data.sources.map(p=>`<a href="${sourceLink(p)}" target="_blank" rel="noopener">${escape(p)} ↗</a>`).join('');
 }

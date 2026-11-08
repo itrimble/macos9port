@@ -96,6 +96,24 @@ class ServiceTests(unittest.TestCase):
         self.dashboard.refresh()
         self.assertEqual(calls, [(revision, 'Finder integration')])
 
+    def test_manual_steps_and_safe_log_endpoint(self):
+        run = self.root / 'state/runs/manual9'
+        run.mkdir()
+        (run / 'build-state.json').write_text(json.dumps({'number': 9,
+            'kind': 'manual_snapshot_validation', 'status': 'validated',
+            'source_tree': 'exact', 'run': str(run)}))
+        (run / 'receipt.json').write_text(json.dumps({'result': 'pass', 'tree': 'exact'}))
+        (run / 'build.log').write_text('api_key=do-not-display\ncompiler finished\n')
+        self.dashboard.refresh()
+        body = json.loads(self.request('/api/state')[1])
+        self.assertTrue(body['builds'][0]['progress']['historical'])
+        status, log = self.request('/api/build-log?run=manual9&step=browser')
+        self.assertEqual(status, 200)
+        self.assertIn('compiler finished', json.loads(log)['text'])
+        self.assertNotIn('do-not-display', log.decode())
+        self.assertEqual(self.request('/api/build-log?run=..%2Fsecret&step=browser')[0],404)
+        self.assertEqual(self.request('/api/build-log?run=manual9&step=unknown')[0],404)
+
     def test_event_stream_emits_snapshot(self):
         client = http.client.HTTPConnection('127.0.0.1', self.server.server_port, timeout=3)
         client.request('GET', '/api/events')

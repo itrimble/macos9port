@@ -12,3 +12,8 @@ main{padding:35px 38px 40px;min-width:0;max-width:1640px;width:100%}.page-headin
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 .treemap{display:flex;flex-direction:column;height:420px;gap:0}.tree-row{display:flex;min-height:0;gap:0}.tree-group{min-width:0;min-height:0;flex-basis:0!important;border-radius:0;margin:0}.tree-cells{overflow:hidden}.tree-group h3{overflow-wrap:anywhere}.tree-group small{font-size:11px}@media(max-width:560px){.treemap{height:520px}.tree-group{padding:9px}.tree-group h3{font-size:12px}.tree-cells{gap:2px}.tree-cells i{width:7px;height:7px}}
+
+/* Build steps retain the existing restrained card layout. */
+.build-progress{margin:1rem 0}.step-counts{font-weight:600}.historical-progress{color:var(--muted);font-size:.85rem}
+.build-step{border-top:1px solid var(--line,#ddd);padding:.55rem 0}.build-step summary{display:flex;align-items:center;gap:.75rem;cursor:pointer}.build-step summary>span:first-child{flex:1}.build-step time{font-size:.78rem;color:var(--muted);min-width:7rem;text-align:right}.step-status{font-size:.75rem;text-transform:capitalize}.step-status.passed{color:#30745b}.step-status.failed{color:#ad4638}.step-status.running{color:#94671d}.step-status.pending,.step-status.skipped{color:var(--muted)}.build-step button{margin:.5rem 0}.build-log{max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:.75rem;background:#f3f2ed;padding:.65rem;border-radius:.3rem}.build-log:empty{display:none}
+@media(max-width:680px){.build-step summary{flex-wrap:wrap}.build-step summary>span:first-child{min-width:70%}.build-step time{min-width:0}}

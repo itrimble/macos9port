@@ -30,5 +30,31 @@ class EvidenceTests(unittest.TestCase):
             path.write_text('- [x] V01 Accepted\n')
             self.assertNotEqual(before['revision'], collect(root, root / 'state')['revision'])
 
+    def test_manual_validation_visible_without_queue_admission(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'docs').mkdir()
+            (root / 'docs/DEVELOPMENT-CHECKLIST.md').write_text('- [ ] V01 Open\n')
+            state = root / 'state'
+            run = state / 'runs/build9'
+            run.mkdir(parents=True)
+            record = {'kind': 'manual_snapshot_validation', 'number': 9,
+                      'status': 'running', 'source_tree': 'source-snapshot'}
+            path = run / 'build-state.json'
+            path.write_text(json.dumps(record))
+            before = collect(root, state)
+            self.assertEqual(before['builds'][0]['status'], 'running')
+            self.assertEqual(before['builds'][0]['commit'], '')
+            record['status'] = 'validated'
+            path.write_text(json.dumps(record))
+            after = collect(root, state)
+            self.assertEqual(after['builds'][0]['status'], 'validated')
+            self.assertNotEqual(before['revision'], after['revision'])
+            self.assertFalse((state / 'queue').exists())
+            self.assertIsNone(after['latest'])
+            (state / 'queue').mkdir()
+            (state / 'queue/promoted.json').write_text(json.dumps({'number': 9, 'status': 'merged'}))
+            self.assertEqual(collect(root, state)['builds'], [{'number': 9, 'status': 'merged'}])
+
 if __name__ == '__main__':
     unittest.main()

@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import time
+from build_progress import progress_for, safe_run
 
 GROUPS = {'C': 'Provenance', 'S': 'Startup', 'L': 'Storage', 'R': 'Toolbox & runtime',
           'V': 'Finder & appearance', 'G': 'Graphics & games', 'B': 'Browser',
@@ -97,8 +98,34 @@ def collect(repo, state):
             builds.append(load_json(path, {}))
         except (ValueError, OSError):
             alerts.append({'level': 'warning', 'title': 'Unreadable queue entry', 'detail': path.name})
+    # Manual validations are observable history, never actionable queue items.
+    queued_numbers = {item.get('number') for item in builds}
+    for path in sorted((state / 'runs').glob('*/build-state.json')):
+        try:
+            if path.parent.resolve().parent != (state / 'runs').resolve():
+                continue
+            item = load_json(path, {})
+            if item.get('kind') != 'manual_snapshot_validation' or type(item.get('number')) is not int:
+                continue
+            if item['number'] in queued_numbers:
+                continue  # promotion/failure recorded by the queue takes precedence
+            item.setdefault('commit', '')
+            builds.append(item)
+        except (ValueError, OSError, AttributeError):
+            alerts.append({'level': 'warning', 'title': 'Unreadable manual build history', 'detail': path.parent.name})
     builds.sort(key=lambda item: item.get('number', 0), reverse=True)
     for item in builds:
+        if item.get('run'):
+            try:
+                run = safe_run(state, Path(item['run']).name)
+                item['run_id'] = run.name
+                item['progress'] = progress_for(run, item.get('source_tree'))
+                if (item['progress'] or {}).get('status') == 'failed' and item.get('status') != 'merged':
+                    item['recorded_status'] = item.get('status')
+                    item['status'] = 'failed'
+                    item['error'] = item['progress'].get('reason', 'Build stage failed')
+            except (ValueError, OSError, KeyError, TypeError) as error:
+                item['progress_error'] = str(error)
         if item.get('status') == 'failed':
             alerts.append({'level': 'error', 'title': item.get('title', 'Integration failed'),
                            'detail': item.get('error', 'Inspect the retained build log')})
