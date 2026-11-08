@@ -58,6 +58,13 @@ int main(void) {
     int second=open_res(&r,"Second");CHECK(second>first && current(&r)==second);
     uint32_t sh=get(&r,0xa81f,128);CHECK(sh!=fh && sh!=ah);bytes_are(&r,sh,"BBB!");
     CHECK(open_res(&r,"FIRST")==first && current(&r)==second);
+    /* A full pathname that starts with the volume's own name is the same file; any other colon is still refused. */
+    CHECK(open_res(&r,"OS Pi Data:First")==first && err(&r)==0);
+    CHECK(open_res(&r,"os pi data:FIRST")==first && err(&r)==0);
+    CHECK(open_res(&r,"OS Pi Data:Missing")==-1 && err(&r)==-43);
+    CHECK(open_res(&r,"OS Pi Data:")==-1 && err(&r)==-37 && open_res(&r,"Other Disk:First")==-1 && err(&r)==-37);
+    CHECK(open_res(&r,"OS Pi Data:sub:First")==-1 && err(&r)==-37 && open_res(&r,"OS Pi Data:../First")==-1 && err(&r)==-37);
+    CHECK(current(&r)==second);
     use(&r,first);CHECK(err(&r)==0 && get(&r,0xa9a0,128)==fh);
     CHECK(get(&r,0xa99d,1)==sh);CHECK(get(&r,0xa99d,2)==fh);CHECK(get(&r,0xa99d,3)==ah);
     CHECK(mac_resource_chain_count(&r,TEXT,0)==3);CHECK(mac_resource_chain_count(&r,TEXT,1)==1);

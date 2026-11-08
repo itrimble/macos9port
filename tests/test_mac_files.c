@@ -175,6 +175,15 @@ int main(void) {
     CHECK(open_name(&rt,"fifo",1)==-50);
     CHECK(open_name(&rt,"Game Data",1)==0);
     CHECK(call(&rt,0xa001)==0);
+    /* A full pathname starting with this volume's own name opens the same file; no other colon form does. */
+    CHECK(open_name(&rt,"OS Pi Data:Game Data",1)==0);CHECK(call(&rt,0xa001)==0);
+    CHECK(open_name(&rt,"os pi data:Game Data",1)==0);CHECK(call(&rt,0xa001)==0);
+    CHECK(open_name(&rt,"OS Pi Data:missing",1)==-43);
+    CHECK(open_name(&rt,"OS Pi Data:",1)==-50 && open_name(&rt,"OS Pi Data",1)==-43);   /* no file name; plain name is just a missing file */
+    CHECK(open_name(&rt,"OS Pi Data:sub:Game Data",1)==-50 && open_name(&rt,"OS Pi Data:../escape",1)==-50);
+    CHECK(open_name(&rt,"Other Disk:Game Data",1)==-50 && open_name(&rt,"OS Pi Data::Game Data",1)==-50);
+    CHECK(open_name(&rt,"OS Pi Dat:Game Data",1)==-50 && open_name(&rt,"XOS Pi Data:Game Data",1)==-50);
+    CHECK(open_name(&rt,"OS Pi Data:OS Pi Data:Game Data",1)==-50);                      /* only one prefix is removed */
     /* PBOpenDF opens the same file as PBOpen and returns a usable reference; it fails exactly like PBOpen. */
     CHECK(open_df(&rt,"Game Data",1)==0);
     uint32_t df_ref=mac_cpu_read(rt.cpu,PB+24,2);CHECK(df_ref>=128);

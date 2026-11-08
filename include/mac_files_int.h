@@ -32,6 +32,8 @@ int mac_files_valid(MacCpu *cpu, uint32_t address, uint32_t length);
 /* Copy a guest Pascal string into out (NUL terminated). Returns -50 when the
  * pointer, length or characters are unacceptable for any volume operation. */
 int mac_files_read_name(MacCpu *cpu, uint32_t pointer, char *out, size_t capacity);
+/* Length of a leading "OS Pi Data:" (this volume's name, any case) when a file name follows it, else 0. */
+unsigned mac_files_volume_prefix(const char *name, size_t length);
 int mac_files_save_name_ok(const char *name);
 int mac_files_classify(const FileState *s, const char *name);
 GuestFile *mac_files_open_by_name(FileState *s, const char *name);

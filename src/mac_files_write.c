@@ -38,12 +38,29 @@ int mac_files_valid(MacCpu *cpu, uint32_t address, uint32_t length) {
     return address <= size && length <= size - address;
 }
 
+/* A full pathname that starts with this volume's own name ("OS Pi Data:Name", the name PBGetVol reports) names the same file
+ * as "Name": the prefix is matched without regard to case and removed. Nothing else with a colon is accepted. */
+unsigned mac_files_volume_prefix(const char *name, size_t length) {
+    static const char prefix[] = "OS Pi Data:";
+    const size_t n = sizeof prefix - 1;
+    if (length <= n) return 0; /* the bare volume name leaves no file name */
+    for (size_t i = 0; i < n; i++) {
+        int a = (unsigned char)name[i], b = (unsigned char)prefix[i];
+        if (a >= 'A' && a <= 'Z') a += 32;
+        if (b >= 'A' && b <= 'Z') b += 32;
+        if (a != b) return 0;
+    }
+    return (unsigned)n;
+}
+
 int mac_files_read_name(MacCpu *cpu, uint32_t pointer, char *out, size_t capacity) {
     if (!mac_files_valid(cpu, pointer, 1)) return -50;
     unsigned length = mac_cpu_read(cpu, pointer, 1);
     if (!length || length >= capacity || !mac_files_valid(cpu, pointer + 1, length)) return -50;
     memcpy(out, mac_cpu_ram(cpu) + pointer + 1, length);
     out[length] = 0;
+    unsigned skip = mac_files_volume_prefix(out, length);
+    if (skip) { memmove(out, out + skip, length - skip + 1); length -= skip; }
     for (unsigned i = 0; i < length; i++)
         if ((unsigned char)out[i] < 32 || (unsigned char)out[i] >= 127 ||
             out[i] == '/' || out[i] == ':' || out[i] == '\\') return -50;
