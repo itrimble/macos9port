@@ -10,7 +10,8 @@ none of the following changes imply promotion, GUI acceptance or listening tests
 | Build 9 | Complete gate and relocated packaged Quake frame/input probe passed | Local main promotion remains pending |
 | Build 10 | All 15 gate stages passed; later review found movie/audio teardown use-after-free | Diagnostic artifact only; correction carried into the next candidate |
 | Build 11 | Desktop test gate failed because the direct Finder test omitted quota-helper link dependencies | No package assembled; dependency correction carried into R2 |
-| R2 candidate | Sound defaults, native applications/quit/recent tracking and Notes/docs combined focused checks pass | Fonts/About handoff, final combined suite and a new numbered package gate pending |
+| Build 12 | Stopped during SDL preparation when a parallel suite exposed an obsolete About body-text assertion | No package assembled; test correction retained for a fresh numbered run |
+| R2 candidate | Sound, native applications, Notes/docs and Fonts/About combined focused checks pass; mobile 596 checks and host simulator build pass | Final combined suite and a new numbered package gate pending |
 
 R2 interface effects default off, startup chime off and system gain 20 percent;
 explicit saved preferences survive. Effect toggles no longer mute music/movie

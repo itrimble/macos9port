@@ -47,7 +47,7 @@ static void test_about_and_menu_toggles(Session *s, const char *dir) {
     CHECK(about->w == 460 && about->h == 350);
     CHECK(about->x == (OSPI_W - 460) / 2 && about->y == (OSPI_H - 350) / 2);
     CHECK(strstr(about->text, "Ian Trimble") != NULL);
-    CHECK(strstr(about->text, "remnantsecurity.com") != NULL);
+    CHECK(strstr(about->text, "Explore Ian's apps using the link below.") != NULL);
     /* S11: Never expose temporary host paths or private volume location in About. */
     CHECK(strstr(about->text, dir) == NULL);
 
