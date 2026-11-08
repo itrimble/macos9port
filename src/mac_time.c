@@ -67,6 +67,7 @@ size_t mac_time_poll(MacRuntime*r,size_t budget){
  struct MacTimeState*s=r->time_manager;if(s->callback){fail(r,"Recursive timer polling is prohibited.");return 0;}
  size_t ran=0;unsigned work=0;
  if(budget>MAX_TIMER_CALLBACK_INSTRUCTIONS)budget=MAX_TIMER_CALLBACK_INSTRUCTIONS;
+ size_t allowance=budget;
  while(ran<budget && work++<128){
   TimeTask*t=NULL;for(unsigned i=0;i<TIME_TASKS;i++){TimeTask*v=&s->tasks[i];if(v->installed && v->active && v->due<=r->clock_us && (!t || v->due<t->due))t=v;}
   if(!t)break;uint32_t p=t->p,code=rd(r,p+6,4);
@@ -77,7 +78,9 @@ size_t mac_time_poll(MacRuntime*r,size_t budget){
   uint8_t stack[4];memcpy(stack,mac_cpu_ram(r->cpu)+sp-4,4);wr(r,sp-4,4,TIME_RETURN);
   mac_cpu_set(r->cpu,MAC_A7,sp-4);mac_cpu_set(r->cpu,MAC_A1,p);mac_cpu_set(r->cpu,MAC_PC,code);s->callback=1;
   size_t callback_start=ran;
-  while(ran<budget && !mac_cpu_halted(r->cpu) && mac_cpu_get(r->cpu,MAC_PC)!=TIME_RETURN){size_t n=mac_cpu_run(r->cpu,1);ran+=n;if(!n)break;}
+  /* Each callback gets the poll's full budget (itself capped), not what is left of it after earlier callbacks: what is left only
+   * decides whether another callback may start. A callback cut off by an earlier one's time would be abandoned in the middle of its work. */
+  while(ran-callback_start<allowance && !mac_cpu_halted(r->cpu) && mac_cpu_get(r->cpu,MAC_PC)!=TIME_RETURN){size_t n=mac_cpu_run(r->cpu,1);ran+=n;if(!n)break;}
   s->callback=0;if(mac_cpu_halted(r->cpu))return ran;
   if(mac_cpu_get(r->cpu,MAC_PC)!=TIME_RETURN || mac_cpu_get(r->cpu,MAC_A7)!=sp){
    char error[160];
