@@ -50,7 +50,7 @@ static void stamp_guard(MacRuntime *rt, uint32_t pointer, uint32_t size) {
 }
 
 static int verify_guard(MacRuntime *rt, const MacHandle *h) {
-    if (!rt->guard_allocs || !h || h->resource || !h->pointer) return 0;
+    if (!rt->guard_allocs || !h || h->resource || h->loaded_code || !h->pointer) return 0;
     uint32_t aligned = (h->size + 3) & ~UINT32_C(3);
     if (!aligned) aligned = 4;
     uint32_t end = h->pointer + aligned + 16u;
@@ -68,6 +68,9 @@ static int move_high(MacRuntime *rt, uint32_t address) {
     MacHandle *h = lookup(rt, address, 1);
     if (!h || !h->pointer) { result(cpu, -109); return 1; }
     if (h->loaded_code || (h->state & 0x80)) { result(cpu, -117); return 1; }
+    if (verify_guard(rt, h) != 0) {
+        mac_cpu_halt(cpu, "Guest heap guard redzone corrupted."); return -1;
+    }
     if (h->size > UINT32_MAX - 32) { result(cpu, -108); return 1; }
     uint32_t amount = (h->size + 3) & ~UINT32_C(3);
     if (!amount) amount = 4;
@@ -178,6 +181,9 @@ int mac_memory_service(MacRuntime *rt, uint16_t opcode) {
         MacHandle *h = lookup(rt, a0, 1);
         if (!h) result(cpu, -109);
         else if (h->loaded_code && d0 != h->size) result(cpu, -117);
+        else if (verify_guard(rt, h) != 0) {
+            mac_cpu_halt(cpu, "Guest heap guard redzone corrupted."); return -1;
+        }
         else if (d0 <= h->size) { h->size = d0; stamp_guard(rt, h->pointer, d0); result(cpu, 0); }
         else if (h->state & 0x80) result(cpu, -117);
         else {

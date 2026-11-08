@@ -100,7 +100,7 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
     else if (heap_mb == 12) { rt->a5 = 0xc00000; rt->heap_limit = 0xb00000; }
     else { rt->a5 = 0x800000; rt->heap_limit = 0x700000; }
     if (rt->a5 < below + 0x140000) { rt->a5 = 0x800000; rt->heap_limit = 0x700000; }
-    else if (rt->heap_limit > rt->a5 - below - 0x10000) rt->heap_limit = rt->a5 - below - 0x10000;
+    if (rt->heap_limit > rt->a5 - below - 0x10000) rt->heap_limit = rt->a5 - below - 0x10000;
     rt->jump_table = rt->a5 + offset;
     rt->jump_size = length;
     rt->heap_next = 0x100000;

@@ -180,6 +180,14 @@ static void runtime_policy_and_guard_checks(void) {
     CHECK(mac_cpu_get(rt.cpu, MAC_D0) == 0 && mac_cpu_get(rt.cpu, MAC_A0) == 0x200000);
     mac_runtime_destroy(&rt);
 
+    /* A large below-A5 area triggers policy fallback, but still reserves stack space. */
+    put32(b + ZERO + 4, 0x100000);
+    CHECK(mac_runtime_init(&rt, &f, err, sizeof err) == 0);
+    CHECK(rt.a5 == 0x800000 && rt.stack_base == 0x700000);
+    CHECK(rt.heap_limit <= rt.stack_base - 0x10000);
+    mac_runtime_destroy(&rt);
+    put32(b + ZERO + 4, 0x100);
+
     setenv("OS999_GUEST_HEAP_MB", "12", 1);
     setenv("OS999_GUEST_GUARD", "1", 1);
     CHECK(mac_runtime_init(&rt, &f, err, sizeof err) == 0);
@@ -220,10 +228,34 @@ static void runtime_policy_and_guard_checks(void) {
     mac_runtime_set_memory_policy(0, 0);
 }
 
+static void corrupted_guard_cannot_be_restamped(void) {
+    const uint16_t ops[] = {0xa024, 0xa024, 0xa064};
+    const uint32_t sizes[] = {8, 32, 0};
+    for (unsigned i = 0; i < 3; i++) {
+        MacRuntime rt = {0}; rt.cpu = mac_cpu_create(65536);
+        CHECK(rt.cpu != NULL); if (!rt.cpu) return;
+        rt.heap_next = 0x1000; rt.heap_limit = 0x8000; rt.guard_allocs = 1;
+        CHECK(call(&rt, 0xa022, 0, 16) == 1);
+        uint32_t handle = mac_cpu_get(rt.cpu, MAC_A0);
+        uint32_t pointer = mac_cpu_read(rt.cpu, handle, 4), next = rt.heap_next;
+        uint8_t master[4]; memcpy(master, mac_cpu_ram(rt.cpu) + handle, sizeof master);
+        mac_cpu_ram(rt.cpu)[pointer + 16] = 0x42;
+        CHECK(call(&rt, ops[i], handle, sizes[i]) == -1);
+        CHECK(mac_cpu_halted(rt.cpu));
+        CHECK(strstr(mac_cpu_error(rt.cpu), "redzone") != NULL);
+        CHECK(rt.heap_next == next && !rt.heap_high);
+        CHECK(!memcmp(master, mac_cpu_ram(rt.cpu) + handle, sizeof master));
+        CHECK(rt.handles[0].size == 16);
+        CHECK(mac_cpu_ram(rt.cpu)[pointer + 16] == 0x42);
+        mac_runtime_destroy(&rt);
+    }
+}
+
 int main(void) {
     bounded_reclamation();
     high_heap();
     runtime_policy_and_guard_checks();
+    corrupted_guard_cannot_be_restamped();
     MacRuntime rt = {0};
     rt.cpu = mac_cpu_create(65536);
     CHECK(rt.cpu != NULL);
