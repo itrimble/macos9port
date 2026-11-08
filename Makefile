@@ -137,10 +137,13 @@ build/test_mac_help: $(RUNTIME_OBJ) tests/test_mac_help.c $(RUNTIME_HDRS) $(CPUO
 build/test_mac_window_colors: $(RUNTIME_OBJ) tests/test_mac_window_colors.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_window_colors.c $(CPUOBJ) -lm -o $@
 
+build/test_mac_setorigin: $(RUNTIME_OBJ) tests/test_mac_setorigin.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_setorigin.c $(CPUOBJ) -lm -o $@
+
 build/test_mac_numconv: $(RUNTIME_OBJ) tests/test_mac_numconv.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_numconv.c $(CPUOBJ) -lm -o $@
 
-test: build/test_mac_numconv build/test_mac_help build/test_mac_window_colors
+test: build/test_mac_numconv build/test_mac_help build/test_mac_window_colors build/test_mac_setorigin
 
 build/test_mac_sound: $(RUNTIME_OBJ) tests/test_mac_sound.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sound.c $(CPUOBJ) -lm -o $@
@@ -427,6 +430,7 @@ test: build/test_os999_startup build/test_ospi build/test_archive_install build/
 	./build/test_mac_numconv
 	./build/test_mac_help
 	./build/test_mac_window_colors
+	./build/test_mac_setorigin
 	./build/test_mac_sound
 	./build/test_mac_sound_double
 	./build/test_mac_sound_resample
