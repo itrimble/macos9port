@@ -187,10 +187,12 @@ int mac_regions_service(MacRuntime *rt,uint16_t opcode) {
  * OpenRgn ($A8DA) starts recording the current port's outline calls; CloseRgn ($A8DB, destination region on the stack) ends it and stores
  * the region the outline encloses. Recorded here: MoveTo, LineTo, Move, Line and FrameRect, as axis-aligned closed paths filled even-odd
  * (each MoveTo starts a new sub-path, and every sub-path is closed back to its start, as QuickDraw closes the outline). The calls are
- * only observed: they still draw as usual. A diagonal segment, a second OpenRgn, a CloseRgn without OpenRgn, more than 4096 segments, or
+ * only observed. OpenRgn hides the pen (decrements pnVis, +66) and CloseRgn shows it again, so that nothing is drawn while the outline is
+ * recorded: this is how I remember the QuickDraw documentation, not something the interface listing here states, and it is supported by
+ * what Castle of Dr. Brain does (without it the region outlines it records appeared on screen). A diagonal segment, a second OpenRgn, a CloseRgn without OpenRgn, more than 4096 segments, or
  * a frame of an oval, round rectangle, arc, polygon or region while recording (outlines this module cannot capture) halts by name. */
 typedef struct { int h0,v0,h1,v1; } Seg;
-typedef struct MacRgnRec { int n,cur_v,cur_h,start_v,start_h; Seg seg[4096]; } Rec;
+typedef struct MacRgnRec { int n,cur_v,cur_h,start_v,start_h; uint32_t port; Seg seg[4096]; } Rec;
 void mac_rgn_record_destroy(MacRuntime *rt){free(rt->rgn_rec);rt->rgn_rec=NULL;}
 static int add_seg(MacRuntime *rt,Rec *r,int h0,int v0,int h1,int v1) {
     if(h0==h1 && v0==v1)return 0;
@@ -230,6 +232,7 @@ static int open_rgn(MacRuntime *rt) {
     Rec *r=calloc(1,sizeof *r);
     if(!r)return fail(rt,"OpenRgn could not allocate its recording.");
     r->cur_v=r->start_v=(int16_t)rd(rt,port+48,2);r->cur_h=r->start_h=(int16_t)rd(rt,port+50,2);
+    r->port=port;wr(rt,port+66,2,(uint16_t)((int16_t)rd(rt,port+66,2)-1));   /* the pen is hidden while the outline is recorded (see the comment above) */
     rt->rgn_rec=r;return 1;
 }
 static int close_rgn(MacRuntime *rt,uint32_t sp) {
@@ -247,7 +250,10 @@ static int close_rgn(MacRuntime *rt,uint32_t sp) {
     }
     MacRgn g;mac_rgn_init(&g);const char *why=NULL;int rc=-1;
     if(mac_rgn_from_vedges(&g,(const int (*)[3])edges,n,&why))fail(rt,why?why:"The recorded outline could not be filled.");
-    else if(!store(rt,m,h,&g)){mac_cpu_set(rt->cpu,MAC_A7,sp+4);mac_rgn_record_destroy(rt);rc=1;}
+    else if(!store(rt,m,h,&g)){
+        if(valid(rt,r->port,108))wr(rt,r->port+66,2,(uint16_t)((int16_t)rd(rt,r->port+66,2)+1));   /* show the pen again */
+        mac_cpu_set(rt->cpu,MAC_A7,sp+4);mac_rgn_record_destroy(rt);rc=1;
+    }
     mac_rgn_free(&g);return rc;
 }
 

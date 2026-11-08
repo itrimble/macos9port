@@ -285,9 +285,9 @@ static int open_it(MacRuntime *rt){mac_cpu_set(rt->cpu,MAC_A7,SP);return mac_reg
 static void recording(void){
     /* a rectangle by MoveTo and three LineTos (the fourth side is the implicit close) */
     MacRuntime rt=rec_rt();uint32_t d=create(&rt);
-    CHECK(open_it(&rt)==1 && rt.rgn_rec && mac_cpu_get(rt.cpu,MAC_A7)==SP);
+    wr(&rt,PORTA+66,2,0);CHECK(open_it(&rt)==1 && rt.rgn_rec && mac_cpu_get(rt.cpu,MAC_A7)==SP && (int16_t)rd(&rt,PORTA+66,2)==-1);   /* the pen is hidden while recording */
     obs2(&rt,0xa893,2,3);obs2(&rt,0xa891,10,3);obs2(&rt,0xa891,10,8);obs2(&rt,0xa891,2,8);
-    CHECK(close_into(&rt,d)==1 && mac_cpu_get(rt.cpu,MAC_A7)==SP+4 && !rt.rgn_rec);
+    CHECK(close_into(&rt,d)==1 && mac_cpu_get(rt.cpu,MAC_A7)==SP+4 && !rt.rgn_rec && (int16_t)rd(&rt,PORTA+66,2)==0);   /* and shown again by CloseRgn */
     {B g=get_box(&rt,d);CHECK(rd(&rt,rd(&rt,d,4),2)==10 && g.t==3 && g.l==2 && g.b==8 && g.r==10);}
     mac_cpu_destroy(rt.cpu);
     /* an L, drawn with LineTo, Line and Move */
@@ -329,6 +329,8 @@ static void recording(void){
         if(k==9){open_it(&rt);obs2(&rt,0xa893,0,0);obs2(&rt,0xa891,0,6);obs2(&rt,0xa891,3,6);obs2(&rt,0xa891,3,0);mac_cpu_set(rt.cpu,MAC_A7,(uint32_t)mac_cpu_ram_size(rt.cpu)-2);rc=mac_regions_service(&rt,0xa8db);}   /* bad stack */
         CHECK(rc==-1 && mac_cpu_halted(rt.cpu));mac_cpu_destroy(rt.cpu);
     }
+    /* a pen the program had already hidden stays hidden after the pair (the count nests) */
+    rt=rec_rt();d=create(&rt);wr(&rt,PORTA+66,2,0xffff);open_it(&rt);CHECK((int16_t)rd(&rt,PORTA+66,2)==-2);obs_rect(&rt,(B){0,0,4,4});CHECK(close_into(&rt,d)==1 && (int16_t)rd(&rt,PORTA+66,2)==-1);mac_cpu_destroy(rt.cpu);
     /* the destination keeps its old contents when the close is refused */
     rt=rec_rt();d=create(&rt);set_box(&rt,d,(B){7,7,9,9});open_it(&rt);obs2(&rt,0xa893,0,0);obs2(&rt,0xa891,5,5);close_into(&rt,d);
     {const uint8_t *ram=mac_cpu_ram(rt.cpu);uint32_t dp=(uint32_t)(ram[d]<<24|ram[d+1]<<16|ram[d+2]<<8|ram[d+3]);CHECK(mac_cpu_halted(rt.cpu) && ram[dp+3]==7 && ram[dp+9]==9);}mac_cpu_destroy(rt.cpu);
