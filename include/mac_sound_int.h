@@ -23,6 +23,7 @@ typedef struct {
  MacSoundDouble double_buffer;
  MacSoundCommand queue[MAC_SOUND_QUEUE];
 } MacSoundChannel;
+int mac_sound_pump(MacRuntime*r,MacSoundChannel*c); /* run instantaneous queued commands (mac_sound_render.c) */
 struct MacSoundState {
  MacSoundChannel channels[MAC_SOUND_CHANNELS];
  uint64_t rendered_frames,clipped_frames;

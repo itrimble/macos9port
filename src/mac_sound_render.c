@@ -3,7 +3,10 @@
 #include <string.h>
 /* CPU reference PCM mixer. Rendering is explicitly pulled by a consumer; it
  * never claims host playback or advances sound merely because CPU time passed. */
-static int queued(MacRuntime*r,MacSoundChannel*c){
+/* Run queued commands until one takes time (a wait, a sound, a pending callback, a pause) or the queue is empty. Rendering does
+ * this as audio is pulled; SndPlayDoubleBuffer does it first so that instantaneous commands such as ampCmd, which a real synth
+ * consumes at once, do not make an otherwise idle channel look busy. Returns 1, or -1 if a command halted the guest. */
+int mac_sound_pump(MacRuntime*r,MacSoundChannel*c){
  for(unsigned work=0;work<MAC_SOUND_QUEUE && !c->buffer_block && !c->wait_frames && !c->paused && !c->callback_pending && c->count;work++){
   MacSoundCommand cmd=c->queue[c->head];
   c->head=(c->head+1)%c->capacity;c->count--;mac_sound_queue_fields(r,c);
@@ -31,7 +34,7 @@ size_t mac_sound_render(MacRuntime*r,int16_t *out,size_t frames){
     continue;
    }
    if(c->double_buffer.pending)continue;
-   if(queued(r,c)<0)return f;
+   if(mac_sound_pump(r,c)<0)return f;
    if(c->wait_frames)c->wait_frames--;
    if(!c->playing)continue;
    int value=mac_sound_sample(r,c);

@@ -35,6 +35,7 @@ int mac_sound_double_service(MacRuntime*r,uint16_t op){
     }
     if(!c || !mac_sound_range(r,p,36,1)){wr(r,sp+8,2,(uint16_t)-205);mac_cpu_set(r->cpu,MAC_A7,sp+8);return 1;}
     if(r->sound->callback_active)return mac_sound_fail(r,"Double buffer start at interrupt time is prohibited.");
+    if(mac_sound_pump(r,c)<0)return -1; /* instantaneous queued commands (ampCmd, quietCmd, ...) are consumed first */
     if(c->playing || c->paused || c->count || c->wait_frames || c->callback_pending || c->double_buffer.active || c->double_buffer.pending)
         return mac_sound_fail(r,"Double buffer start requires an idle sound channel.");
     if(!mac_sound_range(r,h,24,1))return mac_sound_fail(r,"Double buffer header exceeds RAM.");

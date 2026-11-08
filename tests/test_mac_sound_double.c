@@ -26,6 +26,43 @@ static void long_callback(void){MacRuntime r=fresh();CHECK(start(&r)==1);int v;f
 static void invalid(void){for(unsigned test=0;test<5;test++){MacRuntime r=fresh();if(test==0)wr(&r,0x3002,2,16);if(test==1)wr(&r,0x4000,4,0xffffffff);if(test==2)wr(&r,0x3010,4,0x4000);if(test==3)wr(&r,0x3014,4,0);if(test==4)wr(&r,0x4104,4,0);CHECK(start(&r)==-1 && !r.sound->channels[0].double_buffer.active);CHECK(mac_cpu_ram(r.cpu)[SP+8]==0xbe);done(&r);}
  MacRuntime r=fresh();CHECK(start(&r)==1);int v;for(unsigned i=0;i<4;i++)mac_sound_double_sample(&r,0,&v);wr(&r,0x5000,2,0x60fe);CHECK(mac_sound_double_poll(&r,10000)==10000 && mac_cpu_halted(r.cpu));done(&r);}
 static void interpolation(void){MacRuntime r=fresh();r.sound->channels[0].init=0;CHECK(start(&r)==1);int v;CHECK(mac_sound_double_sample(&r,0,&v)==1 && v==-32768);CHECK(mac_sound_double_sample(&r,0,&v)==1 && v==-128);mac_sound_double_stop(&r,0);CHECK(!r.sound->channels[0].double_buffer.active && !r.sound->channels[0].double_buffer.pending);done(&r);}
+/* SndPlayDoubleBuffer after instantaneous commands starts; on a channel that is really busy it still halts. */
+static void queued_commands(void) {
+    static const struct { MacSoundCommand cmd; int ok; } cases[] = {
+        { {43, 200, 0}, 1 },   /* ampCmd: consumed at once */
+        { {3, 0, 0}, 1 },      /* quietCmd on an idle channel */
+        { {0, 0, 0}, 1 },      /* nullCmd */
+        { {10, 100, 0}, 0 },   /* waitCmd (duration in param1): the channel really is busy */
+    };
+    for (unsigned i = 0; i < sizeof cases / sizeof *cases; i++) {
+        MacRuntime r = fresh(); MacSoundChannel *c = &r.sound->channels[0];
+        c->capacity = 128; c->amp = 255; c->left = c->right = 256;
+        c->queue[0] = cases[i].cmd; c->count = 1;
+        int rc = start(&r);
+        if (cases[i].ok) { CHECK(rc == 1 && c->count == 0 && c->double_buffer.active); CHECK(i != 0 || c->amp == 200); }
+        else CHECK(rc == -1 && mac_cpu_halted(r.cpu) && !c->double_buffer.active);
+        done(&r);
+    }
+    /* An instantaneous command ahead of a wait is consumed, and the wait still stops the start. */
+    { MacRuntime r = fresh(); MacSoundChannel *c = &r.sound->channels[0]; c->capacity = 128; c->amp = 255;
+      c->queue[0] = (MacSoundCommand){43, 77, 0}; c->queue[1] = (MacSoundCommand){10, 100, 0}; c->count = 2;
+      CHECK(start(&r) == -1 && c->amp == 77 && c->count == 0 && c->wait_frames != 0); done(&r); }
+    /* A queued command the runtime cannot honour halts the guest instead of being skipped. */
+    { MacRuntime r = fresh(); MacSoundChannel *c = &r.sound->channels[0]; c->capacity = 128; c->amp = 255;
+      c->queue[0] = (MacSoundCommand){127, 0, 0}; c->count = 1;
+      CHECK(start(&r) == -1 && mac_cpu_halted(r.cpu) && !c->double_buffer.active); done(&r); }
+    /* Every other busy state is refused too. */
+    for (unsigned s = 0; s < 6; s++) {
+        MacRuntime r = fresh(); MacSoundChannel *c = &r.sound->channels[0]; c->capacity = 128; c->amp = 255;
+        if (s == 0) c->playing = 1;
+        if (s == 1) c->paused = 1;
+        if (s == 2) c->wait_frames = 5;
+        if (s == 3) c->callback_pending = 1;
+        if (s == 4) c->double_buffer.active = 1;
+        if (s == 5) c->double_buffer.pending = 1;
+        CHECK(start(&r) == -1 && mac_cpu_halted(r.cpu)); done(&r);
+    }
+}
 static void mixer_and_commands(void) {
     MacRuntime r = fresh();
     MacSoundChannel *c = &r.sound->channels[0];
@@ -46,4 +83,4 @@ static void mixer_and_commands(void) {
     CHECK(start(&r) == -1 && !r.sound->channels[0].double_buffer.active);
     done(&r);
 }
-int main(void){playback();waiting();long_callback();invalid();interpolation();mixer_and_commands();puts("doublebuffer tests passed");return 0;}
+int main(void){playback();waiting();long_callback();invalid();interpolation();mixer_and_commands();queued_commands();puts("doublebuffer tests passed");return 0;}
