@@ -57,7 +57,9 @@ uint32_t mac_runtime_resource_owned(MacRuntime *rt, uint32_t type, int16_t id, i
         if (h->resource && h->resource_owner == owner && h->type == type && h->id == id) return h->handle;
     }
     MacResource r;
-    if (mac_resource_find(fork, type, id, &r) != 0 || r.size > UINT32_MAX) return 0;
+    if (mac_resource_find(fork, type, id, &r) != 0) return 0;
+    mac_resedit_apply(rt, owner, &r); /* SetResInfo / WriteResource edits win over the fork's bytes */
+    if (r.size > UINT32_MAX) return 0;
     size_t slot = 0;
     while (slot < rt->handle_count && (rt->handles[slot].handle || rt->handles[slot].pointer)) slot++;
     if (slot == MAC_RUNTIME_HANDLES) return 0;
@@ -131,7 +133,7 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
     mac_cpu_write(rt->cpu, 0x904, 4, rt->a5); /* CurrentA5 */
     mac_cpu_write(rt->cpu, 0x908, 4, rt->a5 - below); /* CurStackBase: below A5 globals */
     mac_cpu_write(rt->cpu, 0x934, 2, offset); /* CurJTOffset */
-    mac_cpu_write(rt->cpu, 0x15a, 2, 0x0607); /* Guest compatibility profile, not host OS. */
+    mac_cpu_write(rt->cpu, 0x15a, 2, MAC_PROFILE_SYSTEM_VERSION); /* Guest compatibility profile, not host OS. */
     mac_cpu_write(rt->cpu, 0x12f, 1, 2); /* 68020 */
     mac_cpu_write(rt->cpu, 0x108, 4, 0x800000); /* Guest MemTop */
     mac_cpu_write(rt->cpu, 0x130, 4, rt->heap_bridge ? 0x700000 : rt->heap_limit); /* ApplLimit */
@@ -169,7 +171,7 @@ int mac_runtime_load_segment(MacRuntime *rt, int16_t id) {
 void mac_runtime_destroy(MacRuntime *rt) {
     if (!rt) return;
     mac_heap_detach(rt);
-    mac_resname_destroy(rt);
+    mac_resedit_destroy(rt);
     mac_time_destroy(rt);
     mac_sound_destroy(rt);
     mac_resource_chain_destroy(rt);

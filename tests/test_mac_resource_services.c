@@ -237,7 +237,79 @@ static void set_res_info(void) {
     mac_runtime_destroy(&rt);
 }
 
+static int memory_call(MacRuntime *rt, uint16_t op, uint32_t a0, uint32_t d0) {
+    mac_cpu_set(rt->cpu, MAC_A0, a0); mac_cpu_set(rt->cpu, MAC_D0, d0);
+    return mac_memory_service(rt, op);
+}
+
+/* The rename made by SetResInfo must outlive ReleaseResource and a fresh GetResource. */
+static void rename_survives_release(void) {
+    uint8_t bytes[END]; MacRuntime rt;
+    CHECK(setup(&rt, bytes, 0x20) == 0);
+    uint32_t h = get(&rt, 0xa9a0, TEXT, 128); CHECK(h != 0);
+    const uint8_t oz[] = {2, 'o', 'z'};
+    memcpy(mac_cpu_ram(rt.cpu) + 0x1000, oz, sizeof oz);
+    CHECK(set_info(&rt, h, 128, 0x1000) == 1 && error(&rt) == 0);
+    one(&rt, 0xa9a3, h, 0); CHECK(error(&rt) == 0);                       /* ReleaseResource */
+    CHECK(mac_cpu_read(rt.cpu, h, 4) == 0);
+    uint32_t again = get(&rt, 0xa9a0, TEXT, 128); CHECK(again != 0 && error(&rt) == 0);
+    res_info(&rt, again, 0x1200);
+    CHECK(mac_cpu_read(rt.cpu, 0x1200, 1) == 2 && memcmp(mac_cpu_ram(rt.cpu) + 0x1201, "oz", 2) == 0);
+    CHECK(memcmp(bytes + NAME + 1, "Name", 4) == 0);                      /* the fork's own bytes never change */
+    mac_runtime_destroy(&rt);
+}
+
+static int write_res(MacRuntime *rt, uint32_t h) { return one(rt, 0xa9b0, h, 0), error(rt); }
+
+static void write_resource(void) {
+    uint8_t bytes[END], pristine[END]; MacRuntime rt;
+    CHECK(setup(&rt, bytes, 0x20) == 0);
+    memcpy(pristine, bytes, END);
+    uint32_t h = get(&rt, 0xa9a0, TEXT, 128); CHECK(h != 0);
+    uint32_t p = mac_cpu_read(rt.cpu, h, 4);
+    CHECK(memcmp(mac_cpu_ram(rt.cpu) + p, "Test", 4) == 0);
+    memcpy(mac_cpu_ram(rt.cpu) + p, "Edit", 4);                           /* same-size change */
+    one(&rt, 0xa9aa, h, 0); CHECK(error(&rt) == 0 && (one(&rt, 0xa9a6, h, 2) & 0x80));   /* ChangedResource */
+    CHECK(write_res(&rt, h) == 0);
+    CHECK((one(&rt, 0xa9a6, h, 2) & 0x80) == 0);                          /* changed flag cleared */
+    CHECK(memcmp(bytes, pristine, END) == 0);                             /* original fork untouched */
+    one(&rt, 0xa9a3, h, 0);                                               /* release, then reload from the map */
+    uint32_t h2 = get(&rt, 0xa9a0, TEXT, 128); CHECK(h2 != 0);
+    p = mac_cpu_read(rt.cpu, h2, 4);
+    CHECK(memcmp(mac_cpu_ram(rt.cpu) + p, "Edit", 4) == 0);
+
+    /* Growing the handle first: the new size is what SizeResource reports after a reload. */
+    CHECK(memory_call(&rt, 0xa024, h2, 10) == 1);
+    p = mac_cpu_read(rt.cpu, h2, 4);
+    memcpy(mac_cpu_ram(rt.cpu) + p, "Longer text", 10);
+    CHECK(write_res(&rt, h2) == 0);
+    one(&rt, 0xa9a3, h2, 0);
+    uint32_t h3 = get(&rt, 0xa9a0, TEXT, 128);
+    CHECK(one(&rt, 0xa9a5, h3, 4) == 10);
+    CHECK(memcmp(mac_cpu_ram(rt.cpu) + mac_cpu_read(rt.cpu, h3, 4), "Longer text", 10) == 0);
+    CHECK(memcmp(bytes, pristine, END) == 0);
+
+    /* Misuse is reported, not ignored. */
+    CHECK(write_res(&rt, 0x3000) == -192);                                /* not a resource handle */
+    mac_cpu_write(rt.cpu, h3, 4, 0);                                      /* purged: nothing to write */
+    CHECK(write_res(&rt, h3) == -192);
+    mac_runtime_destroy(&rt);
+
+    CHECK(setup(&rt, bytes, 0x28) == 0);                                  /* resProtected */
+    h = get(&rt, 0xa9a0, TEXT, 128);
+    CHECK(write_res(&rt, h) == -198);
+    mac_runtime_destroy(&rt);
+
+    CHECK(setup(&rt, bytes, 0x20) == 0);
+    h = get(&rt, 0xa9a0, TEXT, 128);
+    rt.handles[0].loaded_code = 1;                                        /* live CODE must not be rewritten */
+    CHECK(write_res(&rt, h) == -198);
+    mac_runtime_destroy(&rt);
+}
+
 int main(void) {
+    rename_survives_release();
+    write_resource();
     set_res_info();
     pictures();
     loaded_resource_guards();

@@ -121,6 +121,10 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Cannot establish the writable save directory: %s\n", saves);
         mac_runtime_destroy(&rt); free(bytes); return 2;
     }
+    if (saves) { /* resource edits saved by an earlier run of this exact program */
+        int edits = mac_resedit_load(&rt);
+        if (edits) fprintf(stderr, "Loaded %d saved resource edit(s) from the save directory.\n", edits);
+    }
     int result;
     if (window) {
         const char *name = strrchr(path, '/');

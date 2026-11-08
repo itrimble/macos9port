@@ -35,7 +35,10 @@ static MacHandle *handle(MacRuntime *rt, uint32_t value, MacResource *resource) 
         MacHandle *h = &rt->handles[i];
         const MacResourceFork *fork=mac_resource_owner_fork(rt,h->resource_owner);
         if (h->handle == value && h->resource && fork &&
-            mac_resource_find(fork, h->type, h->id, resource) == 0) return h;
+            mac_resource_find(fork, h->type, h->id, resource) == 0) {
+            mac_resedit_apply(rt, h->resource_owner, resource); /* SetResInfo / WriteResource edits win */
+            return h;
+        }
     }
     return NULL;
 }
@@ -93,9 +96,8 @@ static int resource_info(MacRuntime *rt, uint32_t sp) {
     MacResource r;
     MacHandle *h = handle(rt, value, &r);
     if (!h) return result(rt, sp, 16, 0, 0, RES_NOT_FOUND);
-    const uint8_t *renamed = mac_resname_get(rt, h->handle); /* SetResInfo override wins over the fork's name */
-    size_t name_size = renamed ? renamed[0] : r.name_size;
-    const uint8_t *name_bytes = renamed ? renamed + 1 : r.name;
+    size_t name_size = r.name_size;
+    const uint8_t *name_bytes = r.name;
     if (!valid(rt->cpu, name, (uint32_t)name_size + 1, 0) ||
         !valid(rt->cpu, type, 4, 1) || !valid(rt->cpu, id, 2, 1)) return -1;
     if (h->resource_changed) r.attributes |= 0x80;
@@ -125,8 +127,28 @@ static int set_resource_info(MacRuntime *rt, uint32_t sp) {
     pascal[0] = (uint8_t)mac_cpu_read(rt->cpu, name, 1);
     if (!valid(rt->cpu, name, (uint32_t)pascal[0] + 1, 0)) return -1;
     memcpy(pascal + 1, mac_cpu_ram(rt->cpu) + name + 1, pascal[0]);
-    if (mac_resname_set(rt, h->handle, pascal)) return result(rt, sp, 10, 0, 0, MEM_FULL);
+    if (mac_resedit_set_name(rt, h->resource_owner, r.type, r.id, pascal)) return result(rt, sp, 10, 0, 0, MEM_FULL);
     return result(rt, sp, 10, 0, 0, 0);
+}
+
+/* WriteResource(theResource): commit the handle's current contents as the resource's data, then clear its
+ * changed flag. The application's fork bytes are never modified: the data goes into the session edit layer,
+ * and into the save overlay too when one is mounted (--saves). Without an overlay the change lasts for this
+ * session only; a failed overlay write still leaves the session change and reports its File Manager error. */
+static int write_resource(MacRuntime *rt, uint32_t sp) {
+    uint32_t value = mac_cpu_read(rt->cpu, sp, 4);
+    MacResource r;
+    MacHandle *h = handle(rt, value, &r);
+    if (!h) return result(rt, sp, 4, 0, 0, RES_NOT_FOUND);
+    if (r.attributes & 0x08) return result(rt, sp, 4, 0, 0, -198); /* resProtected: resAttrErr */
+    uint32_t pointer = mac_cpu_read(rt->cpu, h->handle, 4);
+    if (!pointer || h->loaded_code) return result(rt, sp, 4, 0, 0, pointer ? -198 : RES_NOT_FOUND); /* purged, or live CODE */
+    if (!valid(rt->cpu, pointer, h->size, 0)) return -1;
+    if (mac_resedit_set_data(rt, h->resource_owner, r.type, r.id, mac_cpu_ram(rt->cpu) + pointer, h->size))
+        return result(rt, sp, 4, 0, 0, MEM_FULL);
+    h->resource_changed = 0;
+    int saved = mac_resedit_save(rt);
+    return result(rt, sp, 4, 0, 0, saved < 0 ? saved : 0);
 }
 
 int mac_resource_service(MacRuntime *rt, uint16_t opcode) {
@@ -143,6 +165,7 @@ int mac_resource_service(MacRuntime *rt, uint16_t opcode) {
     case 0xa9a8: args = 16; break;
     case 0xa9a9: args = 10; break;
     case 0xa9aa: args = 4; break;
+    case 0xa9b0: args = 4; break;
     case 0xa9af: width = 2; break;
     default: return 0;
     }
@@ -152,6 +175,7 @@ int mac_resource_service(MacRuntime *rt, uint16_t opcode) {
         return get_resource(rt, sp, opcode == 0xa99d, opcode == 0xa9bc, opcode == 0xa81f);
     if (opcode == 0xa9a8) return resource_info(rt, sp);
     if (opcode == 0xa9a9) return set_resource_info(rt, sp);
+    if (opcode == 0xa9b0) return write_resource(rt, sp);
     if (opcode == 0xa9aa) {
         uint32_t value = mac_cpu_read(rt->cpu, sp, 4);
         MacResource r;

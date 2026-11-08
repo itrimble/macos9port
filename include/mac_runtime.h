@@ -8,6 +8,13 @@
 #define MAC_CODE_TYPE UINT32_C(0x434f4445)
 #define MAC_RUNTIME_RAM (16u * 1024u * 1024u)
 #define MAC_RUNTIME_HANDLES 512
+/* Guest compatibility profile (Ian, 2026-11-07): the virtual machine presents itself as a Mac II-class
+ * computer (68020, indexed Color QuickDraw, no FPU) running System 7.0. It is an identity for applications
+ * that gate on SysEnvirons/Gestalt, not a claim that every System 7 service exists: unsupported traps and
+ * Gestalt selectors still halt or return gestaltUndefSelectorErr. */
+#define MAC_PROFILE_SYSTEM_VERSION 0x0700 /* Gestalt 'sysv', SysEnvirons systemVersion, low-memory SysVersion */
+#define MAC_PROFILE_SYSENV_MACHINE 4      /* SysEnvirons envMacII */
+#define MAC_PROFILE_GESTALT_MACHINE 6     /* Gestalt 'mach' gestaltMacII */
 /* Smallest poll budget the VBL/Time Manager/sound pollers accept. */
 #define MAC_RUNTIME_SERVICE_MIN 10000u
 
@@ -37,7 +44,7 @@ typedef struct {
 } MacWindowState;
 
 typedef struct MacHeapBridge MacHeapBridge;
-struct MacResNames;
+struct MacResEdits;
 
 typedef struct {
     MacCpu *cpu;
@@ -74,7 +81,7 @@ typedef struct {
     uint32_t vbl_tasks[32], vbl_last_tick, vbl_due[32];
     unsigned vbl_count, vbl_due_count, vbl_due_cursor;
     int vbl_active;
-    struct MacResNames *res_names; /* SetResInfo name overrides (host memory) */
+    struct MacResEdits *res_edits; /* resource edits layered over the fork (host memory) */
     MacHeapBridge *heap_bridge; /* protected heap over [lo,hi) of guest RAM; NULL = legacy bump only */
     MacHandle handles[MAC_RUNTIME_HANDLES];
     size_t handle_count;
@@ -99,10 +106,21 @@ int mac_memory_service(MacRuntime *rt, uint16_t opcode);
 void mac_memory_result(MacCpu *cpu, int16_t err);
 /* Protected heap (os999_heap) over guest RAM [lo,hi); hi must lie within guest RAM.
  * The legacy bump allocator must not use that window. Detach is idempotent. */
-/* Name overrides for resources renamed by SetResInfo (Pascal strings, length byte first). */
-int mac_resname_set(MacRuntime *rt, uint32_t handle, const uint8_t *pascal);
-const uint8_t *mac_resname_get(const MacRuntime *rt, uint32_t handle);
-void mac_resname_destroy(MacRuntime *rt);
+/* Session edits to resources (SetResInfo names, WriteResource data) layered over the immutable fork.
+ * Keyed by (owner, type, id); host memory only. Owner 0 is the application fork. */
+int mac_resedit_set_name(MacRuntime *rt, int16_t owner, uint32_t type, int16_t id, const uint8_t *pascal);
+int mac_resedit_set_data(MacRuntime *rt, int16_t owner, uint32_t type, int16_t id, const uint8_t *data, uint32_t size);
+void mac_resedit_apply(const MacRuntime *rt, int16_t owner, MacResource *r);
+/* Persist application-fork edits into the writable save overlay (hidden file bound to this exact fork).
+ * 0 saved, 1 nothing to save or no overlay mounted (edits stay in this session), <0 File Manager error. */
+int mac_resedit_save(MacRuntime *rt);
+/* Load previously saved edits once the overlay is mounted; returns the number applied (a bad file applies none). */
+int mac_resedit_load(MacRuntime *rt);
+void mac_resedit_destroy(MacRuntime *rt);
+/* Hidden (dot-named) overlay files: invisible to the guest, written via a staged copy and rename.
+ * put: 0 ok, 1 no overlay, <0 error. get: 0 ok (caller frees *data), nonzero if absent or unreadable. */
+int mac_files_overlay_put_hidden(MacRuntime *rt, const char *name, const uint8_t *data, size_t size);
+int mac_files_overlay_get_hidden(MacRuntime *rt, const char *name, size_t limit, uint8_t **data, size_t *size);
 int mac_heap_attach(MacRuntime *rt, uint32_t lo, uint32_t hi);
 void mac_heap_detach(MacRuntime *rt);
 int mac_heap_owns(const MacRuntime *rt, uint32_t address);

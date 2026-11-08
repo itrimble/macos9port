@@ -87,7 +87,7 @@ build/test_archive_install: tests/install_network_stub.c $(CORE) $(STORAGE_A) sr
 MUSASHI := build/deps/Musashi-313ebf1bd9f4d0d93341eb5ce21fd8a119e9dbdd
 CPUFLAGS := -DM68K_ILLG_HAS_CALLBACK=1 -DM68K_INSTRUCTION_HOOK=1 -I$(MUSASHI)
 CPUOBJ := build/m68kcpu.o build/m68kops.o build/softfloat.o
-RUNTIME := src/mac_resource.c src/mac_cpu.c src/mac_runtime.c src/mac_services.c src/mac_memory.c src/os999_heap.c src/mac_heap_bridge.c src/mac_resource_services.c src/mac_resource_names.c src/mac_events.c src/mac_quickdraw.c src/mac_toolbox.c src/mac_raster.c src/mac_system.c src/mac_geometry.c src/mac_files.c src/mac_cursor.c src/mac_color.c src/mac_dialog.c src/mac_color_port.c src/mac_copybits.c src/mac_palette.c src/mac_color_raster.c
+RUNTIME := src/mac_resource.c src/mac_cpu.c src/mac_runtime.c src/mac_services.c src/mac_memory.c src/os999_heap.c src/mac_heap_bridge.c src/mac_resource_services.c src/mac_resource_edits.c src/mac_events.c src/mac_quickdraw.c src/mac_toolbox.c src/mac_raster.c src/mac_system.c src/mac_geometry.c src/mac_files.c src/mac_cursor.c src/mac_color.c src/mac_dialog.c src/mac_color_port.c src/mac_copybits.c src/mac_palette.c src/mac_color_raster.c
 RUNTIME += src/mac_video_config.c src/mac_vbl.c src/mac_pixmap.c src/mac_pixels.c src/mac_volume.c src/mac_window.c src/mac_window_draw.c src/mac_regions.c src/mac_system_volume.c src/mac_color_pen.c src/mac_drive_queue.c src/mac_menu.c src/mac_menu_records.c src/mac_palette_manager.c src/mac_window_resource.c src/mac_window_registry.c src/font.c
 RUNTIME_HDRS := include/folder_navigation.h src/runtime_video_pixels.h src/runtime_frame.h src/runtime_pacing.h include/mac_resource.h include/mac_cpu.h include/mac_runtime.h include/mac_window_int.h include/mac_system_volume.h include/mac_drive_queue.h include/mac_menu_int.h include/runtime_bridge.h
 RUNTIME += src/mac_resource_catalog.c src/mac_resource_files.c
@@ -209,6 +209,9 @@ build/test_mac_runtime: $(RUNTIME_OBJ) tests/test_mac_runtime.c $(RUNTIME_HDRS) 
 build/test_mac_resource_services: $(RUNTIME_OBJ) tests/test_mac_resource_services.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_resource_services.c $(CPUOBJ) -lm -o $@
 
+build/test_mac_resource_edits: $(RUNTIME_OBJ) tests/test_mac_resource_edits.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_resource_edits.c $(CPUOBJ) -lm -o $@
+
 build/test_mac_memory: $(RUNTIME_OBJ) tests/test_mac_memory.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_memory.c $(CPUOBJ) -lm -o $@
 
@@ -229,12 +232,13 @@ build/test_os999_heap_asan: src/os999_heap.c tests/test_os999_heap.c include/os9
 
 # Memory manager gate: plain and ASan/UBSan runs of the protected heap, plus the
 # guest Memory Manager trap tests.
-test-memory: build/test_os999_heap build/test_os999_heap_asan build/test_mac_memory build/test_mac_heap_bridge build/test_mac_heap_bridge_asan
+test-memory: build/test_os999_heap build/test_os999_heap_asan build/test_mac_memory build/test_mac_heap_bridge build/test_mac_heap_bridge_asan build/test_mac_resource_edits
 	./build/test_os999_heap
 	ASAN_OPTIONS=handle_segv=0:handle_sigbus=0 ./build/test_os999_heap_asan
 	./build/test_mac_memory
 	./build/test_mac_heap_bridge
 	./build/test_mac_heap_bridge_asan
+	./build/test_mac_resource_edits
 
 build/test_mac_traps: $(RUNTIME_OBJ) tests/test_mac_traps.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_traps.c $(CPUOBJ) -lm -o $@
@@ -354,7 +358,7 @@ build/test_mac_system: $(RUNTIME_OBJ) tests/test_mac_system.c $(RUNTIME_HDRS) $(
 build/test_mac_raster: $(RUNTIME_OBJ) tests/test_mac_raster.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_raster.c $(CPUOBJ) -lm -o $@
 
-test: build/test_os999_startup build/test_ospi build/test_archive_install build/test_mac_icon build/test_runtime_bridge build/test_mac_resource build/test_mac_cpu build/test_mac_runtime build/test_mac_resource_services build/test_mac_memory build/test_os999_heap build/test_mac_heap_bridge build/test_mac_traps build/test_native_launch build/test_mac_events build/test_mac_quickdraw build/test_runtime_video build/test_runtime_perf build/test_runtime_keys build/test_mac_raster build/test_mac_system build/test_mac_geometry build/test_mac_files build/test_mac_cursor build/test_mac_color build/test_mac_dialog build/test_runtime_cursor build/test_mac_color_port build/test_mac_copybits build/test_mac_palette build/test_mac_color_raster build/test_mac_movie build/test_movie_window build/test_mac_files_write
+test: build/test_os999_startup build/test_ospi build/test_archive_install build/test_mac_icon build/test_runtime_bridge build/test_mac_resource build/test_mac_cpu build/test_mac_runtime build/test_mac_resource_services build/test_mac_memory build/test_os999_heap build/test_mac_heap_bridge build/test_mac_resource_edits build/test_mac_traps build/test_native_launch build/test_mac_events build/test_mac_quickdraw build/test_runtime_video build/test_runtime_perf build/test_runtime_keys build/test_mac_raster build/test_mac_system build/test_mac_geometry build/test_mac_files build/test_mac_cursor build/test_mac_color build/test_mac_dialog build/test_runtime_cursor build/test_mac_color_port build/test_mac_copybits build/test_mac_palette build/test_mac_color_raster build/test_mac_movie build/test_movie_window build/test_mac_files_write
 	./build/test_desktop_assets assets/icons/ospi-icons.icl8
 	./build/test_appearance
 	./build/test_appearance_panel
@@ -397,6 +401,7 @@ test: build/test_os999_startup build/test_ospi build/test_archive_install build/
 	./build/test_mac_memory
 	./build/test_os999_heap
 	./build/test_mac_heap_bridge
+	./build/test_mac_resource_edits
 	./build/test_mac_traps
 	./build/test_native_launch
 	./build/test_mac_events
