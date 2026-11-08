@@ -73,7 +73,8 @@ size_t mac_time_poll(MacRuntime*r,size_t budget){
   if(!t)break;uint32_t p=t->p,code=rd(r,p+6,4);
   if(!span(r,p,t->extended?22:14) || (code && !span(r,code,2))){fail(r,"Timer callback or record exceeds RAM.");return ran;}
   uint32_t saved[18];for(unsigned i=0;i<18;i++)saved[i]=mac_cpu_get(r->cpu,(MacCpuReg)i);
-  uint32_t sp=saved[MAC_A7];if(code && (sp<4 || !span(r,sp-4,4))){fail(r,"Timer callback stack exceeds RAM.");return ran;}
+  uint32_t sp=saved[MAC_A7]&~1u; /* the interrupted code may have an odd A7 (a THINK C frame of odd size): the callback runs just below it, word aligned, and A7 is restored from `saved` */
+  if(code && (sp<4 || !span(r,sp-4,4))){fail(r,"Timer callback stack exceeds RAM.");return ran;}
   t->active=0;wr(r,p+4,2,0);wr(r,p+10,4,0);if(!code)continue;
   uint8_t stack[4];memcpy(stack,mac_cpu_ram(r->cpu)+sp-4,4);wr(r,sp-4,4,TIME_RETURN);
   mac_cpu_set(r->cpu,MAC_A7,sp-4);mac_cpu_set(r->cpu,MAC_A1,p);mac_cpu_set(r->cpu,MAC_PC,code);s->callback=1;

@@ -37,7 +37,19 @@ static void cursor_state(void) {
     for (int i = 0; i < 3; i++) CHECK(mac_cursor_service(&rt, 0xa853) == 1);
     CHECK(mac_cpu_read(rt.cpu, 0x8d0, 2) == 0);
     CHECK(rt.cursor_obscured); /* Independent of the nesting level. */
-    CHECK(mac_cursor_service(&rt, 0xa855) == 0); /* ShieldCursor unsupported. */
+    /* ShieldCursor(rect pointer, offset point): pops 8, changes no cursor state; a bad rectangle pointer halts. */
+    {int16_t lvl = (int16_t)mac_cpu_read(rt.cpu, 0x8d0, 2); int ob = rt.cursor_obscured; uint8_t keep[68]; memcpy(keep, rt.cursor, 68);
+     mac_cpu_set(rt.cpu, MAC_A7, 0x8000); mac_cpu_write(rt.cpu, 0x8000, 4, 0x00050003); mac_cpu_write(rt.cpu, 0x8004, 4, 0x4000);
+     CHECK(mac_cursor_service(&rt, 0xa855) == 1 && mac_cpu_get(rt.cpu, MAC_A7) == 0x8008);
+     CHECK((int16_t)mac_cpu_read(rt.cpu, 0x8d0, 2) == lvl && rt.cursor_obscured == ob && !memcmp(keep, rt.cursor, 68));
+     for (unsigned k = 0; k < 3; k++) {
+         MacRuntime bad; setup(&bad); mac_cpu_set(bad.cpu, MAC_A7, 0x8000);
+         mac_cpu_write(bad.cpu, 0x8004, 4, k == 0 ? 0 : k == 1 ? 0xfffffffc : 0x3);
+         if (k == 2) mac_cpu_write(bad.cpu, 0x8004, 4, (uint32_t)mac_cpu_ram_size(bad.cpu) - 4);
+         CHECK(mac_cursor_service(&bad, 0xa855) == -1 && mac_cpu_halted(bad.cpu));
+     }
+     MacRuntime bs; setup(&bs); mac_cpu_set(bs.cpu, MAC_A7, (uint32_t)mac_cpu_ram_size(bs.cpu) - 4);
+     CHECK(mac_cursor_service(&bs, 0xa855) == -1 && mac_cpu_halted(bs.cpu));}
     mac_cpu_destroy(rt.cpu);
 }
 static void resources(void) {

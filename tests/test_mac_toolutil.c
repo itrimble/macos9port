@@ -36,6 +36,12 @@ int main(void){
     r.cpu=mac_cpu_create(MAC_RUNTIME_RAM);mac_cpu_set(r.cpu,MAC_A7,(uint32_t)mac_cpu_ram_size(r.cpu)-2);CHECK(mac_toolutil_service(&r,0xa86a)==-1);mac_cpu_destroy(r.cpu);
     r.cpu=mac_cpu_create(MAC_RUNTIME_RAM);CHECK(mac_toolutil_service(&r,0xa857)==0 && mac_toolutil_service(&r,0xa860)==0 && mac_toolutil_service(&r,0xa86c)==0);
     mac_cpu_halt(r.cpu,"x");CHECK(mac_toolutil_service(&r,0xa858)==-1);mac_cpu_destroy(r.cpu);
+    /* SwapMMUMode: D0.b in = new mode, out = previous; the mode is kept at $CB2; other modes halt; the other D0 bytes survive */
+    r.cpu=mac_cpu_create(MAC_RUNTIME_RAM);
+    mac_cpu_set(r.cpu,MAC_D0,0xabcdef01);CHECK(mac_toolutil_service(&r,0xa05d)==1 && mac_cpu_get(r.cpu,MAC_D0)==0xabcdef00 && rd(&r,0xcb2,1)==1);
+    mac_cpu_set(r.cpu,MAC_D0,0x11223300);CHECK(mac_toolutil_service(&r,0xa05d)==1 && mac_cpu_get(r.cpu,MAC_D0)==0x11223301 && rd(&r,0xcb2,1)==0);
+    mac_cpu_set(r.cpu,MAC_D0,0x11223302);CHECK(mac_toolutil_service(&r,0xa05d)==-1 && mac_cpu_halted(r.cpu) && rd(&r,0xcb2,1)==0);mac_cpu_destroy(r.cpu);
+    r.cpu=mac_cpu_create(MAC_RUNTIME_RAM);mac_cpu_halt(r.cpu,"x");CHECK(mac_toolutil_service(&r,0xa05d)==-1);mac_cpu_destroy(r.cpu);
     if(!fails)puts("Toolbox utility checks passed");
     return fails?1:0;
 }

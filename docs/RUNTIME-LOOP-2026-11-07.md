@@ -192,6 +192,15 @@ the probe, not a window I watched, and I have not listened to any audio.
   `src/mac_toolutil.c`) after Castle reached `LoWord` ($A86B); `BitShift` semantics are from memory, not from a listing I could open.
   Mutation checks on the tracker: 9 of 11 mutants killed; the 2 survivors are equivalent (a redundant `shown = 0`, a second clear of
   an already-clear highlight). UBSan caught a signed shift on menu flags with the high byte set; fixed.
+- **Options menu (headless frames):** the **Options** pull-down shows *Small Window* (checked), *Medium Window*, *Large Window*, *Hide
+  Desktop*. Choosing Medium Window took three fixes: `ShieldCursor` (`$A855`, validates the rectangle, changes nothing because the
+  cursor is composed by the host and never drawn into guest memory), `SwapMMUMode` (`$A05D`, D0.b in = new mode, D0.b out = old mode, kept
+  at `$CB2`; the register convention is from memory), and callbacks on an odd stack. THINK C builds odd-sized frames (`link A6,#-7`),
+  so an interrupt can land with an odd A7; the timer, VBL and both sound callbacks refused that as "stack exceeds RAM". They now run
+  word aligned just below it and restore the registers. After that the window resizes to the medium size and the game redraws the
+  front-door scene at 1.5x in the frame. The sound render callback has the same change but no odd-stack test of its own. **Large Window
+  still halts:** `SizeWindow exceeds supported content dimensions` (the game asks for 640x400 at top 140 before moving the window, and
+  our window model keeps windows fully on the 640x480 screen). That needs off-screen window geometry, which I have not started.
 - **Parity:** Monkey Island and Monkey Island 2 are byte-identical to the previous baseline; `make test` exits 0; ASan on Castle (90 s with
   the menu script) and on the new and touched menu, window and utility tests reports nothing.
 

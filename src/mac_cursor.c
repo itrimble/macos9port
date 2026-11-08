@@ -50,6 +50,7 @@ int mac_cursor_service(MacRuntime *rt, uint16_t opcode) {
     case 0xa9b9: args = 2; break; /* GetCursor */
     case 0xa851: args = 4; break; /* SetCursor */
     case 0xa852: case 0xa853: case 0xa856: args = 0; break;
+    case 0xa855: args = 8; break; /* ShieldCursor(shieldRect: Rect pointer; offsetPt: Point) */
     default: return 0;
     }
     uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7);
@@ -71,6 +72,12 @@ int mac_cursor_service(MacRuntime *rt, uint16_t opcode) {
             return fail(rt, "SetCursor requires a valid 68-byte Cursor pointer.");
         memcpy(rt->cursor, mac_cpu_ram(rt->cpu) + p, sizeof(rt->cursor));
         rt->cursor_valid = 1;
+    } else if (opcode == 0xa855) {
+        /* The cursor is composed by the host above the guest's screen memory and never drawn into it, so there are no pixels to
+         * protect while the guest draws under the pointer: this validates the rectangle pointer and changes nothing (the hide
+         * level and the obscured flag are untouched). */
+        uint32_t r = mac_cpu_read(rt->cpu, sp + 4, 4);
+        if (!r || !range(rt, r, 8)) return fail(rt, "ShieldCursor requires a valid Rect pointer.");
     } else if (opcode == 0xa856) {
         rt->cursor_obscured = 1;
     } else {

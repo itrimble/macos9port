@@ -8,7 +8,20 @@
  * fill, and a count of 32 or more in either direction gives 0 (this is how I remember the documentation; it is not in the interface
  * listing available here). */
 static int fail(MacRuntime *rt, const char *why) { mac_cpu_halt(rt->cpu, why); return -1; }
+/* SwapMMUMode ($A05D, register based): D0.b on entry is the addressing mode to select (0 = 24-bit, 1 = 32-bit), D0.b on exit is the
+ * previous mode; the current mode lives in low memory MMU32Bit ($CB2). This runtime has one flat 16 MB guest address space that is
+ * reachable the same way in either mode, so only the recorded mode changes. Modes other than 0 and 1 halt. The register convention is
+ * from memory (the interface listing here has only the Pascal declaration). */
+static int swap_mmu(MacRuntime *rt) {
+    MacCpu *c = rt->cpu; uint32_t d0 = mac_cpu_get(c, MAC_D0);
+    if ((d0 & 0xff) > 1) return fail(rt, "SwapMMUMode with a mode other than 0 or 1 is unsupported.");
+    unsigned prev = mac_cpu_read(c, 0xcb2, 1) & 1;
+    mac_cpu_write(c, 0xcb2, 1, d0 & 1);
+    mac_cpu_set(c, MAC_D0, (d0 & ~0xffu) | prev);
+    return 1;
+}
 int mac_toolutil_service(MacRuntime *rt, uint16_t op) {
+    if (op == 0xa05d) { if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1; return swap_mmu(rt); }
     if (!(op >= 0xa858 && op <= 0xa85f) && op != 0xa86a && op != 0xa86b) return 0;
     if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1;
     MacCpu *c = rt->cpu;

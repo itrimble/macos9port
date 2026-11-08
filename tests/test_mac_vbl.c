@@ -101,4 +101,14 @@ static void small_cycle_slices(void){
  CHECK(mac_cpu_cycles(r.cpu)>=4*16000);
  mac_cpu_destroy(r.cpu);
 }
-int main(void){countdown();queue_and_reentrant();faults();paused_host();budget_continuation();small_cycle_slices();puts("mac VBL callback tests passed");return 0;}
+/* An odd A7 in the interrupted code (a THINK C frame of odd size): the callback runs below it, aligned, and A7 and the bytes under it return. */
+static void odd_stack(void){
+ MacRuntime r=fresh();mac_cpu_set_trap(r.cpu,trap,&r);
+ const uint16_t words[]={0x5268,14,0x317c,2,10,0x7007,0x4e75};
+ for(unsigned i=0;i<7;i++)wr(&r,0x2000+i*2,2,words[i]);
+ task(&r,0x3000,0x2000,2);install(&r,0x3000);memset(mac_cpu_ram(r.cpu)+0x7fe0,0x5a,0x10);
+ mac_cpu_set(r.cpu,MAC_A7,0x8001);r.ticks=2;
+ CHECK(mac_vbl_poll(&r,10000)==4&&rd(&r,0x300e,2)==1&&!mac_cpu_halted(r.cpu)&&mac_cpu_get(r.cpu,MAC_A7)==0x8001);
+ CHECK(mac_cpu_ram(r.cpu)[0x7fef]==0x5a && mac_cpu_ram(r.cpu)[0x8001]==0x00);   /* the VBL return slot sits below A7; nothing above it is touched */
+}
+int main(void){odd_stack();countdown();queue_and_reentrant();faults();paused_host();budget_continuation();small_cycle_slices();puts("mac VBL callback tests passed");return 0;}

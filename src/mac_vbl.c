@@ -48,7 +48,7 @@ static int callback(MacRuntime*r,uint32_t task,size_t *ran,size_t limit){
     uint32_t code=rd(r,task+6,4),saved[18];
     if(!code||valid(r,code,2)<0)return fail(r,"Invalid VBL callback address.");
     for(unsigned i=0;i<18;i++)saved[i]=mac_cpu_get(r->cpu,(MacCpuReg)i);
-    uint32_t sp=saved[MAC_A7];
+    uint32_t sp=saved[MAC_A7]&~1u; /* odd A7 of the interrupted code (a THINK C frame of odd size): run the callback just below it, word aligned; the registers come back from `saved` */
     if(sp<4||valid(r,sp-4,4)<0)return fail(r,"VBL callback stack exceeds RAM.");
     wr(r,sp-4,4,VBL_RETURN);mac_cpu_set(r->cpu,MAC_A7,sp-4);
     mac_cpu_set(r->cpu,MAC_A0,task);mac_cpu_set(r->cpu,MAC_PC,code);

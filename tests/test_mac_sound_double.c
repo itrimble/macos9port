@@ -21,6 +21,11 @@ static void playback(void){MacRuntime r=fresh();CHECK(start(&r)==1 && rd(&r,SP+8
  for(unsigned i=0;i<18;i++)CHECK(saved[i]==mac_cpu_get(r.cpu,(MacCpuReg)i));
  for(unsigned i=0;i<4;i++){CHECK(mac_sound_double_sample(&r,0,&v)==1 && v==exp[i]);}CHECK(mac_sound_double_poll(&r,10000)>0);
  for(unsigned i=0;i<4;i++){CHECK(mac_sound_double_sample(&r,0,&v)==1 && v==exp[i]);}CHECK(!r.sound->channels[0].double_buffer.active && rd(&r,0x4004,4)==4);CHECK(mac_sound_double_sample(&r,0,&v)==0);CHECK(mac_sound_double_poll(&r,10000)>0);CHECK(!r.sound->channels[0].double_buffer.active);done(&r);}
+/* The interrupted code has an odd A7: the callback still runs and everything comes back, including the odd A7. */
+static void odd_stack(void){MacRuntime r=fresh();CHECK(start(&r)==1);int v;for(unsigned i=0;i<4;i++)CHECK(mac_sound_double_sample(&r,0,&v)==1);
+ mac_cpu_set(r.cpu,MAC_A7,SP+1);mac_cpu_set(r.cpu,MAC_PC,0x7000);uint32_t saved[18];for(unsigned i=0;i<18;i++)saved[i]=mac_cpu_get(r.cpu,(MacCpuReg)i);
+ CHECK(mac_sound_double_poll(&r,10000)>0 && !mac_cpu_halted(r.cpu) && rd(&r,0x6000,4)==0x4000);
+ for(unsigned i=0;i<18;i++)CHECK(saved[i]==mac_cpu_get(r.cpu,(MacCpuReg)i));done(&r);}
 static void waiting(void){MacRuntime r=fresh();CHECK(start(&r)==1);int v;for(unsigned i=0;i<8;i++)CHECK(mac_sound_double_sample(&r,0,&v)==1);CHECK(r.sound->channels[0].double_buffer.pending==3);CHECK(mac_sound_double_sample(&r,0,&v)==1 && v==0);CHECK(mac_sound_double_poll(&r,10000)>0 && rd(&r,0x4104,4)==5);done(&r);}
 static void long_callback(void){MacRuntime r=fresh();CHECK(start(&r)==1);int v;for(unsigned i=0;i<4;i++)CHECK(mac_sound_double_sample(&r,0,&v)==1);uint8_t code[35];memcpy(code,mac_cpu_ram(r.cpu)+0x5000,sizeof code);memcpy(mac_cpu_ram(r.cpu)+0x10000,code,sizeof code);memset(mac_cpu_ram(r.cpu)+0x5000,0x4e,24000);for(unsigned i=0;i<24000;i+=2)mac_cpu_ram(r.cpu)[0x5000+i+1]=0x71;wr(&r,0x5000+24000,2,0x4ef9);wr(&r,0x5000+24002,4,0x10000);mac_cpu_set(r.cpu,MAC_A7,SP);mac_cpu_set(r.cpu,MAC_PC,0x7000);size_t ran=mac_sound_double_poll(&r,100000);if(ran<=10000 || mac_cpu_halted(r.cpu))fprintf(stderr,"long callback ran=%zu halted=%d reason=%s\n",ran,mac_cpu_halted(r.cpu),mac_cpu_error(r.cpu));CHECK(ran>10000 && !mac_cpu_halted(r.cpu));done(&r);}
 static void invalid(void){for(unsigned test=0;test<5;test++){MacRuntime r=fresh();if(test==0)wr(&r,0x3002,2,16);if(test==1)wr(&r,0x4000,4,0xffffffff);if(test==2)wr(&r,0x3010,4,0x4000);if(test==3)wr(&r,0x3014,4,0);if(test==4)wr(&r,0x4104,4,0);CHECK(start(&r)==-1 && !r.sound->channels[0].double_buffer.active);CHECK(mac_cpu_ram(r.cpu)[SP+8]==0xbe);done(&r);}
@@ -101,4 +106,4 @@ static void mixer_and_commands(void) {
     CHECK(start(&r) == -1 && !r.sound->channels[0].double_buffer.active);
     done(&r);
 }
-int main(void){calling_conventions();playback();waiting();long_callback();invalid();interpolation();mixer_and_commands();queued_commands();puts("doublebuffer tests passed");return 0;}
+int main(void){odd_stack();calling_conventions();playback();waiting();long_callback();invalid();interpolation();mixer_and_commands();queued_commands();puts("doublebuffer tests passed");return 0;}

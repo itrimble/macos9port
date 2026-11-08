@@ -89,7 +89,8 @@ size_t mac_sound_double_poll(MacRuntime*r,size_t budget){
         if(ran>=budget || ran>=MAX_DOUBLEBACK_INSTRUCTIONS)return ran;
         if(!mac_sound_range(r,d->callback,2,1)){mac_sound_fail(r,"Doubleback code exceeds RAM.");return ran;}
         uint32_t saved[18];for(unsigned j=0;j<18;j++)saved[j]=mac_cpu_get(r->cpu,(MacCpuReg)j);
-        uint32_t sp=saved[MAC_A7];if(sp<12 || !mac_sound_range(r,sp-12,12,1)){mac_sound_fail(r,"Doubleback stack exceeds RAM.");return ran;}
+        uint32_t sp=saved[MAC_A7]&~1u; /* odd A7 of the interrupted code (a THINK C frame of odd size): run the callback just below it, word aligned; the registers come back from `saved` */
+        if(sp<12 || !mac_sound_range(r,sp-12,12,1)){mac_sound_fail(r,"Doubleback stack exceeds RAM.");return ran;}
         uint8_t stack[12];memcpy(stack,mac_cpu_ram(r->cpu)+sp-12,12);
         wr(r,sp-12,4,DOUBLE_RETURN);wr(r,sp-8,4,d->buffers[b]);wr(r,sp-4,4,c->address);
         mac_cpu_set(r->cpu,MAC_A7,sp-12);mac_cpu_set(r->cpu,MAC_PC,d->callback);d->pending&=~(1u<<b);r->sound->callback_active=1;
