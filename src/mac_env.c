@@ -115,6 +115,29 @@ static int os_trap(MacRuntime *rt, uint16_t opcode) {
     }
 }
 
+/* FSpDispatch (0xAA52): the FSSpec file calls, selected by D0. Argument bytes
+ * (excluding the result slot) were read from how real extensions push them:
+ *   1 make spec 14, 2/3 open data/resource fork 10, 4 create 14, 5 make directory 10,
+ *   6/9/10 delete/lock/unlock 4, 7/8 get/set file info 8, 11 rename 8, 12 move 8,
+ *   13 open resource file 6 (returns a refnum), 14 create resource file 14 (no result).
+ * The guest has no preferences or support files, so every call reports
+ * "file not found" (-43); a spec being made is zeroed. Other selectors stay unhandled. */
+static int fsp_dispatch(MacRuntime *rt) {
+    static const uint8_t args[15] = {0, 14, 10, 10, 14, 10, 4, 8, 8, 4, 4, 8, 8, 6, 14};
+    MacCpu *cpu = rt->cpu;
+    uint32_t sel = mac_cpu_get(cpu, MAC_D0), sp = mac_cpu_get(cpu, MAC_A7);
+    if (sel < 1 || sel > 14) return 0;
+    if (sel == 1) { /* the FSSpec is the last argument: vRefNum, parID, name[64] */
+        uint32_t spec = mac_cpu_read(cpu, sp, 4);
+        for (uint32_t i = 0; i < 70 && spec; i++) mac_cpu_write(cpu, spec + i, 1, 0);
+    }
+    pop(cpu, args[sel]);
+    if (sel == 14) { mac_cpu_write(cpu, RES_ERR, 2, (uint16_t)-43); return 1; }
+    put_result16(cpu, sel == 13 ? 0xffff : (uint16_t)-43);
+    if (sel == 13) mac_cpu_write(cpu, RES_ERR, 2, (uint16_t)-43);
+    return 1;
+}
+
 static int toolbox_trap(MacRuntime *rt, uint16_t opcode) {
     MacCpu *cpu = rt->cpu;
     uint32_t sp = mac_cpu_get(cpu, MAC_A7);
@@ -256,6 +279,7 @@ static int toolbox_trap(MacRuntime *rt, uint16_t opcode) {
         put_result16(cpu, 0); /* drawing is skipped at startup; reported as success */
         return 1;
     }
+    case 0xaa52: return fsp_dispatch(rt);
     default: return 0;
     }
 }
@@ -272,7 +296,7 @@ int mac_env_implemented(unsigned key) {
     case 0x60: case 0x9c9: case 0x9c6: case 0x9e1: case 0xbff: case 0x80d: case 0x80e: case 0x820: case 0x81a: case 0x81b:
     case 0x823: case 0xa1b: case 0xa1e: case 0xa1f: case 0xa25: case 0x862: case 0x892: case 0x8dc: case 0x8e5: case 0x85d:
     case 0x86b: case 0x805: case 0x97c: case 0x895: case 0x94b: case 0x874: case 0x912:
-    case 0x9a7: case 0x8a6: case 0x817: case 0xbc9: return 1;
+    case 0xa52: case 0x9a7: case 0x8a6: case 0x817: case 0xbc9: return 1;
     case 0x9c8: case 0x99b: case 0x999: case 0x9aa: case 0x9b0: case 0x9ab: case 0x9ba: case 0x9a1: return 1;
     default: return 0;
     }

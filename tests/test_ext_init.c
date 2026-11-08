@@ -94,6 +94,11 @@ static void test_rollback(void) {
     /* D0 is not a status: real INITs leave junk there. */
     CHECK(run_code(&rt, FX_JUNK_D0, sizeof FX_JUNK_D0, 1000, &rep) == 0 && rep.count == 1);
 
+    /* FSpDispatch pops the documented argument bytes (the runner checks stack balance). */
+    CHECK(run_code(&rt, FX_FSP_DELETE, sizeof FX_FSP_DELETE, 1000, &rep) == 0);
+    CHECK(run_code(&rt, FX_FSP_OPENRES, sizeof FX_FSP_OPENRES, 1000, &rep) == 0);
+    CHECK(run_code(&rt, FX_FSP_CREATERES, sizeof FX_FSP_CREATERES, 1000, &rep) == 0);
+
     CHECK(run_code(&rt, FX_LOOP, sizeof FX_LOOP, 500, &rep) == -1);
     CHECK(strstr(rep.error, "budget") != NULL);
     CHECK(!mac_cpu_halted(rt.cpu));
@@ -107,6 +112,11 @@ static void test_rollback(void) {
     CHECK(host(&rt) == 0);
     CHECK(run_code(&rt, FX_LOADSEG, sizeof FX_LOADSEG, 1000, &rep) == -2);
     CHECK(strstr(rep.error, "LoadSeg") != NULL);
+    mac_runtime_destroy(&rt);
+
+    /* A selector nobody has confirmed stays unhandled instead of being guessed. */
+    CHECK(host(&rt) == 0);
+    CHECK(run_code(&rt, FX_FSP_UNKNOWN, sizeof FX_FSP_UNKNOWN, 1000, &rep) == -2);
     mac_runtime_destroy(&rt);
 }
 
