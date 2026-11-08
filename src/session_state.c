@@ -1,3 +1,4 @@
+#include "notes.h"
 #include "finder_desktop_surface.h"
 #include "finder_spring.h"
 #include "finder_preferences.h"
@@ -185,7 +186,7 @@ void session_tick(Session *s, uint32_t now_ms) {
             s->held_last_repeat_ms = now_ms;
             if (s->held_text[0]) {
                 if (session_editing(s)) session_text(s, s->held_text);
-                else if (s->dialog == 3 || s->dialog == 5) session_text_input(s, s->held_text);
+                else if (s->dialog == 3 || s->dialog == 5 || notes_active(s)) session_text_input(s, s->held_text);
                 else if (!session_overlay_active(s)) terminal_text_input(s, s->held_text);
             } else {
                 session_key(s, s->held_key, s->held_mods);

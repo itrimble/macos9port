@@ -64,10 +64,10 @@ int main(void) {
     int a=item(w,"A"),b=item(w,"B"),c=item(w,"C");CHECK(a>=0 && b>=0 && c>=0);
     click(s,a,0);click(s,b,MOD_SHIFT);CHECK(w->items[a].selected && w->items[b].selected);
     click(s,b,MOD_SHIFT);CHECK(w->items[a].selected && !w->items[b].selected);
-    session_command(s,CMD_VIEW_LIST);w=&s->win[s->nwin-1];a=item(w,"A");c=item(w,"C");
-    click(s,a,0);click(s,c,MOD_SHIFT);CHECK(w->items[0].selected && w->items[1].selected && w->items[2].selected);
-    session_key(s,MENU_KEY_UP,MOD_SHIFT);CHECK(w->items[0].selected && w->items[1].selected && !w->items[2].selected);
-    session_key(s,MENU_KEY_DOWN,0);CHECK(!w->items[0].selected && !w->items[1].selected && w->items[2].selected);
+    session_command(s,CMD_VIEW_LIST);w=&s->win[s->nwin-1];a=item(w,"A");b=item(w,"B");c=item(w,"C");
+    click(s,a,0);click(s,c,MOD_SHIFT);CHECK(w->items[a].selected && w->items[b].selected && w->items[c].selected);
+    session_key(s,MENU_KEY_UP,MOD_SHIFT);CHECK(w->items[a].selected && w->items[b].selected && !w->items[c].selected);
+    session_key(s,MENU_KEY_DOWN,0);CHECK(!w->items[a].selected && !w->items[b].selected && w->items[c].selected);
     session_command(s,CMD_VIEW_ICONS);Layout lay;window_layout(w,&lay);
     s->mouse_mods=0;session_down(s,lay.content.x+4,lay.content.y+lay.content.h-2,1);
     session_move(s,lay.content.x+CELL_W*2-4,lay.content.y+2);CHECK(s->drag==5);

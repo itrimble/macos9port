@@ -1,3 +1,4 @@
+#include "notes.h"
 #include "finder_system_icons.h"
 #include "finder_desktop_surface.h"
 #include "menu_navigation.h"
@@ -48,7 +49,7 @@ static int icon_double(Session *s, int valid, int kind, const char *dir,
     uint32_t elapsed = s->input_now_ms - s->click_ms;
     uint32_t win_ms = s->double_click_ms > 0 ? (uint32_t)s->double_click_ms : 500u;
     int dx = x - s->click_x, dy = y - s->click_y;
-    int repeat = valid && elapsed > 0 && elapsed <= win_ms &&
+    int repeat = valid && (elapsed > 0 || clicks >= 2) && elapsed <= win_ms &&
                  dx >= -4 && dx <= 4 && dy >= -4 && dy <= 4 &&
                  kind == s->click_kind && strcmp(dir, s->click_dir) == 0 &&
                  strcmp(name, s->click_name) == 0;
@@ -213,6 +214,7 @@ void session_down(Session *s, int x, int y, int clicks) {
         if (!w->collapsed && w->kind == WIN_TERMINAL) {
             terminal_down(s, w, &lay, x, y, clicks);
         }
+        if (notes_down(s, x, y)) { s->down = 0; return; }
         s->press_zone = Z_CONTENT;
         return;
     }
@@ -426,6 +428,7 @@ void session_key(Session *s, int key, int mods) {
         }
         return;
     }
+    if (notes_key(s, key, mods)) return;
     if (finder_edit_key(s, key, mods)) return;
     if (key >= 'A' && key <= 'Z') key += 'a' - 'A';
     if (context_key(s, key, mods)) return;
@@ -486,6 +489,7 @@ void session_context(Session *s, int x, int y) {
 }
 
 void session_text_input(Session *s, const char *text) {
+    if (notes_input(s, text)) return;
     if (s && text && finder_labels_text(s, text)) return;
     if (!s || s->dialog != 3 || !text) return;
     size_t used = s->edit_selected ? 0 : strlen(s->edit_text), n = strlen(text);

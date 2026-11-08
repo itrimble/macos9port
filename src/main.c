@@ -1,3 +1,4 @@
+#include "notes.h"
 #include "osa_session.h"
 #include "finder_apps.h"
 #include "finder_print.h"
@@ -384,7 +385,7 @@ int main(int argc, char **argv) {
                     else if (strcmp(s->held_text, ev.text.text) == 0) continue;
                 }
                 if (session_editing(s)) session_text(s, ev.text.text);
-                else if (s->dialog == 3 || s->dialog == 5) session_text_input(s, ev.text.text);
+                else if (s->dialog == 3 || s->dialog == 5 || notes_active(s)) session_text_input(s, ev.text.text);
                 else if (!session_overlay_active(s) && !(SDL_GetModState() & (KMOD_GUI | KMOD_CTRL | KMOD_ALT)))
                     terminal_text_input(s, ev.text.text);
             } else if (ev.type == SDL_KEYDOWN) {

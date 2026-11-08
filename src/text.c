@@ -36,7 +36,7 @@ static int take_line(const char *s, int max_w, int *draw_n, int *advance) {
         return 1;
     }
     *draw_n = bytes;
-    *advance = bytes;
+    *advance = bytes + (s[bytes] == '\n');
     return 1;
 }
 
@@ -54,6 +54,7 @@ int text_height(const char *text, int max_w) {
         p += adv;
         lines++;
     }
+    if (p > text && p[-1] == '\n') lines++;
     return lines * typeface_line_height(1);
 }
 
@@ -76,4 +77,43 @@ void text_draw(void *fb_ptr, int x, int y, int max_w, uint32_t color, const char
         p += adv;
         cy += line_height;
     }
+}
+
+/* Shared layout for painting and editing: offsets are UTF-8 byte boundaries. */
+void text_caret(const char *text, int width, size_t offset, int *x, int *y) {
+    const char *p = text; size_t at = 0; *x = *y = 0;
+    while (*p) {
+        int n, adv;
+        if (!take_line(p, width, &n, &adv) || adv <= 0) break;
+        if (offset < at + (size_t)adv || !p[adv]) {
+            if (offset >= at + (size_t)adv && adv > 0 && p[adv-1] == '\n') {
+                *y += typeface_line_height(1); return;
+            }
+            size_t end = offset > at ? offset-at : 0;
+            if (end > (size_t)n) end = (size_t)n;
+            for (size_t i = 0; i < end;) { int bytes, px;
+                if (!typeface_next(1, p+i, &bytes, &px) || bytes <= 0) break;
+                *x += px; i += (size_t)bytes;
+            }
+            return;
+        }
+        at += (size_t)adv; p += adv; *y += typeface_line_height(1);
+    }
+}
+size_t text_offset(const char *text, int width, int x, int y) {
+    const char *p = text; size_t at = 0; int cy = 0;
+    while (*p) {
+        int n, adv;
+        if (!take_line(p,width,&n,&adv) || adv <= 0) break;
+        if (y < cy + typeface_line_height(1)) {
+            int px = 0; size_t i = 0;
+            while (i < (size_t)n) { int bytes, step;
+                if (!typeface_next(1,p+i,&bytes,&step) || bytes <= 0 || x < px+step/2) break;
+                px += step; i += (size_t)bytes;
+            }
+            return at+i;
+        }
+        p += adv; at += (size_t)adv; cy += typeface_line_height(1);
+    }
+    return at;
 }

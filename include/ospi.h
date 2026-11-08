@@ -131,6 +131,8 @@ typedef struct {
     int nitems;
     char text[OSPI_TEXT];
     char *expanded_text;
+    int note_editable, note_select_all;
+    size_t note_caret;
     struct TermSession *term;
     void *movie;
     int movie_modern;

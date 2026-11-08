@@ -1,3 +1,4 @@
+#include "notes.h"
 #include "finder_apps.h"
 #include "finder_recent.h"
 #include "finder_labels.h"
@@ -25,6 +26,7 @@ static MenuItem k_pi[] = {
 };
 static MenuItem k_file[] = {
     KEY("New Folder", CMD_NEW_FOLDER, "Cmd-N", 'n'),
+    ITEM("New Note", CMD_NEW_NOTE),
     KEY("Open", CMD_OPEN, "Cmd-O", 'o'), ITEM("Print", CMD_PRINT),
     KEY("Close Window", CMD_CLOSE, "Cmd-W", 'w'), ITEM("Close All", CMD_CLOSE_ALL), SEP,
     KEY("Get Info", CMD_GET_INFO, "Cmd-I", 'i'), ITEM("Label", CMD_MENU_LABELS),
@@ -121,6 +123,7 @@ static void update_items(Session *s, MenuItem *items, int count) {
         case CMD_MENU_ARRANGE: yes = folder; break;
         case CMD_MENU_LABELS: case CMD_EDIT_LABELS: yes = 1; break;
         case CMD_MENU_PANELS: case CMD_MENU_RECENT_APPS: case CMD_MENU_RECENT_DOCS: yes = 1; break;
+        case CMD_NEW_NOTE: yes = !s->browser_focused && !s->guest_focused; break;
         case CMD_NEW_FOLDER: yes = !w || !w->search_results; break;
         case CMD_ABOUT: case CMD_CONTROL_PANELS: case CMD_CP_GENERAL: case CMD_CP_SOUND:
         case CMD_CP_MONITORS: case CMD_CP_KEYBOARD: case CMD_CP_ENERGY:
@@ -135,11 +138,13 @@ static void update_items(Session *s, MenuItem *items, int count) {
         case CMD_CLOSE_ALL: yes = panel || s->nwin; break;
         case CMD_TERMINAL_SHELL: case CMD_TERMINAL_CONSOLE: case CMD_BROWSER:
         case CMD_MEDIA_PLAYER: case CMD_SUPPORTED_FORMATS: yes = 1; break;
-        case CMD_PASTE: case CMD_TERM_CLEAR: case CMD_TERM_THEME:
+        case CMD_PASTE: yes = !panel && w && (w->kind == WIN_TERMINAL || w->note_editable); break;
+        case CMD_SELECT_ALL: yes = !panel && ((w && w->note_editable) || desktop_command_enabled(s,item->cmd)); break;
+        case CMD_TERM_CLEAR: case CMD_TERM_THEME:
             yes = w && w->kind == WIN_TERMINAL && !panel; break;
         case CMD_COPY:
             yes = !panel && ((w && w->kind == WIN_TERMINAL) || desktop_command_enabled(s, item->cmd)); break;
-        case CMD_GET_INFO: case CMD_SELECT_ALL:
+        case CMD_GET_INFO:
             yes = !panel && desktop_command_enabled(s, item->cmd); break;
         case CMD_CLEANUP: yes = folder; break;
         case CMD_EMPTY_ASK: yes = 1; break;

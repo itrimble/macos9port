@@ -1,3 +1,4 @@
+#include "volume_documents.h"
 #include "ospi.h"
 #include "native_apps.h"
 #include "mac_icon.h"
@@ -19,27 +20,18 @@ static const struct {
 } k_seed[] = {
     {"Applications/Utilities/Tailscale", "OS999-BUILTIN:tailscale:1\n"},
     {"Applications/Utilities/Terminal", "OS999-BUILTIN:terminal:1\n"},
+    {"Documents/Getting Started",
+     "Getting Started with OS999\n\nOS999 is a classic-Mac-style desktop running on your host computer. Double-click folders and documents, or select an item and choose File > Open. Use the File menu to create folders or a New Note.\n\nNew notes are plain .txt files in Documents and save as you type. Click to position the caret, use left and right arrows, Return for a new paragraph, and Command-A to replace all text. Existing notes are never overwritten by seeding.\n\nDrag title bars to move windows. Drag the lower-right corner to resize; long paragraphs wrap to the new width. Scroll with the wheel. Command-W closes the front window.\n\nThe Granny Smith menu opens Control Panels, Terminal, browser and media features. Some features depend on optional helpers in the build. See Help and Limitations before relying on compatibility claims.\n"},
+    {"Documents/Applications Guide",
+     "Applications Guide\n\nFinder manages your volume files. The built-in text viewer opens readable documents; File > New Note creates an editable plain-text note. Terminal runs host commands, so use it with the same care as your normal terminal.\n\nChromium Browser requires the separately built browser helper. OS999 Amp handles supported media when the media components are included. A packaged helper or successful launch alone does not prove video acceleration, playback quality or device support.\n\nSupported classic CODE-resource applications use the independent OS999 runtime. Other architectures and Toolbox features may be unsupported. Quake III requires the appropriate engine and separately supplied demo or retail assets; commercial data is not included.\n\nControl Panels adjust desktop preferences. Controls labeled unavailable do not change host networking or hardware. Bluetooth radio pairing and real-device interoperability remain separate acceptance tests.\n"},
+    {"Documents/Storage and Installers",
+     "Storage and Installers\n\nYour OS999 volume is a real directory on the host. Copy, move and rename operations affect those files. Empty Trash permanently removes its contents. Back up important documents and saves.\n\nSupported archives retain classic resource forks and Finder metadata using the storage subsystem. Keep .rsrc sidecars with their matching data files. Some StuffIt methods need an external extractor; unsupported formats are rejected rather than guessed.\n\nDisk-image support depends on the format and available parser. Disposable virtual volumes do not mean every .img, .dmg or .iso is supported. Do not assume that an extracted installer can run: its architecture and resources must also be supported.\n\nThe Memory panel scratch disk is a quota-limited host directory, not physical RAM. It refuses to adopt an existing unmanaged RAM Disk folder. Clear on quit removes data only from a verified managed scratch disk.\n\nReinstalling or reseeding OS999 does not intentionally replace existing starter documents. Classic-app saves are kept separately from application folders.\n"},
+    {"Documents/Help and Limitations",
+     "Help and Limitations\n\nIf double-clicking does not open an item, select it and choose File > Open. Check the resulting message: an unsupported application or malformed resource fork is different from a mouse event problem.\n\nIf a note cannot save, the file may have changed outside OS999 or become unwritable. The failed edit does not replace your saved file. Reopen it to read the current contents. New notes are in Documents.\n\nThis is a userspace desktop and clean-room compatibility runtime, not a complete Mac OS 9 emulator or operating system. Not all classic applications, installers, extensions, printers or network services work.\n\nHeadless tests and successful builds do not establish visual, gameplay, audio, performance or physical-device compatibility. Report the build, file name, action and visible error when something fails.\n\nUse Command-W to close a window and Command-Q to quit. Avoid deleting the host volume or save directories to troubleshoot an application.\n"},
     {"Documents/Notes",
      "Notes live here as plain text.\n\n"
      "Double-click a document to read it.\n"},
-    {"Read Me",
-     "OS999 Stylized 0.1\n\n"
-     "This desktop is a clean-room program.\n"
-     "It is not Apple's Mac OS 9. There is\n"
-     "no Apple ROM and no Apple Toolbox.\n\n"
-     "These folders are real folders. New\n"
-     "Folder makes a real folder. Empty Trash\n"
-     "deletes real files.\n\n"
-     "Cmd-N  New Folder\n"
-     "Cmd-O  Open\n"
-     "Cmd-W  Close\n"
-     "Cmd-Q  Quit\n\n"
-     "Supported 68k apps run in OS999's own\n"
-     "runtime. Other apps may fail or use a\n"
-     "legacy archive launcher.\n\n"
-     "Double-click the disk if you close\n"
-     "this window. Shut Down is under the\n"
-     "Granny Smith icon at the left of the menu bar.\n"},
+    {"Read Me", OS999_CURRENT_README},
     {"System Folder/About This Folder",
      "On a classic Mac this folder held the\n"
      "system. Here it is an ordinary folder,\n"
@@ -132,6 +124,28 @@ int volume_builtin_tailnet(const char *root, const char *rel) {
     return native_catalog_id(root, rel) == NATIVE_TAILSCALE;
 }
 
+static int seed_directory(const char *root, const char *relative) {
+    int dir = volume_directory_open(root, "");
+    char path[OSPI_PATH];
+    if (dir < 0 || snprintf(path, sizeof path, "%s", relative) >= (int)sizeof path) {
+        if (dir >= 0) close(dir);
+        return -1;
+    }
+    char *part = path;
+    while (*part) {
+        char *slash = strchr(part, '/');
+        if (slash) *slash = 0;
+        if (mkdirat(dir, part, 0755) != 0 && errno != EEXIST) { close(dir); return -1; }
+        int child = openat(dir, part, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+        close(dir);
+        if (child < 0) return -1;
+        dir = child;
+        if (!slash) break;
+        part = slash + 1;
+    }
+    close(dir); return 0;
+}
+
 int volume_seed(const char *root) {
     if (!root || volume_mkdir_p(root) != 0) {
         return -1;
@@ -146,13 +160,7 @@ int volume_seed(const char *root) {
             }
             memcpy(parent_rel, k_seed[i].rel, len);
             parent_rel[len] = 0;
-            char parent[OSPI_PATH];
-            if (volume_join(parent, sizeof parent, root, parent_rel) != 0) {
-                return -1;
-            }
-            if (volume_mkdir_p(parent) != 0) {
-                return -1;
-            }
+            if (seed_directory(root, parent_rel) != 0) return -1;
         }
         char full[OSPI_PATH];
         if (volume_join(full, sizeof full, root, k_seed[i].rel) != 0) {
@@ -161,15 +169,17 @@ int volume_seed(const char *root) {
         if (exists_file(full)) {
             continue;
         }
-        FILE *f = fopen(full, "w");
-        if (!f) {
-            return -1;
-        }
-        if (k_seed[i].body && fputs(k_seed[i].body, f) < 0) {
-            fclose(f);
-            return -1;
-        }
-        fclose(f);
+        const char *leaf = strrchr(k_seed[i].rel, '/');
+        int dir = volume_directory_open(root, leaf ? parent_rel : "");
+        if (dir < 0) return -1;
+        int fd = openat(dir, leaf ? leaf + 1 : k_seed[i].rel,
+                        O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+        close(dir);
+        if (fd < 0) { if (errno == EEXIST) continue; return -1; }
+        FILE *f = fdopen(fd, "w");
+        if (!f) { close(fd); return -1; }
+        int ok = !k_seed[i].body || fputs(k_seed[i].body, f) >= 0;
+        if (fclose(f) != 0 || !ok) return -1;
     }
     return native_catalog_seed(root);
 }

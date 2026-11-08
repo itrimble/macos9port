@@ -2,6 +2,7 @@
  * and posture, fingers through to desktop calls. Headless. */
 #include "kbd_int.h"
 #include "mobile_shell.h"
+#include "notes.h"
 #include "os999_mobile.h"
 
 #include <stdio.h>
@@ -270,6 +271,17 @@ int test_mobile_shell(int *checks_out, int *fails_out) {
     CHECK(m.toast.active && haptics == 1);
     CHECK(mobile_shell_frame(&m, ms += 16) == 1);
     test_edit(&m, s, root, &ms);
+    session_command(s, CMD_CLOSE_ALL);
+    session_command(s, CMD_NEW_NOTE);
+    CHECK(notes_active(s));
+    mobile_shell_text(&m, "Mobile note");
+    mobile_shell_key(&m, '\r', 0);
+    mobile_shell_text(&m, "second line");
+    Window *note = &s->win[s->nwin - 1];
+    CHECK(!strcmp(window_text(note), "Mobile note\nsecond line"));
+    char saved[128];
+    CHECK(!volume_read(root, note->rel, saved, sizeof saved));
+    CHECK(!strcmp(saved, "Mobile note\nsecond line"));
     mobile_shell_free(&m);
     session_destroy(s);
     *checks_out = checks;

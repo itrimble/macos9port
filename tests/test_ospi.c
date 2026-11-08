@@ -153,9 +153,11 @@ int main(void) {
     }
     CHECK(volume_seed(dir) == 0);
     {
-        char readme[OSPI_TEXT];
+        char readme[OSPI_TEXT], installed[OSPI_TEXT];
         CHECK(volume_read(dir, "Read Me", readme, sizeof readme) == 0);
-        CHECK(strstr(readme, "OS999's own") != NULL);
+        CHECK(strstr(readme, "clean-room program") != NULL);
+        CHECK(volume_read(dir, "Documents/Applications Guide", installed, sizeof installed) == 0);
+        CHECK(strstr(installed, "independent OS999 runtime") != NULL);
         CHECK(strstr(readme, "Systemless") == NULL);
         CHECK(native_catalog_id(dir, "Applications/Terminal") == NATIVE_TERMINAL);
         CHECK(native_catalog_id(dir, "Applications/Movie Player") == NATIVE_MOVIE);

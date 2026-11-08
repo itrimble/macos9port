@@ -38,6 +38,14 @@ static int open_named(Session *s, int win, const char *name) {
     int idx = item_named(&s->win[win], name);
     int x, y;
     if (idx < 0 || ospi_item_center(s, win, idx, &x, &y) != 0) return -1;
+    /* Starter documents can add rows: reveal the icon before clicking it. */
+    Window *folder = &s->win[win];
+    Layout lay; window_layout(folder, &lay);
+    if (y < lay.content.y) folder->scroll -= lay.content.y - y + CELL_H;
+    else if (y >= lay.content.y + lay.content.h)
+        folder->scroll += y - (lay.content.y + lay.content.h) + CELL_H;
+    session_clamp(s);
+    if (ospi_item_center(s, win, idx, &x, &y) != 0 || !rect_has(lay.content, x, y)) return -1;
     click_at(s, x, y, 2);
     return 0;
 }

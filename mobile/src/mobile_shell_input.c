@@ -1,6 +1,7 @@
 /* Phone shell input: who owns each finger, strip actions, and turning
  * gesture and keyboard events into desktop calls. */
 #include "mobile_shell.h"
+#include "notes.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -68,7 +69,8 @@ static void apply_kbd(MobileShell *m, const KbdEvent *e) {
         session_key(m->s, e->key, (e->mods & KBD_MOD_CMD) ? MOD_CMD : 0);
         break;
     case KBD_EV_TEXT:
-        session_text(m->s, e->text);   /* keeps capitals, symbols and Option letters */
+        if (notes_active(m->s)) session_text_input(m->s, e->text);
+        else session_text(m->s, e->text);   /* preserves Finder rename input */
         break;
     case KBD_EV_FORCE: {               /* as in the Finder: Force Click a name to rename it */
         int x = (int)m->touch.px, y = (int)m->touch.py;
@@ -197,7 +199,8 @@ void mobile_shell_key(MobileShell *m, int key, int mods) {
 }
 
 void mobile_shell_text(MobileShell *m, const char *utf8) {
-    session_text(m->s, utf8);
+    if (notes_active(m->s)) session_text_input(m->s, utf8);
+    else session_text(m->s, utf8);
     m->dirty = 1;
 }
 

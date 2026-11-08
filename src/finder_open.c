@@ -1,3 +1,4 @@
+#include "notes.h"
 #include "finder_recent.h"
 #include "native_apps.h"
 #include "movie_window.h"
@@ -95,6 +96,7 @@ void open_item(Session *s, Window *w, int index) {
         if (mh && mh->is_media_file && mh->open_file && mh->is_media_file(full)) {
             appearance_panel_close(); mh->open_file(s, full); finder_recent_note(s, rel, 0); return;
         }
+        if (notes_open_document(s, window_items(w)[index].name, rel) <= 0) return;
         char buf[OSPI_TEXT];
         if (volume_read(s->root, rel, buf, sizeof buf) != 0) {
             dialog_info(s, "Open", "Could not read that file.");

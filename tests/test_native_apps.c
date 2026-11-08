@@ -1,6 +1,7 @@
 #include "ospi.h"
 #include "term.h"
 #include "native_apps.h"
+#include "notes.h"
 #include "finder_recent.h"
 #include "movie_window.h"
 #include "movie_fixture.h"
@@ -32,8 +33,12 @@ static void catalog_checks(Session *s) {
         CHECK(i >= 0 && window_items(apps)[i].kind == ITEM_APPLICATION);
     }
     CHECK(named(apps, "Nothing Installed Yet") < 0);
+    char note_path[OSPI_PATH]; snprintf(note_path, sizeof note_path, "%s/Documents/Notes", s->root);
+    FILE *note = fopen(note_path, "wb"); CHECK(note);
+    if (note) { for (int i = 0; i < 6000; i++) fputc('x', note); fclose(note); }
     int notes = named(apps, "Notes"); CHECK(notes >= 0); open_item(s, apps, notes);
     CHECK(s->win[s->nwin - 1].kind == WIN_TEXT && recent(s, NATIVE_NOTES) >= 0);
+    CHECK(notes_active(s) && strlen(window_text(&s->win[s->nwin - 1])) == 6000);
     CHECK(!native_app_open(s, NATIVE_MOVIE));
     CHECK(s->win[s->nwin - 1].kind == WIN_MOVIE && !s->win[s->nwin - 1].movie);
     CHECK(recent(s, NATIVE_MOVIE) >= 0);
@@ -119,6 +124,15 @@ int main(void) {
     CHECK(!volume_seed(root) && !native_catalog_id(root, "Applications/Notes"));
     CHECK(!unlink(notes_path)); CHECK(!symlink("../Documents/Notes", notes_path));
     CHECK(!native_catalog_id(root, "Applications/Notes"));
+    char bad_root[] = "/tmp/os999-native-note-failure-XXXXXX"; CHECK(mkdtemp(bad_root));
+    CHECK(!volume_seed(bad_root));
+    snprintf(notes_path, sizeof notes_path, "%s/Documents/Notes", bad_root);
+    CHECK(!unlink(notes_path) && !symlink("../Read Me", notes_path));
+    s = session_create(bad_root); CHECK(s);
+    before = s->nwin;
+    CHECK(native_app_open(s, NATIVE_NOTES) < 0);
+    CHECK(s->nwin == before && recent(s, NATIVE_NOTES) < 0);
+    session_destroy(s);
     unsetenv("OS999_TAILSCALE_CLI"); unsetenv("OS999_FAKE_CLI_LOG");
     printf("Native application regression: %d failures; fixture %s\n",failures,root);
     return failures?1:0;

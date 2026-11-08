@@ -359,3 +359,11 @@ test: test-native-apps
 build/test_native_host: $(QT_LIFECYCLE_SRC) $(STORAGE_A) tests/test_native_host.c $(HDRS) $(AUDIO_HDRS) include/desktop_host.h
 	$(CC) $(CFLAGS) $(SDL_CFLAGS) $(FFMPEG_CFLAGS) -o $@ $(QT_LIFECYCLE_SRC) $(STORAGE_LINK) tests/test_native_host.c $(SDL_LIBS) $(FFMPEG_LIBS) $(FT_LIBS) $(NET_LIBS) -pthread -lm
 test-native-apps: build/test_native_host
+
+build/test_documents: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_documents.c $(HDRS)
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_documents.c $(FT_LIBS) -lm $(NET_LIBS)
+
+test-documents: build/test_documents
+	./build/test_documents
+
+test: test-documents

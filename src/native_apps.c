@@ -1,4 +1,5 @@
 #include "native_apps.h"
+#include "notes.h"
 #include "finder_recent.h"
 #include "movie_window.h"
 #include "session_int.h"
@@ -25,12 +26,7 @@ int native_app_open(Session *s, int app) {
         return 0;
     case NATIVE_MOVIE: return movie_window_launcher(s);
     case NATIVE_NOTES: {
-        char text[OSPI_TEXT];
-        if (volume_read(s->root, "Documents/Notes", text, sizeof text)) {
-            dialog_info(s, "Notes", "Documents/Notes is unavailable.");
-            return -1;
-        }
-        if (session_open_text(s, "Notes", "Documents/Notes", text)) return -1;
+        if (notes_open_document(s, "Notes", "Documents/Notes") != 0) return -1;
         native_app_note(s, app);
         return 0;
     }

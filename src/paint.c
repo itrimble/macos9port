@@ -1,3 +1,4 @@
+#include "notes.h"
 #include "folder_view.h"
 #include "finder_apps.h"
 #include "app_switcher.h"
@@ -372,8 +373,10 @@ static void paint_window(Fb *fb, const Session *s, int index) {
         } else {
             fb_clip(fb, lay.content.x, lay.content.y, lay.content.w, lay.content.h);
             if (w->kind == WIN_TEXT) {
+                if (w->note_select_all) fb_fill(fb,lay.content.x,lay.content.y,lay.content.w,lay.content.h,0xffc8dcf5);
                 text_draw(fb, lay.content.x + 8, lay.content.y + 6 - w->scroll, lay.content.w - 12, desktop_theme_color(THEME_FOREGROUND),
                           window_text(w));
+                notes_paint(fb, s, w, &lay);
             } else if (w->kind == WIN_MOVIE) {
                 movie_window_paint(fb, w);
             } else {

@@ -1,3 +1,5 @@
+#include "volume_documents.h"
+#include "notes.h"
 #include "finder_desktop_positions.h"
 #include "finder_apps.h"
 #include "finder_print.h"
@@ -60,8 +62,6 @@ void close_index(Session *s, int idx) {
     }
     snprintf(s->sound_event, sizeof s->sound_event, "window.close");
 }
-
-
 void reload_folders(Session *s) {
     if (s->desktop.kind == WIN_FOLDER) reload_folder_window(s, &s->desktop);
     for (int i = 0; i < s->nwin; i++) {
@@ -126,9 +126,10 @@ int open_folder(Session *s, const char *rel) {
     return 0;
 }
 int session_open_text(Session *s, const char *title, const char *rel, const char *body) {
+    if (body && !strcmp(body, OS999_LEGACY_README)) body = OS999_CURRENT_README;
     finder_apps_command(s, CMD_APP_FINDER); appearance_panel_blur();
     for (int i = 0; i < s->nwin; i++) {
-        if (s->win[i].kind == WIN_TEXT && strcmp(s->win[i].title, title) == 0) {
+        if (s->win[i].kind == WIN_TEXT && strcmp(s->win[i].rel, rel ? rel : "") == 0) {
             if (window_text_set(&s->win[i], body)) return -1;
             bring_front(s, i);
             return 0;
@@ -140,6 +141,10 @@ int session_open_text(Session *s, const char *title, const char *rel, const char
     Window *w = &s->win[s->nwin];
     memset(w, 0, sizeof *w);
     w->kind = WIN_TEXT;
+    size_t path_len = rel ? strlen(rel) : 0;
+    w->note_editable = rel && (!strcmp(rel,"Documents/Notes") ||
+        (!strncmp(rel,"Documents/",10) && path_len > 4 && !strcmp(rel+path_len-4,".txt")));
+    w->note_caret = body ? strlen(body) : 0;
     snprintf(w->title, sizeof w->title, "%s", title);
     snprintf(w->rel, sizeof w->rel, "%s", rel ? rel : "");
     if (window_text_set(w, body)) return -1;
@@ -177,7 +182,6 @@ void dialog_accept(Session *s) {
         session_command(s, cmd);
     }
 }
-
 void select_only(Window *w, int index) {
     w->selection_anchor = w->selection_cursor = index;
     for (int i = 0; i < w->nitems; i++) {
@@ -234,6 +238,9 @@ void session_command(Session *s, int cmd) {
     if (s->media_focused && !s->dialog && (cmd == CMD_CLOSE || cmd == CMD_CLOSE_ALL)) {
         if (session_media_hooks() && session_media_hooks()->close) session_media_hooks()->close();
         return;
+    }
+    if (notes_active(s) && (cmd == CMD_SELECT_ALL || cmd == CMD_PASTE)) {
+        notes_key(s, cmd == CMD_PASTE ? 'v' : 'a', MOD_CMD); return;
     }
     if (finder_labels_command(s, cmd) || finder_apps_command(s, cmd) || finder_print_command(s, cmd) || finder_recent_command(s, cmd) || finder_settings_command(s, cmd) || finder_search_command(s, cmd) || finder_command(s, cmd) || desktop_command(s, cmd) || desktop_help_command(s, cmd)) return;
     if (folder_view_command(s, cmd)) {
@@ -365,6 +372,7 @@ void session_command(Session *s, int cmd) {
             if (finder_current(s)->desktop_surface) finder_desktop_positions_clean(s);
         }
         break;
+    case CMD_NEW_NOTE: notes_new(s); break;
     case CMD_NEW_FOLDER: {
         if (s->desk_sel >= 0 && open_folder(s, s->desk_sel == 1 ? "Trash" : "")) {
             dialog_info(s, "New Folder", "Close a window first."); break;
