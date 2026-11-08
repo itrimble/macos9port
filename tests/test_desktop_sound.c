@@ -1,5 +1,6 @@
 #include "desktop_sound.h"
 #include "audio_service.h"
+#include "sound_preferences.h"
 #include <math.h>
 #include <SDL.h>
 #include <stdio.h>
@@ -18,6 +19,11 @@ int main(int argc, char **argv) {
     if (fd < 0) return 1;
     close(fd);
     CHECK(desktop_sound_init(argv[1], pref) == DESKTOP_SOUND_COUNT);
+    CHECK(!desktop_sound_enabled()); /* Empty/missing preferences are silent. */
+    CHECK(!desktop_sound_play(DESKTOP_SOUND_STARTUP));
+    CHECK(!audio_get_master_muted());
+    CHECK(fabsf(audio_get_bus_volume(AUDIO_BUS_SYSTEM) - 0.2f) < 0.001f);
+    CHECK(desktop_sound_set_enabled(1));
     CHECK(desktop_sound_enabled());
     audio_service_pause_output(1); /* Deterministic mixer reads below. */
     CHECK(desktop_sound_play(DESKTOP_SOUND_STARTUP));
@@ -38,6 +44,15 @@ int main(int argc, char **argv) {
     CHECK(!desktop_sound_enabled());
     CHECK(desktop_sound_effects_suppressed());
     CHECK(!desktop_sound_play(DESKTOP_SOUND_STARTUP));
+    CHECK(!audio_get_master_muted());
+    CHECK(audio_submit_app_pcm_f32(app_pcm, 1) == 1);
+    audio_service_mix_frames(mixed, 1);
+    CHECK(fabsf(mixed[0] - 0.25f) < 0.01f && fabsf(mixed[1] + 0.25f) < 0.01f);
+    audio_set_master_muted(1);
+    CHECK(desktop_sound_set_enabled(1));
+    CHECK(audio_get_master_muted()); /* Do not override an independent master control. */
+    CHECK(desktop_sound_set_enabled(0));
+    audio_set_master_muted(0);
     desktop_sound_shutdown();
     CHECK(desktop_sound_init(argv[1], pref) == DESKTOP_SOUND_COUNT);
     CHECK(!desktop_sound_enabled());
@@ -46,6 +61,9 @@ int main(int argc, char **argv) {
     CHECK(desktop_sound_play(DESKTOP_SOUND_MENU_SELECT));
     CHECK(!desktop_sound_play(-1));
     CHECK(!desktop_sound_play(DESKTOP_SOUND_COUNT));
+    desktop_sound_shutdown();
+    CHECK(desktop_sound_init(argv[1], pref) == DESKTOP_SOUND_COUNT);
+    CHECK(desktop_sound_enabled()); /* Explicit opt-in survives initialization. */
     desktop_sound_shutdown();
     CHECK(!desktop_sound_init("/nonexistent/sound-pack", pref));
     CHECK(!desktop_sound_play(DESKTOP_SOUND_STARTUP));
@@ -69,7 +87,14 @@ int main(int argc, char **argv) {
     }
     unlink(bad);
     rmdir(dir);
+    FILE *unknown = fopen(pref, "w");
+    CHECK(unknown != NULL);
+    if (unknown) { fputs("1garbage", unknown); fclose(unknown); }
+    CHECK(!sound_preference_enabled(pref));
     unlink(pref);
+    CHECK(desktop_sound_init(argv[1], pref) == DESKTOP_SOUND_COUNT);
+    CHECK(!desktop_sound_enabled() && !audio_get_master_muted());
+    desktop_sound_shutdown();
     printf("desktop sound: %s\n", failures ? "FAILED" : "ok");
     return failures ? 1 : 0;
 }

@@ -30,7 +30,7 @@ CFLAGS += -Istorage/include
 
 VIDEO_SRC := src/quicktime_decode.c src/quicktime_movie.c src/quicktime_backend.c
 AUDIO_SRC := src/audio_decoder.c src/audio_dsp.c src/audio_midi.c src/audio_output.c src/audio_service.c
-AUDIO_HDRS := include/movie_host.h include/quicktime_movie.h src/quicktime_decode.h include/osa.h include/osa_bridge.h include/osa_events.h include/osa_json.h include/osa_session.h include/volume_directory.h include/audio_decoder.h include/audio_dsp.h include/audio_midi.h include/audio_output.h include/audio_service.h
+AUDIO_HDRS := include/sound_preferences.h include/movie_host.h include/quicktime_movie.h src/quicktime_decode.h include/osa.h include/osa_bridge.h include/osa_events.h include/osa_json.h include/osa_session.h include/volume_directory.h include/audio_decoder.h include/audio_dsp.h include/audio_midi.h include/audio_output.h include/audio_service.h
 
 # Boot startup renderer and the original pixel-art fruit sprite it draws.
 STARTUP_SRC := src/os999_startup.c src/os999_startup_sprite.c

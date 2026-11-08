@@ -123,9 +123,10 @@ test-network: build/test_modern_network
 
 test: build/test_modern_network
 
-build/test_finder_files: tests/test_finder_files.c src/finder_files.c src/finder_alias.c src/archive_fs.c include/finder_files.h include/ospi.h include/volume_directory.h
+FINDER_VOLUME_SRC := src/volume.c src/volume_folders.c src/mac_icon.c src/mac_icon_palette.c src/mac_resource.c
+build/test_finder_files: $(FINDER_VOLUME_SRC) tests/test_finder_files.c src/finder_files.c src/finder_alias.c src/archive_fs.c include/finder_files.h include/ospi.h include/volume_directory.h
 	mkdir -p build
-	$(CC) $(CFLAGS) tests/test_finder_files.c src/finder_files.c src/finder_alias.c src/archive_fs.c -o $@
+	$(CC) $(CFLAGS) $(FINDER_VOLUME_SRC) tests/test_finder_files.c src/finder_files.c src/finder_alias.c src/archive_fs.c -o $@
 test: build/test_finder_files
 
 build/test_finder_desktop: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_finder_desktop.c $(HDRS)

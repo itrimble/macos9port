@@ -1,5 +1,6 @@
 #include "desktop_sound.h"
 #include "audio_service.h"
+#include "sound_preferences.h"
 #include <SDL.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,7 +9,7 @@
 #include <unistd.h>
 
 enum { MAX_WAV_BYTES = 2 * 1024 * 1024, MAX_PCM_BYTES = 48000 * 4 * 8 };
-static int enabled = 1, guest_active, initialized;
+static int enabled, guest_active, initialized;
 static uint32_t last_effect;
 static int played_effect;
 static char preference[4096];
@@ -63,13 +64,12 @@ void desktop_sound_shutdown(void) {
 int desktop_sound_init(const char *dir, const char *preference_file) {
     desktop_sound_shutdown();
     preference[0] = 0;
-    enabled = 1;
+    enabled = 0;
     if (!dir || !*dir) return 0;
     if (preference_file && *preference_file) {
         if (strlen(preference_file) >= sizeof preference) return 0;
         strcpy(preference, preference_file);
-        FILE *f = fopen(preference, "r");
-        if (f) { int c = fgetc(f); if (c == '0') enabled = 0; fclose(f); }
+        enabled = sound_preference_enabled(preference);
     }
     static const char *files[] = {"01-startup_chord.wav", "03-plain_beep.wav",
                                   "16-menu_open.wav", "17-menu_select.wav"};
@@ -81,12 +81,17 @@ int desktop_sound_init(const char *dir, const char *preference_file) {
             loaded++;
     }
     if (!loaded || audio_service_init(dir) != 0) return 0;
-    audio_set_master_muted(!enabled);
+    audio_set_bus_volume(AUDIO_BUS_SYSTEM, OS999_EFFECT_VOLUME_PERCENT / 100.0f);
     initialized = 1;
     return loaded;
 }
 
 int desktop_sound_enabled(void) { return enabled; }
+
+void desktop_sound_restore_enabled(int value) {
+    enabled = !!value;
+    if (!enabled) audio_clear_system_voices();
+}
 
 int desktop_sound_set_enabled(int value) {
     value = !!value;
@@ -102,9 +107,7 @@ int desktop_sound_set_enabled(int value) {
         if (ok && rename(temp, preference)) ok = 0;
         if (!ok) { unlink(temp); return 0; }
     }
-    enabled = value;
-    audio_set_master_muted(!enabled);
-    if (!enabled) audio_clear_system_voices();
+    desktop_sound_restore_enabled(value);
     return 1;
 }
 

@@ -8,6 +8,9 @@ enum { DESKTOP_SOUND_STARTUP, DESKTOP_SOUND_ALERT, DESKTOP_SOUND_MENU_OPEN,
 int desktop_sound_init(const char *sound_dir, const char *preference_file);
 void desktop_sound_shutdown(void);
 int desktop_sound_enabled(void);
+/* Restore validated preferences without rewriting files during startup. */
+void desktop_sound_restore_enabled(int enabled);
+/* Changes interface effects only; never changes the media/app master mute. */
 int desktop_sound_set_enabled(int enabled);
 /* Call each main-loop iteration, before events. Guest activation cancels host sounds. */
 void desktop_sound_guest_active(int active);

@@ -7,6 +7,7 @@
 #include "control_panels.h"
 #include "desktop_host.h"
 #include "desktop_sound.h"
+#include "sound_preferences.h"
 #include "media_player_panel.h"
 #include "os999_startup.h"
 
@@ -63,7 +64,7 @@ static void cp_audio_set_volume(int percent) {
 }
 
 static void cp_audio_set_muted(int muted) {
-    (void)desktop_sound_set_enabled(!muted);
+    desktop_sound_restore_enabled(!muted); /* The panel saves its own typed store. */
 }
 
 static const ControlPanelsAudioHooks k_cp_audio_hooks = {
@@ -86,15 +87,16 @@ void desktop_host_init(const char *volume) {
     if (n <= 0 || (size_t)n >= sizeof preference) return;
     if (!desktop_sound_init(sounds, preference))
         fprintf(stderr, "OS999 Stylized: desktop sounds unavailable\n");
-    int play_chime = 1;
+    int play_chime = 0;
     os999_cp_store_t store;
     if (os999_cp_store_init(&store, volume) == 0) {
         if (os999_cp_store_load(&store) == 0) {
-            int vol = os999_cp_store_get_int(&store, "sound", "volume", 80);
+            int vol = os999_cp_store_get_int(&store, "sound", "volume", OS999_EFFECT_VOLUME_PERCENT);
             cp_audio_set_volume(vol);
             if (os999_cp_store_has(&store, "sound", "muted"))
-                (void)desktop_sound_set_enabled(!os999_cp_store_get_bool(&store, "sound", "muted", 0));
-            play_chime = os999_cp_store_get_bool(&store, "sound", "startup_chime", 1);
+                desktop_sound_restore_enabled(!os999_cp_store_get_bool(&store, "sound", "muted",
+                    !desktop_sound_enabled()));
+            play_chime = os999_cp_store_get_bool(&store, "sound", "startup_chime", 0);
         }
         os999_cp_store_destroy(&store);
     }

@@ -17,8 +17,8 @@ build/test_desktop_assets: tests/test_desktop_assets.c src/desktop_assets.c src/
 
 test: build/test_desktop_assets
 
-build/test_desktop_sound: tests/test_desktop_sound.c src/desktop_sound.c $(AUDIO_SRC) include/desktop_sound.h $(AUDIO_HDRS)
-	$(CC) $(CFLAGS) $(SDL_CFLAGS) $(FFMPEG_CFLAGS) tests/test_desktop_sound.c src/desktop_sound.c $(AUDIO_SRC) $(SDL_LIBS) $(FFMPEG_LIBS) -pthread -lm -o $@
+build/test_desktop_sound: tests/test_desktop_sound.c src/desktop_sound.c src/sound_preferences.c $(AUDIO_SRC) include/sound_preferences.h include/desktop_sound.h $(AUDIO_HDRS)
+	$(CC) $(CFLAGS) $(SDL_CFLAGS) $(FFMPEG_CFLAGS) tests/test_desktop_sound.c src/desktop_sound.c src/sound_preferences.c $(AUDIO_SRC) $(SDL_LIBS) $(FFMPEG_LIBS) -pthread -lm -o $@
 
 test: build/test_desktop_sound
 

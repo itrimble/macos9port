@@ -1,6 +1,7 @@
 #include "os999_cdev.h"
 #include "cdev_ui.h"
 #include "control_panels.h"
+#include "sound_preferences.h"
 #include "desktop_theme.h"
 
 #include <stdio.h>
@@ -28,7 +29,7 @@ typedef struct {
     int dragging_volume;
 } SoundState;
 
-static SoundState g_snd = {80, 0, 0, 1, 1, 0};
+static SoundState g_snd = {OS999_EFFECT_VOLUME_PERCENT, 1, 0, 0, 1, 0};
 
 static int clamp_vol(int v) { return v < 0 ? 0 : v > 100 ? 100 : v; }
 
@@ -69,10 +70,11 @@ static int sound_load(os999_cdev_t *self, const os999_cdev_host_t *host) {
     }
     if (host && host->store) {
         if (host->get_int)
-            g_snd.volume = clamp_vol(host->get_int(host->store, "sound", "volume", 80));
+            g_snd.volume = clamp_vol(host->get_int(host->store, "sound", "volume", OS999_EFFECT_VOLUME_PERCENT));
         if (host->get_bool) {
-            g_snd.muted = host->get_bool(host->store, "sound", "muted", 0);
-            g_snd.startup_chime = host->get_bool(host->store, "sound", "startup_chime", 1);
+            g_snd.muted = host->get_bool(host->store, "sound", "muted",
+                !sound_preference_for_volume(host->session ? host->session->root : NULL));
+            g_snd.startup_chime = host->get_bool(host->store, "sound", "startup_chime", 0);
             g_snd.startup_intro = host->get_bool(host->store, "sound", "startup_intro",
                                                  g_snd.startup_intro);
         }
@@ -89,10 +91,10 @@ static int sound_load(os999_cdev_t *self, const os999_cdev_host_t *host) {
 
 static int sound_init(os999_cdev_t *self, const os999_cdev_host_t *host) {
     self->priv = &g_snd;
-    g_snd.volume = 80;
-    g_snd.muted = 0;
+    g_snd.volume = OS999_EFFECT_VOLUME_PERCENT;
+    g_snd.muted = 1;
     g_snd.alert_index = 0;
-    g_snd.startup_chime = 1;
+    g_snd.startup_chime = 0;
     g_snd.startup_intro = 1;
     g_snd.dragging_volume = 0;
     sound_load(self, host);
@@ -245,7 +247,7 @@ static void sound_render(os999_cdev_t *self, const os999_cdev_host_t *host, Fb *
     char pct[16];
     snprintf(pct, sizeof pct, g_snd.muted ? "Muted" : "%d%%", g_snd.volume);
     fb_text(fb, c.x + 378, c.y + 29, fg, pct);
-    cdev_ui_checkbox(fb, mute_chk_rect(c), "Mute Audio", g_snd.muted);
+    cdev_ui_checkbox(fb, mute_chk_rect(c), "Mute Effects", g_snd.muted);
 
     for (int seg = 0; seg < 10; seg++) {
         int lit = !g_snd.muted && g_snd.volume >= (seg + 1) * 10;

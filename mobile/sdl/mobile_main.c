@@ -291,6 +291,8 @@ int main(int argc, char **argv) {
     kbd_load_fonts("fonts/ChicagoFLF.ttf");
     mobile_pointer_load("assets/icons/cursors/arrow.curs");
     h->audio = kbd_audio_open();
+    kbd_audio_set_muted(h->audio, !s->host_sound_enabled);
+    kbd_audio_set_volume(h->audio, s->system_volume / 100.0f);
     h->haptics = h->sim ? kbd_haptics_open() : NULL;
     MobileShellHost cb = {on_haptic, on_kbd_event, on_clipboard, h};
     if (mobile_shell_init(&h->shell, s, cb, volume) != 0) {
@@ -334,6 +336,7 @@ int main(int argc, char **argv) {
         if (session_take_clip_out(s)) SDL_SetClipboardText(s->clip);
         desktop_host_tick(s, 0);
         kbd_audio_set_muted(h->audio, !s->host_sound_enabled);
+        kbd_audio_set_volume(h->audio, s->system_volume / 100.0f);
         if (!mobile_shell_frame(&h->shell, SDL_GetTicks())) { SDL_Delay(8); continue; }
         SDL_UpdateTexture(h->tex, NULL, h->shell.canvas.px, h->shell.canvas.w * (int)sizeof(uint32_t));
         SDL_RenderClear(h->ren);

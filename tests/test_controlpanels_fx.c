@@ -177,7 +177,7 @@ static void test_general_appearance_sound_monitors(void) {
     hook_vol = -1; hook_muted = -1; hook_played[0] = 0;
     click_at(s, c.x + 32, c.y + 36, 1);
     click_at(s, c.x + 32, c.y + 36, 1);
-    CHECK(hook_vol == 60 && s->system_volume == 60 && s->volume_sync_request == 1);
+    CHECK(hook_vol == 0 && s->system_volume == 0 && s->volume_sync_request == 1);
     click_at(s, c.x + 450, c.y + 36, 1);
     CHECK(hook_muted == 1 && s->sound_muted == 1 && s->host_sound_enabled == 0);
     hook_played[0] = 0;

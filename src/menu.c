@@ -104,7 +104,7 @@ static char active_app[OSPI_NAME] = "Finder", guest_name[OSPI_NAME], hide_app[OS
 static char window_titles[OSPI_MAX_WIN][OSPI_NAME];
 static char quit_guest[OSPI_NAME + 8];
 static int window_count;
-static int sound_enabled = 1;
+static int sound_enabled;
 void menu_set_sound_enabled(int enabled) { sound_enabled = !!enabled; }
 
 static void update_items(Session *s, MenuItem *items, int count) {

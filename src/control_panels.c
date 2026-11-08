@@ -1,4 +1,5 @@
 #include "control_panels_int.h"
+#include "sound_preferences.h"
 #include "appearance_panel.h"
 #include "cdev_ui.h"
 #include "desktop_theme.h"
@@ -133,11 +134,11 @@ int control_panels_session_init(Session *s) {
     s->menu_blink_count = cp_clamp(
         os999_cp_store_get_int(store, "general", "menu_blink_count", 3), 0, 3);
     s->system_volume = cp_clamp(
-        os999_cp_store_get_int(store, "sound", "volume", 80), 0, 100);
-    s->sound_muted = os999_cp_store_get_bool(store, "sound", "muted", 0);
+        os999_cp_store_get_int(store, "sound", "volume", OS999_EFFECT_VOLUME_PERCENT), 0, 100);
+    s->sound_muted = os999_cp_store_get_bool(store, "sound", "muted", !sound_preference_for_volume(s->root));
     s->host_sound_enabled = !s->sound_muted;
     menu_set_sound_enabled(s->host_sound_enabled);
-    s->startup_chime_enabled = os999_cp_store_get_bool(store, "sound", "startup_chime", 1);
+    s->startup_chime_enabled = os999_cp_store_get_bool(store, "sound", "startup_chime", 0);
     int intro_pref = os999_startup_pref_read(s->root);
     s->host_startup_enabled = os999_cp_store_get_bool(store, "sound", "startup_intro", intro_pref);
     os999_cp_store_get_str(store, "sound", "alert_sound",

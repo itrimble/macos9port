@@ -245,3 +245,17 @@ host allocation. Guest guard checks are software redzones, not OS guard pages.
 Focused and full combined validation results belong to the numbered build receipt.
 Source tests do not establish visual, audible, real-radio, guest ABI, mobile-device
 or classic-application acceptance.
+
+### R2 interface sound policy
+
+The R2 candidate starts new volumes with interface effects and startup chimes off.
+Enabling effects uses a conservative 20% system-bus default; existing explicit
+volume and enable preferences are preserved. Interface toggles no longer change
+the shared media/app master mute. Mobile keyboard feedback is muted before the
+first event unless the volume explicitly enables interface sounds. Unknown or
+malformed legacy preferences stay silent.
+
+The design follows Apple's [Explore immersive sound design, WWDC23](https://developer.apple.com/videos/play/wwdc2023/10271/):
+frequently repeated UI sounds should remain subtle and provide useful feedback.
+The 20% gain is a chosen default, not a measured universal loudness guarantee.
+Dummy-output PCM tests are separate from listening and device acceptance.

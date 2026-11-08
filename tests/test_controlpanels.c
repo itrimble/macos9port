@@ -299,7 +299,7 @@ static void test_plugin_container_and_modules(const char *plugin_so) {
     Rect c = {r.x + 16, r.y + 60, r.w - 32, r.h - 76};
     CHECK(region_has_color(px, OSPI_W, c, 0xFF28A448u));
     click_at(s, c.x + 40, c.y + 30, 1); /* utc_offset_min: -360 -> -300 */
-    CHECK(strcmp(s->sound_event, "window.zoom") == 0);
+    CHECK(s->sound_muted && s->sound_event[0] == 0); /* Fresh volumes suppress effects. */
     session_key(s, '+', 0); /* -300 -> -240 */
     session_key(s, 't', 0); /* use_24_hour: 1 */
     session_paint(s, px, OSPI_W, OSPI_H);
@@ -367,6 +367,9 @@ static void test_plugin_container_and_modules(const char *plugin_so) {
     CHECK(s->system_volume == 65 && g_hook_vol == 65);
     click_at(s, c.x + 80, c.y + 121 + 2 * 25 + 12, 1); /* Droplet */
     CHECK(strcmp(s->alert_sound, "alert.droplet") == 0 && strcmp(g_hook_sound, "alert.droplet") == 0);
+    CHECK(s->startup_chime_enabled == 0);
+    click_at(s, c.x + 420, c.y + 136, 1); /* Explicitly enable chime. */
+    CHECK(s->startup_chime_enabled == 1);
     click_at(s, c.x + 420, c.y + 136, 1); /* Startup chime off */
     click_at(s, c.x + 420, c.y + 214, 1); /* Startup intro off */
     CHECK(s->startup_chime_enabled == 0 && s->host_startup_enabled == 0);
