@@ -220,7 +220,7 @@ int main(void) {
     click(s, ax, ay, 2);
     CHECK(s->nwin == 2);
     CHECK(strcmp(s->win[1].rel, "Applications") == 0);
-    CHECK(s->win[1].nitems == 9); /* Eight implemented native apps plus Utilities. */
+    CHECK(s->win[1].nitems == 10); /* Nine implemented native apps (including Quake III Arena) plus Utilities. */
 
     int cx, cy;
     CHECK(ospi_control_center(&s->win[1], 0, &cx, &cy) == 0);

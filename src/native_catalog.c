@@ -16,6 +16,7 @@ static const NativeEntry entries[] = {
     {NATIVE_MOVIE,"Applications/Movie Player","OS999-BUILTIN:movie:1\n"},
     {NATIVE_NOTES,"Applications/Notes","OS999-BUILTIN:notes:1\n"},
     {NATIVE_CONTROLS,"Applications/Control Panels","OS999-BUILTIN:controls:1\n"},
+    {NATIVE_QUAKE,"Applications/Quake III Arena","OS999-BUILTIN:quake:1\n"},
     {NATIVE_TERMINAL,"Applications/Utilities/Terminal","OS999-BUILTIN:terminal:1\n"},
     {NATIVE_TAILSCALE,"Applications/Utilities/Tailscale","OS999-BUILTIN:tailscale:1\n"}
 };

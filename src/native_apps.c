@@ -31,6 +31,10 @@ int native_app_open(Session *s, int app) {
         return 0;
     }
     case NATIVE_CONTROLS: session_command(s, CMD_CONTROL_PANELS); return 0;
+    case NATIVE_QUAKE:
+        if (session_open_quake_app(s)) return -1;
+        native_app_note(s, app);
+        return 0;
     default: return -1;
     }
 }

@@ -3,7 +3,7 @@ CORE := src/system_icon_positions.c src/finder_system_icons.c src/finder_icon_po
 	src/hostinfo.c src/text.c src/paint.c src/session.c src/input.c src/finder_edit.c \
 	src/application_probe.c src/install.c src/install_local.c src/classic.c src/typeface.c src/native_launch.c src/mac_resource.c \
 	src/term_tailnet.c src/term_font.c src/term_vt.c src/term_pty.c src/term_console.c src/term_ui.c \
-	src/mac_movie.c src/mac_movie_play.c src/movie_window.c src/quake_launch.c src/quake_session.c
+	src/mac_movie.c src/mac_movie_play.c src/movie_window.c src/quake_launch.c src/quake_data.c src/quake_session.c
 
 CORE += src/osa.c src/osa_events.c src/osa_json.c src/osa_bridge.c src/osa_script.c src/osa_session.c src/osa_ipc.c
 

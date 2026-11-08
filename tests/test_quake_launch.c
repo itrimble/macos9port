@@ -1,4 +1,5 @@
 #include "quake_launch.h"
+#include "quake_data.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -76,6 +77,32 @@ int main(int argc, char **args) {
         CHECK(quake_launch_resolve_demo(&q, exe, home) == 0);
         CHECK(q.arena_demo && !strcmp(q.game, "demoq3"));
     }
+#ifdef __APPLE__
+    { /* The demo is found in the volume, verified, and installed; wrong or tampered files never are. */
+        static const char body[] = "os999 quake data fixture";
+        static const char sha[] = "475815b56dc74d836c50d50e2752a29de9f90be76eaa8ecbfc474dbd34553445";
+        char vol[512], dl[512], inst[512], bad[512];
+        snprintf(vol, sizeof vol, "%s/volume", root); mkdir(vol, 0755);
+        snprintf(dl, sizeof dl, "%s/Downloads", vol); mkdir(dl, 0755);
+        snprintf(inst, sizeof inst, "%s/Library/Application Support/OS999/Quake3/demoq3/pak0.pk3", home);
+        snprintf(bad, sizeof bad, "%s/pak0.pk3", dl);
+        FILE *f = fopen(bad, "wb"); fputs("os999 quake data tampered", f); fclose(f);
+        const char *const dirs[] = {dl};
+        off_t size = (off_t)(sizeof body - 1);
+        CHECK(quake_data_import(home, dirs, 1, size, sha) == -1);   /* tampered, same size */
+        CHECK(access(inst, F_OK) != 0);
+        f = fopen(bad, "wb"); fwrite(body, 1, size, f); fclose(f);
+        CHECK(quake_data_check(bad, size, sha) && !quake_data_check(bad, size + 1, sha));
+        CHECK(quake_data_import(home, dirs, 1, size, sha) == 0);    /* installed */
+        CHECK(quake_data_check(inst, size, sha));
+        struct stat st; CHECK(!stat(inst, &st) && (st.st_mode & 077) == 0);
+        CHECK(quake_data_import(home, dirs, 1, size, sha) == 1);    /* already installed */
+        unlink(inst);
+        snprintf(p, sizeof p, "%s.part", inst); CHECK(access(p, F_OK) != 0);
+        CHECK(!quake_data_demo_ok(bad));                            /* not the real demo */
+        CHECK(quake_data_import_demo(home, vol) == -1);
+    }
+#endif
     unsetenv("OS999_QUAKE3_DATA");
     printf("quake launch: %d checks, %d failures\n", checks, failures);
     return failures != 0;

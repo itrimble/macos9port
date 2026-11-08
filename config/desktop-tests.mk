@@ -246,9 +246,9 @@ test-system-icons: build/test_system_icon_positions build/test_system_icon_drag
 	./build/test_system_icon_drag
 test: test-system-icons
 
-build/test_quake_surface: src/control_panel_store.c include/native_settings.h include/control_panel_store.h $(STORAGE_A) src/application_probe.c include/application_probe.h tests/test_quake_surface.c src/quake_session.c src/native_launch.c src/runtime_bridge.c src/mac_resource.c src/quake_launch.c include/os999_quake_bridge.h include/native_launch.h
+build/test_quake_surface: src/control_panel_store.c include/native_settings.h include/control_panel_store.h $(STORAGE_A) src/application_probe.c include/application_probe.h tests/test_quake_surface.c src/quake_session.c src/native_launch.c src/runtime_bridge.c src/mac_resource.c src/quake_launch.c src/quake_data.c include/quake_data.h include/os999_quake_bridge.h include/native_launch.h
 	mkdir -p build
-	$(CC) $(CFLAGS) -Isrc -o $@ tests/test_quake_surface.c src/control_panel_store.c src/native_launch.c src/application_probe.c src/runtime_bridge.c src/mac_resource.c src/quake_launch.c $(STORAGE_LINK) -pthread
+	$(CC) $(CFLAGS) -Isrc -o $@ tests/test_quake_surface.c src/control_panel_store.c src/native_launch.c src/application_probe.c src/runtime_bridge.c src/mac_resource.c src/quake_launch.c src/quake_data.c $(STORAGE_LINK) -pthread
 .PHONY: test-quake-surface
 test-quake-surface: build/test_quake_surface
 	./build/test_quake_surface

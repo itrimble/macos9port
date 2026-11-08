@@ -70,8 +70,8 @@ test-tailnet: build/os999-tailnet
 	python3 tests/test_tailnet.py
 
 
-build/test_quake_launch: src/quake_launch.c tests/test_quake_launch.c include/quake_launch.h
+build/test_quake_launch: src/quake_launch.c src/quake_data.c tests/test_quake_launch.c include/quake_launch.h include/quake_data.h
 	mkdir -p build
-	$(CC) $(CFLAGS) -o $@ src/quake_launch.c tests/test_quake_launch.c
+	$(CC) $(CFLAGS) -o $@ src/quake_launch.c src/quake_data.c tests/test_quake_launch.c
 
 test: build/test_quake_launch

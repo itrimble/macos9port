@@ -1,5 +1,6 @@
 #include "session_int.h"
 #include "quake_launch.h"
+#include "quake_data.h"
 #include "native_launch.h"
 #include "os999_quake_bridge.h"
 #include <errno.h>
@@ -98,7 +99,10 @@ static const NativeSurfaceBackend backend = {
 
 /* OS999 > Quake III Arena: start the separately built, GPL-2 engine as its own
  * process. Nothing from Quake links into OS999. */
-static int open_quake(Session *s, int demo) {
+/* mode 0: full game. 1: Arena demo. 2: Applications icon: the full game when its data is installed,
+ * otherwise the demo. */
+static int open_quake(Session *s, int mode) {
+    int demo = mode == 1;
     if (native_surface_active()) {
         dialog_info(s, "Quake III Arena", "Close the current guest application first.");
         return -1;
@@ -114,14 +118,20 @@ static int open_quake(Session *s, int demo) {
     char *slash = strrchr(exe, '/');
     if (slash) *slash = 0;
     QuakeLaunch q;
-    int ready = demo ? quake_launch_resolve_demo(&q, exe[0] ? exe : NULL, getenv("HOME"))
-                     : quake_launch_resolve(&q, exe[0] ? exe : NULL, getenv("HOME"));
+    const char *home = getenv("HOME");
+    int ready = quake_launch_resolve(&q, exe[0] ? exe : NULL, home);
+    if (mode == 2 && ready != -1 && ready != 0) demo = 1; /* no retail data: use the demo */
+    if (demo) {
+        ready = quake_launch_resolve_demo(&q, exe[0] ? exe : NULL, home);
+        if (ready == -3 && quake_data_import_demo(home, s->root) >= 0) /* found a verified copy */
+            ready = quake_launch_resolve_demo(&q, exe[0] ? exe : NULL, home);
+    }
     if (ready == -1) {
         dialog_info(s, "Quake III Arena", "The Quake III engine is not installed. Build quake/ and package it with make app.");
         return -1;
     }
     if (ready == -3) {
-        dialog_info(s, "Quake III Arena Demo", "Requires the original Arena 1.11 demo pak0.pk3 in ~/Library/Application Support/OS999/Quake3/demoq3. Local play only; modified data is rejected.");
+        dialog_info(s, "Quake III Arena Demo", "Put the original Arena 1.11 demo pak0.pk3 in this volume's Downloads or Documents folder and open Quake again. OS999 checks and installs it. Local play only; modified data is rejected.");
         return -1;
     }
     if (ready == -2) {
@@ -172,4 +182,5 @@ static int open_quake(Session *s, int demo) {
 }
 
 int session_open_quake(Session *s) { return open_quake(s, 0); }
+int session_open_quake_app(Session *s) { return open_quake(s, 2); }
 int session_open_quake_demo(Session *s) { return open_quake(s, 1); }

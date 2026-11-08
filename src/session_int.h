@@ -18,6 +18,7 @@ void session_open_sit(Session *s, const char *rel);
 void dialog_info(Session *s, const char *title, const char *body);
 int session_open_quake(Session *s);
 int session_open_quake_demo(Session *s);
+int session_open_quake_app(Session *s); /* the Applications icon: full game, else the demo */
 void dialog_accept(Session *s);
 void open_item(Session *s, Window *w, int index);
 void select_only(Window *w, int index);

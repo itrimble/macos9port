@@ -26,7 +26,7 @@ static int named(Window *w, const char *name) {
 static void catalog_checks(Session *s) {
     CHECK(!open_folder(s, "Applications"));
     Window *apps = &s->win[s->nwin - 1];
-    for (int app = NATIVE_TERMINAL; app <= NATIVE_CONTROLS; app++) {
+    for (int app = NATIVE_TERMINAL; app <= NATIVE_QUAKE; app++) {
         const char *path = native_catalog_path(app);
         CHECK(native_catalog_id(s->root, path) == app);
         int i = named(apps, strrchr(path, '/') + 1);
