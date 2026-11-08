@@ -386,7 +386,9 @@ int finder_edit_paint(Fb *fb, const Session *s, const Window *w, int index, int 
         fb_fill(fb, tx + a, y - 1, b - a, lh + 2, highlight);
     }
     fb_text(fb, tx, y, C_BLACK, s->edit_buf);
-    if (hi == lo && ((s->input_now_ms - s->edit_since) / 530u) % 2u == 0)   /* the caret blinks */
+    uint32_t period = s->cursor_blink_set ? (uint32_t)(s->cursor_blink_ms > 0 ? s->cursor_blink_ms : 0) : 530u;
+    int show_caret = !period || (((s->input_now_ms - s->edit_since) / period) % 2u == 0);
+    if (hi == lo && show_caret)   /* the caret blinks */
         fb_fill(fb, tx + fb_text_width_n(s->edit_buf, s->edit_caret), y - 1, 1, lh + 1, C_BLACK);
     return 1;
 }

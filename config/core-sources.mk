@@ -6,3 +6,5 @@ CORE := src/system_icon_positions.c src/finder_system_icons.c src/finder_icon_po
 	src/mac_movie.c src/mac_movie_play.c src/movie_window.c src/quake_launch.c src/quake_session.c
 
 CORE += src/osa.c src/osa_events.c src/osa_json.c src/osa_bridge.c src/osa_script.c src/osa_session.c src/osa_ipc.c
+
+CORE += src/control_panel_store.c src/cdev_registry.c src/cdev_ui.c src/cdev_general.c src/cdev_sound.c src/cdev_appearance.c src/control_panels.c src/control_panels_input.c

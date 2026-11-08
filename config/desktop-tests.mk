@@ -310,3 +310,15 @@ build/test_quicktime: src/quicktime_decode.c src/quicktime_decode.h src/quicktim
 .PHONY: test-quicktime
 test-quicktime: build/test_quicktime
 	sh scripts/test-quicktime-fixtures.sh
+build/fixture_cdev.so: tests/fixture_cdev_plugin.c include/os999_cdev.h include/control_panel_store.h include/draw.h include/ospi.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -shared -fPIC tests/fixture_cdev_plugin.c -o $@
+
+build/test_controlpanels: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_controlpanels.c $(HDRS) $(STARTUP_HDR)
+	mkdir -p build
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_controlpanels.c $(FT_LIBS) -lm $(NET_LIBS)
+
+.PHONY: test-controlpanels
+test-controlpanels: build/test_controlpanels build/fixture_cdev.so
+	./build/test_controlpanels build/fixture_cdev.so assets/icons/ospi-icons.icl8
+test: test-controlpanels

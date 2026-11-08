@@ -2,6 +2,9 @@
 #include <SDL.h>
 #include "desktop_bt_host.h"
 #include "session_int.h"
+#include "audio_service.h"
+#include "control_panel_store.h"
+#include "control_panels.h"
 #include "desktop_host.h"
 #include "desktop_sound.h"
 #include "media_player_panel.h"
@@ -52,6 +55,21 @@ static void find_sounds(char *out, size_t capacity) {
     snprintf(out, capacity, "assets/sounds/classic9");
 }
 
+static void cp_audio_set_volume(int percent) {
+    int pct = percent < 0 ? 0 : percent > 100 ? 100 : percent;
+    audio_set_bus_volume(AUDIO_BUS_SYSTEM, (float)pct / 100.0f);
+}
+
+static void cp_audio_set_muted(int muted) {
+    (void)desktop_sound_set_enabled(!muted);
+}
+
+static const ControlPanelsAudioHooks k_cp_audio_hooks = {
+    .set_volume = cp_audio_set_volume,
+    .set_muted = cp_audio_set_muted,
+    .play_sound = NULL
+};
+
 void desktop_host_init(const char *volume) {
     char sounds[4096], preference[OSPI_PATH + 32];
     previous_menu = -1;
@@ -60,11 +78,25 @@ void desktop_host_init(const char *volume) {
     media_panel_init_hooks();
     desktop_bt_host_init();
     quicktime_install_backend();
+    control_panels_set_audio_hooks(&k_cp_audio_hooks);
     int n = snprintf(preference, sizeof preference, "%s/.os999-sound", volume);
     if (n <= 0 || (size_t)n >= sizeof preference) return;
     if (!desktop_sound_init(sounds, preference))
         fprintf(stderr, "OS999 Stylized: desktop sounds unavailable\n");
-    (void)desktop_sound_play(DESKTOP_SOUND_STARTUP);
+    int play_chime = 1;
+    os999_cp_store_t store;
+    if (os999_cp_store_init(&store, volume) == 0) {
+        if (os999_cp_store_load(&store) == 0) {
+            int vol = os999_cp_store_get_int(&store, "sound", "volume", 80);
+            cp_audio_set_volume(vol);
+            if (os999_cp_store_has(&store, "sound", "muted"))
+                (void)desktop_sound_set_enabled(!os999_cp_store_get_bool(&store, "sound", "muted", 0));
+            play_chime = os999_cp_store_get_bool(&store, "sound", "startup_chime", 1);
+        }
+        os999_cp_store_destroy(&store);
+    }
+    if (play_chime)
+        (void)desktop_sound_play(DESKTOP_SOUND_STARTUP);
 }
 
 void desktop_host_tick(Session *s, int guest_active) {
@@ -81,6 +113,11 @@ void desktop_host_tick(Session *s, int guest_active) {
         s->sound_toggle_request = 0;
         if (!desktop_sound_set_enabled(!desktop_sound_enabled()))
             fprintf(stderr, "OS999 Stylized: could not save sound preference\n");
+        s->sound_muted = !desktop_sound_enabled();
+    }
+    if (s->volume_sync_request) {
+        s->volume_sync_request = 0;
+        cp_audio_set_volume(s->system_volume);
     }
     if (s->sound_preview_request >= 0) {
         int ev = s->sound_preview_request;
@@ -90,7 +127,7 @@ void desktop_host_tick(Session *s, int guest_active) {
     s->host_sound_enabled = desktop_sound_enabled();
     menu_set_sound_enabled(s->host_sound_enabled);
     if (s->dialog && !previous_dialog)
-        (void)desktop_sound_play(DESKTOP_SOUND_ALERT);
+        (void)desktop_sound_play_named(s->alert_sound[0] ? s->alert_sound : "alert.beep");
     else if (s->menu >= 0 && previous_menu < 0)
         (void)desktop_sound_play(DESKTOP_SOUND_MENU_OPEN);
     else if (s->menu < 0 && previous_menu >= 0)

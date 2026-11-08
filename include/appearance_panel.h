@@ -5,6 +5,22 @@
 #include "draw.h"
 
 enum { APPEARANCE_DESKTOP_TAB, APPEARANCE_THEMES_TAB };
+
+typedef struct {
+    int (*active)(void);
+    int (*can_open)(void);
+    int (*regions)(const Session *session, Rect out[2]);
+    void (*close)(void);
+    void (*deactivate)(void);
+    void (*blur)(void);
+    void (*draw)(Session *session, Fb *fb);
+    int (*down)(Session *session, int x, int y, int clicks);
+    int (*context)(Session *session, int x, int y);
+    int (*key)(Session *session, int key, int mods);
+} AppearancePanelDelegate;
+
+void appearance_panel_set_delegate(const AppearancePanelDelegate *delegate);
+void appearance_panel_close_local(void);
 void appearance_panel_open_controls(Session *session);
 void appearance_panel_open(Session *session, int tab);
 int appearance_panel_active(void);

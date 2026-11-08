@@ -51,7 +51,8 @@ enum { CMD_THEME_BASE = 200, CMD_THEME_LAST = 215, CMD_THEME_NEXT = 216 };
 enum { CMD_WALLPAPER_BASE = 300, CMD_WALLPAPER_LAST = 359,
        CMD_WALLPAPER_PREVIOUS = 400, CMD_WALLPAPER_NEXT = 401,
        CMD_APPEARANCE_DESKTOP = 410, CMD_CONTROL_PANELS = 411,
-       CMD_APPEARANCE_THEMES = 412, MENU_APPEARANCE = 6, WALLPAPERS_PER_PAGE = 10 };
+       CMD_APPEARANCE_THEMES = 412, CMD_CP_GENERAL = 413, CMD_CP_SOUND = 414,
+       MENU_APPEARANCE = 6, WALLPAPERS_PER_PAGE = 10 };
 enum { CMD_GET_INFO = 420, CMD_SELECT_ALL = 421, CMD_COPY = 422, CMD_CLOSE_ALL = 423, CMD_STANDARD_ICON = 424,
        CMD_VIEW_ICONS = 430, CMD_VIEW_LIST = 431, CMD_SORT_NAME = 432, CMD_SORT_KIND = 433,
        CMD_HELP_KEYS = 440, CMD_HELP_STATUS = 441 };
@@ -251,6 +252,10 @@ struct Session {
     char type_buf[32];
     int clip_out;
     char info_rel[OSPI_PATH];
+    void *cp_store;
+    int cursor_blink_ms, cursor_blink_set, menu_blink_count, desktop_pattern;
+    int system_volume, sound_muted, startup_chime_enabled, volume_sync_request;
+    char alert_sound[32];
 };
 
 typedef struct {
