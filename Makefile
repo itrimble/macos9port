@@ -149,10 +149,13 @@ build/test_mac_getnewpalette: $(RUNTIME_OBJ) tests/test_mac_getnewpalette.c $(RU
 build/test_mac_palette_activation: $(RUNTIME_OBJ) tests/test_mac_palette_activation.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_palette_activation.c $(CPUOBJ) -lm -o $@
 
+build/test_mac_pict_depths: $(RUNTIME_OBJ) tests/test_mac_pict_depths.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_pict_depths.c $(CPUOBJ) -lm -o $@
+
 build/test_mac_numconv: $(RUNTIME_OBJ) tests/test_mac_numconv.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_numconv.c $(CPUOBJ) -lm -o $@
 
-test: build/test_mac_numconv build/test_mac_help build/test_mac_appleevents build/test_mac_window_colors build/test_mac_setorigin build/test_mac_getnewpalette build/test_mac_palette_activation
+test: build/test_mac_numconv build/test_mac_help build/test_mac_appleevents build/test_mac_window_colors build/test_mac_setorigin build/test_mac_getnewpalette build/test_mac_palette_activation build/test_mac_pict_depths
 
 build/test_mac_sound: $(RUNTIME_OBJ) tests/test_mac_sound.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sound.c $(CPUOBJ) -lm -o $@
@@ -443,6 +446,7 @@ test: build/test_os999_startup build/test_ospi build/test_archive_install build/
 	./build/test_mac_setorigin
 	./build/test_mac_getnewpalette
 	./build/test_mac_palette_activation
+	./build/test_mac_pict_depths
 	./build/test_mac_sound
 	./build/test_mac_sound_double
 	./build/test_mac_sound_resample

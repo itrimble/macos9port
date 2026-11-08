@@ -41,15 +41,23 @@ static int unpack(Reader*r,unsigned row,unsigned height,uint8_t *out){
         if(written!=row)return reject(r,"PackBits scanline has the wrong decoded length.");
     }return 1;
 }
+/* The palette index of pixel (x, y), counted from the PixMap's bounds origin, in a row of `bits`-bit pixels packed
+ * most-significant-bits first. Bits past the last pixel of a row are padding, not color data. */
+static unsigned index_at(const uint8_t*decoded,unsigned row,unsigned bits,unsigned x,unsigned y){
+    unsigned offset=x*bits;
+    return (decoded[(size_t)y*row+offset/8]>>(8-bits-offset%8))&((1u<<bits)-1u);
+}
 /* Ceiling division handles rectangles extending left/above the picture. */
 static int ceil_ratio(int64_t n,int d){return (int)(n>=0?(n+d-1)/d:n/d);}
 static int bitmap(Reader*r,Box frame,Box clip,MacPictImage*out,const MacPictPalette*palette,size_t *budget){
     const uint8_t*p=take(r,46);if(!p)return 0;
     unsigned row=u16(p)&0x3fff;Box bounds=box(p+2);
+    unsigned bits=u16(p+28); /* pixelSize: indexed PixMaps of 1, 2, 4 or 8 bits per pixel */
     if((u16(p)&0xc000)!=0x8000 || !row || (row&1) || !positive(bounds) ||
-       bounds.r-bounds.l>(int)row || u16(p+10)!=0 || u16(p+12)!=0 || u32(p+14)!=0 ||
-       u16(p+26)!=0 || u16(p+28)!=8 || u16(p+30)!=1 || u16(p+32)!=8 || u32(p+34)!=0 || u32(p+42)!=0)
-        return reject(r,"PICT requires unpacked-layout indexed8 PixMaps with default packing.");
+       u16(p+10)!=0 || u16(p+12)!=0 || u32(p+14)!=0 ||
+       u16(p+26)!=0 || !(bits==1 || bits==2 || bits==4 || bits==8) || u16(p+30)!=1 || u16(p+32)!=bits || u32(p+34)!=0 || u32(p+42)!=0 ||
+       (uint64_t)(bounds.r-bounds.l)*bits>(uint64_t)row*8)
+        return reject(r,"PICT requires unpacked-layout indexed PixMaps of 1, 2, 4 or 8 bits with default packing.");
     size_t pixels=(size_t)row*(unsigned)(bounds.b-bounds.t);
     if(pixels>PIXELS || pixels>PIXELS*2u-*budget)return reject(r,"PICT decoded pixel budget exceeded.");
     *budget+=pixels;
@@ -69,7 +77,7 @@ static int bitmap(Reader*r,Box frame,Box clip,MacPictImage*out,const MacPictPale
     if(!unpack(r,row,(unsigned)(bounds.b-bounds.t),decoded)){free(decoded);return 0;}
     /* Validate every actual pixel, including clipped pixels; row padding is not color data. */
     for(int y=0;y<bounds.b-bounds.t;y++)for(int x=0;x<bounds.r-bounds.l;x++)
-        if(!defined[decoded[(size_t)y*row+(unsigned)x]]){free(decoded);return reject(r,"PICT pixels reference undefined source colors.");}
+        if(!defined[index_at(decoded,row,bits,(unsigned)x,(unsigned)y)]){free(decoded);return reject(r,"PICT pixels reference undefined source colors.");}
     Box area=intersection(intersection(frame,clip),dst);
     if(positive(area)){
         int fw=frame.r-frame.l,fh=frame.b-frame.t;
@@ -81,7 +89,7 @@ static int bitmap(Reader*r,Box frame,Box clip,MacPictImage*out,const MacPictPale
             int sx=src.l+(int)(xx*(src.r-src.l)/((int64_t)out->width*(dst.r-dst.l)));
             int sy=src.t+(int)(yy*(src.b-src.t)/((int64_t)out->height*(dst.b-dst.t)));
             size_t at=(size_t)y*out->width+(unsigned)x;
-            out->pixels[at]=mapping[decoded[(size_t)(sy-bounds.t)*row+(unsigned)(sx-bounds.l)]];out->covered[at]=1;
+            out->pixels[at]=mapping[index_at(decoded,row,bits,(unsigned)(sx-bounds.l),(unsigned)(sy-bounds.t))];out->covered[at]=1;
         }
     }
     free(decoded);return 1;
