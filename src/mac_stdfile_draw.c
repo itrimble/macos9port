@@ -1,38 +1,9 @@
 #include "mac_stdfile_int.h"
+#include "mac_dialog_draw.h"
 #include <string.h>
 
-extern const uint8_t font8x8_basic[128][8]; /* existing public-domain font */
-/* Independently authored dialog chrome: not Apple's art or definition procedure. Everything is clipped to the dialog
- * rectangle and the physical screen. */
-typedef struct { MacRuntime *rt; const MacSfState *s; uint8_t dark, light; } Pen;
-
-static void fill(const Pen *p, int l, int t, int r, int b, uint8_t ink) {
-    const MacSfState *s = p->s;
-    if (l < s->left) l = s->left;
-    if (t < s->top) t = s->top;
-    if (r > s->left + s->width) r = s->left + s->width;
-    if (b > s->top + s->height) b = s->top + s->height;
-    if (l < 0) l = 0;
-    if (t < 0) t = 0;
-    if (r > p->rt->screen_width) r = p->rt->screen_width;
-    if (b > p->rt->screen_height) b = p->rt->screen_height;
-    uint8_t *ram = mac_cpu_ram(p->rt->cpu);
-    for (int y = t; y < b; y++)
-        for (int x = l; x < r; x++) ram[p->rt->screen_base + (uint32_t)y * p->rt->screen_row_bytes + (uint32_t)x] = ink;
-}
-static void box(const Pen *p, int l, int t, int r, int b, uint8_t ink) {
-    fill(p, l, t, r, t + 1, ink); fill(p, l, b - 1, r, b, ink);
-    fill(p, l, t, l + 1, b, ink); fill(p, r - 1, t, r, b, ink);
-}
-static void text(const Pen *p, int x, int y, const char *s, unsigned n, uint8_t ink, int dim) {
-    for (unsigned i = 0; i < n; i++) {
-        unsigned c = (unsigned char)s[i]; if (c >= 128) c = '?';
-        for (int row = 0; row < 8; row++)
-            for (int bit = 0; bit < 8; bit++)
-                if ((font8x8_basic[c][row] & (1u << bit)) && !(dim && ((bit + row) & 1)))
-                    fill(p, x + (int)i * 8 + bit, y + row, x + (int)i * 8 + bit + 1, y + row + 1, ink);
-    }
-}
+/* Independently authored dialog chrome: not Apple's art or definition procedure (shared primitives: mac_dialog_draw.c). */
+typedef struct { MacPen pen; const MacSfState *s; } Pen;
 static void item_rect(const MacSfState *s, const MacDitlItem *it, int *l, int *t, int *r, int *b) {
     *l = s->left + it->left; *t = s->top + it->top; *r = s->left + it->right; *b = s->top + it->bottom;
 }
@@ -72,60 +43,46 @@ int mac_stdfile_scroll_zone(const MacSfState *s, int x, int y) {
     return 0;
 }
 static void button(const Pen *p, const MacDitlItem *it, unsigned number, int enabled, int pressed) {
-    const MacSfState *s = p->s; int l, t, r, b; item_rect(s, it, &l, &t, &r, &b);
-    uint8_t face = pressed ? p->dark : p->light, ink = pressed ? p->light : p->dark;
-    fill(p, l, t, r, b, face);
-    box(p, l, t, r, b, p->dark);
-    fill(p, l, t, l + 1, t + 1, face); fill(p, r - 1, t, r, t + 1, face);       /* rounded corners */
-    fill(p, l, b - 1, l + 1, b, face); fill(p, r - 1, b - 1, r, b, face);
-    if (number == SF_OPEN && enabled) box(p, l - 3, t - 3, r + 3, b + 3, p->dark); /* the default button */
-    unsigned n = it->length; int w = (int)n * 8;
-    text(p, l + (r - l - w) / 2, t + (b - t - 8) / 2, (const char *)it->data, n, ink, !enabled);
+    int l, t, r, b; item_rect(p->s, it, &l, &t, &r, &b);
+    mac_pen_button(&p->pen, l, t, r, b, it->data, it->length, enabled, pressed, number == SF_OPEN && enabled);
 }
 static void list_area(const Pen *p, const MacDitlItem *it) {
     const MacSfState *s = p->s; int l, t, r, b; item_rect(s, it, &l, &t, &r, &b);
-    fill(p, l, t, r, b, p->light); box(p, l, t, r, b, p->dark);
+    mac_pen_fill(&p->pen, l, t, r, b, p->pen.light); mac_pen_box(&p->pen, l, t, r, b, p->pen.dark);
     unsigned chars = (unsigned)(r - l - 8) / 8;
     for (unsigned i = 0; i < s->list.rows; i++) {
         unsigned index = s->list.top + i; if (index >= s->list.count) break;
         const char *name = s->list.entries[index].name; unsigned n = (unsigned)strlen(name); if (n > chars) n = chars;
         int y = t + 1 + (int)i * SF_ROW, selected = (int)index == s->list.selected;
         if (y + SF_ROW > b) break;
-        if (selected) fill(p, l + 1, y, r - 1, y + SF_ROW, p->dark);
-        text(p, l + 4, y + (SF_ROW - 8) / 2, name, n, selected ? p->light : p->dark, 0);
+        if (selected) mac_pen_fill(&p->pen, l + 1, y, r - 1, y + SF_ROW, p->pen.dark);
+        mac_pen_text(&p->pen, l + 4, y + (SF_ROW - 8) / 2, name, n, selected ? p->pen.light : p->pen.dark, 0);
     }
 }
 static void arrow(const Pen *p, int l, int t, int r, int b, int up) {
-    box(p, l, t, r, b, p->dark);
+    mac_pen_box(&p->pen, l, t, r, b, p->pen.dark);
     int cx = (l + r) / 2, cy = (t + b) / 2;
     for (int k = 0; k < 4; k++) {
         int y = up ? cy - 2 + k : cy + 1 - k;
-        fill(p, cx - k, y, cx + k + 1, y + 1, p->dark);
+        mac_pen_fill(&p->pen, cx - k, y, cx + k + 1, y + 1, p->pen.dark);
     }
 }
 static void scroll_bar(const Pen *p, const MacDitlItem *it) {
     const MacSfState *s = p->s; int l, t, r, b; item_rect(s, it, &l, &t, &r, &b);
-    fill(p, l, t, r, b, p->light); box(p, l, t, r, b, p->dark);
+    mac_pen_fill(&p->pen, l, t, r, b, p->pen.light); mac_pen_box(&p->pen, l, t, r, b, p->pen.dark);
     arrow(p, l, t, r, t + SF_ROW, 1); arrow(p, l, b - SF_ROW, r, b, 0);
     unsigned max = mac_sflist_max_top(&s->list);
     if (!max) return; /* everything fits: no thumb */
     unsigned track = (unsigned)(b - t - 2 * SF_ROW), thumb = track * s->list.rows / s->list.count; if (thumb < SF_ROW) thumb = SF_ROW;
     int from = t + SF_ROW + (int)((track - thumb) * s->list.top / max);
-    fill(p, l + 1, from, r - 1, from + (int)thumb, p->dark);
-    fill(p, l + 3, from + 2, r - 3, from + (int)thumb - 2, p->light);
+    mac_pen_fill(&p->pen, l + 1, from, r - 1, from + (int)thumb, p->pen.dark);
+    mac_pen_fill(&p->pen, l + 3, from + 2, r - 3, from + (int)thumb - 2, p->pen.light);
 }
 void mac_stdfile_draw(MacRuntime *rt, const MacSfState *s) {
-    Pen pen = { rt, s, 0, 0 };
-    unsigned min = UINT32_MAX, max = 0;
-    for (unsigned i = 0; i < 256; i++) {
-        uint32_t c = rt->palette[i]; unsigned v = ((c >> 16) & 255) + ((c >> 8) & 255) + (c & 255);
-        if (v < min) { min = v; pen.dark = (uint8_t)i; }
-        if (v >= max) { max = v; pen.light = (uint8_t)i; }
-    }
+    Pen pen = { {0}, s };
+    mac_pen_init(&pen.pen, rt, s->left, s->top, s->width, s->height);
     const Pen *p = &pen;
-    fill(p, s->left, s->top, s->left + s->width, s->top + s->height, p->light);
-    box(p, s->left, s->top, s->left + s->width, s->top + s->height, p->dark);
-    box(p, s->left + 3, s->top + 3, s->left + s->width - 3, s->top + s->height - 3, p->dark);
+    mac_pen_frame(&p->pen);
     for (unsigned i = 0; i < s->ditl.count; i++) {
         const MacDitlItem *it = &s->ditl.items[i];
         unsigned number = i + 1; int l, t, r, b; item_rect(s, it, &l, &t, &r, &b);
@@ -137,24 +94,20 @@ void mac_stdfile_draw(MacRuntime *rt, const MacSfState *s) {
             /* The item's own text wins; the prompt argument is only the fallback for a template item with none. */
             const char *msg = it->length ? (const char *)it->data : s->prompt;
             unsigned n = it->length ? it->length : (unsigned)strlen(s->prompt), fit = (unsigned)(r - l) / 8;
-            text(p, l, t, msg, n < fit ? n : fit, p->dark, 0);
+            mac_pen_text(&p->pen, l, t, msg, n < fit ? n : fit, p->pen.dark, 0);
         } else if (number == SF_DISK) {
             /* The disk name starts clear of the scroll bar, which the template's item rectangle overlaps. */
             int from = l;
             if (s->ditl.count >= SF_SCROLL) { const MacDitlItem *sb = &s->ditl.items[SF_SCROLL - 1]; if (s->left + sb->right + 2 > from) from = s->left + sb->right + 2; }
-            text(p, from, t + 2, s->volume, (unsigned)strlen(s->volume), p->dark, 0);
+            mac_pen_text(&p->pen, from, t + 2, s->volume, (unsigned)strlen(s->volume), p->pen.dark, 0);
         }
-        else if (it->kind == MAC_ITEM_USER && b - t == 1) fill(p, l, t, r, b, p->dark); /* divider line */
-        else if (it->kind == MAC_ITEM_STATIC && it->length) text(p, l, t, (const char *)it->data, it->length, p->dark, 0);
+        else if (it->kind == MAC_ITEM_USER && b - t == 1) mac_pen_fill(&p->pen, l, t, r, b, p->pen.dark); /* divider line */
+        else if (it->kind == MAC_ITEM_STATIC && it->length) mac_pen_text(&p->pen, l, t, (const char *)it->data, it->length, p->pen.dark, 0);
     }
 }
 void mac_stdfile_save(MacRuntime *rt, MacSfState *s) {
-    uint8_t *ram = mac_cpu_ram(rt->cpu);
-    for (int y = 0; y < s->height; y++)
-        memcpy(s->backdrop + (size_t)y * (size_t)s->width, ram + rt->screen_base + (uint32_t)(s->top + y) * rt->screen_row_bytes + (uint32_t)s->left, (size_t)s->width);
+    MacPen pen; mac_pen_init(&pen, rt, s->left, s->top, s->width, s->height); mac_pen_save(&pen, s->backdrop);
 }
 void mac_stdfile_restore(MacRuntime *rt, const MacSfState *s) {
-    uint8_t *ram = mac_cpu_ram(rt->cpu);
-    for (int y = 0; y < s->height; y++)
-        memcpy(ram + rt->screen_base + (uint32_t)(s->top + y) * rt->screen_row_bytes + (uint32_t)s->left, s->backdrop + (size_t)y * (size_t)s->width, (size_t)s->width);
+    MacPen pen; mac_pen_init(&pen, rt, s->left, s->top, s->width, s->height); mac_pen_restore(&pen, s->backdrop);
 }

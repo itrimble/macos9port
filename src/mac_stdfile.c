@@ -176,16 +176,6 @@ static int begin(MacRuntime *rt, uint32_t sp, uint32_t pc, unsigned selector) {
 }
 
 enum { PENDING = 0, OPEN = 1, CANCEL = 2 };
-static int next_event(MacRuntime *rt, MacEvent *out) {
-    for (unsigned i = 0; i < rt->event_count; i++) {
-        MacEvent e = rt->events[(rt->event_head + i) % 64];
-        if (e.what != 1 && e.what != 2 && e.what != 3 && e.what != 5) continue;
-        for (unsigned j = i; j + 1 < rt->event_count; j++) rt->events[(rt->event_head + j) % 64] = rt->events[(rt->event_head + j + 1) % 64];
-        rt->event_count--; *out = e;
-        return 1;
-    }
-    return 0;
-}
 static uint32_t double_time(MacRuntime *rt) { uint32_t t = rd(rt, 0x2f0, 4); return t && t < 600 ? t : 32; }
 
 static int handle(MacRuntime *rt, MacSfState *s, const MacEvent *e) {
@@ -237,7 +227,7 @@ static void write_reply(MacRuntime *rt, const MacSfState *s, int outcome) {
 static int step(MacRuntime *rt, MacSfState *s) {
     if (!s->drawn) { mac_stdfile_save(rt, s); s->drawn = 1; s->dirty = 1; }
     int outcome = PENDING; MacEvent e;
-    while (outcome == PENDING && next_event(rt, &e)) outcome = handle(rt, s, &e);
+    while (outcome == PENDING && mac_dialog_next_event(rt, &e)) outcome = handle(rt, s, &e);
     if (outcome == PENDING) {
         if (s->dirty) { mac_stdfile_draw(rt, s); s->dirty = 0; }
         mac_cpu_set(rt->cpu, MAC_PC, s->trap_pc);   /* stay in the dialog: run this trap again next slice */
