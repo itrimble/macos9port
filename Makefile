@@ -42,7 +42,7 @@ PRINT_HOST := src/desktop_print_macos.m
 SHORTCUT_HOST := src/desktop_shortcuts_macos.m
 endif
 
-.PHONY: all test app run clean runtime
+.PHONY: all test app run clean runtime test-memory
 
 all: build/ospi build/ospi-runtime build/os999-tailnet
 
@@ -207,6 +207,22 @@ build/test_mac_resource_services: $(RUNTIME_OBJ) tests/test_mac_resource_service
 build/test_mac_memory: $(RUNTIME_OBJ) tests/test_mac_memory.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_memory.c $(CPUOBJ) -lm -o $@
 
+build/test_os999_heap: src/os999_heap.c tests/test_os999_heap.c include/os999_heap.h
+	mkdir -p build
+	$(CC) $(CFLAGS) src/os999_heap.c tests/test_os999_heap.c -o $@
+
+build/test_os999_heap_asan: src/os999_heap.c tests/test_os999_heap.c include/os999_heap.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined src/os999_heap.c tests/test_os999_heap.c -o $@
+
+# Memory manager gate: plain and ASan/UBSan runs of the protected heap, plus the
+# guest Memory Manager trap tests.
+test-memory: build/test_os999_heap build/test_os999_heap_asan build/test_mac_memory
+	./build/test_os999_heap
+	ASAN_OPTIONS=handle_segv=0:handle_sigbus=0 ./build/test_os999_heap_asan
+	./build/test_mac_memory
+	./build/test_os999_heap
+
 build/test_mac_traps: $(RUNTIME_OBJ) tests/test_mac_traps.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_traps.c $(CPUOBJ) -lm -o $@
 
@@ -325,7 +341,7 @@ build/test_mac_system: $(RUNTIME_OBJ) tests/test_mac_system.c $(RUNTIME_HDRS) $(
 build/test_mac_raster: $(RUNTIME_OBJ) tests/test_mac_raster.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_raster.c $(CPUOBJ) -lm -o $@
 
-test: build/test_os999_startup build/test_ospi build/test_archive_install build/test_mac_icon build/test_runtime_bridge build/test_mac_resource build/test_mac_cpu build/test_mac_runtime build/test_mac_resource_services build/test_mac_memory build/test_mac_traps build/test_native_launch build/test_mac_events build/test_mac_quickdraw build/test_runtime_video build/test_runtime_perf build/test_runtime_keys build/test_mac_raster build/test_mac_system build/test_mac_geometry build/test_mac_files build/test_mac_cursor build/test_mac_color build/test_mac_dialog build/test_runtime_cursor build/test_mac_color_port build/test_mac_copybits build/test_mac_palette build/test_mac_color_raster build/test_mac_movie build/test_movie_window build/test_mac_files_write
+test: build/test_os999_startup build/test_ospi build/test_archive_install build/test_mac_icon build/test_runtime_bridge build/test_mac_resource build/test_mac_cpu build/test_mac_runtime build/test_mac_resource_services build/test_mac_memory build/test_os999_heap build/test_mac_traps build/test_native_launch build/test_mac_events build/test_mac_quickdraw build/test_runtime_video build/test_runtime_perf build/test_runtime_keys build/test_mac_raster build/test_mac_system build/test_mac_geometry build/test_mac_files build/test_mac_cursor build/test_mac_color build/test_mac_dialog build/test_runtime_cursor build/test_mac_color_port build/test_mac_copybits build/test_mac_palette build/test_mac_color_raster build/test_mac_movie build/test_movie_window build/test_mac_files_write
 	./build/test_desktop_assets assets/icons/ospi-icons.icl8
 	./build/test_appearance
 	./build/test_appearance_panel
