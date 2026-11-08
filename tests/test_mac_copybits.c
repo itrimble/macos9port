@@ -47,6 +47,29 @@ static void faults(void){for(unsigned test=0;test<5;test++){
  if(test==4){wr(&r,0x1100+42,4,0x3100);wr(&r,0x3100,4,0x3200);wr(&r,0x3200,4,1);wr(&r,0x3206,2,255);wr(&r,0x320a,2,10);}
  CHECK(mac_copybits_service(&r,0xa8ec)==-1&&mac_cpu_halted(r.cpu));for(unsigned j=0;j<32;j++)CHECK(b[0x5000+j]==0xa7);mac_cpu_destroy(r.cpu);
 }}
+/* A palette-linked source table (ctFlags bit 14): pixel -> table entry -> palette index (the entry's value) -> device index. */
+static void palette_linked(void){for(unsigned t=0;t<12;t++){
+ MacRuntime r=setup(8);unsigned char*b=mac_cpu_ram(r.cpu);
+ wr(&r,0x1000+42,4,0x3400);wr(&r,0x3400,4,0x3500);wr(&r,0x3500,4,0x77);wr(&r,0x3504,2,0x4000);wr(&r,0x3506,2,255);
+ for(unsigned j=0;j<256;j++){wr(&r,0x3508+j*8,2,(j*3)%64);wr(&r,0x350a+j*8,2,0xabcd);}   /* rgb differs from the destination table and must be ignored */
+ wr(&r,0x3e00,4,0x3e10);wr(&r,0x3e10,2,64);r.palette_active=0x3e00;for(unsigned v=0;v<64;v++)r.palette_map[v]=(uint8_t)(100+v);
+ for(unsigned i=0;i<32;i++)b[0x4000+i]=(unsigned char)i;memset(b+0x5000,0xa7,32);
+ if(t==1)wr(&r,SP+4,2,1);                    /* not srcCopy */
+ if(t==2)r.palette_active=0;                 /* no activated palette */
+ if(t==3)wr(&r,0x3508+5*8,2,64);             /* pixel 5's entry points past the palette */
+ if(t==4)wr(&r,0x3504,2,0x4001);             /* a reserved flag bit */
+ if(t==5)wr(&r,0x3504,2,0x6000);             /* another reserved bit */
+ if(t==6)wr(&r,0x2104,2,0x4000);             /* the destination table is palette-linked */
+ if(t==7)wr(&r,0x3506,2,3);                  /* the table is too short for pixel 5 */
+ if(t==8)wr(&r,0x3e10,2,5);                  /* a palette too small for the entries pixels use */
+ if(t==9)wr(&r,0x3e00,4,0xfffff0);           /* the palette handle is outside RAM */
+ if(t==10)wr(&r,0x3504,2,0xc000);            /* device table bit together with the link bit: still linked */
+ if(t==11){wr(&r,0x3e10,2,300);wr(&r,0x3508+5*8,2,280);}   /* an index above 255 cannot be a device index */
+ int rc=mac_copybits_service(&r,0xa8ec);
+ if(t==0||t==10){CHECK(rc==1&&mac_cpu_get(r.cpu,MAC_A7)==SP+22);for(unsigned i=0;i<32;i++)CHECK(b[0x5000+i]==(unsigned char)(100+(i*3)%64));}
+ else{CHECK(rc==-1&&mac_cpu_halted(r.cpu));for(unsigned j=0;j<32;j++)CHECK(b[0x5000+j]==0xa7);}   /* a halt leaves the destination alone */
+ mac_cpu_destroy(r.cpu);
+}}
 static void equal_seed(void){for(unsigned test=0;test<5;test++) {
  MacRuntime r=setup(8);uint8_t *b=mac_cpu_ram(r.cpu);for(unsigned i=0;i<32;i++)b[0x4000+i]=(uint8_t)(255-i);
  memset(b+0x5000,0xa7,32);
@@ -63,4 +86,4 @@ static void equal_seed(void){for(unsigned test=0;test<5;test++) {
  else {CHECK(result==-1 && mac_cpu_halted(r.cpu));for(unsigned i=0;i<32;i++)CHECK(b[0x5000+i]==0xa7);CHECK(mac_cpu_get(r.cpu,MAC_A7)==SP);}
  mac_cpu_destroy(r.cpu);
 }}
-int main(void){equal_seed();modes();overlap_scale_mask();port_clip();faults();puts("mac CopyBits tests passed");return 0;}
+int main(void){palette_linked();equal_seed();modes();overlap_scale_mask();port_clip();faults();puts("mac CopyBits tests passed");return 0;}

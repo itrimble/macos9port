@@ -45,11 +45,18 @@ static int image(MacRuntime*rt,uint32_t p,Image*i){
        (uint64_t)w*(unsigned)h>8u*1024*1024)return fail(rt,"CopyBits image exceeds pixel budget.");
     return valid(rt,i->base,(size_t)i->row*(unsigned)h,0);
 }
-static int table_header(MacRuntime*rt,uint32_t h,uint32_t*p){
+/* A color table. Bit 15 of ctFlags (device table: the value fields are ignored) is always fine. Bit 14 marks a palette-linked
+ * table: CopyBits reads each entry's value as an index into the palette attached to the destination window and ignores the
+ * rgb field (Technical Note QD13, which cites Inside Macintosh VI, "Palette Manager"). That meaning is implemented for a
+ * source table only (`linked` is set); on a destination, or with any reserved bit, the table is refused. */
+static int table_header(MacRuntime*rt,uint32_t h,uint32_t*p,int source,int*linked){
     if(!h||valid(rt,h,4,1)<0)return fail(rt,"CopyBits missing indexed color table.");
     *p=rd(rt,h,4);
     if(!*p||valid(rt,*p,8,1)<0)return fail(rt,"CopyBits invalid color table header.");
-    if(rd(rt,*p+4,2)&0x7fff)return fail(rt,"CopyBits palette-linked or custom color table flags unsupported.");
+    unsigned flags=rd(rt,*p+4,2);
+    if(flags&0x3fff)return fail(rt,"CopyBits custom or reserved color table flags unsupported.");
+    *linked=(flags&0x4000)!=0;
+    if(*linked && !source)return fail(rt,"CopyBits palette-linked destination color table unsupported.");
     return 1;
 }
 static unsigned pixel(const unsigned char*ram,Image*i,int x,int y){
@@ -72,6 +79,7 @@ int mac_copybits_service(MacRuntime*rt,uint16_t opcode){
     if(image(rt,rd(rt,sp+18,4),&src)<0||image(rt,rd(rt,sp+14,4),&dst)<0||
        box(rt,rd(rt,sp+10,4),&sr)<0||box(rt,rd(rt,sp+6,4),&dr)<0)return -1;
     if(src.depth!=dst.depth)return fail(rt,"CopyBits mixed pixel depths unsupported.");
+    unsigned palette_count=0,table_size=0;int linked_source=0;
     if(src.depth==8){
         if(rt->trace)for(unsigned n=0;n<2;n++) {
             uint32_t h=n?dst.table:src.table;
@@ -82,13 +90,22 @@ int mac_copybits_service(MacRuntime*rt,uint16_t opcode){
             }
         }
 
-        uint32_t a,b;if(table_header(rt,src.table,&a)<0||table_header(rt,dst.table,&b)<0)return -1;
+        uint32_t a,b;int linked=0,unused=0;
+        if(table_header(rt,src.table,&a,1,&linked)<0||table_header(rt,dst.table,&b,0,&unused)<0)return -1;
+        linked_source=linked;
+        if(linked) { /* each source pixel selects an entry whose value indexes the active window palette; see below */
+            if(mode!=0)return fail(rt,"CopyBits palette-linked source supports srcCopy only.");
+            if(!rt->palette_active||valid(rt,rt->palette_active,4,1)<0||valid(rt,rd(rt,rt->palette_active,4),2,1)<0)
+                return fail(rt,"CopyBits palette-linked source needs an activated window palette.");
+            palette_count=rd(rt,rd(rt,rt->palette_active,4),2);table_size=rd(rt,a+6,2);
+            if(valid(rt,a,8+((size_t)table_size+1)*8,1)<0)return fail(rt,"CopyBits palette-linked color table is truncated.");
+        }
         /* QD13, ctSeed contract: srcCopy with equal source/destination seeds
          * transfers pixel values without consulting RGB entries. An empty
          * source table is therefore usable here; differing seeds still require
          * complete tables and verified color equivalence.
          * https://leopard-adc.pepas.com/technotes/qd/qd_13.html */
-        if(mode!=0 || rd(rt,a,4)!=rd(rt,b,4)) {
+        if(!linked && (mode!=0 || rd(rt,a,4)!=rd(rt,b,4))) {
             if(rd(rt,a+6,2)!=255 || rd(rt,b+6,2)!=255 ||
                valid(rt,a,2056,1)<0 || valid(rt,b,2056,1)<0)
                 return fail(rt,"CopyBits unequal-seed or non-srcCopy transfer requires 256-entry color tables.");
@@ -128,7 +145,14 @@ int mac_copybits_service(MacRuntime*rt,uint16_t opcode){
     for(size_t y=0;y<h;y++)for(size_t x=0;x<w;x++){
         int sx=sr.l+(int)(((int64_t)clip.l+(int)x-dr.l)*sw/dw);
         int sy=sr.t+(int)(((int64_t)clip.t+(int)y-dr.t)*sh/dh);
-        snapshot[y*w+x]=(unsigned char)pixel(ram,&src,sx,sy);
+        unsigned v=pixel(ram,&src,sx,sy);
+        if(linked_source) { /* pixel -> table entry -> palette index -> device index; refuse before writing anything */
+            if(v>table_size){free(snapshot);return fail(rt,"CopyBits palette-linked pixel has no color table entry.");}
+            unsigned index=rd(rt,rd(rt,src.table,4)+8+v*8,2);
+            if(index>=palette_count||index>255){free(snapshot);return fail(rt,"CopyBits palette-linked entry is outside the window palette.");}
+            v=rt->palette_map[index];
+        }
+        snapshot[y*w+x]=(unsigned char)v;
     }
     unsigned bits=dst.depth==8?255:1;
     for(size_t y=0;y<h;y++)for(size_t x=0;x<w;x++){
