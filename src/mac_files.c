@@ -341,6 +341,7 @@ static unsigned block_size(unsigned base, int wd, unsigned selector) {
     case 0xa011: case 0xa012: return 32;
     case 0xa013: case 0xa014: case 0xa015: return 24;
     case 0xa00c: case 0xa00d: case 0xa20c: return 80;
+    case 0xa007: return 64;
     case 0xa209: return 52;
     case 0xa207: return 122;
     case 0xa260: return wd && selector == 9 ? 104 : 52;
@@ -352,7 +353,7 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode) {
     if (opcode == 0xaa52) return mac_fsspec_service(rt, opcode); /* HighLevelFSDispatch */
     unsigned base = opcode & ~0x400u;
     switch (base) {
-    case 0xa000: case 0xa001: case 0xa002: case 0xa003: case 0xa008: case 0xa009:
+    case 0xa000: case 0xa001: case 0xa002: case 0xa003: case 0xa007: case 0xa008: case 0xa009:
     case 0xa00b: case 0xa00c: case 0xa00d: case 0xa011: case 0xa012: case 0xa013:
     case 0xa014: case 0xa015: case 0xa018: case 0xa044: case 0xa207: case 0xa209:
     case 0xa060: case 0xa20c: case 0xa260: break;
@@ -372,6 +373,7 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode) {
     FileState *state = rt->file_state;
     switch (base) {
     case 0xa013: return result(cpu, pb, flush_volume(rt, pb));
+    case 0xa007: return result(cpu, pb, mac_volume_info_basic(rt, pb, state ? state->directory : -1));
     case 0xa207: return result(cpu, pb, mac_volume_info(rt, pb, state ? state->directory : -1));
     case 0xa260: {
         int error = selector == 9 ? root_info(rt,pb) : working_directory(rt,pb);

@@ -154,6 +154,27 @@ int main(void) {
     CHECK(mac_cpu_read(rt.cpu,PB+62,2)==0); /* Read-only virtual capacity. */
     CHECK(call(&rt,0xa607)==-50); /* Async request has no completion adapter. */
 
+    /* PBGetVInfo ($A007): the plain 64-byte volumeParam. The HFS fields at 64 and beyond are not this call's: untouched. */
+    memset(mac_cpu_ram(rt.cpu)+PB+64,0xee,58);
+    put(&rt,18,4,0);put(&rt,22,2,0xffff);put(&rt,28,2,0xffff);
+    CHECK(call(&rt,0xa007)==0);
+    CHECK(mac_cpu_read(rt.cpu,PB+22,2)==0xffff && mac_cpu_read(rt.cpu,PB+38,2)==0x8000 && mac_cpu_read(rt.cpu,PB+40,2)==1);
+    CHECK(mac_cpu_read(rt.cpu,PB+62,2)==0 && mac_cpu_read(rt.cpu,PB+48,4)==512);
+    for(unsigned i=64;i<122;i++)CHECK(mac_cpu_ram(rt.cpu)[PB+i]==0xee);
+    put(&rt,18,4,NAME);put(&rt,22,2,0);put(&rt,28,2,1);                      /* by index 1: the volume name comes back */
+    CHECK(call(&rt,0xa007)==0 && mac_cpu_ram(rt.cpu)[NAME]==10 && !memcmp(mac_cpu_ram(rt.cpu)+NAME+1,"OS Pi Data",10));
+    put(&rt,28,2,2);CHECK(call(&rt,0xa007)==-35);                            /* only one volume */
+    put(&rt,28,2,0);put(&rt,22,2,77);CHECK(call(&rt,0xa007)==-35);           /* unknown volume reference */
+    put(&rt,28,2,0xffff);put(&rt,18,4,0);put(&rt,22,2,0);CHECK(call(&rt,0xa407)==-50);   /* asynchronous */
+    put(&rt,18,4,PB+80);put(&rt,22,2,0);put(&rt,28,2,1);                     /* a name buffer past the 64 bytes is not an overlap */
+    CHECK(call(&rt,0xa007)==0 && mac_cpu_ram(rt.cpu)[PB+80]==10);
+    put(&rt,18,4,PB+40);CHECK(mac_cpu_write(rt.cpu,PB+28,2,1)==0 && (mac_cpu_set(rt.cpu,MAC_A0,PB),mac_file_service(&rt,0xa007)==1) && (int16_t)mac_cpu_read(rt.cpu,PB+16,2)==-50); /* inside it is */
+    {   /* a 64-byte block at the very end of RAM is enough for PBGetVInfo */
+        uint32_t end=4096-64;mac_cpu_set(rt.cpu,MAC_A0,end);
+        CHECK(!mac_cpu_write(rt.cpu,end+18,4,0) && !mac_cpu_write(rt.cpu,end+22,2,0xffff) && !mac_cpu_write(rt.cpu,end+28,2,0xffff));
+        CHECK(mac_file_service(&rt,0xa007)==1 && !mac_cpu_halted(rt.cpu) && mac_cpu_read(rt.cpu,end+16,2)==0 && mac_cpu_read(rt.cpu,end+38,2)==0x8000);
+    }
+
     put(&rt,18,4,NAME); put(&rt,22,2,123);
     CHECK(call(&rt,0xa014)==0);
     CHECK(mac_cpu_read(rt.cpu,PB+22,2)==0xffff);
@@ -273,6 +294,11 @@ int main(void) {
     memset(mac_cpu_ram(rt.cpu)+4000,0x5a,96);
     CHECK(mac_file_service(&rt,0xa260)==-1);CHECK(mac_cpu_halted(rt.cpu));
     for(int i=0;i<96;i++)CHECK(mac_cpu_ram(rt.cpu)[4000+i]==0x5a);
+    mac_cpu_destroy(rt.cpu);
+    rt.cpu=mac_cpu_create(4096);mac_cpu_set(rt.cpu,MAC_A0,4096-60);                 /* fewer than the 64 bytes PBGetVInfo owns */
+    memset(mac_cpu_ram(rt.cpu)+4096-60,0x5a,60);
+    CHECK(mac_file_service(&rt,0xa007)==-1);CHECK(mac_cpu_halted(rt.cpu));
+    for(int i=0;i<60;i++)CHECK(mac_cpu_ram(rt.cpu)[4096-60+i]==0x5a);
     mac_cpu_destroy(rt.cpu);
     rt.cpu=mac_cpu_create(4096);mac_cpu_set(rt.cpu,MAC_A0,3980);
     memset(mac_cpu_ram(rt.cpu)+3980,0x5a,116);

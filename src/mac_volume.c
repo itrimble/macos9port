@@ -111,15 +111,17 @@ int mac_volume_blocks(int directory_fd, uint32_t *blocks) {
 /* Returns an OSErr; dispatcher owns ioResult, D0, and condition codes. All
  * guest outputs are committed only after every validation and scan succeeds.
  */
-int mac_volume_info(MacRuntime *rt, uint32_t pb, int directory_fd) {
-    if (!rt || !rt->cpu || (pb & 1) || !range(rt->cpu, pb, VOLUME_PB_SIZE)) return -50;
+/* `size` is how much of the parameter block the call owns: VOLUME_PB_SIZE for PBHGetVInfo, 64 (the plain volumeParam, ending at
+ * ioVFrBlk) for PBGetVInfo. Nothing at or beyond `size` is read or written, because a PBGetVInfo caller's block is that small. */
+static int volume_info(MacRuntime *rt, uint32_t pb, int directory_fd, size_t size) {
+    if (!rt || !rt->cpu || (pb & 1) || !range(rt->cpu, pb, size)) return -50;
     if (directory_fd < 0) return -35;
     uint8_t *ram = mac_cpu_ram(rt->cpu), *input = ram + pb;
     uint32_t name = get32(input + 18);
     int16_t volume = (int16_t)get16(input + 22), index = (int16_t)get16(input + 28);
     if (index > 1) return -35;
     if (name && (!range(rt->cpu, name, sizeof(volume_name)) ||
-                 ((uint64_t)name < (uint64_t)pb + VOLUME_PB_SIZE &&
+                 ((uint64_t)name < (uint64_t)pb + size &&
                   (uint64_t)name + sizeof(volume_name) > pb))) return -50;
     if (index <= 0) {
         if (index < 0 && name) {
@@ -152,10 +154,12 @@ int mac_volume_info(MacRuntime *rt, uint32_t pb, int directory_fd) {
     put16(out + 66, 1); /* Matches the mounted application drive queue entry. */
     put32(out + 82, metadata.files);
     put32(out + 86, metadata.directories);
-    memcpy(input, out, sizeof(out));
+    memcpy(input, out, size);
     if (name) {
         ram[name] = sizeof(volume_name) - 1;
         memcpy(ram + name + 1, volume_name, sizeof(volume_name) - 1);
     }
     return 0;
 }
+int mac_volume_info(MacRuntime *rt, uint32_t pb, int directory_fd) { return volume_info(rt, pb, directory_fd, VOLUME_PB_SIZE); }
+int mac_volume_info_basic(MacRuntime *rt, uint32_t pb, int directory_fd) { return volume_info(rt, pb, directory_fd, 64); }
