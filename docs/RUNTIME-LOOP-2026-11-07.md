@@ -58,6 +58,8 @@ R04 and G02. Items stay unchecked.
 | `5da36ec` | `PBGetVInfo` (`$A007`). The shared volume-info code takes the size of the block the call owns: the plain call writes only the first 64 bytes, never the HFS fields at 64 and beyond (a caller's block is often only that big). 7 of 7 mutants killed after tests for the 64-byte boundary, a name buffer inside and outside the block, and a block with too little room. |
 | `f2dd086` | Fix to `5da36ec`, found by an automated security review after the commit and reproduced with ASan (`READ of size 122`, heap-buffer-overflow, `tests/test_mac_files.c`): `PBGetVInfo` range-checked 64 bytes but copied a 122-byte scratch buffer from guest RAM, so a block at the very end of RAM made the host read past its allocation. The extra bytes were never written back to the guest, so nothing leaked, but it was a real out-of-bounds read. I had not run ASan on the new tests before committing; all five new tests of this session are now ASan/UBSan clean. |
 | `a588842` | `AnimatePalette` (`$AA9A`; the MPW listing puts each `INLINE` after its declaration, so `$AA99` is `AnimateEntry` and `$AA9B` `GetEntryColor`). It replaces the device colors of the window palette\'s animated entries from a color table, at once, with no redraw. The device index is the one activation chose (for the explicit-and-animated entries Castle uses, the entry\'s own index). A non-animated entry, an inactive palette, bad indices or lengths and a bad source table halt by name, all before the first device entry changes. The palette\'s own stored colors are not rewritten, so a later activation restores them: an interpretation I could not check against the Palette Manager chapter (only the interface listing is local), so it is unverified. 21 mutants: 3 survivors after the first pass were tightened (palette bound, stack message, source range); 2 equivalent survivors remain (a missing palette or a negative entry still halt at a later check). **Castle now runs its whole 20 s probe with no halt.** |
+| `0062f13` | **The cause of Castle's black window: the low-memory clock globals were never written.** `Ticks` (`$16A`) and `Time` (`$20C`) stayed zero for the whole run (RAM dumps at 6 to 45 s all show zero); only the `TickCount` trap followed `rt->ticks`. Sierra's SCI interpreter reads `Ticks` directly (`GetTime` mode 0 is `move.l $16a.w,D0`) and `Time` for its seconds, so every tick- or seconds-based wait in the first room never elapsed. Found by reading the interpreter by its embedded function names, then the `GetTime` code. They are now written from `rt->ticks` at the start of both run entry points (`Time` = a base in seconds since 1904, taken once from the host clock, plus whole elapsed seconds). 11 of 11 mutants on the new test killed after the epoch check was bracketed against the host clock; two survivors are equivalent (a NULL CPU is already tolerated by the write). Monkey Island and Monkey Island 2 stay byte-identical. |
+| `73f519c` | `AnimatePalette` with a NIL window, and with a window that has no palette. With a live clock Castle reaches the call early (0.57 s), while its palette-less splash window is frontmost, and passes NIL. The interface listing available here defines neither case, so both are narrow interpretations, recorded in the source and unverified: NIL selects the frontmost window, and a window without a palette has no animated entries so nothing changes. A NIL with no window, and every other bad argument, still halt by name. |
 
 ## Compatibility profile decision
 
@@ -153,29 +155,19 @@ screen black and the real run cannot show the colour work. The unit tests carry 
 
 ## Castle of Dr. Brain, 8 Nov 2026 (headless only)
 
-Startup completes and the game no longer halts: the 20 s probe ran to its budget (61,675,482 instructions, result 4, "gameplay
-unverified"), up from 2.7 s before this session's InvalRect work. The window (title bar, menus, content area) appears at 4 s and the
-frame changes once more at 6 s, then stays identical to 20 s. The content area is black and the Edit menu is dimmed: the game is
-sitting in its event loop, and why it draws nothing is not yet known. Investigation so far (headless, all measured):
-the 2 s frame is the game's own splash picture (PICT 200, "Castle of Dr. Brain Macintosh Version 1.0") drawn correctly; the
-black window follows it. Ruled out: a long delay (70 s of guest time, frames identical, still silent); a missing update event
-(the game calls BeginUpdate/EndUpdate itself, so an empty update region is correct; `WaitNextEvent` returns one activate event
-at tick 304 and null events after that); a broken colour remap (the cel decoder at `004adab0` reads an identity table at
-`004388db`, and maps colour 0 to black by design); missing data (RESOURCE.MAP/.000/.001, 7.pat, 0.tex, VERSION and
-resource.cfg all open and read). Observed: the game stops reading resources after about 6 s (it never opens RESOURCE.002 or
-.003, which presumably hold the first room's pictures), the offscreen it copies to the window is all index 255 from 3 s on,
-and `AnimatePalette` is called once (254 entries, from the colour table at `00417294`). My reading, not verified: the SCI
-interpreter is parked before the first room, perhaps waiting on a kernel call (sound driver status, a cue, or a clock) that
-we answer differently from a real Mac. Update, same day: the binary carries THINK C function names (a name follows the
-function it names, so a listed address is where the next function starts), which identifies it as Sierra's SCI interpreter. With
-a temporary instruction watch (not committed) the steady loop is, per tick: `KAnimate`, `KGetEvent`, `KWait`, two `KGetTime`,
-`BlastPixMap` (the `CopyBits` caller); `KDrawPic` ran once, `ShowPic` once and the `Iris` transition once; `KDoSound`,
-`KDoSync` and `KPalette` never ran in 12 s. Scripted mouse and key events reach `WaitNextEvent` (mouseDown, mouseUp, two keyDowns
-seen) and the game ignores them. A RAM diff 4 s apart shows only counters ticking at ~60 Hz plus stack. So the interpreter is
-alive, running a room script, and the room's picture never reaches the display buffer: either the picture drawn once was itself
-black, or the `Iris` reveal copies nothing. Not yet known which. The 12x35 `CopyBits` per tick is probably the software cursor. The 20 s capture is silent (peak 0 over 960,000 frames), so
-nothing is claimed about audio. No input was sent: input and play are unverified. Parity: Monkey Island and Monkey Island 2 are
-byte-identical to `baseline/games-outputs-regions`; ASan on Castle (10 s) and on the new tests reports nothing; `make test` exits 0.
+Startup completes and the game runs without a halt. The black window was caused by the frozen low-memory clock (`0062f13`):
+with `Ticks` and `Time` published, the game waits about 20 s of guest time in its first room and then shows the **Sierra logo**
+(frame at 24 s, a headless frame dump of the runtime's own screen; not a window I watched). The 30 s capture is **no longer
+silent**: from about 20 s it carries a varying signal (peak 30,208, roughly 1,000 zero-crossings per second, level changing
+from second to second). That is signal-shaped output from our audio path; I have not listened to it, so whether it is the
+right music is unverified. The ~20 s wait before the logo is also unexplained: I do not know whether a real Mac shows the logo
+sooner. No input was sent in that run; the earlier scripted clicks and keys (before the fix) did nothing, which proved nothing.
+Earlier investigation that led here: the 2 s frame is the game's own splash picture (PICT 200); the binary is Sierra's SCI interpreter with
+embedded THINK C function names (a name follows the function it names; the map is kept outside Git); the interpreter ran its
+main loop (`KAnimate`, `KGetEvent`, `KWait`, `KGetTime`), `KDrawPic` once for picture 802 (a 1,312-byte picture in RESOURCE.000),
+and never called `KDoSound` until the clock ran. Ruled out on the way: a long delay under the frozen clock, a missing update event,
+a broken colour remap, missing data. Parity: Monkey Island and Monkey Island 2 are byte-identical to the previous baseline;
+ASan on Castle (30 s) and on the new tests reports nothing; `make test` exits 0.
 
 ## Next reproducible steps
 
