@@ -36,10 +36,20 @@
 #define BAR_TRACK 0xFF3A4A6Bu
 #define BAR_STRIPE_A 0xFF7E9ED6u
 #define BAR_STRIPE_B 0xFF46689Fu
-#define BAR_LEADING 0xFF5D7DBBu
+#define BAR_EMPTY_ON 0xFF44587Fu
+#define BAR_EMPTY_OFF 0xFF32425Fu
+#define BAR_HEAD 0xFFE8F1FFu
 
 #define BAR_SEGMENTS 24
 #define BAR_GAP 2
+
+/* The bar is one continuous zebra. The bands repeat every 8 pixels, half of
+   them lit, and they advance to the right as the phase grows. */
+#define BAR_STRIPE_PERIOD 8
+#define BAR_STRIPE_ON 4
+/* One pixel every 25 ms is about 40 pixels a second: fast enough to read as
+   motion, slow enough to look like the late-90s striped bar. */
+#define BAR_STRIPE_STEP_MS 25u
 
 void os999_startup_release(void) {
     /* The renderer owns no scratch memory any more. */
@@ -157,8 +167,11 @@ const char *os999_startup_status_text(void) {
 
 double os999_startup_progress(const Os999Startup *s, uint32_t now) {
     if (!s) return 0.0;
-    if (s->ready) return 1.0;
     if (s->phase == OS999_STARTUP_ERROR) return s->progress;
+    /* The bar completes when the intro leaves the spin phase, which only
+       happens once the desktop is genuinely ready. A desktop that exists
+       early does not complete the bar: the fill still crosses the track. */
+    if (s->phase != OS999_STARTUP_SPIN) return 1.0;
     uint32_t elapsed = now - s->phase_started;
     double t = (double)elapsed / (double)SPIN_MS;
     if (t > 1.0) t = 1.0;
@@ -247,15 +260,24 @@ static void draw_background(Fb *fb) {
     }
 }
 
-static void stripe_row(Fb *fb, int x, int y, int width, int row, int phase,
-                       uint32_t a, uint32_t b) {
+/* Zebra bands run diagonally and advance to the right as the phase grows. */
+static int stripe_on(int col, int row, int phase) {
+    int p = (col + row - phase) % BAR_STRIPE_PERIOD;
+    if (p < 0) p += BAR_STRIPE_PERIOD;
+    return p < BAR_STRIPE_ON;
+}
+
+/* Paint one row of the zebra. The column index is absolute inside the track,
+   so the bands run unbroken across the whole bar instead of restarting in
+   every segment. */
+static void zebra_row(Fb *fb, int x, int y, int width, int row, int phase,
+                       uint32_t on_color, uint32_t off_color) {
     int col = 0;
     while (col < width) {
-        int on = ((col + row + phase) % 6) < 3;
+        int on = stripe_on(col, row, phase);
         int run = 1;
-        while (col + run < width &&
-               ((((col + run) + row + phase) % 6) < 3) == on) run++;
-        fb_fill(fb, x + col, y, run, 1, on ? a : b);
+        while (col + run < width && stripe_on(col + run, row, phase) == on) run++;
+        fb_fill(fb, x + col, y, run, 1, on ? on_color : off_color);
         col += run;
     }
 }
@@ -272,28 +294,36 @@ static void draw_progress_bar(Fb *fb, int x, int y, int w, int h,
     fb_fill(fb, x + w - 2, y + 1, 1, h - 2, BAR_BEVEL_DARK);
     int inner_x = x + 2, inner_y = y + 2;
     int inner_w = w - 4, inner_h = h - 4;
-    if (inner_w < BAR_SEGMENTS || inner_h < 2) return;
+    if (inner_w < BAR_STRIPE_PERIOD || inner_h < 2) return;
+    int phase = animate ? (int)((now / BAR_STRIPE_STEP_MS) % BAR_STRIPE_PERIOD) : 0;
+
+    /* The empty track carries a dim zebra, so the bar reads as alive from the
+       first frame and the fill is seen crossing it. */
+    for (int row = 0; row < inner_h; row++)
+        zebra_row(fb, inner_x, inner_y + row, inner_w, row, phase,
+                  BAR_EMPTY_ON, BAR_EMPTY_OFF);
+    /* The filled part is the bright zebra, clipped at the progress edge. */
+    int fill_w = (int)(progress * (double)inner_w);
+    if (fill_w > inner_w) fill_w = inner_w;
+    if (fill_w < 0) fill_w = 0;
+    if (fill_w > 0)
+        for (int row = 0; row < inner_h; row++)
+            zebra_row(fb, inner_x, inner_y + row, fill_w, row, phase,
+                      BAR_STRIPE_A, BAR_STRIPE_B);
+    /* Segment separators sit on top of the zebra, so the bar stays segmented. */
     int seg_w = (inner_w - (BAR_SEGMENTS - 1) * BAR_GAP) / BAR_SEGMENTS;
     if (seg_w < 1) seg_w = 1;
     int total = BAR_SEGMENTS * seg_w + (BAR_SEGMENTS - 1) * BAR_GAP;
     int start_x = inner_x + (inner_w - total) / 2;
-    int phase = animate ? (int)((now / 55u) % 6u) : 0;
-    double filled = progress * (double)BAR_SEGMENTS;
-    for (int i = 0; i < BAR_SEGMENTS; i++) {
-        int seg_x = start_x + i * (seg_w + BAR_GAP);
-        double fill = filled - (double)i;
-        int lit_width = 0;
-        if (fill >= 1.0) lit_width = seg_w;
-        else if (fill > 0.0) lit_width = (int)(fill * seg_w);
-        if (lit_width <= 0) continue;
-        if (fill < 1.0) {
-            /* The leading segment shows how far the current step has come. */
-            fb_fill(fb, seg_x, inner_y, lit_width, inner_h, BAR_LEADING);
-            continue;
-        }
-        for (int row = 0; row < inner_h; row++)
-            stripe_row(fb, seg_x, inner_y + row, lit_width, row, phase,
-                       BAR_STRIPE_A, BAR_STRIPE_B);
+    for (int i = 1; i < BAR_SEGMENTS; i++) {
+        int gx = start_x + i * (seg_w + BAR_GAP);
+        if (gx + BAR_GAP > inner_x + inner_w) break;
+        fb_fill(fb, gx, inner_y, BAR_GAP, inner_h, BAR_TRACK);
+    }
+    /* A bright cap marks the head of the fill. */
+    if (fill_w > 0 && fill_w < inner_w) {
+        int cap = fill_w < 3 ? fill_w : 3;
+        fb_fill(fb, inner_x + fill_w - cap, inner_y, cap, inner_h, BAR_HEAD);
     }
 }
 
@@ -324,8 +354,9 @@ static void render_intro(Fb *fb, const Os999Startup *s, uint32_t now) {
                           WORDMARK, L.word_scale);
     bitmap_draw_scaled(fb, L.tag_x, L.tag_y, TAGLINE_COLOR, TAGLINE, L.tag_scale);
     double progress = os999_startup_progress(s, now);
-    /* Stripes only crawl while real work is still pending. */
-    int animate = !s->reduced_motion && progress < 1.0;
+    /* The bands keep crawling until the desktop takes over the screen. A
+       failure freezes them, so the bar never invents progress. */
+    int animate = !s->reduced_motion && s->phase != OS999_STARTUP_ERROR;
     draw_progress_bar(fb, L.bar_x, L.bar_y, L.bar_w, L.bar_h, progress, now, animate);
     bitmap_draw_scaled(fb, L.status_x, L.status_y, STATUS_COLOR, STATUS_TEXT,
                         L.status_scale);

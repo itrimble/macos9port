@@ -237,6 +237,16 @@ git add src/os999_startup.c tests/test_os999_startup.c
 git commit -m "Add a segmented striped progress bar that tracks real initialization"
 ```
 
+**Implementation note (8 Nov):** the bar shipped differently from the steps
+above, after the live window showed two defects the unit tests did not catch.
+The zebra now runs across the whole track instead of restarting per segment,
+its bands advance to the right (the planned phase scrolled left), the empty
+track carries a dim zebra so the bar is alive before any progress, and the
+fill is clipped at the progress edge instead of stepping segment by segment.
+`os999_startup_progress()` completes when the intro leaves the spin phase, not
+when the desktop session appears, so the fill crosses the track during the
+boot. The bar checks live in their own binary, `tests/test_os999_startup_bar.c`.
+
 ---
 
 ### Task 4: Drop the 3D mesh and its halo

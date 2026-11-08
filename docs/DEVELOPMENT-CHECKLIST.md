@@ -80,6 +80,16 @@ See [the preserved baseline](DEVELOPMENT-BASELINE.md). Newer acceptance evidence
   reaches 1.0 once the desktop is genuinely ready; while work is pending it
   climbs with elapsed time and stops at 0.92. A failure freezes the bar at its
   last value and keeps the retry/close dialog.
+  8 Nov: the bar is a single continuous zebra whose bands crawl to the right
+  at about 40 pixels a second, and the lit part advances to the right with the
+  boot. The empty track carries a dim zebra so the bar reads as alive from the
+  first frame, and a bright cap marks the head of the fill. The bands keep
+  crawling until the desktop takes over the screen, but a failure freezes them
+  so the bar never invents progress.
+  8 Nov: the bar no longer snaps to full when the desktop session appears.
+  Progress completes when the intro leaves the spin phase, which only happens
+  once the desktop is genuinely ready, so the fill crosses the track during
+  the boot instead of jumping straight to 100%.
 - [ ] S05 Keep the wordmark and “Made for the fun of it.” readable and still;
   keep any supporting tagline (“For enthusiasts. By enthusiasts.”) secondary. Spin only while work is pending, land upright smoothly, and avoid long waits.
   Provide a development preview/replay control for repeatable review.

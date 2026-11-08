@@ -74,11 +74,15 @@ A late-90s Mac OS boot display:
 - 420x20 at a 1024-wide window, centred, scaled down on smaller windows.
 - Classic construction: 1px dark outer border, 1px light top/left bevel,
   1px dark bottom/right bevel, inset track.
-- The filled region is split into 24 discrete segments separated by 2px gaps.
-  Each filled segment is filled with diagonal stripes that scroll, giving the
-  authentic 90s striped progress look.
-- Unfilled segments stay empty track colour, so the bar reads as discrete
-  steps rather than a smooth smear.
+- The whole track carries one continuous zebra of diagonal bands, 4 pixels on
+  and 4 off, repeating every 8 pixels. The bands advance to the right by one
+  pixel every 25 ms, about 40 pixels a second, so the bar reads as animated.
+- The filled region is the same zebra in bright colours, clipped at the
+  progress edge; a bright cap marks the head of the fill.
+- The unfilled track carries the same zebra in dim colours, so the bar is
+  alive from the first frame and the fill is seen crossing it.
+- 2px separator gaps split the track into 24 segments and are drawn over the
+  zebra, so the bar reads as discrete steps rather than a smooth smear.
 
 ### Truthful progress
 
@@ -129,6 +133,9 @@ centre of the window:
 - the region below the fruit contains no shadow halo pixels;
 - wordmark and status glyph pixels are present in the rendered frame;
 - progress-bar segments are present and change as progress advances;
+- the zebra bands advance to the right at a visible rate, the empty track is
+  striped too, the lit edge moves right as the boot runs, and reduced motion
+  freezes the bands;
 - the boot frame does not contain desktop pixels;
 - the reveal still ends on the desktop frame.
 

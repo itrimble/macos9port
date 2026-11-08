@@ -218,8 +218,14 @@ int main(void) {
     CHECK(os999_startup_progress(&s, 1650) > 0.4);
     CHECK(os999_startup_progress(&s, 100000) <= 0.92);
     CHECK(os999_startup_progress(&s, 100000) > 0.9);
+    /* A desktop that exists early does not complete the bar: the fill still
+       has to cross the track. The bar completes when the intro leaves the
+       spin phase, which only happens once the desktop is genuinely ready. */
     s.ready = 1;
-    CHECK(os999_startup_progress(&s, 100000) == 1.0);
+    CHECK(os999_startup_progress(&s, 100000) <= 0.92);
+    os999_startup_frame(&s, 3300, 1, image, desktop, W, H);
+    CHECK(s.phase == OS999_STARTUP_SETTLE);
+    CHECK(os999_startup_progress(&s, 3300) == 1.0);
 
     /* A failure freezes the bar instead of inventing progress. */
     os999_startup_begin(&s, 0, 0);

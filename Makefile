@@ -70,6 +70,10 @@ build/test_os999_startup: $(STARTUP_SRC) src/font.c tests/test_os999_startup.c $
 	mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $(STARTUP_SRC) src/font.c tests/test_os999_startup.c -lm
 
+build/test_os999_startup_bar: $(STARTUP_SRC) src/font.c tests/test_os999_startup_bar.c $(STARTUP_HDR) include/draw.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $(STARTUP_SRC) src/font.c tests/test_os999_startup_bar.c -lm
+
 build/test_ospi: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_ospi.c $(HDRS) $(STARTUP_HDR)
 	mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_ospi.c $(FT_LIBS) -lm $(NET_LIBS)
@@ -329,7 +333,7 @@ build/test_mac_system: $(RUNTIME_OBJ) tests/test_mac_system.c $(RUNTIME_HDRS) $(
 build/test_mac_raster: $(RUNTIME_OBJ) tests/test_mac_raster.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_raster.c $(CPUOBJ) -lm -o $@
 
-test: build/test_os999_startup build/test_ospi build/test_archive_install build/test_mac_icon build/test_runtime_bridge build/test_mac_resource build/test_mac_cpu build/test_mac_runtime build/test_mac_resource_services build/test_mac_memory build/test_mac_traps build/test_native_launch build/test_mac_events build/test_mac_quickdraw build/test_runtime_video build/test_runtime_perf build/test_runtime_keys build/test_mac_raster build/test_mac_system build/test_mac_geometry build/test_mac_files build/test_mac_cursor build/test_mac_color build/test_mac_dialog build/test_runtime_cursor build/test_mac_color_port build/test_mac_copybits build/test_mac_palette build/test_mac_color_raster build/test_mac_movie build/test_movie_window build/test_mac_files_write
+test: build/test_os999_startup build/test_os999_startup_bar build/test_ospi build/test_archive_install build/test_mac_icon build/test_runtime_bridge build/test_mac_resource build/test_mac_cpu build/test_mac_runtime build/test_mac_resource_services build/test_mac_memory build/test_mac_traps build/test_native_launch build/test_mac_events build/test_mac_quickdraw build/test_runtime_video build/test_runtime_perf build/test_runtime_keys build/test_mac_raster build/test_mac_system build/test_mac_geometry build/test_mac_files build/test_mac_cursor build/test_mac_color build/test_mac_dialog build/test_runtime_cursor build/test_mac_color_port build/test_mac_copybits build/test_mac_palette build/test_mac_color_raster build/test_mac_movie build/test_movie_window build/test_mac_files_write
 	./build/test_desktop_assets assets/icons/ospi-icons.icl8
 	./build/test_appearance
 	./build/test_appearance_panel
@@ -352,6 +356,7 @@ test: build/test_os999_startup build/test_ospi build/test_archive_install build/
 	./build/test_terminal
 	./build/test_audio_engine assets/sounds/classic9
 	./build/test_os999_startup
+	./build/test_os999_startup_bar
 	./build/test_modern_network
 	./build/test_ospi
 	./build/test_archive_install
