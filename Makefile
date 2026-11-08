@@ -93,6 +93,7 @@ RUNTIME_HDRS := include/folder_navigation.h src/runtime_video_pixels.h src/runti
 RUNTIME += src/mac_resource_catalog.c src/mac_resource_files.c
 RUNTIME += src/mac_pict_decode.c src/mac_picture.c
 RUNTIME += src/mac_sane.c
+RUNTIME += src/mac_numconv.c
 RUNTIME += src/mac_sound.c src/mac_sound_render.c
 RUNTIME += src/mac_sound_double.c
 RUNTIME += src/mac_sound_resample.c
@@ -129,6 +130,11 @@ build/test_mac_sane: $(RUNTIME_OBJ) tests/test_mac_sane.c $(RUNTIME_HDRS) $(CPUO
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sane.c $(CPUOBJ) -lm -o $@
 
 test: build/test_mac_sane
+
+build/test_mac_numconv: $(RUNTIME_OBJ) tests/test_mac_numconv.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_numconv.c $(CPUOBJ) -lm -o $@
+
+test: build/test_mac_numconv
 
 build/test_mac_sound: $(RUNTIME_OBJ) tests/test_mac_sound.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sound.c $(CPUOBJ) -lm -o $@
@@ -396,6 +402,7 @@ test: build/test_os999_startup build/test_ospi build/test_archive_install build/
 	./build/test_mac_resource_chain
 	./build/test_mac_picture
 	./build/test_mac_sane
+	./build/test_mac_numconv
 	./build/test_mac_sound
 	./build/test_mac_sound_double
 	./build/test_mac_sound_resample
