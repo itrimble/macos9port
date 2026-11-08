@@ -49,9 +49,10 @@ static void associations(void){
  CHECK(rd(&r,h,4)==0 && !mac_window_find(&r,windows[0])->palette_handle && !mac_window_find(&r,windows[1])->palette_handle);
  CHECK(create(&r,16,0)==1);h=rd(&r,0x800a,4);mac_window_find(&r,windows[0])->palette_handle=h;
  wr(&r,0x8000,4,windows[0]);mac_cpu_set(r.cpu,MAC_A7,0x8000);
- /* This palette's entries use usage 14 (animated and explicit bits set), which activation does not support: showing the
-  * window must refuse BEFORE the window appears, with the device table untouched. Supported usages are covered in
-  * test_mac_palette_activation. */
+ /* NewPalette stored usage 14 (explicit, animated, tolerant), which activation now accepts with the explicit bit winning
+  * (test_mac_palette_activation). Make the entries plain animated (usage 4), which activation does not support: showing the
+  * window must refuse BEFORE the window appears, with the device table untouched. */
+ {uint32_t pal=rd(&r,h,4);for(unsigned i=0;i<16;i++)wr(&r,pal+16+i*16+6,2,4);}
  {uint32_t table[256];memcpy(table,r.palette,sizeof table);
   CHECK(mac_window_service(&r,0xa915)==-1 && mac_cpu_halted(r.cpu) && !mac_window_find(&r,windows[0])->visible && !memcmp(table,r.palette,sizeof table));}
  mac_cpu_destroy(r.cpu);

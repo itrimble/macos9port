@@ -31,8 +31,12 @@ static MacHandle *palette(MacRuntime*r,uint32_t h) {
  * and change nothing; tolerant entries use an existing exact match or take the unclaimed device index (never 0 or
  * 255) whose current color is nearest, and are set to the exact RGB. A tolerant entry's tolerance only ever relaxes
  * that, so supplying the exact color always satisfies it. Entries inhibited for this device type (pmInhibitC8 on a
- * color device, pmInhibitG8 on a gray one) are skipped. Dithered, animated and explicit entries are refused before
- * anything changes. The window is invalidated if the table changed. */
+ * color device, pmInhibitG8 on a gray one) are skipped. Explicit entries (pmExplicit, alone or with the tolerant and animated bits) change
+ * nothing - the interface says "no reserve, no render, no record; stuff index into port" - so they are skipped and map to their
+ * own index. The interface does not say what explicit combined with animated means (no reserve versus reserve): when the explicit
+ * bit is set it wins here, the entry reserves and renders nothing, and the animated bit's reservation is not honoured, so
+ * animating such entries (AnimatePalette and the like) is separate and still halts by name; this is an interpretation, not
+ * verified on real hardware. Dithered, plain animated, and explicit combined with dithered are refused before anything changes. The window is invalidated if the table changed. */
 static unsigned nearest_index(const MacRuntime*r,uint32_t rgb,const uint8_t*claimed,unsigned lo,unsigned hi){
     unsigned best=lo;long bd=-1;
     for(unsigned i=lo;i<=hi;i++){
@@ -52,12 +56,23 @@ int mac_palette_check(MacRuntime*r,const MacWindowState*w){
     if(!r->main_device || r->screen_depth!=8)return fail(r,"Palette activation is implemented for the 8-bit indexed device only.");
     uint32_t p=m->pointer,gd=rd(r,r->main_device,4);unsigned n=rd(r,p,2);
     if(!valid(r,gd,62))return fail(r,"Palette activation needs a valid main device record.");
-    if(n>254)return fail(r,"Palette needs more device entries than the 8-bit device has free.");
+    int gray=!(rd(r,gd+20,2)&1);
+    uint32_t distinct[256];unsigned needed=0;
     for(unsigned i=0;i<n;i++){
-        uint32_t usage=rd(r,p+16+16*i+6,2);
+        uint32_t e=p+16+16*i,usage=rd(r,e+6,2);
         if(usage&~0x3f3fu)return fail(r,"Palette entry has unsupported usage modifiers.");
-        if((usage&0xf)!=0 && (usage&0xf)!=2)return fail(r,"Palette usage dithered, animated or explicit is unsupported.");
+        unsigned mode=usage&0xf;
+        if(mode!=0 && mode!=2 && !((mode&8) && !(mode&1)))return fail(r,"Palette usage dithered, plain animated, or explicit combined with dithered is unsupported.");
+        /* Only tolerant entries that are not inhibited for this device type take a device index. Activation never touches
+         * index 0 (white) or 255 (black), so every other distinct color needs one of the 254 indices 1-254, whether it is
+         * newly written or already present; repeats of a color share an index, and white and black need none. */
+        if((usage&(gray?0x1000u:0x2000u)) || (usage&0xf)==0 || (usage&8))continue;
+        uint32_t rgb=(rd(r,e,2)>>8)<<16|(rd(r,e+2,2)>>8)<<8|(rd(r,e+4,2)>>8);
+        if(rgb==0xffffffu || rgb==0)continue;
+        unsigned k=0;while(k<needed && distinct[k]!=rgb)k++;
+        if(k==needed)distinct[needed++]=rgb;
     }
+    if(needed>254)return fail(r,"Palette needs more device entries than the 8-bit device has free.");
     return 0;
 }
 int mac_palette_activate(MacRuntime*r,MacWindowState*w){
@@ -74,6 +89,7 @@ int mac_palette_activate(MacRuntime*r,MacWindowState*w){
         uint16_t c16[3]={(uint16_t)rd(r,e,2),(uint16_t)rd(r,e+2,2),(uint16_t)rd(r,e+4,2)};
         uint32_t rgb=(uint32_t)(c16[0]>>8)<<16|(uint32_t)(c16[1]>>8)<<8|(c16[2]>>8);
         if(usage&(gray?0x1000u:0x2000u)){r->palette_map[i]=(uint8_t)nearest_index(r,rgb,NULL,0,255);continue;}
+        if(usage&8){r->palette_map[i]=(uint8_t)i;continue;} /* explicit: the palette index is the pixel value; the device is untouched */
         if((usage&0xf)==0){r->palette_map[i]=(uint8_t)nearest_index(r,rgb,NULL,0,255);continue;}
         unsigned j=256;
         for(unsigned k=0;k<256;k++)if(r->palette[k]==rgb){j=k;break;}

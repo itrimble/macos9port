@@ -224,7 +224,7 @@ static void switching_and_visibility(void) {
 }
 
 static void refusals_change_nothing(void) {
-    const unsigned bad[] = {1, 4, 8, 0x0c, 0x0e, 3, 0x4000, 0x8002, 0x10000 >> 1};            /* dithered, animated, explicit, unknown modifiers */
+    const unsigned bad[] = {1, 4, 9, 0x0b, 0x0d, 0x0f, 3, 5, 6, 7, 0x4000, 0x8002, 0x10000 >> 1}; /* dithered, plain animated, explicit with dithered, unknown modifiers */
     for (unsigned i = 0; i < sizeof bad / sizeof *bad; i++) {
         Color c[2] = {{1, 2, 3, 2, 0}, {9, 8, 7, bad[i], 0}};
         const Color *sets[1] = {c}; unsigned counts[1] = {2};
@@ -258,6 +258,80 @@ static void refusals_change_nothing(void) {
         uint32_t base[256]; snapshot(r, base);
         CHECK(set_palette(r, r->window.address, pal) == -1 && mac_cpu_halted(r->cpu) && !changed(base, r->palette));
         mac_cpu_destroy(r->cpu);
+    }
+    {   /* what counts is distinct colors that need a slot, not the number of entries */
+        static Color mix[256];
+        mix[0] = (Color){255, 255, 255, 2, 0}; mix[1] = (Color){0, 0, 0, 2, 0};
+        for (unsigned i = 2; i < 256; i++) mix[i] = (Color){1 + (i - 2) % 35, 2 + (i - 2) / 35, 3, 2, 0};
+        const Color *sets[1] = {mix}; unsigned counts[1] = {256};
+        MacRuntime *r = make(1, sets, counts, 1); uint32_t pal = new_palette(r, 200);   /* white + black + 254 others: fits */
+        CHECK(set_palette(r, r->window.address, pal) == 1 && !mac_cpu_halted(r->cpu) && table_consistent(r));
+        CHECK(r->palette_map[0] == 0 && r->palette_map[1] == 255 && r->palette[0] == 0xffffff && r->palette[255] == 0);
+        for (unsigned i = 2; i < 256; i++) CHECK(r->palette[r->palette_map[i]] == rgb8(mix[i].r, mix[i].g, mix[i].b));
+        mac_cpu_destroy(r->cpu);
+        mix[0] = (Color){200, 200, 200, 2, 0};                                            /* 255 distinct non-white/black: does not */
+        r = make(1, sets, counts, 1); pal = new_palette(r, 200); uint32_t base[256]; snapshot(r, base);
+        CHECK(set_palette(r, r->window.address, pal) == -1 && mac_cpu_halted(r->cpu) && !changed(base, r->palette));
+        mac_cpu_destroy(r->cpu);
+        static Color rep[256];                                                            /* 256 entries, 128 distinct colors */
+        for (unsigned i = 0; i < 256; i++) rep[i] = (Color){1 + (i % 128) % 35, 2 + (i % 128) / 35, 3, 2, 0};
+        const Color *rsets[1] = {rep};
+        r = make(1, rsets, counts, 1); pal = new_palette(r, 200);
+        CHECK(set_palette(r, r->window.address, pal) == 1 && table_consistent(r) && r->palette_map[0] == r->palette_map[128] && r->palette_map[5] == r->palette_map[133]);
+        mac_cpu_destroy(r->cpu);
+        static Color cour[256];                                                           /* courteous entries need no slot */
+        for (unsigned i = 0; i < 256; i++) cour[i] = (Color){1 + i % 35, 2 + i / 35, 3, i < 254 ? 2u : 0u, 0};
+        const Color *csets[1] = {cour};
+        r = make(1, csets, counts, 1); pal = new_palette(r, 200);
+        CHECK(set_palette(r, r->window.address, pal) == 1 && !mac_cpu_halted(r->cpu) && table_consistent(r)); mac_cpu_destroy(r->cpu);
+        cour[254].usage = 2; cour[255].usage = 2;                                         /* the same palette, all tolerant: 256 distinct */
+        r = make(1, csets, counts, 1); pal = new_palette(r, 200);
+        CHECK(set_palette(r, r->window.address, pal) == -1 && mac_cpu_halted(r->cpu)); mac_cpu_destroy(r->cpu);
+        static Color inh[256];                                                            /* entries inhibited for a color device need no slot */
+        for (unsigned i = 0; i < 256; i++) inh[i] = (Color){1 + i % 35, 2 + i / 35, 3, i < 254 ? 2u : (2u | 0x2000u), 0};
+        const Color *isets[1] = {inh};
+        r = make(1, isets, counts, 1); pal = new_palette(r, 200);
+        CHECK(set_palette(r, r->window.address, pal) == 1 && !mac_cpu_halted(r->cpu)); mac_cpu_destroy(r->cpu);
+        /* On a gray device the other inhibit bit applies: 256 distinct colors, the last two inhibited for gray only, fit; the
+         * same two inhibited for color only do not. */
+        static Color gr[256];
+        for (unsigned i = 0; i < 256; i++) gr[i] = (Color){1 + i % 35, 2 + i / 35, 3, i < 254 ? 2u : (2u | 0x1000u), 0};
+        const Color *gsets[1] = {gr};
+        r = make(0, gsets, counts, 1); CHECK(mac_color_set_gray(r, 1) == 0);
+        pal = new_palette(r, 200); CHECK(set_palette(r, r->window.address, pal) == 1);
+        CHECK(show(r, r->window.address) == 1 && !mac_cpu_halted(r->cpu)); mac_cpu_destroy(r->cpu);
+        for (unsigned i = 254; i < 256; i++) gr[i].usage = 2u | 0x2000u;
+        r = make(0, gsets, counts, 1); CHECK(mac_color_set_gray(r, 1) == 0);
+        pal = new_palette(r, 200); CHECK(set_palette(r, r->window.address, pal) == 1);
+        CHECK(show(r, r->window.address) == -1 && mac_cpu_halted(r->cpu)); mac_cpu_destroy(r->cpu);
+    }
+    {   /* pmExplicit ("no reserve, no render, no record; stuff index into port"): alone or with the tolerant bit the device is untouched */
+        Color ex[6] = {{1, 2, 3, 2, 0}, {250, 10, 10, 8, 0}, {11, 12, 13, 0x0a, 0}, {4, 5, 6, 2, 0}, {21, 22, 23, 0x0c, 0}, {31, 32, 33, 0x0e, 0}};
+        const Color *sets[1] = {ex}; unsigned counts[1] = {6};
+        MacRuntime *r = make(1, sets, counts, 1); uint32_t pal = new_palette(r, 200);
+        CHECK(set_palette(r, r->window.address, pal) == 1 && !mac_cpu_halted(r->cpu) && table_consistent(r));
+        CHECK(has(r->palette, rgb8(1, 2, 3)) && has(r->palette, rgb8(4, 5, 6)));                  /* tolerant entries are rendered */
+        CHECK(!has(r->palette, rgb8(250, 10, 10)) && !has(r->palette, rgb8(11, 12, 13)));         /* explicit entries are not */
+        CHECK(!has(r->palette, rgb8(21, 22, 23)) && !has(r->palette, rgb8(31, 32, 33)));         /* nor explicit with animated (explicit wins) */
+        CHECK(r->palette_map[1] == 1 && r->palette_map[2] == 2 && r->palette_map[4] == 4 && r->palette_map[5] == 5); /* the index itself is the pixel value */
+        CHECK(r->palette[r->palette_map[0]] == rgb8(1, 2, 3) && r->palette[r->palette_map[3]] == rgb8(4, 5, 6));
+        mac_cpu_destroy(r->cpu);
+        /* They need no device slot: 254 distinct tolerant colors plus two explicit ones still fit. */
+        static Color cap[256];
+        for (unsigned i = 0; i < 254; i++) cap[i] = (Color){1 + i % 35, 2 + i / 35, 3, 2, 0};
+        const unsigned forms[4][2] = {{8, 0x0a}, {0x0c, 0x0e}, {8, 0x0e}, {0x0a, 0x0c}};   /* every explicit form takes no slot */
+        for (unsigned f = 0; f < 4; f++) {
+            cap[254] = (Color){200, 1, 1, forms[f][0], 0}; cap[255] = (Color){201, 1, 1, forms[f][1], 0};
+            const Color *csets[1] = {cap}; unsigned ccounts[1] = {256};
+            r = make(1, csets, ccounts, 1); pal = new_palette(r, 200);
+            CHECK(set_palette(r, r->window.address, pal) == 1 && !mac_cpu_halted(r->cpu) && table_consistent(r) && r->palette_map[254] == 254 && r->palette_map[255] == 255);
+            mac_cpu_destroy(r->cpu);
+        }
+        /* An explicit entry that is also inhibited for this device type follows the inhibit rule (nearest color, no change). */
+        Color inh2[1] = {{9, 9, 9, 8 | 0x2000, 0}};
+        const Color *isets[1] = {inh2}; unsigned icounts[1] = {1};
+        r = make(1, isets, icounts, 1); pal = new_palette(r, 200); uint32_t before[256]; snapshot(r, before);
+        CHECK(set_palette(r, r->window.address, pal) == 1 && !mac_cpu_halted(r->cpu)); mac_cpu_destroy(r->cpu);
     }
     {   /* bad arguments and the wrong display */
         const Color *sets[1] = {GLIDER}; unsigned counts[1] = {16};
