@@ -191,6 +191,8 @@ int mac_appfork_service(MacRuntime *rt, uint16_t opcode); /* PBRead/PBGetEOF on 
 int mac_dialog_next_event(MacRuntime *rt, MacEvent *out); /* next mouse/key event for a modal dialog */
 int mac_alert_service(MacRuntime *rt, uint16_t opcode); /* Alert, StopAlert, NoteAlert, CautionAlert: $A985..$A988 */
 void mac_alert_destroy(MacRuntime *rt);
+int mac_region_box_algebra(unsigned op, const int a[4], const int b[4], int out[4]); /* rectangle algebra, mac_regions.c */
+int mac_window_inval_service(MacRuntime *rt, uint16_t opcode); /* InvalRect/InvalRgn/ValidRect/ValidRgn, $A927..$A92A */
 int mac_stdfile_service(MacRuntime *rt, uint16_t opcode); /* Pack3 Standard File, $A9EA */
 void mac_stdfile_destroy(MacRuntime *rt);
 int mac_menu_service(MacRuntime *rt, uint16_t opcode);

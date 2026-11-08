@@ -113,6 +113,25 @@ static void set_point_checks(void) {
         free(saved); mac_cpu_destroy(rt.cpu);
     }
 }
+/* EqualRect: every edge must match (two empty rectangles with different edges are different). */
+static int equal_rect(MacRuntime *r,const int16_t a[4],const int16_t b[4]){
+    for(unsigned i=0;i<4;i++){mac_cpu_write(r->cpu,RECT+i*2,2,(uint16_t)a[i]);mac_cpu_write(r->cpu,RECT+8+i*2,2,(uint16_t)b[i]);}
+    mac_cpu_set(r->cpu,MAC_A7,SP);mac_cpu_write(r->cpu,SP,4,RECT+8);mac_cpu_write(r->cpu,SP+4,4,RECT);mac_cpu_write(r->cpu,SP+8,2,0x55aa);
+    CHECK(mac_geometry_service(r,0xa8a6)==1 && mac_cpu_get(r->cpu,MAC_A7)==SP+8 && mac_cpu_read(r->cpu,SP+9,1)==0xaa);
+    return mac_cpu_read(r->cpu,SP+8,1);
+}
+static void equal_checks(void){
+    MacRuntime r=fresh();
+    const int16_t base[4]={-10,-20,30,40};
+    CHECK(equal_rect(&r,base,base)==1);
+    for(unsigned i=0;i<4;i++){int16_t other[4];memcpy(other,base,sizeof other);other[i]=(int16_t)(other[i]+1);CHECK(equal_rect(&r,base,other)==0 && equal_rect(&r,other,base)==0);}
+    const int16_t e1[4]={0,0,0,0},e2[4]={5,5,5,5},e3[4]={5,5,2,2};
+    CHECK(equal_rect(&r,e1,e1)==1 && equal_rect(&r,e1,e2)==0 && equal_rect(&r,e2,e3)==0);
+    const int16_t lo[4]={-32768,-32768,32767,32767};CHECK(equal_rect(&r,lo,lo)==1);
+    mac_cpu_set(r.cpu,MAC_A7,SP);mac_cpu_write(r.cpu,SP,4,0);mac_cpu_write(r.cpu,SP+4,4,RECT);CHECK(mac_geometry_service(&r,0xa8a6)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
+    r=fresh();mac_cpu_set(r.cpu,MAC_A7,SP);mac_cpu_write(r.cpu,SP,4,RAM-4);mac_cpu_write(r.cpu,SP+4,4,RECT);CHECK(mac_geometry_service(&r,0xa8a6)==-1 && mac_cpu_get(r.cpu,MAC_A7)==SP);mac_cpu_destroy(r.cpu);
+    r=fresh();mac_cpu_set(r.cpu,MAC_A7,RAM-6);CHECK(mac_geometry_service(&r,0xa8a6)==-1);mac_cpu_destroy(r.cpu);
+}
 static void intersections(void) {
     const int16_t inputs[][8]={{-10,-20,30,40,0,-30,50,10},{0,0,10,10,10,0,20,10},{10,0,-10,20,-20,-20,40,40},{-32768,-32768,32767,32767,0,1,2,3}};
     const int16_t expected[][4]={{0,-20,30,10},{0,0,0,0},{0,0,0,0},{0,1,2,3}};
@@ -130,6 +149,7 @@ static void intersections(void) {
 }
 
 int main(void) {
+    equal_checks();
     intersections();
     set_point_checks();
     offset_checks();

@@ -13,7 +13,7 @@ static int valid(MacCpu *cpu, uint32_t address, size_t size) {
  * passed by value (vertical, horizontal); rectangles are passed by address.
  * Bounds enclose pixels: top/left inclusive, bottom/right exclusive. */
 int mac_geometry_service(MacRuntime *rt, uint16_t opcode) {
-    if (opcode != 0xa8aa && opcode != 0xa8ad && opcode != 0xa8a8 && opcode != 0xa880) return 0;
+    if (opcode != 0xa8aa && opcode != 0xa8ad && opcode != 0xa8a8 && opcode != 0xa880 && opcode != 0xa8a6) return 0;
     MacCpu *cpu = rt->cpu;
     if (mac_cpu_halted(cpu)) return -1;
     uint32_t sp = mac_cpu_get(cpu, MAC_A7);
@@ -42,6 +42,19 @@ int mac_geometry_service(MacRuntime *rt, uint16_t opcode) {
         if (!valid(cpu, point, 4)) return -1;
         /* Snapshot before writing: the destination may overlap arguments. */
         mac_cpu_write(cpu, point, 4, coordinates);
+        mac_cpu_set(cpu, MAC_A7, sp + 8);
+        return 1;
+    }
+    if (opcode == 0xa8a6) { /* EqualRect(rect1, rect2): BOOLEAN. True when all four edges are equal, so two empty rectangles
+        * with different edges are not equal. Stack: rect2, rect1, result slot (Pascal reverse order). */
+        if (!valid(cpu, sp, 10)) return -1;
+        uint32_t b = mac_cpu_read(cpu, sp, 4), a = mac_cpu_read(cpu, sp + 4, 4);
+        if (!a || !b) { mac_cpu_halt(cpu, "EqualRect requires non-NIL rectangles."); return -1; }
+        if (!valid(cpu, a, 8) || !valid(cpu, b, 8)) return -1;
+        unsigned same = 1;
+        for (unsigned i = 0; i < 4; i++)
+            if (mac_cpu_read(cpu, a + i * 2, 2) != mac_cpu_read(cpu, b + i * 2, 2)) same = 0;
+        mac_cpu_write(cpu, sp + 8, 1, same);
         mac_cpu_set(cpu, MAC_A7, sp + 8);
         return 1;
     }

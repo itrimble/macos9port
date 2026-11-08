@@ -194,3 +194,11 @@ int mac_regions_service(MacRuntime *rt,uint16_t opcode) {
     if(store_rect(rt,m,h,edges))return -1;
     mac_cpu_set(rt->cpu,MAC_A7,sp+stack);return 1;
 }
+
+/* Rectangle algebra for other modules (the window update region): op is $A8E4 sect, $A8E5 union, $A8E6 diff, $A8E7 xor;
+ * boxes are {top,left,bottom,right}. Returns 1 with *out set when the result is a rectangle or empty, else 0. */
+int mac_region_box_algebra(unsigned op,const int a[4],const int b[4],int out[4]) {
+    Box x={a[0],a[1],a[2],a[3]},y={b[0],b[1],b[2],b[3]},o;
+    if(!algebra(op,x,y,&o))return 0;
+    out[0]=o.t;out[1]=o.l;out[2]=o.b;out[3]=o.r;return 1;
+}
