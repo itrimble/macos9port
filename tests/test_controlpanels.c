@@ -213,7 +213,7 @@ static void test_plugin_container_and_modules(const char *plugin_so) {
     if (!s) return;
 
     /* Built-ins + dynamically scanned .cdev shared library must be registered. */
-    CHECK(os999_cdev_count() == 4);
+    CHECK(os999_cdev_count() == 5);
     CHECK(os999_cdev_find("general") != NULL);
     CHECK(os999_cdev_find("sound") != NULL);
     CHECK(os999_cdev_find("appearance") != NULL);
@@ -246,9 +246,11 @@ static void test_plugin_container_and_modules(const char *plugin_so) {
     CHECK(control_panels_selected_index() == 0);
     session_key(s, MENU_KEY_RIGHT, 0);
     CHECK(control_panels_selected_index() == 1);
-    session_key(s, MENU_KEY_DOWN, 0);
-    CHECK(control_panels_selected_index() == 3);
+    session_key(s, MENU_KEY_DOWN, 0); /* three columns: 1 -> 4 now that Extensions is the fifth panel */
+    CHECK(control_panels_selected_index() == 4);
     session_key(s, MENU_KEY_UP, 0);
+    CHECK(control_panels_selected_index() == 1);
+    session_key(s, MENU_KEY_LEFT, 0);
     CHECK(control_panels_selected_index() == 0);
 
     session_key(s, '\t', 0);

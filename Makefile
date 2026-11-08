@@ -32,7 +32,7 @@ AUDIO_SRC := src/audio_decoder.c src/audio_dsp.c src/audio_midi.c src/audio_outp
 AUDIO_HDRS := include/volume_directory.h include/audio_decoder.h include/audio_dsp.h include/audio_midi.h include/audio_output.h include/audio_service.h
 
 include config/core-sources.mk
-HDRS := include/control_panel_store.h include/os999_cdev.h include/control_panels.h src/cdev_ui.h src/control_panels_int.h include/quake_launch.h include/term_font.h include/tailnet.h include/finder_edit.h include/app_switcher.h include/desktop_gesture.h include/finder_apps.h include/finder_print.h include/finder_recent.h include/finder_batch.h include/finder_drag.h include/finder_selection.h include/finder_popup.h include/finder_state.h include/finder_settings.h include/finder_search.h include/finder_files.h include/desktop_finder.h include/modern_network.h include/folder_navigation.h include/desktop_commands.h include/desktop_help.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h include/term.h include/mac_movie.h include/movie_window.h
+HDRS := include/ext_ui.h include/ext_registry.h include/control_panel_store.h include/os999_cdev.h include/control_panels.h src/cdev_ui.h src/control_panels_int.h include/quake_launch.h include/term_font.h include/tailnet.h include/finder_edit.h include/app_switcher.h include/desktop_gesture.h include/finder_apps.h include/finder_print.h include/finder_recent.h include/finder_batch.h include/finder_drag.h include/finder_selection.h include/finder_popup.h include/finder_state.h include/finder_settings.h include/finder_search.h include/finder_files.h include/desktop_finder.h include/modern_network.h include/folder_navigation.h include/desktop_commands.h include/desktop_help.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h include/term.h include/mac_movie.h include/movie_window.h
 
 PRINT_HOST := src/desktop_print_stub.c
 SHORTCUT_HOST := src/desktop_shortcuts_stub.c
@@ -58,9 +58,9 @@ build/browser_overlay_mac.o: src/browser_overlay_mac.m $(BROWSER_HDRS) include/o
 else
 BROWSER_OVERLAY := src/browser_overlay_linux.c
 endif
-build/ospi: $(SHORTCUT_HOST) include/desktop_shortcuts.h $(PRINT_HOST) $(CORE) $(STORAGE_A) $(AUDIO_SRC) src/winamp_skin.c src/media_player_panel.c src/os999_startup.c src/main.c src/desktop_guest.c src/desktop_host.c src/desktop_sound.c $(HDRS) $(AUDIO_HDRS) include/winamp_skin.h include/media_player_panel.h include/os999_startup.h include/desktop_guest.h include/desktop_host.h include/desktop_sound.h $(BROWSER_SRC) $(BROWSER_OVERLAY) $(BROWSER_HDRS)
+build/ospi: $(SHORTCUT_HOST) include/desktop_shortcuts.h $(PRINT_HOST) $(CORE) $(STORAGE_A) $(AUDIO_SRC) src/winamp_skin.c src/media_player_panel.c src/os999_startup.c src/ext_boot.c src/main.c src/desktop_guest.c src/desktop_host.c src/desktop_sound.c $(HDRS) $(AUDIO_HDRS) include/winamp_skin.h include/media_player_panel.h include/os999_startup.h include/ext_boot.h include/desktop_guest.h include/desktop_host.h include/desktop_sound.h $(BROWSER_SRC) $(BROWSER_OVERLAY) $(BROWSER_HDRS)
 	mkdir -p build
-	$(CC) $(CFLAGS) $(SDL_CFLAGS) $(FFMPEG_CFLAGS) -o $@ $(SHORTCUT_HOST) $(PRINT_HOST) $(CORE) $(STORAGE_LINK) $(AUDIO_SRC) src/winamp_skin.c src/media_player_panel.c src/os999_startup.c src/main.c src/desktop_guest.c src/desktop_host.c src/desktop_sound.c $(BROWSER_SRC) $(BROWSER_OVERLAY) $(SDL_LIBS) $(FFMPEG_LIBS) $(FT_LIBS) $(BROWSER_LIBS) -pthread -lm $(NET_LIBS)
+	$(CC) $(CFLAGS) $(SDL_CFLAGS) $(FFMPEG_CFLAGS) -o $@ $(SHORTCUT_HOST) $(PRINT_HOST) $(CORE) $(STORAGE_LINK) $(AUDIO_SRC) src/winamp_skin.c src/media_player_panel.c src/os999_startup.c src/ext_boot.c src/main.c src/desktop_guest.c src/desktop_host.c src/desktop_sound.c $(BROWSER_SRC) $(BROWSER_OVERLAY) $(SDL_LIBS) $(FFMPEG_LIBS) $(FT_LIBS) $(BROWSER_LIBS) -pthread -lm $(NET_LIBS)
 
 build/test_os999_startup: src/os999_startup.c src/font.c tests/test_os999_startup.c include/os999_startup.h include/draw.h
 	mkdir -p build
@@ -96,10 +96,10 @@ RUNTIME += src/mac_sane.c
 RUNTIME += src/mac_sound.c src/mac_sound_render.c
 RUNTIME += src/mac_sound_double.c
 RUNTIME += src/mac_sound_resample.c
-RUNTIME += src/mac_time.c
+RUNTIME += src/mac_time.c src/mac_init.c src/ext_init.c src/ext_runtime.c src/ext_scan.c src/ext_state.c
 RUNTIME += src/mac_files_write.c src/mac_files_info.c
 RUNTIME_HDRS += include/mac_files_int.h
-RUNTIME_HDRS += include/mac_time.h
+RUNTIME_HDRS += include/mac_time.h include/mac_init.h include/ext_init.h include/ext_registry.h include/ext_runtime.h
 RUNTIME_HDRS += include/mac_sound_double.h
 RUNTIME_HDRS += include/mac_sound.h include/mac_sound_int.h include/runtime_audio.h include/runtime_perf.h include/runtime_keys.h
 RUNTIME_HDRS += include/mac_pict.h

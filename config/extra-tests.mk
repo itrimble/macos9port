@@ -75,3 +75,4 @@ build/test_quake_launch: src/quake_launch.c tests/test_quake_launch.c include/qu
 	$(CC) $(CFLAGS) -o $@ src/quake_launch.c tests/test_quake_launch.c
 
 test: build/test_quake_launch
+include config/extensions-tests.mk

@@ -6,6 +6,7 @@
 #include "native_launch.h"
 #include "os999_startup.h"
 #include "desktop_guest.h"
+#include "ext_boot.h"
 #include "desktop_host.h"
 #include "desktop_shortcuts.h"
 #include "browser_window.h"
@@ -106,10 +107,7 @@ int main(int argc, char **argv) {
         SDL_Quit();
         return 1;
     }
-    int ww = 0;
-    int wh = 0;
-    int rw = 0;
-    int rh = 0;
+    int ww = 0, wh = 0, rw = 0, rh = 0;
     SDL_GetWindowSize(win, &ww, &wh);
     SDL_GetRendererOutputSize(ren, &rw, &rh);
     fprintf(stderr, "OS999 Stylized window %dx%d  drawable %dx%d\n", ww, wh, rw, rh);
@@ -136,6 +134,7 @@ int main(int argc, char **argv) {
         free(startup_desktop); free(guest_pixels); free(frame); SDL_DestroyTexture(tex);
         SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit(); return 1;
     }
+    ext_boot_run(volume, win, ren, tex, frame); /* Space held: Extensions Manager before startup */
     desktop_host_init(volume);
     boot_enabled = startup_desktop && boot_enabled;
     if (boot_enabled)

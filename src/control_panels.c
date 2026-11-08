@@ -102,6 +102,8 @@ static void ensure_builtin_modules(void) {
         os999_cdev_register(os999_cdev_sound_module());
     if (!os999_cdev_find("appearance"))
         os999_cdev_register(os999_cdev_appearance_module());
+    if (!os999_cdev_find("extensions"))
+        os999_cdev_register(os999_cdev_extensions_module());
 }
 
 int control_panels_session_init(Session *s) {

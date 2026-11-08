@@ -4,4 +4,4 @@ CORE := src/system_icon_positions.c src/finder_system_icons.c src/finder_icon_po
 	src/install.c src/classic.c src/typeface.c src/native_launch.c src/mac_resource.c \
 	src/term_tailnet.c src/term_font.c src/term_vt.c src/term_pty.c src/term_console.c src/term_ui.c \
 	src/mac_movie.c src/mac_movie_play.c src/movie_window.c src/quake_launch.c src/quake_session.c \
-	src/control_panel_store.c src/cdev_registry.c src/cdev_ui.c src/cdev_general.c src/cdev_sound.c src/cdev_appearance.c src/control_panels.c src/control_panels_input.c
+	src/control_panel_store.c src/cdev_registry.c src/cdev_ui.c src/cdev_general.c src/cdev_sound.c src/cdev_appearance.c src/control_panels.c src/control_panels_input.c src/ext_scan.c src/ext_state.c src/ext_ui.c src/cdev_extensions.c

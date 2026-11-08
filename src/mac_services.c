@@ -88,6 +88,11 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (opcode < 0xa800 && (opcode & 0xff) == 0x47) { /* SetTrapAddress */
         unsigned key = requested_key(opcode, (uint16_t)mac_cpu_get(cpu, MAC_D0));
         uint32_t address = mac_cpu_get(cpu, MAC_A0);
+        if (rt->init_guard && (key == 0x46 || key == 0x47 || key == 0x9f0 || key == 0x9f4)) {
+            rt->init_violation = 1; /* protected: refuse, tell the INIT paramErr */
+            mac_cpu_set(cpu, MAC_D0, (uint32_t)(int32_t)-50);
+            return 0;
+        }
         if ((address & 1) || address >= mac_cpu_ram_size(cpu) - 1) {
             mac_cpu_halt(cpu, "Invalid guest trap-handler address.");
             return -1;

@@ -80,7 +80,15 @@ int main(void) {
             mac_cpu_get(rt.cpu,MAC_D0)!=(i==5?(uint32_t)-5551:0) ||
             mac_cpu_get(rt.cpu,MAC_A7)!=0x50000) failed=1;
     }
-    if (mac_system_service(&rt,0xa3ad)!=0) failed=1; /* NewGestalt remains unsupported. */
+    /* NewGestalt records a selector; Gestalt then reports it present (response 0). */
+    mac_cpu_set(rt.cpu,MAC_D0,0x62616421);mac_cpu_set(rt.cpu,MAC_A0,0x1000);
+    if (mac_system_service(&rt,0xa3ad)!=1 || mac_cpu_get(rt.cpu,MAC_D0)!=0 || rt.gestalt_count!=1) failed=1;
+    mac_cpu_set(rt.cpu,MAC_D0,0x62616421);
+    if (mac_system_service(&rt,0xa1ad)!=1 || mac_cpu_get(rt.cpu,MAC_D0)!=0) failed=1;
+    mac_cpu_set(rt.cpu,MAC_D0,0x62616421);mac_cpu_set(rt.cpu,MAC_A0,0x1000);
+    if (mac_system_service(&rt,0xa3ad)!=1 || mac_cpu_get(rt.cpu,MAC_D0)!=(uint32_t)-5550) failed=1; /* duplicate */
+    mac_cpu_set(rt.cpu,MAC_D0,0x73797376);
+    if (mac_system_service(&rt,0xa3ad)!=1 || mac_cpu_get(rt.cpu,MAC_D0)!=(uint32_t)-5550) failed=1; /* built in */
     mac_cpu_write(rt.cpu,0x100,2,0x7001); /* MOVEQ #1,D0 */
     mac_cpu_set(rt.cpu,MAC_PC,0x100);
     mac_cpu_run(rt.cpu,1);
