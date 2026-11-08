@@ -60,7 +60,8 @@ static int implemented(unsigned key) {
     case 0xab1d: case 0xaa03: case 0xaa04: case 0xaa24:
     case 0xaa00: case 0xaa01: case 0xaa02: case 0xa8ec:
     case 0xaa14: case 0xaa15: case 0xaa18: case 0xaa3e: case 0xaa40: case 0xaa3f:
-    case 0xaa29: case 0xaa2a: case 0xaa2b: case 0xaa2c: case 0xaa31: case 0xaa32: return 1;
+    case 0xaa29: case 0xaa2a: case 0xaa2b: case 0xaa2c: case 0xaa31: case 0xaa32:
+    case 0xaa1b: case 0xaa1c: case 0xaa1d: case 0xaa26: return 1;
     default: return 0;
     }
 }
@@ -142,6 +143,8 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (file) return file > 0 ? 0 : -1;
     int cursor = mac_cursor_service(rt, opcode);
     if (cursor) return cursor > 0 ? 0 : -1;
+    int ccursor = mac_ccursor_service(rt, opcode);
+    if (ccursor) return ccursor > 0 ? 0 : -1;
     int dialog = mac_dialog_service(rt, opcode);
     if (dialog) return dialog > 0 ? 0 : -1;
     int color_port = mac_color_port_service(rt, opcode);

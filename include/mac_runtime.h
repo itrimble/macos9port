@@ -162,6 +162,7 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode);
 int mac_color_init(MacRuntime *rt);
 int mac_color_service(MacRuntime *rt, uint16_t opcode);
 int mac_cursor_service(MacRuntime *rt, uint16_t opcode);
+int mac_ccursor_service(MacRuntime *rt, uint16_t opcode);
 int mac_dialog_service(MacRuntime *rt, uint16_t opcode);
 int mac_color_port_service(MacRuntime *rt, uint16_t opcode);
 int mac_copybits_service(MacRuntime *rt, uint16_t opcode);
