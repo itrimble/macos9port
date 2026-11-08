@@ -144,6 +144,15 @@ int mac_memory_service(MacRuntime *rt, uint16_t opcode) {
         }
         return 1;
     }
+    if (call == 0x28) { /* RecoverHandle: the handle that owns the relocatable block starting at A0. A pointer that is not
+                         * the start of a live relocatable block gives a nil handle and memWZErr (the real result is undefined). */
+        MacHandle *owner = NULL;
+        for (size_t i = 0; a0 && i < rt->handle_count; i++)
+            if (rt->handles[i].handle && rt->handles[i].pointer == a0) { owner = &rt->handles[i]; break; }
+        mac_cpu_set(cpu, MAC_A0, owner ? owner->handle : 0);
+        result(cpu, owner ? 0 : -111);
+        return 1;
+    }
     if (call == 0x1f || call == 0x23) { /* DisposePtr / DisposeHandle. */
         MacHandle *h = lookup(rt, a0, call == 0x23);
         if (!h) result(cpu, -109);

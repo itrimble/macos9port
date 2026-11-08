@@ -205,6 +205,13 @@ int main(void) {
     CHECK(mac_cpu_read(rt.cpu, grown + 8, 4) == 0);
     CHECK(call(&rt, 0xa025, handle, 0) == 1);
     CHECK(mac_cpu_get(rt.cpu, MAC_D0) == 16);
+    /* RecoverHandle finds the owner of a relocatable block from its start; anything else is a nil handle and memWZErr. */
+    CHECK(call(&rt, 0xa128, grown, 0) == 1); error_is(&rt, 0); CHECK(mac_cpu_get(rt.cpu, MAC_A0) == handle);
+    CHECK(call(&rt, 0xa028, grown, 0) == 1); error_is(&rt, 0); CHECK(mac_cpu_get(rt.cpu, MAC_A0) == handle);
+    CHECK(call(&rt, 0xa128, pointer, 0) == 1); error_is(&rt, -111); CHECK(mac_cpu_get(rt.cpu, MAC_A0) == 0);  /* a plain pointer */
+    CHECK(call(&rt, 0xa128, grown + 4, 0) == 1); error_is(&rt, -111); CHECK(mac_cpu_get(rt.cpu, MAC_A0) == 0); /* inside a block */
+    CHECK(call(&rt, 0xa128, 0, 0) == 1); error_is(&rt, -111); CHECK(mac_cpu_get(rt.cpu, MAC_A0) == 0);
+    CHECK(call(&rt, 0xa128, handle, 0) == 1); error_is(&rt, -111);                                             /* a handle is not a block start */
 
     CHECK(call(&rt, 0xa029, handle, 0) == 1); /* HLock. */
     error_is(&rt, 0);
@@ -238,8 +245,10 @@ int main(void) {
     }
     CHECK(call(&rt, 0xa023, 0, 0) == 1); error_is(&rt, -109);
     CHECK(call(&rt, 0xa023, pointer, 0) == 1); error_is(&rt, -109);
+    uint32_t live_block = record ? record->pointer : 0;
     CHECK(call(&rt, 0xa023, handle, 0) == 1); error_is(&rt, 0);
     CHECK(mac_cpu_read(rt.cpu, handle, 4) == 0);
+    CHECK(live_block && call(&rt, 0xa128, live_block, 0) == 1); error_is(&rt, -111); CHECK(mac_cpu_get(rt.cpu, MAC_A0) == 0); /* disposed */
     CHECK(call(&rt, 0xa023, handle, 0) == 1); error_is(&rt, -109);
     CHECK(call(&rt, 0xa01f, pointer, 0) == 1); error_is(&rt, 0);
     CHECK(call(&rt, 0xa021, pointer, 0) == 1); error_is(&rt, -109);
