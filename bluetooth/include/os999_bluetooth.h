@@ -189,6 +189,9 @@ void bt_l2cap_set_acl_sender(BtL2cap *l, BtAclSendFn fn, void *ctx);
 /* Announce a new baseband link. cid space is per link. */
 void bt_l2cap_link_up(BtL2cap *l, uint16_t handle, const BtAddress *peer);
 void bt_l2cap_link_down(BtL2cap *l, uint16_t handle);
+/* Remove callbacks owned by a protocol before freeing its context. */
+void bt_l2cap_detach_context(BtL2cap *l, void *ctx);
+int bt_l2cap_unlisten(BtL2cap *l, uint16_t psm);
 int bt_l2cap_listen(BtL2cap *l, uint16_t psm, BtL2capOpenFn on_open, void *ctx);
 /* Starts an outgoing channel. on_open fires once the peer configured the
  * channel. out_cid receives the local CID. */
@@ -224,6 +227,8 @@ typedef struct {
 int bt_l2cap_adopt(BtL2cap *l, uint16_t handle, const BtAddress *peer, uint16_t psm,
                    uint16_t mtu, const BtL2capPipe *pipe, int *out_cid);
 /* Feed one payload that arrived on an adopted channel. */
+/* Report host-owned channel closure without sending raw L2CAP signalling. */
+void bt_l2cap_pipe_closed(BtL2cap *l, int cid);
 void bt_l2cap_pipe_rx(BtL2cap *l, int cid, const uint8_t *p, size_t n);
 /* Feed one inbound ACL payload. */
 void bt_l2cap_rx(BtL2cap *l, uint16_t handle, uint8_t flags, const uint8_t *data, size_t len);
@@ -275,10 +280,11 @@ enum { BT_BNEP_ETHERTYPE_IPV4 = 0x0800, BT_BNEP_ETHERTYPE_ARP = 0x0806,
 enum { BT_BNEP_HDR_ETHERNET = 0x00, BT_BNEP_HDR_BNEP = 0x01 };
 
 /* BNEP control message types. */
-enum { BT_BNEP_CMD_FILTER = 0x00, BT_BNEP_CMD_CONN_REQ = 0x01, BT_BNEP_CMD_CONN_RSP = 0x02,
-       BT_BNEP_CMD_DISCONN_REQ = 0x03, BT_BNEP_CMD_DISCONN_RSP = 0x04 };
+enum { BT_BNEP_CMD_UNKNOWN = 0x00, BT_BNEP_CMD_CONN_REQ = 0x01, BT_BNEP_CMD_CONN_RSP = 0x02,
+       BT_BNEP_CMD_NET_FILTER = 0x03, BT_BNEP_CMD_NET_RESPONSE = 0x04,
+       BT_BNEP_CMD_FILTER = 0x05, BT_BNEP_CMD_FILTER_RESPONSE = 0x06 };
 
-/* Multicast filter modes carried in the filter message. */
+/* API modes encoded as standard multicast ranges, not wire mode bytes. */
 enum { BT_BNEP_FILTER_ALL = 0, BT_BNEP_FILTER_NONE = 1 };
 
 typedef struct BtBnep BtBnep;
@@ -299,10 +305,14 @@ BtBnep *bt_bnep_new(BtL2cap *l);
 void bt_bnep_free(BtBnep *b);
 int bt_bnep_listen(BtBnep *b, BtBnepOpenFn on_open, void *ctx);
 int bt_bnep_connect(BtBnep *b, uint16_t handle, const BtAddress *peer, int *out_cid);
-/* Send one Ethernet frame (destination and source MAC plus payload). */
+/* Adopt an open host-owned BNEP L2CAP channel; caller owns transport closure. */
+int bt_bnep_adopt(BtBnep *b, int cid, const BtAddress *peer);
+/* Send one general Ethernet frame (destination/source MAC plus payload). */
 int bt_bnep_send(BtBnep *b, int cid, const uint8_t dst[6], const uint8_t src[6],
                  uint16_t ethertype, const void *payload, size_t len);
-/* Multicast filter: 0 = all, 1 = none, otherwise a group address. */
+/* Request a peer multicast filter. ALL with group restricts to that address;
+ * ALL without group requests the full range. NONE requests an empty range.
+ * BT_OK means request sent, not peer acceptance; local filters are unsupported. */
 int bt_bnep_set_filter(BtBnep *b, int cid, int mode, const uint8_t group[6]);
 int bt_bnep_info(BtBnep *b, int cid, BtBnepInfo *out);
 /* The BNEP channel that talks to this peer MAC, or BT_ENOENT. */

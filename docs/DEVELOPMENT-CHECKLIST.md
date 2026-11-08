@@ -504,3 +504,9 @@ The isolated recovery adds the desktop PAN service/manager seam, cancellation,
 and safe detach; [details and remaining protocol blocker](BLUETOOTH-RECOVERY-2026-11-08.md).
 The existing BNEP simulator format is not standard wire interoperability.
 Real-radio UI, classic runtime hooks, and hardware acceptance remain pending.
+
+Bluetooth follow-up: standard setup/control UUID framing and host-channel
+lifetime are corrected with independent wire vectors. macOS wrapper completion,
+pipe initialization and cancellation are compile/contract checked. See
+[wire recovery evidence and explicit unsupported capabilities](BLUETOOTH-WIRE-2026-11-08.md).
+No physical peer, desktop radio wiring or classic runtime hook acceptance yet.

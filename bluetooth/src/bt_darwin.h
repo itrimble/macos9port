@@ -34,7 +34,12 @@ typedef void (*BtDarwinCloseFn)(void *ctx);
 BtDarwin *bt_darwin_new(void);
 void bt_darwin_free(BtDarwin *d);
 /* Run a standard inquiry for the given number of seconds. */
+typedef void (*BtDarwinDoneFn)(void *ctx, int status);
 int bt_darwin_discover(BtDarwin *d, uint32_t seconds, BtDarwinDeviceFn fn, void *ctx);
+/* Completion-aware variant; cancellation suppresses callbacks. */
+int bt_darwin_discover_with_done(BtDarwin *d, uint32_t seconds, BtDarwinDeviceFn fn,
+                                BtDarwinDoneFn done, void *ctx);
+int bt_darwin_local_address(BtDarwin *d, BtAddress *out);
 int bt_darwin_stop_discover(BtDarwin *d);
 /* Open an L2CAP channel to a peer and report the pipe when it is up. */
 int bt_darwin_open_l2cap(BtDarwin *d, const BtAddress *peer, uint16_t psm,

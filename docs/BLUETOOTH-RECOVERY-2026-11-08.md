@@ -19,19 +19,20 @@ Drivers must deliver callbacks on the caller thread and quiesce callbacks on
 free. The no-radio backend reports unavailable. There is no real-radio driver
 connected to this manager yet.
 
-## Protocol blocker and remaining integration
+## Original protocol finding and remaining integration
 
-The existing BNEP stack is a simulator-compatible subset, not a demonstrated
-standard PAN implementation. Its control sender writes a five-byte setup request
-without service UUIDs; its receiver expects at least five bytes with data at
+At the first recovery checkpoint the BNEP stack was a simulator-compatible subset, not a demonstrated
+standard PAN implementation. Its control sender wrote a five-byte setup request
+without service UUIDs; its receiver expected at least five bytes with data at
 byte five. The Bluetooth SIG test suite specifies a seven-byte setup request
 with UUID length and destination/source service UUIDs, and a four-byte success
 response. See [Bluetooth SIG BNEP test suite, tables 4.6 and 4.7](https://files.bluetooth.com/wp-content/uploads/2024/10/BNEP.TS_.p09.pdf).
 
-Correct the wire protocol and add independent known-vector tests before
-connecting the macOS L2CAP accelerator to real peers. The documented adopt
-example also has incorrect packet lengths and cannot be used as-is. No radio
-inquiry, pairing, device disconnect, or hardware test was attempted here.
+The follow-up protocol commit corrects setup/control framing, removes the private
+disconnect opcodes, adds independent wire vectors and safe host-channel adopt,
+closure and callback detachment. See [protocol follow-up](BLUETOOTH-WIRE-2026-11-08.md).
+Physical interoperability remains unverified; no radio inquiry, pairing or
+user-device disconnect was attempted.
 
 The menu, panel facade, and host lifecycle wiring overlap the active Control
 Panels producer and remain unmodified. Runtime hooks for real classic programs
