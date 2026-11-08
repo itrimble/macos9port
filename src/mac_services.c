@@ -39,7 +39,7 @@ static int implemented(unsigned key) {
     case 0xa8f6:
     case 0xa997: case 0xa994: case 0xa998: case 0xa99a: case 0xa9a4:
     case 0xaa52:
-    case 0xa861: case 0xaa4e: case 0xaa97: case 0xaa98: case 0xa83d: case 0xa9cb: case 0xa9cc: case 0xa9cd: case 0xa9cf: case 0xa9d1: case 0xa9d2: case 0xa9d3: case 0xa9d4: case 0xa9d8: case 0xa9d9: case 0xa9da: case 0xa9dc: case 0xa9df: case 0xa883: case 0xa884: case 0xa885: case 0xa886: case 0xa887: case 0xa888: case 0xa889: case 0xa88a: case 0xa88b: case 0xa88c: case 0xa88d: case 0xa88e: case 0xaa91: case 0xaa92: case 0xaa93: case 0xaa94: case 0xaa95: case 0xaa96: case 0xaa9a: case 0xaaa2:
+    case 0xa858: case 0xa859: case 0xa85a: case 0xa85b: case 0xa85c: case 0xa85d: case 0xa85e: case 0xa85f: case 0xa86a: case 0xa86b: case 0xa861: case 0xa93d: case 0xa938: case 0xa93e: case 0xaa4e: case 0xaa97: case 0xaa98: case 0xa83d: case 0xa9cb: case 0xa9cc: case 0xa9cd: case 0xa9cf: case 0xa9d1: case 0xa9d2: case 0xa9d3: case 0xa9d4: case 0xa9d8: case 0xa9d9: case 0xa9da: case 0xa9dc: case 0xa9df: case 0xa883: case 0xa884: case 0xa885: case 0xa886: case 0xa887: case 0xa888: case 0xa889: case 0xa88a: case 0xa88b: case 0xa88c: case 0xa88d: case 0xa88e: case 0xaa91: case 0xaa92: case 0xaa93: case 0xaa94: case 0xaa95: case 0xaa96: case 0xaa9a: case 0xaaa2:
     case 0xa931: case 0xa932: case 0xa933: case 0xa934: case 0xa935: case 0xa936: case 0xa93c: case 0xa9c0:
     case 0xa939: case 0xa93a: case 0xa945: case 0xa947: case 0xa949: case 0xa94d:
     case 0xa950: case 0xa9bf: case 0xa9bc:
@@ -147,6 +147,8 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (quickdraw) return quickdraw > 0 ? 0 : -1;
     int menu = mac_menu_service(rt, opcode);
     if (menu) return menu > 0 ? 0 : -1;
+    int menusel = mac_menuselect_service(rt, opcode);
+    if (menusel) return menusel > 0 ? 0 : -1;
     int toolbox = mac_toolbox_service(rt, opcode);
     if (toolbox) return toolbox > 0 ? 0 : -1;
     int color_raster = mac_color_raster_service(rt, opcode);
@@ -209,6 +211,8 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (text_state) return text_state > 0 ? 0 : -1;
     int text = mac_text_service(rt, opcode);
     if (text) return text > 0 ? 0 : -1;
+    int toolutil = mac_toolutil_service(rt, opcode);
+    if (toolutil) return toolutil > 0 ? 0 : -1;
     int stdprocs = mac_stdprocs_service(rt, opcode);
     if (stdprocs) return stdprocs > 0 ? 0 : -1;
     int textedit = mac_textedit_service(rt, opcode);

@@ -182,7 +182,18 @@ the probe, not a window I watched, and I have not listened to any audio.
 - **Not yet known:** why the logo takes ~20 s to appear (I do not know whether a real Mac is faster); whether the game's first
   moves (walking, the inventory, the menus, saving) work; anything about actual play. Reading the interpreter by its embedded function
   names (map kept outside Git) found the clock bug: `GetTime` mode 0 is `move.l $16a.w,D0`.
-- **Parity:** Monkey Island and Monkey Island 2 are byte-identical to the previous baseline; `make test` exits 0.
+- **Menu bar (headless frames):** `FindWindow` now returns `inMenuBar` for a point above `MBarHeight`; new `MenuSelect`, `HiliteMenu` and
+  `MenuKey` (`src/mac_menuselect.c`) track a press in the bar, draw a pull-down in the project's own 8x8 face (not a system menu font)
+  and own chrome, restore the pixels under it, and return `(menuID << 16) | item`. A scripted press on **File** (x 55, y 9) shows
+  *Save Game? / Restore Game? / Restart Game / Quit* with command keys, **Edit** dimmed; moving to Restore Game? and releasing opens the
+  game's own Standard File dialog ("Restore Game:"), which our dialog code draws. Not done: hierarchical menus, icons in items, custom
+  menu definitions and colour menus are not drawn; the pull-down is not a pixel match for a real Mac's. I have not tried the Options
+  menu or a command key in the game. Also added the integer/bit Toolbox utilities (`BitAnd`.. `BitClr`, `HiWord`, `LoWord`,
+  `src/mac_toolutil.c`) after Castle reached `LoWord` ($A86B); `BitShift` semantics are from memory, not from a listing I could open.
+  Mutation checks on the tracker: 9 of 11 mutants killed; the 2 survivors are equivalent (a redundant `shown = 0`, a second clear of
+  an already-clear highlight). UBSan caught a signed shift on menu flags with the high byte set; fixed.
+- **Parity:** Monkey Island and Monkey Island 2 are byte-identical to the previous baseline; `make test` exits 0; ASan on Castle (90 s with
+  the menu script) and on the new and touched menu, window and utility tests reports nothing.
 
 ## Next reproducible steps
 
