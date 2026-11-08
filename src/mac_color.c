@@ -18,6 +18,33 @@ static void bounds(MacRuntime *rt, uint32_t p) {
     wr(rt, p, 4, 0); wr(rt, p + 4, 2, 480); wr(rt, p + 6, 2, 640);
 }
 
+/* The main device's 256-entry table. Color is an authored uniform RGB332 cube reversed so white=0 and black=255;
+ * gray is the same ordering as a plain gray ramp (the device's "Grays" mode at the same depth). */
+static void fill_table(MacRuntime *rt, uint32_t ct, int gray) {
+    for (unsigned i = 0; i < 256; i++) {
+        unsigned v = 255 - i, r, g, b;
+        if (gray) r = g = b = v;
+        else { r = ((v >> 5) & 7) * 255 / 7; g = ((v >> 2) & 7) * 255 / 7; b = (v & 3) * 255 / 3; }
+        rt->palette[i] = r << 16 | g << 8 | b;
+        wr(rt, ct + 8 + i * 8, 2, 0);
+        wr(rt, ct + 10 + i * 8, 2, r * 257);
+        wr(rt, ct + 12 + i * 8, 2, g * 257);
+        wr(rt, ct + 14 + i * 8, 2, b * 257);
+    }
+}
+
+/* Switch the main device between its color and gray tables at the current depth (SetDepth's gdDevType bit).
+ * Bumps ctSeed so cached inverse tables are invalidated, as a real table change does. */
+int mac_color_set_gray(MacRuntime *rt, int gray) {
+    if (!rt->main_device || rt->screen_depth != 8) return -1;
+    uint32_t ct = rd(rt, rt->screen_colors, 4), gd = rd(rt, rt->main_device, 4);
+    if (!valid(rt, ct, 2056) || !valid(rt, gd, 62)) return -1;
+    fill_table(rt, ct, gray);
+    wr(rt, ct, 4, rd(rt, ct, 4) + 1);
+    wr(rt, gd + 20, 2, gray ? (rd(rt, gd + 20, 2) & ~1u) : (rd(rt, gd + 20, 2) | 1u));
+    return 0;
+}
+
 int mac_color_init(MacRuntime *rt) {
     if (mac_cpu_halted(rt->cpu)) return -1;
     if (rt->main_device) return 1;
@@ -39,18 +66,7 @@ int mac_color_init(MacRuntime *rt) {
         if (rt->handle_count <= slots[i]) rt->handle_count = slots[i] + 1;
     }
     wr(rt, ct, 4, 1024); wr(rt, ct + 4, 2, 0x8000); wr(rt, ct + 6, 2, 255);
-    /* Authored uniform RGB332 cube, reversed so white=0 and black=255. */
-    for (unsigned i = 0; i < 256; i++) {
-        unsigned v = 255 - i;
-        unsigned r = ((v >> 5) & 7) * 255 / 7;
-        unsigned g = ((v >> 2) & 7) * 255 / 7;
-        unsigned b = (v & 3) * 255 / 3;
-        rt->palette[i] = r << 16 | g << 8 | b;
-        wr(rt, ct + 8 + i * 8, 2, 0);
-        wr(rt, ct + 10 + i * 8, 2, r * 257);
-        wr(rt, ct + 12 + i * 8, 2, g * 257);
-        wr(rt, ct + 14 + i * 8, 2, b * 257);
-    }
+    fill_table(rt, ct, 0);
     wr(rt, pm, 4, 0xe00000); wr(rt, pm + 4, 2, 0x8000 | 640); bounds(rt, pm + 6);
     wr(rt, pm + 22, 4, 72u << 16); wr(rt, pm + 26, 4, 72u << 16);
     wr(rt, pm + 32, 2, 8); wr(rt, pm + 34, 2, 1); wr(rt, pm + 36, 2, 8);

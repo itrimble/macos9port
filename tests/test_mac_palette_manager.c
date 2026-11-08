@@ -68,18 +68,34 @@ static uint16_t depth_call(MacRuntime*r,uint16_t selector,uint32_t gd,int depth,
 }
 static void palette_dispatch(void){
  MacRuntime r=fresh();CHECK(mac_color_init(&r)==1);uint32_t gd=r.main_device;CHECK(gd && r.screen_depth==8);
- /* HasDepth: only the single indexed color mode exists. */
+ /* HasDepth: the single 8-bit indexed mode, available as color or as grays. */
  CHECK(depth_call(&r,0x0a14,gd,8,1,1)==1);          /* 8-bit color: available */
+ CHECK(depth_call(&r,0x0a14,gd,8,1,0)==1);          /* 8-bit grays: available (Glider PRO's CanWeDisplay8Bit) */
  CHECK(depth_call(&r,0x0a14,gd,8,0,0)==1);          /* device type not constrained */
- CHECK(depth_call(&r,0x0a14,gd,1,1,0)==0);          /* Glider PRO's exact query: 1-bit monochrome */
- CHECK(depth_call(&r,0x0a14,gd,8,1,0)==0);          /* 8-bit but asked to be monochrome */
+ CHECK(depth_call(&r,0x0a14,gd,1,1,0)==0 && depth_call(&r,0x0a14,gd,4,1,0)==0);   /* no other depth exists */
  CHECK(depth_call(&r,0x0a14,gd,4,1,1)==0 && depth_call(&r,0x0a14,gd,32,1,1)==0 && depth_call(&r,0x0a14,gd,-8,1,1)==0);
  CHECK(depth_call(&r,0x0a14,gd,8,2,2)==0);          /* undefined flag bits are not claimed */
  CHECK(depth_call(&r,0x0a14,0,8,1,1)==0 && depth_call(&r,0x0a14,gd+4,8,1,1)==0);   /* not the main device */
- /* SetDepth: the current mode is a no-op success; anything else fails and changes nothing. */
- CHECK(depth_call(&r,0x0a13,gd,8,1,1)==0);
- CHECK(depth_call(&r,0x0a13,gd,1,1,0)==(uint16_t)-50 && r.screen_depth==8);
- CHECK(depth_call(&r,0x0a13,0,8,1,1)==(uint16_t)-50);
+ /* SetDepth switches between the color and gray tables for real; other depths fail and change nothing. */
+ uint32_t ct=rd(&r,r.screen_colors,4),devp=rd(&r,gd,4);
+ uint8_t color[2056];memcpy(color,mac_cpu_ram(r.cpu)+ct,2056);
+ uint32_t seed=rd(&r,ct,4);
+ CHECK(rd(&r,devp+20,2)&1);
+ CHECK(depth_call(&r,0x0a13,gd,8,1,0)==0);                              /* to grays */
+ CHECK(!(rd(&r,devp+20,2)&1) && r.screen_depth==8 && rd(&r,ct,4)==seed+1);
+ for(unsigned i=0;i<256;i++){
+  uint32_t rr=rd(&r,ct+10+i*8,2),gg=rd(&r,ct+12+i*8,2),bb=rd(&r,ct+14+i*8,2);
+  CHECK(rr==gg && gg==bb && rr==(255-i)*257);                            /* white at 0 ... black at 255 */
+  CHECK(r.palette[i]==((255-i)<<16|(255-i)<<8|(255-i)));
+ }
+ CHECK(depth_call(&r,0x0a14,gd,8,1,0)==1 && depth_call(&r,0x0a14,gd,8,1,1)==1);   /* both still offered */
+ CHECK(depth_call(&r,0x0a13,gd,8,0,0)==0 && !(rd(&r,devp+20,2)&1));    /* whichFlags 0: leave the type alone */
+ CHECK(depth_call(&r,0x0a13,gd,8,1,1)==0);                              /* back to color */
+ CHECK((rd(&r,devp+20,2)&1) && rd(&r,ct,4)==seed+2);
+ CHECK(memcmp(mac_cpu_ram(r.cpu)+ct+4,color+4,2052)==0);                /* identical to the original table */
+ CHECK(depth_call(&r,0x0a13,gd,1,1,0)==(uint16_t)-50 && r.screen_depth==8 && (rd(&r,devp+20,2)&1));
+ CHECK(depth_call(&r,0x0a13,gd,8,2,0)==(uint16_t)-50 && rd(&r,ct,4)==seed+2);       /* undefined flag bits */
+ CHECK(depth_call(&r,0x0a13,0,8,1,1)==(uint16_t)-50 && rd(&r,ct,4)==seed+2);
  CHECK(!mac_cpu_halted(r.cpu));
  /* Unknown routines and malformed argument sizes halt naming the selector; nothing is fabricated. */
  mac_cpu_set(r.cpu,MAC_A7,0x8000);mac_cpu_set(r.cpu,MAC_D0,0x0415);

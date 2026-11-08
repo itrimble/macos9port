@@ -55,8 +55,9 @@ static int association(MacRuntime*r,uint16_t opcode,uint32_t sp){
 }
 /* _PaletteDispatch ($AAA2): the selector is the low word of D0, high byte = argument bytes, low byte = routine
  * (e.g. $0A14 = HasDepth, $0A13 = SetDepth; declaration pairs in the public MPW interface files). The only
- * display mode is the main device's 8-bit indexed color depth, so a depth request succeeds only for exactly that
- * mode. whichFlags selects which device-type bits to compare (bit 0 = gdDevType: 1 color, 0 monochrome). */
+ * display depth is the main device's 8-bit indexed mode, which has a color table and a gray table (the device's
+ * "Grays" mode), so a request is supported at exactly that depth for either device type. whichFlags selects which
+ * flag bits matter (bit 0 = gdDevType: 1 color, 0 gray); any other bit is not defined here and is refused. */
 static int palette_dispatch(MacRuntime *r){
     uint32_t sel=mac_cpu_get(r->cpu,MAC_D0)&0xffff,sp=mac_cpu_get(r->cpu,MAC_A7);
     unsigned routine=sel&0xff,args=sel>>8;
@@ -67,15 +68,10 @@ static int palette_dispatch(MacRuntime *r){
     }
     if(!valid(r,sp,12))return fail(r,"PaletteDispatch stack exceeds guest RAM.");
     uint32_t flags=rd(r,sp,2),which=rd(r,sp+2,2),depth=rd(r,sp+4,2),gd=rd(r,sp+6,4);
-    int supported=gd && gd==r->main_device && r->screen_depth==depth;
-    if(supported){
-        uint32_t device=rd(r,gd,4);
-        uint32_t device_flags=device && valid(r,device,62)?rd(r,device+20,2):0;
-        if(which&~1u)supported=0;                                  /* only gdDevType is defined here */
-        else if((which&1) && ((flags^device_flags)&1))supported=0; /* wrong device type for this mode */
-    }
+    int supported=gd && gd==r->main_device && r->screen_depth==depth && !(which&~1u);
+    if(supported && routine==0x13 && (which&1) && mac_color_set_gray(r,!(flags&1)))supported=0;
     if(routine==0x14)wr(r,sp+10,2,supported?1:0);                  /* HasDepth: nonzero when available */
-    else wr(r,sp+10,2,supported?0:(uint16_t)-50);                  /* SetDepth: noErr for the current mode, else paramErr */
+    else wr(r,sp+10,2,supported?0:(uint16_t)-50);                  /* SetDepth: noErr, or paramErr when unavailable */
     mac_cpu_set(r->cpu,MAC_A7,sp+10);
     return 1;
 }
