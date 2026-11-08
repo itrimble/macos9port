@@ -22,19 +22,19 @@ build/test_desktop_sound: tests/test_desktop_sound.c src/desktop_sound.c $(AUDIO
 
 test: build/test_desktop_sound
 
-build/test_audio_engine: tests/test_audio_engine.c tests/test_media_app.c $(CORE) $(STORAGE_A) $(AUDIO_SRC) src/winamp_skin.c src/media_player_panel.c src/desktop_sound.c src/os999_startup.c $(HDRS) $(AUDIO_HDRS) include/winamp_skin.h include/media_player_panel.h include/desktop_sound.h
-	$(CC) $(CFLAGS) $(SDL_CFLAGS) $(FFMPEG_CFLAGS) tests/test_audio_engine.c tests/test_media_app.c $(CORE) $(STORAGE_LINK) $(AUDIO_SRC) src/winamp_skin.c src/media_player_panel.c src/desktop_sound.c src/os999_startup.c $(SDL_LIBS) $(FFMPEG_LIBS) $(FT_LIBS) -pthread -lm -o $@ $(NET_LIBS)
+build/test_audio_engine: tests/test_audio_engine.c tests/test_media_app.c $(CORE) $(STORAGE_A) $(AUDIO_SRC) src/winamp_skin.c src/media_player_panel.c src/desktop_sound.c $(STARTUP_SRC) $(HDRS) $(AUDIO_HDRS) include/winamp_skin.h include/media_player_panel.h include/desktop_sound.h
+	$(CC) $(CFLAGS) $(SDL_CFLAGS) $(FFMPEG_CFLAGS) tests/test_audio_engine.c tests/test_media_app.c $(CORE) $(STORAGE_LINK) $(AUDIO_SRC) src/winamp_skin.c src/media_player_panel.c src/desktop_sound.c $(STARTUP_SRC) $(SDL_LIBS) $(FFMPEG_LIBS) $(FT_LIBS) -pthread -lm -o $@ $(NET_LIBS)
 
 test: build/test_audio_engine
 
-build/test_desktop_guest: $(CORE) $(STORAGE_A) src/desktop_guest.c src/os999_startup.c tests/test_desktop_guest.c $(HDRS) include/desktop_guest.h include/os999_startup.h
-	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) src/desktop_guest.c src/os999_startup.c tests/test_desktop_guest.c $(FT_LIBS) -lm $(NET_LIBS)
+build/test_desktop_guest: $(CORE) $(STORAGE_A) src/desktop_guest.c $(STARTUP_SRC) tests/test_desktop_guest.c $(HDRS) include/desktop_guest.h $(STARTUP_HDR)
+	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) src/desktop_guest.c $(STARTUP_SRC) tests/test_desktop_guest.c $(FT_LIBS) -lm $(NET_LIBS)
 
-build/test_archive_fs: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_archive_fs.c $(HDRS) include/os999_startup.h
-	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_archive_fs.c $(FT_LIBS) -lm $(NET_LIBS)
+build/test_archive_fs: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_archive_fs.c $(HDRS) $(STARTUP_HDR)
+	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_archive_fs.c $(FT_LIBS) -lm $(NET_LIBS)
 
-build/test_desktop_session_ui: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_desktop_session_ui.c $(HDRS) include/os999_startup.h
-	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_desktop_session_ui.c $(FT_LIBS) -lm $(NET_LIBS)
+build/test_desktop_session_ui: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_desktop_session_ui.c $(HDRS) $(STARTUP_HDR)
+	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_desktop_session_ui.c $(FT_LIBS) -lm $(NET_LIBS)
 
 build/test_runtime_audio: $(RUNTIME_OBJ) src/runtime_audio.c tests/test_runtime_audio.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(SDL_CFLAGS) $(RUNTIME_OBJ) src/runtime_audio.c tests/test_runtime_audio.c $(CPUOBJ) $(SDL_LIBS) -lm -o $@
@@ -55,9 +55,9 @@ test-wallpapers: wallpapers build/test_desktop_wallpaper
 
 include config/desktop-tests.mk
 
-build/test_finder_edit: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_finder_edit.c $(HDRS)
+build/test_finder_edit: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_finder_edit.c $(HDRS)
 	mkdir -p build
-	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_finder_edit.c $(FT_LIBS) -lm $(NET_LIBS)
+	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_finder_edit.c $(FT_LIBS) -lm $(NET_LIBS)
 
 test: build/test_finder_edit
 

@@ -68,11 +68,25 @@ See [the preserved baseline](DEVELOPMENT-BASELINE.md). Newer acceptance evidence
   persistent end-user on/off setting and a visible preview/replay action.
 - [ ] S03 Use a replaceable, original OS999 emblem; do not copy Apple logos,
   recordings, or other proprietary assets. The supplied startup prompt describes a spinning Apple-shaped icon; adapt that concept to an original silhouette.
+  7 Nov (branch `feature/boot-startup-sequence`): the boot screen now draws an
+  original pixel-art Granny Smith fruit authored as indexed rows in
+  `src/os999_startup_sprite.c`, using only colours already present in the
+  project 256-colour icon cube. The supplied `apple_logo.png` and
+  `boot logo.png` mockups were used as layout references only; no Apple
+  artwork and no bitmap from that folder is vendored or shipped.
 - [ ] S04 Drive the initialize → settle → reveal → desktop/failure state machine
   from actual startup work. Keep status truthful, prevent duplicate reveals, provide recovery on failure, and do not invent progress or spin indefinitely.
+  7 Nov: `os999_startup_progress()` now reports boot progress and only
+  reaches 1.0 once the desktop is genuinely ready; while work is pending it
+  climbs with elapsed time and stops at 0.92. A failure freezes the bar at its
+  last value and keeps the retry/close dialog.
 - [ ] S05 Keep the wordmark and “Made for the fun of it.” readable and still;
   keep any supporting tagline (“For enthusiasts. By enthusiasts.”) secondary. Spin only while work is pending, land upright smoothly, and avoid long waits.
   Provide a development preview/replay control for repeatable review.
+  7 Nov: the wordmark and tagline are drawn in the project's 8x8 pixel font,
+  the status line under the progress bar reads exactly `Starting Up...`, and
+  the fruit turns only while work is pending, landing upright before the
+  reveal. Reduced motion keeps the mark static.
 - [ ] S06 Respect reduced motion with a static mark and short dissolve. Any
   startup sound is one optional original sound, respects sound preferences, and never uses a copied Apple chime or delays startup.
 - [ ] S07 Reveal the existing functional desktop, menus, windows, icons, and
@@ -84,6 +98,11 @@ See [the preserved baseline](DEVELOPMENT-BASELINE.md). Newer acceptance evidence
 - [ ] S10 Use supplied desktop and boot mockups as layout references. Preserve
   the existing functional desktop; treat the Chromium image as a future target, not implemented browser evidence. Verify wallpaper, windows, menu, About, and
   app launching separately before marking visual acceptance complete.
+  7 Nov: the boot screen follows the supplied boot mockup layout — fruit,
+  `OS999` wordmark, tagline, striped progress bar — and drops the mockup's
+  decorative HD/document/`OS9 ->` icons and the old soft shadow halo. The
+  1024x768 frames were reviewed as rendered images; hands-on acceptance in a
+  real window is still open.
 - [ ] S11 Keep About This Mac compact and centered, fit the author/site/system
   information without an oversized window, and never show temporary host paths or the private volume location.
 

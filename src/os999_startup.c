@@ -1,4 +1,5 @@
 #include "os999_startup.h"
+#include "os999_startup_sprite.h"
 #include "ospi.h"
 #include <stdio.h>
 
@@ -16,13 +17,32 @@
 #define HOLD_MS 190u
 #define REVEAL_MS 250u
 
-static float *depth_buffer;
-static size_t depth_capacity;
+/* Boot copy. The status line below the progress bar is exact text. */
+#define WORDMARK "OS999"
+#define TAGLINE "Made for the fun of it."
+#define STATUS_TEXT "Starting Up..."
+
+/* Late-90s palette: deep blue-grey panel, cream wordmark, striped bar. */
+#define BG_TOP 0xFF2E3A55u
+#define BG_BOTTOM 0xFF586C93u
+#define BG_SCANLINE 0xFF1B2438u
+#define WORDMARK_COLOR 0xFFF4E3A8u
+#define WORDMARK_SHADOW 0xFF16203Au
+#define TAGLINE_COLOR 0xFFC6D2E6u
+#define STATUS_COLOR 0xFFE8EEF8u
+#define BAR_EDGE 0xFF16203Au
+#define BAR_BEVEL_LIGHT 0xFF9FB2D6u
+#define BAR_BEVEL_DARK 0xFF101A2Eu
+#define BAR_TRACK 0xFF3A4A6Bu
+#define BAR_STRIPE_A 0xFF7E9ED6u
+#define BAR_STRIPE_B 0xFF46689Fu
+#define BAR_LEADING 0xFF5D7DBBu
+
+#define BAR_SEGMENTS 24
+#define BAR_GAP 2
 
 void os999_startup_release(void) {
-    free(depth_buffer);
-    depth_buffer = NULL;
-    depth_capacity = 0;
+    /* The renderer owns no scratch memory any more. */
 }
 
 int os999_startup_pref_read(const char *root) {
@@ -59,112 +79,7 @@ static uint32_t mix(uint32_t a, uint32_t b, double t) {
     return out;
 }
 
-static void emblem_shadow(Fb *fb, int cx, int cy, int width, int height) {
-    if (width < 1 || height < 1) return;
-    for (int y = 0; y <= height; y++) {
-        for (int x = -width; x <= width; x++) {
-            double nx = (double)x / width, ny = (double)y / height;
-            double d = nx * nx + ny * ny;
-            if (d >= 1.0) continue;
-            int px = cx + x, py = cy + y;
-            if (px < 0 || py < 0 || px >= fb->w || py >= fb->h) continue;
-            size_t at = (size_t)py * (size_t)fb->w + (size_t)px;
-            fb->px[at] = mix(fb->px[at], 0xFF17243Au, (1.0 - d) * 0.22);
-        }
-    }
-}
-
-typedef struct { double x, y, z; uint32_t color; } BootVertex;
-
-static uint32_t apple_light(double nx, double ny, double nz) {
-    const double lx=-0.42, ly=0.50, lz=0.76;
-    double ndotl=fmax(0.0,nx*lx+ny*ly+nz*lz);
-    double shine=pow(ndotl,24.0);
-    uint32_t green=mix(0xFF47751Fu,0xFF9CCB43u,0.58+0.18*ny);
-    green=mix(0xFF26391Au,green,0.23+0.70*ndotl);
-    return mix(green,0xFFFFF5CEu,shine*0.52);
-}
-
-static BootVertex apple_vertex(double x,double y,double z,double angle,
-                               int cx,int cy,double scale,uint32_t color) {
-    double c=cos(angle),s=sin(angle);
-    double rx=x*c+z*s, rz=-x*s+z*c;
-    double perspective=3.8/(3.8-rz);
-    return (BootVertex){cx+rx*scale*perspective,cy-y*scale*perspective,rz,color};
-}
-
-static void apple_triangle(Fb *fb,BootVertex a,BootVertex b,BootVertex c,
-                           double angle,int cx,int cy,double scale) {
-    a=apple_vertex(a.x,a.y,a.z,angle,cx,cy,scale,a.color);
-    b=apple_vertex(b.x,b.y,b.z,angle,cx,cy,scale,b.color);
-    c=apple_vertex(c.x,c.y,c.z,angle,cx,cy,scale,c.color);
-    double area=(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
-    if(fabs(area)<0.001)return;
-    int x0=(int)fmax(0,floor(fmin(a.x,fmin(b.x,c.x))));
-    int x1=(int)fmin(fb->w-1,ceil(fmax(a.x,fmax(b.x,c.x))));
-    int y0=(int)fmax(0,floor(fmin(a.y,fmin(b.y,c.y))));
-    int y1=(int)fmin(fb->h-1,ceil(fmax(a.y,fmax(b.y,c.y))));
-    double ar=(a.color>>16)&255,ag=(a.color>>8)&255,ab=a.color&255;
-    double br=(b.color>>16)&255,bg=(b.color>>8)&255,bb=b.color&255;
-    double cr=(c.color>>16)&255,cg=(c.color>>8)&255,cb=c.color&255;
-    for(int y=y0;y<=y1;y++)for(int x=x0;x<=x1;x++){
-        double wa=((b.x-x)*(c.y-y)-(b.y-y)*(c.x-x))/area;
-        double wb=((c.x-x)*(a.y-y)-(c.y-y)*(a.x-x))/area;
-        double wc=1.0-wa-wb;
-        if(wa<-.002||wb<-.002||wc<-.002)continue;
-        size_t at=(size_t)y*(size_t)fb->w+(size_t)x;
-        double z=wa*a.z+wb*b.z+wc*c.z;
-        if(z<=depth_buffer[at])continue;
-        depth_buffer[at]=(float)z;
-        fb->px[at]=0xFF000000u|((uint32_t)(wa*ar+wb*br+wc*cr)<<16)|
-                   ((uint32_t)(wa*ag+wb*bg+wc*cg)<<8)|(uint32_t)(wa*ab+wb*bb+wc*cb);
-    }
-}
-
-static void emblem(Fb *fb, double angle) {
-    /* Original upright Granny Smith fruit mesh; not an Apple logo. */
-    enum { LAT=32,LON=48 };
-    BootVertex mesh[LAT+1][LON+1];
-    int cx=fb->w/2,cy=fb->h/2-65;
-    double scale=fmin(142.0,(double)fb->h*0.19)*0.25;
-    size_t count=(size_t)fb->w*(size_t)fb->h;
-    if(count>depth_capacity){
-        float *grown=realloc(depth_buffer,count*sizeof *depth_buffer);
-        if(!grown)return;
-        depth_buffer=grown;depth_capacity=count;
-    }
-    for(size_t i=0;i<count;i++)depth_buffer[i]=-1.0e9f;
-    emblem_shadow(fb,cx,cy+(int)(scale*.89),(int)(scale*.45),(int)(scale*.07));
-    for(int i=0;i<=LAT;i++){
-        double phi=-PI/2+PI*(double)i/LAT,sy=sin(phi),cp=cos(phi);
-        double dent=.11*exp(-pow((phi-1.43)/.16,2.0));
-        double radius=cp*(.93+.10*sy)+dent;
-        for(int j=0;j<=LON;j++){
-            double theta=2*PI*(double)j/LON;
-            double lobe=1+.035*cos(5*theta+.2*sy);
-            double x=radius*lobe*cos(theta),z=radius*lobe*sin(theta);
-            double nx=x/(radius*radius+.04),ny=sy,nz=z/(radius*radius+.04);
-            double n=sqrt(nx*nx+ny*ny+nz*nz);if(n>0){nx/=n;ny/=n;nz/=n;}
-            double y=sy-dent+.03*cos(5*theta)*cp;
-            mesh[i][j]=(BootVertex){x,y,z,apple_light(nx,ny,nz)};
-        }
-    }
-    for(int i=0;i<LAT;i++)for(int j=0;j<LON;j++){
-        BootVertex a=mesh[i][j],b=mesh[i][j+1],c=mesh[i+1][j],d=mesh[i+1][j+1];
-        apple_triangle(fb,a,c,b,angle,cx,cy,scale);
-        apple_triangle(fb,b,c,d,angle,cx,cy,scale);
-    }
-    BootVertex stem[4]={{-.018,.88,0,0xFF755331u},{.018,.88,0,0xFF977044u},
-                        {.045,1.12,.01,0xFF977044u},{.075,1.12,.01,0xFF684629u}};
-    apple_triangle(fb,stem[0],stem[1],stem[2],angle,cx,cy,scale);
-    apple_triangle(fb,stem[1],stem[3],stem[2],angle,cx,cy,scale);
-    BootVertex leaf[4]={{.03,1.00,.015,0xFF4B8628u},{.13,1.12,.02,0xFF85B83Au},
-                        {.49,1.23,.025,0xFFA4D64Eu},{.27,1.07,.05,0xFF5A9A2Eu}};
-    apple_triangle(fb,leaf[0],leaf[1],leaf[3],angle,cx,cy,scale);
-    apple_triangle(fb,leaf[1],leaf[2],leaf[3],angle,cx,cy,scale);
-}
-
-void os999_draw_menu_apple(Fb *fb,int x,int y) {
+void os999_draw_menu_apple(Fb *fb, int x, int y) {
     if(!fb)return;
     static const uint8_t half_width[]={2,4,5,6,7,7,7,7,6,6,5,4,3,2};
     const uint32_t green=0xFF78AD32u,light=0xFFA3CE55u,dark=0xFF477625u;
@@ -209,15 +124,24 @@ static void bitmap_draw_scaled(Fb *fb, int x, int y, uint32_t color,
     }
 }
 
+static void bitmap_draw_extruded(Fb *fb, int x, int y, uint32_t color,
+                                 uint32_t shadow, const char *text, int scale) {
+    if (shadow) bitmap_draw_scaled(fb, x + scale, y + scale, shadow, text, scale);
+    bitmap_draw_scaled(fb, x, y, color, text, scale);
+}
+
 void os999_startup_begin(Os999Startup *s, uint32_t now, int reduced_motion) {
     if (!s) return;
     *s = (Os999Startup){.phase = OS999_STARTUP_SPIN,
                         .phase_started = now,
-                        .reduced_motion = reduced_motion};
+                        .reduced_motion = reduced_motion,
+                        .progress = 0.0};
 }
 
 void os999_startup_fail(Os999Startup *s, uint32_t now) {
     if (!s) return;
+    /* Freeze the bar where it stood so the failure does not invent progress. */
+    s->progress = os999_startup_progress(s, now);
     s->phase = OS999_STARTUP_ERROR;
     s->phase_started = now;
     s->failed = 1;
@@ -225,6 +149,21 @@ void os999_startup_fail(Os999Startup *s, uint32_t now) {
 
 int os999_startup_active(const Os999Startup *s) {
     return s && s->phase != OS999_STARTUP_INACTIVE && s->phase != OS999_STARTUP_DONE;
+}
+
+const char *os999_startup_status_text(void) {
+    return STATUS_TEXT;
+}
+
+double os999_startup_progress(const Os999Startup *s, uint32_t now) {
+    if (!s) return 0.0;
+    if (s->ready) return 1.0;
+    if (s->phase == OS999_STARTUP_ERROR) return s->progress;
+    uint32_t elapsed = now - s->phase_started;
+    double t = (double)elapsed / (double)SPIN_MS;
+    if (t > 1.0) t = 1.0;
+    /* Work is still pending, so the bar never claims completion. */
+    return t * 0.92;
 }
 
 static void advance(Os999Startup *s, uint32_t now, int ready) {
@@ -245,38 +184,151 @@ static void advance(Os999Startup *s, uint32_t now, int ready) {
     }
 }
 
-static void render_intro(Fb *fb, const Os999Startup *s, uint32_t now) {
+typedef struct {
+    int fruit_scale, fruit_x, fruit_y;
+    int word_scale, word_x, word_y;
+    int tag_scale, tag_x, tag_y;
+    int bar_x, bar_y, bar_w, bar_h;
+    int status_scale, status_x, status_y;
+} BootLayout;
+
+static void compute_layout(const Fb *fb, BootLayout *L) {
+    int w = fb->w, h = fb->h;
+    int scale = w / 200;
+    if (scale < 2) scale = 2;
+    if (scale > 8) scale = 8;
+    int small = scale / 2;
+    if (small < 1) small = 1;
+    int fruit_h = os999_startup_fruit_height(scale);
+    int word_w = bitmap_width_scaled(WORDMARK, scale);
+    int word_h = 8 * scale;
+    int tag_w = bitmap_width_scaled(TAGLINE, small);
+    int tag_h = 8 * small;
+    int status_w = bitmap_width_scaled(STATUS_TEXT, small);
+    int status_h = 8 * small;
+    int bar_w = w / 2;
+    if (bar_w > 440) bar_w = 440;
+    if (bar_w < 180) bar_w = 180;
+    int bar_h = 20;
+    int gap_fruit = 24, gap_word = 18, gap_tag = 26, gap_bar = 14;
+    int block = fruit_h + gap_fruit + word_h + gap_word + tag_h +
+                gap_tag + bar_h + gap_bar + status_h;
+    int top = (h - block) / 2 - h / 24;
+    if (top < 8) top = 8;
+    L->fruit_scale = scale;
+    L->fruit_x = w / 2;
+    L->fruit_y = top + fruit_h / 2;
+    int y = top + fruit_h + gap_fruit;
+    L->word_scale = scale;
+    L->word_x = (w - word_w) / 2;
+    L->word_y = y;
+    y += word_h + gap_word;
+    L->tag_scale = small;
+    L->tag_x = (w - tag_w) / 2;
+    L->tag_y = y;
+    y += tag_h + gap_tag;
+    L->bar_x = (w - bar_w) / 2;
+    L->bar_y = y;
+    L->bar_w = bar_w;
+    L->bar_h = bar_h;
+    y += bar_h + gap_bar;
+    L->status_scale = small;
+    L->status_x = (w - status_w) / 2;
+    L->status_y = y;
+}
+
+static void draw_background(Fb *fb) {
     for (int y = 0; y < fb->h; y++) {
-        double t = (double)y / (fb->h ? fb->h : 1);
-        uint32_t c = mix(0xFF344768u, 0xFF536B91u, t);
+        double t = fb->h > 1 ? (double)y / (double)(fb->h - 1) : 0.0;
+        uint32_t c = mix(BG_TOP, BG_BOTTOM, t);
+        /* Every other row is dimmed for a subtle CRT scanline texture. */
+        if (y & 1) c = mix(c, BG_SCANLINE, 0.16);
         fb_fill(fb, 0, y, fb->w, 1, c);
     }
+}
+
+static void stripe_row(Fb *fb, int x, int y, int width, int row, int phase,
+                       uint32_t a, uint32_t b) {
+    int col = 0;
+    while (col < width) {
+        int on = ((col + row + phase) % 6) < 3;
+        int run = 1;
+        while (col + run < width &&
+               ((((col + run) + row + phase) % 6) < 3) == on) run++;
+        fb_fill(fb, x + col, y, run, 1, on ? a : b);
+        col += run;
+    }
+}
+
+static void draw_progress_bar(Fb *fb, int x, int y, int w, int h,
+                              double progress, uint32_t now, int animate) {
+    if (w < 8 || h < 8) return;
+    fb_frame(fb, x, y, w, h, BAR_EDGE);
+    fb_fill(fb, x + 1, y + 1, w - 2, h - 2, BAR_TRACK);
+    /* Classic bevel: light along the top and left, dark along the bottom. */
+    fb_fill(fb, x + 1, y + 1, w - 2, 1, BAR_BEVEL_LIGHT);
+    fb_fill(fb, x + 1, y + 1, 1, h - 2, BAR_BEVEL_LIGHT);
+    fb_fill(fb, x + 1, y + h - 2, w - 2, 1, BAR_BEVEL_DARK);
+    fb_fill(fb, x + w - 2, y + 1, 1, h - 2, BAR_BEVEL_DARK);
+    int inner_x = x + 2, inner_y = y + 2;
+    int inner_w = w - 4, inner_h = h - 4;
+    if (inner_w < BAR_SEGMENTS || inner_h < 2) return;
+    int seg_w = (inner_w - (BAR_SEGMENTS - 1) * BAR_GAP) / BAR_SEGMENTS;
+    if (seg_w < 1) seg_w = 1;
+    int total = BAR_SEGMENTS * seg_w + (BAR_SEGMENTS - 1) * BAR_GAP;
+    int start_x = inner_x + (inner_w - total) / 2;
+    int phase = animate ? (int)((now / 55u) % 6u) : 0;
+    double filled = progress * (double)BAR_SEGMENTS;
+    for (int i = 0; i < BAR_SEGMENTS; i++) {
+        int seg_x = start_x + i * (seg_w + BAR_GAP);
+        double fill = filled - (double)i;
+        int lit_width = 0;
+        if (fill >= 1.0) lit_width = seg_w;
+        else if (fill > 0.0) lit_width = (int)(fill * seg_w);
+        if (lit_width <= 0) continue;
+        if (fill < 1.0) {
+            /* The leading segment shows how far the current step has come. */
+            fb_fill(fb, seg_x, inner_y, lit_width, inner_h, BAR_LEADING);
+            continue;
+        }
+        for (int row = 0; row < inner_h; row++)
+            stripe_row(fb, seg_x, inner_y + row, lit_width, row, phase,
+                       BAR_STRIPE_A, BAR_STRIPE_B);
+    }
+}
+
+static double fruit_angle(const Os999Startup *s, uint32_t now) {
+    if (s->reduced_motion) return 0.0;
     uint32_t elapsed = now - s->phase_started;
-    double angle = 0.0;
-    if (!s->reduced_motion && s->phase == OS999_STARTUP_SPIN) {
-        angle = ((double)(now - s->phase_started) / SPIN_PERIOD_MS) * 2.0 * PI;
-    } else if (!s->reduced_motion && s->phase == OS999_STARTUP_SETTLE) {
-        double t = (double)elapsed / SETTLE_MS;
+    if (s->phase == OS999_STARTUP_SPIN)
+        return ((double)elapsed / SPIN_PERIOD_MS) * 2.0 * PI;
+    if (s->phase == OS999_STARTUP_SETTLE) {
+        /* Keep the spin's velocity, then taper it so the fruit lands upright. */
+        double base = 2.0 * PI * ((double)SPIN_MS / SPIN_PERIOD_MS);
+        double left = 2.0 * PI - base;
+        double t = (double)elapsed / (double)SETTLE_MS;
         if (t > 1.0) t = 1.0;
-        double left = 2.0 * PI * (1.0 - (double)SPIN_MS / SPIN_PERIOD_MS);
-        /* Match the spin's gentle velocity, then taper smoothly to a stop. */
         double stop = t + t * t - t * t * t;
-        angle = 2.0 * PI * (double)SPIN_MS / SPIN_PERIOD_MS + left * stop;
+        return base + left * stop;
     }
-    emblem(fb, angle);
-    const char *name = "OS999";
-    const char *tagline = "Made for the fun of it.";
-    int has_typeface = s->ready && typeface_startup_ready();
-    int nw = has_typeface ? typeface_width(2, name, (int)strlen(name)) : bitmap_width_scaled(name, 3);
-    int tw = has_typeface ? typeface_width(3, tagline, (int)strlen(tagline)) : bitmap_width_scaled(tagline, 2);
-    int nx = (fb->w - nw) / 2, tx = (fb->w - tw) / 2;
-    if (has_typeface) {
-        typeface_draw(fb, 2, nx, fb->h / 2 + 92, 0xFFF3F5F8u, name, (int)strlen(name));
-        typeface_draw(fb, 3, tx, fb->h / 2 + 146, 0xFFD6DDE8u, tagline, (int)strlen(tagline));
-    } else {
-        bitmap_draw_scaled(fb, nx, fb->h / 2 + 100, 0xFFF3F5F8u, name, 3);
-        bitmap_draw_scaled(fb, tx, fb->h / 2 + 154, 0xFFD6DDE8u, tagline, 2);
-    }
+    return 2.0 * PI;
+}
+
+static void render_intro(Fb *fb, const Os999Startup *s, uint32_t now) {
+    draw_background(fb);
+    BootLayout L;
+    compute_layout(fb, &L);
+    os999_startup_draw_fruit(fb, L.fruit_x, L.fruit_y, L.fruit_scale,
+                             fruit_angle(s, now));
+    bitmap_draw_extruded(fb, L.word_x, L.word_y, WORDMARK_COLOR, WORDMARK_SHADOW,
+                          WORDMARK, L.word_scale);
+    bitmap_draw_scaled(fb, L.tag_x, L.tag_y, TAGLINE_COLOR, TAGLINE, L.tag_scale);
+    double progress = os999_startup_progress(s, now);
+    /* Stripes only crawl while real work is still pending. */
+    int animate = !s->reduced_motion && progress < 1.0;
+    draw_progress_bar(fb, L.bar_x, L.bar_y, L.bar_w, L.bar_h, progress, now, animate);
+    bitmap_draw_scaled(fb, L.status_x, L.status_y, STATUS_COLOR, STATUS_TEXT,
+                        L.status_scale);
     if (s->phase == OS999_STARTUP_ERROR) {
         int x = fb->w / 2 - 275, y = fb->h / 2 - 104;
         fb_fill(fb, x + 7, y + 8, 550, 208, 0xFF26344Du);
