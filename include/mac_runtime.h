@@ -110,6 +110,7 @@ typedef struct {
     unsigned window_count;
     int exited;
     int trace;
+    struct { int active; uint32_t deadline, pc, sp; } delay; /* _Delay in progress (mac_delay.c); host memory only */
     MacAppleEvents appleevents; /* Apple Event Manager handler tables, host memory only (mac_appleevents.c) */
 } MacRuntime;
 
@@ -172,6 +173,7 @@ int mac_appleevents_service(MacRuntime *rt, uint16_t opcode); /* Apple Event Man
 /* Host-side lookup for a future dispatcher (application table, then system table; exact, class+'****', '****'+id,
  * '****'+'****'). Returns 1 and fills the outputs on a hit, 0 otherwise. Nothing in the runtime calls it yet. */
 int mac_ae_find_handler(const MacRuntime *rt, uint32_t event_class, uint32_t event_id, uint32_t *handler, uint32_t *refcon);
+int mac_delay_service(MacRuntime *rt, uint16_t opcode); /* Time Manager _Delay, $A03B */
 int mac_menu_service(MacRuntime *rt, uint16_t opcode);
 int mac_toolbox_service(MacRuntime *rt, uint16_t opcode);
 int mac_raster_service(MacRuntime *rt, uint16_t opcode);
