@@ -19,14 +19,15 @@ extern const uint8_t font8x8_pi[8];
  * shown as '#' and its letter, the highlighted item inverted. Icons, hierarchical (command key 27... mark = submenu ID) items, custom
  * MDEFs and colour menus are not supported and halt by name. Only an 8-bit screen is supported here. */
 enum { ITEM_H = 12, MAX_ITEMS = 31 };
+typedef struct { int id, nitems; unsigned flags; char title[256]; int tlen; struct { char text[256]; int len, cmd, mark; } it[MAX_ITEMS]; } MenuView;
 typedef struct MacMenuSel {
+    MenuView mv;                                   /* snapshot of the tracked menu: the guest cannot change it under the tracker */
     uint32_t sp, pc;
     int index, id, item, shown;                    /* the menu being tracked (index in the bar), its ID, the item under the pointer (0 none) */
     int left, top, w, h;                           /* the pull-down rectangle */
     uint8_t *back;
     int px, py;                                    /* last pointer position */
 } Sel;
-typedef struct { int id, nitems; unsigned flags; char title[256]; int tlen; struct { char text[256]; int len, cmd, mark; } it[MAX_ITEMS]; } MenuView;
 
 static int fail(MacRuntime *r, const char *why) { mac_cpu_halt(r->cpu, why); return -1; }
 static uint32_t rd(MacRuntime *r, uint32_t p, unsigned n) { return mac_cpu_read(r->cpu, p, n); }
@@ -34,6 +35,7 @@ void mac_menuselect_destroy(MacRuntime *rt) { if (rt->menusel) { free(rt->menuse
 
 /* A private copy of one registered menu (so nothing the guest changes mid-track can be read twice inconsistently). */
 static int view(MacRuntime *r, unsigned index, MenuView *v) {
+    memset(v, 0, sizeof *v);
     unsigned count = 0; MacHandle *list = mac_menu_list(r, &count);
     if (!list || index >= count) return 0;
     unsigned items = 0; MacHandle *m = mac_menu_record(r, rd(r, list->pointer + 2 + 4 * index, 4), &items);
@@ -130,8 +132,10 @@ static void result(MacRuntime *r, uint32_t sp, uint32_t value, unsigned pop) { m
 
 static int track(MacRuntime *rt, Sel *s) {
     uint32_t s0 = s->sp;
-    MenuView v;
-    if (!view(rt, (unsigned)s->index, &v)) return fail(rt, "MenuSelect: the menu list changed while tracking.");
+    MenuView *vp = &s->mv, v0; (void)v0;
+    { unsigned cnt = bar_count(rt); MenuView cur; if ((unsigned)s->index >= cnt || !view(rt, (unsigned)s->index, &cur) || cur.id != s->id || cur.nitems != vp->nitems)
+        return fail(rt, "MenuSelect: the menu list changed while tracking."); }
+    MenuView v = *vp;
     MacEvent e; int released = 0, x = rt->mouse_x, y = rt->mouse_y;
     if (!s->shown && draw_menu(rt, &v, s)) return -1;
     while (mac_dialog_next_event(rt, &e)) { if (e.what == 2) { released = 1; x = e.x; y = e.y; break; } if (e.what == 1) { x = e.x; y = e.y; } }
@@ -141,7 +145,7 @@ static int track(MacRuntime *rt, Sel *s) {
     if (t >= 0 && t != s->index && view(rt, (unsigned)t, &w) && (w.flags & 1)) {         /* moved along the bar onto another enabled menu */
         erase_menu(rt, s); hilite_title(rt, (unsigned)s->index);
         if (released) { mac_menuselect_destroy(rt); rt->menu_hilite = 0; result(rt, s0, 0, 4); return 1; }
-        s->index = t; s->id = w.id; s->item = 0; geometry(rt, &w, t, s); hilite_title(rt, (unsigned)t);
+        s->index = t; s->id = w.id; s->item = 0; s->mv = w; geometry(rt, &w, t, s); hilite_title(rt, (unsigned)t);
         if (draw_menu(rt, &w, s)) return -1;
         mac_cpu_set(rt->cpu, MAC_PC, s->pc); mac_cpu_yield(rt->cpu); return 1;
     }
@@ -176,7 +180,7 @@ static int menu_select(MacRuntime *rt, uint32_t sp, uint32_t pc) {
     Sel *s = calloc(1, sizeof *s);
     if (!s) return fail(rt, "MenuSelect could not allocate its state.");
     s->sp = sp; s->pc = pc; s->index = t; s->id = v.id; s->px = x; s->py = y;
-    geometry(rt, &v, t, s); rt->menusel = s; hilite_title(rt, (unsigned)t);
+    s->mv = v; geometry(rt, &v, t, s); rt->menusel = s; hilite_title(rt, (unsigned)t);
     return track(rt, s);
 }
 

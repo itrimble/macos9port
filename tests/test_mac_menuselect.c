@@ -100,7 +100,7 @@ static void keys_and_hilite(void){
 }
 static void refusals(void){
     uint32_t f;MacRuntime r;
-    for(unsigned k=0;k<8;k++){
+    for(unsigned k=0;k<9;k++){
         r=rig(&f);uint32_t sp=SP;
         if(k==0)sp=SP+1;                                                  /* odd stack */
         if(k==1)sp=(uint32_t)mac_cpu_ram_size(r.cpu)-4;                   /* no room for the result */
@@ -110,9 +110,10 @@ static void refusals(void){
         if(k==5)r.screen_row_bytes=100;                                   /* a row narrower than the screen */
         if(k==6){msel(&r,5,30);wr(&r,0xa1c,4,0);}                         /* the menu list vanishes mid-track */
         if(k==7)mac_cpu_halt(r.cpu,"stopped");
+        if(k==8){msel(&r,5,30);pointer(&r,40,62);again(&r);MacHandle*m=mac_menu_record(&r,rd(&r,rd(&r,r.menu_bar,4)+2,4),NULL);CHECK(m);mac_cpu_ram(r.cpu)[m->pointer+15+4]=250;}   /* the tracked menu's record is corrupted mid-track (item 1's length byte) */
         int rc;
         if(k==4)rc=mac_menuselect_service(&r,0xa93d);
-        else if(k==6){pointer(&r,40,25);rc=again(&r);}
+        else if(k==6||k==8){pointer(&r,40,25);rc=again(&r);}
         else {mac_cpu_set(r.cpu,MAC_A7,sp);mac_cpu_set(r.cpu,MAC_PC,PC);rc=mac_menuselect_service(&r,0xa93d);}
         CHECK(rc==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
     }
