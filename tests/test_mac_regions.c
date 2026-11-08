@@ -1,5 +1,6 @@
 #include "mac_runtime.h"
 #include "mac_rgn.h"
+#include "mac_shape.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -282,6 +283,55 @@ static void obs2(MacRuntime *rt,uint16_t op,int a,int b){mac_cpu_set(rt->cpu,MAC
 static void obs_rect(MacRuntime *rt,B b){wr(rt,R,2,(uint16_t)b.t);wr(rt,R+2,2,(uint16_t)b.l);wr(rt,R+4,2,(uint16_t)b.b);wr(rt,R+6,2,(uint16_t)b.r);mac_cpu_set(rt->cpu,MAC_A7,SP);wr(rt,SP,4,R);mac_rgn_record_observe(rt,0xa8a1);}
 static int close_into(MacRuntime *rt,uint32_t h){mac_cpu_set(rt->cpu,MAC_A7,SP);wr(rt,SP,4,h);return mac_regions_service(rt,0xa8db);}
 static int open_it(MacRuntime *rt){mac_cpu_set(rt->cpu,MAC_A7,SP);return mac_regions_service(rt,0xa8da);}
+/* Ovals, round rectangles and diagonals while recording: the region is what the outline encloses, from our own scan conversion (mac_shape.c). */
+static void obs_shape(MacRuntime *rt,uint16_t op,B b,int ow,int oh){
+    wr(rt,R,2,(uint16_t)b.t);wr(rt,R+2,2,(uint16_t)b.l);wr(rt,R+4,2,(uint16_t)b.b);wr(rt,R+6,2,(uint16_t)b.r);mac_cpu_set(rt->cpu,MAC_A7,SP);
+    if(op==0xa8b0){wr(rt,SP,2,(uint16_t)oh);wr(rt,SP+2,2,(uint16_t)ow);wr(rt,SP+4,4,R);}else wr(rt,SP,4,R);
+    mac_rgn_record_observe(rt,op);
+}
+static void shapes_and_diagonals(void){
+    for(unsigned k=0;k<6;k++){
+        MacRuntime rt=rec_rt();uint32_t d=create(&rt);B b[6]={{0,0,4,4},{5,3,17,21},{2,2,3,9},{0,0,40,25},{-3,-4,7,6},{10,10,31,11}};
+        int round=k&1;int ow=round?6:0,oh=round?4:0;
+        open_it(&rt);obs_shape(&rt,round?0xa8b0:0xa8b7,b[k],ow,oh);CHECK(!mac_cpu_halted(rt.cpu) && close_into(&rt,d)==1);
+        MacShape s;CHECK(mac_shape_build(&s,b[k].t,b[k].l,b[k].b,b[k].r,round?ow:b[k].r-b[k].l,round?oh:b[k].b-b[k].t)==0);
+        MacRgn g;mac_rgn_init(&g);CHECK(region_of(&rt,d,&g)==0);
+        for(int y=b[k].t-2;y<b[k].b+2;y++)for(int x=b[k].l-2;x<b[k].r+2;x++)CHECK(mac_rgn_contains(&g,x,y)==mac_shape_contains(&s,x,y));
+        mac_rgn_free(&g);mac_shape_free(&s);mac_cpu_destroy(rt.cpu);
+    }
+    /* an oval and a rectangle recorded together, and nested oval frames leave a hole; empty rectangles record nothing */
+    MacRuntime rt=rec_rt();uint32_t d=create(&rt);open_it(&rt);obs_shape(&rt,0xa8b7,(B){0,0,20,20},0,0);obs_shape(&rt,0xa8b7,(B){5,5,15,15},0,0);obs_shape(&rt,0xa8b7,(B){9,9,9,12},0,0);obs_shape(&rt,0xa8b0,(B){30,30,28,40},4,4);
+    CHECK(close_into(&rt,d)==1);{MacRgn g;mac_rgn_init(&g);CHECK(region_of(&rt,d,&g)==0 && mac_rgn_contains(&g,2,10) && !mac_rgn_contains(&g,10,10) && !mac_rgn_contains(&g,0,0) && !mac_rgn_contains(&g,35,29));mac_rgn_free(&g);}
+    mac_cpu_destroy(rt.cpu);
+    /* a diagonal triangle: (0,0) to (8,8) then back along the bottom and up the left side: row y covers x 0 .. y+1 */
+    rt=rec_rt();d=create(&rt);open_it(&rt);obs2(&rt,0xa893,0,0);obs2(&rt,0xa891,8,8);obs2(&rt,0xa891,0,8);obs2(&rt,0xa891,0,0);
+    CHECK(close_into(&rt,d)==1);{MacRgn g;mac_rgn_init(&g);CHECK(region_of(&rt,d,&g)==0);
+        for(int y=-1;y<10;y++)for(int x=-1;x<10;x++)CHECK(mac_rgn_contains(&g,x,y)==(y>=0&&y<8&&x>=0&&x<=y));mac_rgn_free(&g);}
+    mac_cpu_destroy(rt.cpu);
+    /* a shallow diagonal (rise 2 over 10: the line passes row 0 at x 2.5 -> 3 by round half up, row 1 at 7.5 -> 8) and a steep one go either way */
+    rt=rec_rt();d=create(&rt);open_it(&rt);obs2(&rt,0xa893,0,0);obs2(&rt,0xa891,10,2);obs2(&rt,0xa891,0,2);
+    CHECK(close_into(&rt,d)==1);{MacRgn g;mac_rgn_init(&g);CHECK(region_of(&rt,d,&g)==0);
+        CHECK(!mac_rgn_contains(&g,3,0)&&mac_rgn_contains(&g,2,0)&&mac_rgn_contains(&g,7,1)&&!mac_rgn_contains(&g,8,1)&&!mac_rgn_contains(&g,-1,0));mac_rgn_free(&g);}   /* row 0: [0,3), row 1: [0,8) */
+    mac_cpu_destroy(rt.cpu);
+    rt=rec_rt();d=create(&rt);open_it(&rt);obs2(&rt,0xa893,8,0);obs2(&rt,0xa891,0,8);obs2(&rt,0xa891,0,0);                              /* a diagonal drawn up and to the left, same rows */
+    CHECK(close_into(&rt,d)==1);{MacRgn g;mac_rgn_init(&g);CHECK(region_of(&rt,d,&g)==0);
+        /* (8,0) to (0,8): row y has its slanted edge at x = 8 - y (floor(-16y/16) + 8), and the vertical side is x 0: row y covers [0, 8-y) */
+        for(int y=-1;y<9;y++)for(int x=-1;x<10;x++)CHECK(mac_rgn_contains(&g,x,y)==(y>=0&&y<8&&x>=0&&x<8-y));mac_rgn_free(&g);}
+    mac_cpu_destroy(rt.cpu);
+    /* the same triangle drawn the other way round: the slanted segment runs upward (y decreasing), which must give the same rows */
+    rt=rec_rt();d=create(&rt);open_it(&rt);obs2(&rt,0xa893,0,8);obs2(&rt,0xa891,8,0);obs2(&rt,0xa891,0,0);
+    CHECK(close_into(&rt,d)==1);{MacRgn g;mac_rgn_init(&g);CHECK(region_of(&rt,d,&g)==0);
+        for(int y=-1;y<9;y++)for(int x=-1;x<10;x++)CHECK(mac_rgn_contains(&g,x,y)==(y>=0&&y<8&&x>=0&&x<8-y));mac_rgn_free(&g);}
+    mac_cpu_destroy(rt.cpu);
+    /* a stack or rectangle pointer that is not in RAM, or an oval too tall, halts */
+    for(unsigned k=0;k<3;k++){
+        rt=rec_rt();d=create(&rt);open_it(&rt);
+        if(k==0){mac_cpu_set(rt.cpu,MAC_A7,(uint32_t)mac_cpu_ram_size(rt.cpu)-2);mac_rgn_record_observe(&rt,0xa8b7);}
+        if(k==1){mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,4,(uint32_t)mac_cpu_ram_size(rt.cpu)-4);mac_rgn_record_observe(&rt,0xa8b7);}
+        if(k==2)obs_shape(&rt,0xa8b7,(B){0,0,2049,10},0,0);
+        CHECK(mac_cpu_halted(rt.cpu));mac_cpu_destroy(rt.cpu);
+    }
+}
 static void recording(void){
     /* a rectangle by MoveTo and three LineTos (the fourth side is the implicit close) */
     MacRuntime rt=rec_rt();uint32_t d=create(&rt);
@@ -319,7 +369,7 @@ static void recording(void){
         rt=rec_rt();d=create(&rt);int rc=0;
         if(k==0){CHECK(open_it(&rt)==1);rc=open_it(&rt);}                                                          /* a second OpenRgn */
         if(k==1)rc=close_into(&rt,d);                                                                              /* CloseRgn without OpenRgn */
-        if(k==2){open_it(&rt);obs2(&rt,0xa893,0,0);obs2(&rt,0xa891,5,5);rc=close_into(&rt,d);}                    /* a diagonal */
+        if(k==2){open_it(&rt);obs2(&rt,0xa893,0,0);obs2(&rt,0xa891,100,5000);rc=close_into(&rt,d);}              /* a diagonal crossing more rows than the 4096 edges allow */
         if(k==3){open_it(&rt);mac_cpu_set(rt.cpu,MAC_A7,SP);rc=mac_cpu_halted(rt.cpu)?-1:(wr(&rt,SP,4,0),mac_regions_service(&rt,0xa8db));}   /* a NIL destination */
         if(k==4){open_it(&rt);obs2(&rt,0xa8b7,0,0);rc=mac_cpu_halted(rt.cpu)?-1:0;}                               /* FrameOval */
         if(k==5){open_it(&rt);obs2(&rt,0xa8c6,0,0);rc=mac_cpu_halted(rt.cpu)?-1:0;}                               /* FramePoly */
@@ -332,7 +382,7 @@ static void recording(void){
     /* a pen the program had already hidden stays hidden after the pair (the count nests) */
     rt=rec_rt();d=create(&rt);wr(&rt,PORTA+66,2,0xffff);open_it(&rt);CHECK((int16_t)rd(&rt,PORTA+66,2)==-2);obs_rect(&rt,(B){0,0,4,4});CHECK(close_into(&rt,d)==1 && (int16_t)rd(&rt,PORTA+66,2)==-1);mac_cpu_destroy(rt.cpu);
     /* the destination keeps its old contents when the close is refused */
-    rt=rec_rt();d=create(&rt);set_box(&rt,d,(B){7,7,9,9});open_it(&rt);obs2(&rt,0xa893,0,0);obs2(&rt,0xa891,5,5);close_into(&rt,d);
+    rt=rec_rt();d=create(&rt);set_box(&rt,d,(B){7,7,9,9});open_it(&rt);obs2(&rt,0xa893,0,0);obs2(&rt,0xa891,100,5000);close_into(&rt,d);
     {const uint8_t *ram=mac_cpu_ram(rt.cpu);uint32_t dp=(uint32_t)(ram[d]<<24|ram[d+1]<<16|ram[d+2]<<8|ram[d+3]);CHECK(mac_cpu_halted(rt.cpu) && ram[dp+3]==7 && ram[dp+9]==9);}mac_cpu_destroy(rt.cpu);
 }
-int main(void){recording();complex_regions();more_checks();queries();algebra_table();set_empty();lifecycle();failures();puts("rectangular region ownership checks passed");}
+int main(void){shapes_and_diagonals();recording();complex_regions();more_checks();queries();algebra_table();set_empty();lifecycle();failures();puts("rectangular region ownership checks passed");}

@@ -1,4 +1,5 @@
 #include "mac_runtime.h"
+#include "mac_shape.h"
 #include <limits.h>
 #include <string.h>
 
@@ -66,7 +67,7 @@ static int rgb(MacRuntime *rt,uint32_t port,uint32_t arg,int back) {
     wr(rt,port+(back?84:80),4,index);return 1;
 }
 /* preset: when not NULL the rectangle to paint (the call is PaintRect, op $A8A2), instead of one read from the stack. */
-static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op,const Box *preset) {
+static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op,const Box *preset,uint32_t fillpat,const MacShape *outer,const MacShape *inner) {
     uint32_t pm;
     if(handle(rt,rd(rt,port+2,4),50,&pm)<0)return -1;
     unsigned row=rd(rt,pm+4,2);
@@ -86,7 +87,7 @@ static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op,const Box *
         if(region(rt,rd(rt,port+off,4),&rg)<0)return -1;
         clip=intersect(clip,rg);
     }
-    uint32_t arg=preset?0:rd(rt,sp,4);
+    uint32_t arg=preset?fillpat:rd(rt,sp,4);
     if(preset)b=*preset;
     else if(box(rt,op==0xa8a5?rd(rt,sp+4,4):arg,&b)<0)return -1;
     unsigned fg=rd(rt,port+80,4),bg=rd(rt,port+84,4);
@@ -105,7 +106,8 @@ static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op,const Box *
     Box c=intersect(b,clip);
     /* Every guest range and unsupported representation is checked before writes. */
     for(int y=c.t;y<c.b;y++)for(int x=c.l;x<c.r;x++) {
-        if(op==0xa8a1 && x>=b.l+pw && x<b.r-pw && y>=b.t+ph && y<b.b-ph)continue;
+        if(outer && !mac_shape_contains(outer,x,y))continue;                   /* an oval or round rectangle: only its rows */
+        if(op==0xa8a1 && (inner?mac_shape_contains(inner,x,y):(x>=b.l+pw && x<b.r-pw && y>=b.t+ph && y<b.b-ph)))continue;
         uint8_t *p=mac_cpu_ram(rt->cpu)+base+(size_t)(y-bounds.t)*row+(unsigned)(x-bounds.l);
         int bit=!!(pat[(unsigned)y&7]&(0x80u>>((unsigned)x&7)));
         if(mode&4)bit=!bit;
@@ -122,7 +124,13 @@ static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op,const Box *
 /* Paint a rectangle in the port's pen pattern and mode, clipped like PaintRect (used for pen strokes). */
 int mac_color_paint_box(MacRuntime *rt,uint32_t port,int t,int l,int b,int r) {
     Box x={t,l,b,r};
-    return draw(rt,port,0,0xa8a2,&x);
+    return draw(rt,port,0,0xa8a2,&x,0,NULL,NULL);
+}
+/* An oval or round rectangle on an indexed colour port: `op` is the rectangle call it behaves like ($A8A1 frame, $A8A2 paint, $A8A3 erase, $A8A4 invert,
+ * $A8A5 fill with the pattern at fillpat). */
+int mac_color_shape(MacRuntime *rt,uint32_t port,int t,int l,int b,int r,uint16_t op,uint32_t fillpat,const MacShape *outer,const MacShape *inner) {
+    Box x={t,l,b,r};
+    return draw(rt,port,0,op,&x,fillpat,outer,inner);
 }
 int mac_color_raster_service(MacRuntime *rt,uint16_t opcode) {
     if((opcode<0xa8a1 || opcode>0xa8a5) && opcode!=0xaa14 && opcode!=0xaa15)return 0;
@@ -133,7 +141,7 @@ int mac_color_raster_service(MacRuntime *rt,uint16_t opcode) {
     if((rd(rt,port+6,2)&0xc000)!=0xc000)return 0;
     uint32_t sp=mac_cpu_get(rt->cpu,MAC_A7);unsigned args=opcode==0xa8a5?8:4;
     if(valid(rt,sp,args,1)<0)return -1;
-    int rc=opcode==0xaa14 || opcode==0xaa15?rgb(rt,port,rd(rt,sp,4),opcode==0xaa15):draw(rt,port,sp,opcode,NULL);
+    int rc=opcode==0xaa14 || opcode==0xaa15?rgb(rt,port,rd(rt,sp,4),opcode==0xaa15):draw(rt,port,sp,opcode,NULL,0,NULL,NULL);
     if(rc>0)mac_cpu_set(rt->cpu,MAC_A7,sp+args);
     return rc;
 }

@@ -223,15 +223,26 @@ static int paint_behind(MacRuntime *rt,uint32_t sp) {
     if(w->updating)return fail(rt,"PaintBehind inside BeginUpdate is unsupported.");
     uint32_t h=rd(rt,sp,4);MacHandle *m=record(rt,h,10);
     int window_region=w->address && (h==w->handles[8] || h==w->handles[9] || h==w->handles[10]);
-    if(!m || m->resource || m->loaded_code || rd(rt,m->pointer,2)!=10 ||
+    int complex_region=m && !m->resource && !m->loaded_code && m->type==0x4f52474e && rd(rt,m->pointer,2)>10;
+    if(!m || m->resource || m->loaded_code || (rd(rt,m->pointer,2)!=10 && !complex_region) ||
        (m->type && m->type!=0x4f52474e &&
         !(m->type==0x43505254 && m->size==10) &&
         !(m->type==WINDOW_OWNED && m->size==10 && window_region)))
         return fail(rt,"PaintBehind requires an owned rectangular region.");
     int16_t clip[4],area[4],combined[4];
     uint32_t up=region(rt,w->handles[10]);
+    int exposed_outside=-1;                       /* set for a complex region: does it reach the screen outside this window */
+    if(complex_region) {
+        int structure[4]={w->bounds[0]-mac_window_top_extent(w->proc_id),w->bounds[1]-mac_window_frame(w->proc_id),
+                          w->bounds[2]+mac_window_frame(w->proc_id),w->bounds[3]+mac_window_frame(w->proc_id)},inside[4];
+        int rc=mac_region_window_view(rt,h,structure,inside,&exposed_outside);
+        if(rc<0)return -1;
+        if(rc==0)return fail(rt,"PaintBehind requires an owned rectangular region.");
+        /* The part inside the window is treated as its bounding box: the update area may be larger than the region strictly needs. */
+        for(unsigned i=0;i<4;i++)clip[i]=(int16_t)inside[i];
+    }
     for(unsigned i=0;i<4;i++) {
-        clip[i]=(int16_t)rd(rt,m->pointer+2+i*2,2);
+        if(!complex_region)clip[i]=(int16_t)rd(rt,m->pointer+2+i*2,2);
         int edge=w->bounds[i];
         area[i]=(int16_t)(i<2?(clip[i]>edge?clip[i]:edge):(clip[i]<edge?clip[i]:edge));
         combined[i]=(int16_t)rd(rt,up+2+i*2,2);
@@ -243,7 +254,8 @@ static int paint_behind(MacRuntime *rt,uint32_t sp) {
                          clip[2]<480?clip[2]:480,clip[3]<640?clip[3]:640};
     int frame=mac_window_frame(w->proc_id);
     int structure_top=w->bounds[0]-mac_window_top_extent(w->proc_id);
-    if(visible_clip[0]<visible_clip[2] && visible_clip[1]<visible_clip[3] &&
+    if(complex_region ? exposed_outside!=0 || !w->visible :
+       visible_clip[0]<visible_clip[2] && visible_clip[1]<visible_clip[3] &&
        (!w->visible || visible_clip[0]<structure_top || visible_clip[1]<w->bounds[1]-frame ||
         visible_clip[2]>w->bounds[2]+frame || visible_clip[3]>w->bounds[3]+frame))
         return fail(rt,"PaintBehind exposed desktop repaint is not implemented.");
@@ -385,7 +397,7 @@ int mac_window_service(MacRuntime *rt,uint16_t opcode) {
     case 0xa908:args=6;break;
     case 0xa917:args=4;result=4;break;
     case 0xa80a:args=4;result=2;break;
-    case 0xa918:case 0xa919:case 0xa90d:args=8;break;
+    case 0xa918:case 0xa919:case 0xa90d:case 0xa90a:args=8;break;
     case 0xa92c:args=8;result=2;break;
     default:return 0;
     }
@@ -409,13 +421,15 @@ int mac_window_service(MacRuntime *rt,uint16_t opcode) {
         int hit=front?mac_window_hit(rt,(int16_t)rd(rt,sp+6,2),(int16_t)rd(rt,sp+4,2)):0;
         wr(rt,out,4,hit?rt->window.address:0);wr(rt,sp+8,2,(unsigned)hit);mac_cpu_set(rt->cpu,MAC_A7,sp+8);return 1;
     }
-    uint32_t address=rd(rt,sp+((opcode==0xa91d || opcode==0xa91b)?6:opcode==0xa918 || opcode==0xa919?4:opcode==0xa908?2:0),4);
+    uint32_t address=rd(rt,sp+((opcode==0xa91d || opcode==0xa91b)?6:opcode==0xa918 || opcode==0xa919 || opcode==0xa90a?4:opcode==0xa908?2:0),4);
+    if(opcode==0xa90a && !address){mac_cpu_set(rt->cpu,MAC_A7,sp+8);return 1;}   /* CalcVisBehind(NIL, rgn): no window to recalculate */
     if(!mac_window_select(rt,address) || !window_valid(rt))return fail(rt,"Window call requires the live registered window and valid owned records.");
     if(opcode==0xa91d)return size_window(rt,sp);
     if(opcode==0xa91b)return move_window(rt,sp);
     MacWindowState *w=&rt->window;
     uint32_t vis=region(rt,w->handles[2]),update=region(rt,w->handles[10]);
-    if(opcode==0xa909) { /* CalcVis; public Toolbox-287, global content to local vis. */
+    if(opcode==0xa909 || opcode==0xa90a) { /* CalcVis; public Toolbox-287, global content to local vis. CalcVisBehind(start, clobbered) recomputes the one window
+        * there is the same way: the clobbered region is not used to narrow it. */
         if(w->updating || !mac_window_registry_valid(rt))return fail(rt,"CalcVis requires stable owned window geometry.");
         for(unsigned i=0;i<rt->window_count;i++) {
             MacWindowState *other=mac_window_find(rt,rt->window_order[i]);

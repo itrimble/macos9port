@@ -136,6 +136,20 @@ static void failures(void) {
     CHECK(mac_window_service(&rt,0xaa45)==-1 && rt.heap_next==heap && rt.window.address==STORAGE);
     mac_cpu_destroy(rt.cpu);
 }
+/* CalcVisBehind(startWindow, clobberedRgn) recomputes the one window's visRgn like CalcVis; a NIL start does nothing; the region is only popped. */
+static void calc_vis_behind(void) {
+ MacRuntime r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
+ uint32_t vis=rd(&r,r.window.handles[2],4);wr(&r,vis+2,4,0);wr(&r,vis+6,4,0);
+ mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,0x1234);wr(&r,SP+4,4,STORAGE);
+ CHECK(mac_window_service(&r,0xa90a)==1 && mac_cpu_get(r.cpu,MAC_A7)==SP+8 && rd(&r,vis+6,2)==260 && rd(&r,vis+8,2)==400);
+ wr(&r,vis+2,4,0);wr(&r,vis+6,4,0);mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,0x1234);wr(&r,SP+4,4,0);
+ CHECK(mac_window_service(&r,0xa90a)==1 && mac_cpu_get(r.cpu,MAC_A7)==SP+8 && rd(&r,vis+6,2)==0);
+ mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,0x1234);wr(&r,SP+4,4,0x5555);
+ CHECK(mac_window_service(&r,0xa90a)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
+ r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,0);wr(&r,SP+4,4,STORAGE);
+ CHECK(call(&r,0xa916,STORAGE)==1);mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,0);wr(&r,SP+4,4,STORAGE);
+ vis=rd(&r,r.window.handles[2],4);CHECK(mac_window_service(&r,0xa90a)==1 && rd(&r,vis+2,4)==0 && rd(&r,vis+6,4)==0);mac_cpu_destroy(r.cpu);   /* hidden: an empty vis, as CalcVis */
+}
 static void calc_vis(void) {
  MacRuntime r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
  uint32_t vis=rd(&r,r.window.handles[2],4),content=rd(&r,r.window.handles[9],4),update=rd(&r,r.window.handles[10],4);
@@ -230,4 +244,4 @@ static void offscreen(void) {
  CHECK(resize(&r,600,470,1)==-1 && r.window.bounds[2]==300 && r.window.bounds[3]==450);mac_cpu_destroy(r.cpu);
  r=fresh();new_args(&r,STORAGE,0);CHECK(mac_window_service(&r,0xaa45)==1);CHECK(resize(&r,600,470,1)==1 && r.window.bounds[2]==510);mac_cpu_destroy(r.cpu);
 }
-int main(void){show_hide_checks();moving();sizing();offscreen();calc_vis();lifecycle();failures();puts("one-window lifecycle, drawing, and update checks passed");}
+int main(void){calc_vis_behind();show_hide_checks();moving();sizing();offscreen();calc_vis();lifecycle();failures();puts("one-window lifecycle, drawing, and update checks passed");}

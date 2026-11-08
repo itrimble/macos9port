@@ -1,4 +1,5 @@
 #include "mac_runtime.h"
+#include "mac_shape.h"
 #include "mac_rgn.h"
 #include <stdlib.h>
 #include <string.h>
@@ -45,6 +46,17 @@ static MacHandle *lookup(MacRuntime *rt,uint32_t h) {
         return m;
     }
     return NULL;
+}
+/* A rectangular region of our own (REGION_OWNED) in the handle table, for other modules; 0 if the table or memory is full. */
+uint32_t mac_region_new_rect(MacRuntime *rt,int t,int l,int b,int r) {
+    size_t slot=0;while(slot<MAC_RUNTIME_HANDLES && (rt->handles[slot].handle || rt->handles[slot].pointer))slot++;
+    uint32_t block=slot<MAC_RUNTIME_HANDLES?mac_runtime_alloc(rt,16):0;
+    if(!block)return 0;
+    uint32_t p=block+4;wr(rt,block,4,p);wr(rt,p,2,10);
+    wr(rt,p+2,2,(uint16_t)t);wr(rt,p+4,2,(uint16_t)l);wr(rt,p+6,2,(uint16_t)b);wr(rt,p+8,2,(uint16_t)r);
+    rt->handles[slot]=(MacHandle){.handle=block,.pointer=p,.size=10,.type=REGION_OWNED};
+    if(rt->handle_count<=slot)rt->handle_count=slot+1;
+    return block;
 }
 static int new_region(MacRuntime *rt,uint32_t sp) {
     size_t slot=0;while(slot<MAC_RUNTIME_HANDLES && (rt->handles[slot].handle || rt->handles[slot].pointer))slot++;
@@ -185,7 +197,7 @@ int mac_regions_service(MacRuntime *rt,uint16_t opcode) {
 
 /* ---- OpenRgn .. CloseRgn ----
  * OpenRgn ($A8DA) starts recording the current port's outline calls; CloseRgn ($A8DB, destination region on the stack) ends it and stores
- * the region the outline encloses. Recorded here: MoveTo, LineTo, Move, Line and FrameRect, as axis-aligned closed paths filled even-odd
+ * the region the outline encloses. Recorded here: MoveTo, LineTo, Move, Line and FrameRect, as closed paths filled even-odd (diagonals are scan-converted by us, see CloseRgn)
  * (each MoveTo starts a new sub-path, and every sub-path is closed back to its start, as QuickDraw closes the outline). The calls are
  * only observed. OpenRgn hides the pen (decrements pnVis, +66) and CloseRgn shows it again, so that nothing is drawn while the outline is
  * recorded: this is how I remember the QuickDraw documentation, not something the interface listing here states, and it is supported by
@@ -220,8 +232,29 @@ void mac_rgn_record_observe(MacRuntime *rt,uint16_t opcode) {
         if(b<=t || rr<=l)return;
         if(add_seg(rt,r,l,t,rr,t)||add_seg(rt,r,rr,t,rr,b)||add_seg(rt,r,rr,b,l,b)||add_seg(rt,r,l,b,l,t))return;
         return; }
-    case 0xa8b7: case 0xa8b0: case 0xa8be: case 0xa8c6: case 0xa8d2:
-        fail(rt,"Framing an oval, round rectangle, arc, polygon or region while recording a region (OpenRgn) is unsupported.");return;
+    case 0xa8b7: case 0xa8b0: {                                                 /* FrameOval, FrameRoundRect: the outline of the shape, from mac_shape.c */
+        int round=opcode==0xa8b0;unsigned args=round?8:4;
+        if(!valid(rt,sp,args)){fail(rt,"Outline call stack exceeds guest RAM.");return;}
+        int oh=round?(int16_t)rd(rt,sp,2):0,ow=round?(int16_t)rd(rt,sp+2,2):0;uint32_t p=rd(rt,sp+(round?4:0),4);
+        if(!valid(rt,p,8)){fail(rt,"The shape's rectangle exceeds guest RAM while recording a region.");return;}
+        int t=(int16_t)rd(rt,p,2),l=(int16_t)rd(rt,p+2,2),b=(int16_t)rd(rt,p+4,2),rr=(int16_t)rd(rt,p+6,2);
+        if(b<=t || rr<=l)return;
+        if(!round){ow=rr-l;oh=b-t;}
+        MacShape s;
+        if(mac_shape_build(&s,t,l,b,rr,ow,oh)){fail(rt,"A shape recorded into a region is taller than the supported 2048 rows.");return;}
+        /* One closed outline: the left boundary runs of equal x and the right boundary runs, as vertical segments (the horizontal joins add
+         * nothing to the even-odd fill, and CloseRgn only reads the vertical ones). */
+        for(int side=0;side<2;side++) {
+            int *edge=side?s.hi:s.lo;
+            for(int y=0;y<b-t;) {
+                int e=y;while(e<b-t && edge[e]==edge[y])e++;
+                if(add_seg(rt,r,edge[y],t+y,edge[y],t+e)){mac_shape_free(&s);return;}
+                y=e;
+            }
+        }
+        mac_shape_free(&s);return; }
+    case 0xa8be: case 0xa8c6: case 0xa8d2:
+        fail(rt,"Framing an arc, polygon or region while recording a region (OpenRgn) is unsupported.");return;
     default: return;
     }
 }
@@ -245,8 +278,23 @@ static int close_rgn(MacRuntime *rt,uint32_t sp) {
     static int edges[4096][3];int n=0;
     for(int i=0;i<r->n;i++) {
         Seg s=r->seg[i];
-        if(s.h0!=s.h1 && s.v0!=s.v1)return fail(rt,"A diagonal line was recorded while building a region; only horizontal and vertical outlines are supported.");
-        if(s.h0==s.h1){edges[n][0]=s.h0;edges[n][1]=s.v0<s.v1?s.v0:s.v1;edges[n][2]=s.v0<s.v1?s.v1:s.v0;n++;}
+        if(s.h0!=s.h1 && s.v0!=s.v1) {
+            /* A diagonal: one unit-high edge per row it crosses, at the x where the line passes that row's centre (round half up). This is our own
+             * scan conversion of the line, not QuickDraw's, and the pen size is ignored: pixels along a slanted edge may differ from a real Mac. */
+            int x0=s.h0,y0=s.v0,x1=s.h1,y1=s.v1;
+            if(y0>y1){int tx=x0;x0=x1;x1=tx;int ty=y0;y0=y1;y1=ty;}
+            int dx=x1-x0,dy=y1-y0;
+            for(int y=y0;y<y1;y++) {
+                if(n>=4096)return fail(rt,"A recorded outline needs more than 4096 edges.");
+                int64_t num=(2*(int64_t)(y-y0)+1)*dx+dy,den=2*(int64_t)dy,q=num>=0?num/den:-((-num+den-1)/den);   /* floor((2(y-y0)+1)dx + dy) / 2dy) */
+                edges[n][0]=x0+(int)q;edges[n][1]=y;edges[n][2]=y+1;n++;
+            }
+            continue;
+        }
+        if(s.h0==s.h1){
+            if(n>=4096)return fail(rt,"A recorded outline needs more than 4096 edges.");
+            edges[n][0]=s.h0;edges[n][1]=s.v0<s.v1?s.v0:s.v1;edges[n][2]=s.v0<s.v1?s.v1:s.v0;n++;
+        }
     }
     MacRgn g;mac_rgn_init(&g);const char *why=NULL;int rc=-1;
     if(mac_rgn_from_vedges(&g,(const int (*)[3])edges,n,&why))fail(rt,why?why:"The recorded outline could not be filled.");
@@ -255,6 +303,36 @@ static int close_rgn(MacRuntime *rt,uint32_t sp) {
         mac_cpu_set(rt->cpu,MAC_A7,sp+4);mac_rgn_record_destroy(rt);rc=1;
     }
     mac_rgn_free(&g);return rc;
+}
+
+/* A copy of region h (one of ours, a port's or a window's) in the engine, for modules that test pixels against it. 1 ok, 0 not a usable region,
+ * -1 after a halt. */
+int mac_region_load_copy(MacRuntime *rt,uint32_t h,void *outp) {
+    MacRgn *out=outp;
+    MacHandle *m=lookup(rt,h);if(!m)return 0;
+    MacRgn g;mac_rgn_init(&g);
+    if(load(rt,m,&g)){mac_rgn_free(&g);return -1;}
+    int rc=mac_rgn_copy(out,&g)?(fail(rt,"The region could not be copied."),-1):1;
+    mac_rgn_free(&g);return rc;
+}
+/* For PaintBehind: region h (one of ours) against a window's structure rectangle {top,left,bottom,right}. *inside gets the bounding box of the
+ * part of the region that lies inside the structure rectangle (all zero if none), *outside is 1 when the region reaches any of the 640x480
+ * screen outside it. Returns 1, 0 if h is not a usable region of ours, -1 after a halt. */
+int mac_region_window_view(MacRuntime *rt,uint32_t h,const int structure[4],int inside[4],int *outside) {
+    MacHandle *m=lookup(rt,h);if(!m)return 0;
+    MacRgn g,box,part,rest,screen,seen;mac_rgn_init(&g);mac_rgn_init(&box);mac_rgn_init(&part);mac_rgn_init(&rest);mac_rgn_init(&screen);mac_rgn_init(&seen);
+    int rc=-1;const char *why=NULL;
+    if(load(rt,m,&g))goto done;
+    MacRect b={structure[0],structure[1],structure[2],structure[3]},s={0,0,480,640};
+    if(mac_rgn_set_rect(&box,b) || mac_rgn_set_rect(&screen,s) || mac_rgn_op(MAC_RGN_OP_SECT,&g,&box,&part,&why) ||
+       mac_rgn_op(MAC_RGN_OP_DIFF,&g,&box,&rest,&why) || mac_rgn_op(MAC_RGN_OP_SECT,&rest,&screen,&seen,&why)) {
+        fail(rt,why?why:"The region could not be examined.");goto done;
+    }
+    MacRect bb;mac_rgn_bbox(&part,&bb);inside[0]=bb.t;inside[1]=bb.l;inside[2]=bb.b;inside[3]=bb.r;
+    *outside=!mac_rgn_is_empty(&seen);rc=1;
+done:
+    mac_rgn_free(&g);mac_rgn_free(&box);mac_rgn_free(&part);mac_rgn_free(&rest);mac_rgn_free(&screen);mac_rgn_free(&seen);
+    return rc;
 }
 
 /* Rectangle algebra for other modules (the window update region): op is $A8E4 sect, $A8E5 union, $A8E6 diff, $A8E7 xor; boxes are

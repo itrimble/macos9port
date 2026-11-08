@@ -100,7 +100,7 @@ None of these has reached its main loop. "Traps" is the count before the halt.
 
 | App | Traps | Stops at | What it is |
 | --- | --- | --- | --- |
-| Glider 4.10 | 0 | `FrameRoundRect` inside `OpenRgn` | headless frames, 9 Nov 2026: opening picture and its keyboard alert shown; then oval/round-rect rasterising is missing (see the note above) |
+| Glider 4.10 | 0 | none in 70 s (attract screen) | headless frames, 9 Nov 2026: title screen and animation running; not played (no input scripted), audio unheard |
 | Room Editor 1.06 | (dialog) | `DrawPicture` (`A8F6`) into a dialog port | headless frames, 9 Nov 2026: open dialog, its own password alert, Okay, then a hidden dialog is created, moved, shown and its items adjusted (all handled by the new Dialog Manager) until the app draws a picture into the dialog's port, which has no drawable port here. WIND 128 (procID 160, the app's own WDEF 10) is still ahead |
 | Glider PRO 1.1.2 | 143 | `A260` | `PBDirCreate` (HFSDispatch selector 6) to create a "Preferences" folder; the file system has one flat directory, so this needs a hierarchy, not a one-off |
 | Glider Edit 1.1.1 | 36 | idles at its menu bar after an error dialog | headless frames, 9 Nov 2026: with the new Dialog Manager, opening a (wrong-format) copy of a PRO house retyped `gliH` shows the editor's own box, *The house "Test" is locked.* (ParamText filled in; "locked" because the data volume is read-only without `--saves`), OK dismisses it and the editor returns to its menu bar. I have not seen a house open successfully: the only houses available are the wrong format |
@@ -269,6 +269,26 @@ the probe, not a window I watched, and I have not listened to any audio.
   and no longer stops at a menu colour table (`mctb` is now ignored: menus are black and white here). The next halt is
   `FrameRoundRect` while recording a region (`OpenRgn`): the runtime has no oval or round-rectangle rasteriser at all, and a
   region outline of one would have to match QuickDraw's own scan conversion, which I have no reference for.
+- **Glider 4.10 reaches its attract screen (headless frames, 70 s, no halt):** after the keyboard alert the game builds regions with
+  `OpenRgn`, `FrameRoundRect` and diagonal lines, takes `GrayRgn` (`$9EE`), calls `PaintBehind` with a complex region, `CalcVisBehind`
+  (`$A90A`), `CopyMask` (`$A817`) and `CopyBits` through a colour port's `portBits`, a complex mask region and a different colour
+  table. All now work, and its title screen is up: *Glider 4.0, by john calhoun, (c) 1991 Casady & Greene*, with menus **Game** and
+  **Options**, a balloon and small paper gliders moving. What each piece is, and what it is **not**:
+  - **Ovals and round rectangles** (`src/mac_shape.c`, `src/mac_shapes.c`): Frame, Paint, Erase, Invert and Fill for both, on 1-bit and
+    indexed colour ports, and in region recording. **This is our own scan conversion, not QuickDraw's** (a symmetric midpoint-style
+    ellipse sampled at row centres, widths rounded to the shape's parity): pixels near curves can differ from a real Mac.
+  - **Diagonal lines in regions** are scan-converted by us the same way (one edge per row, x rounded half up) and ignore the pen size.
+  - **GrayRgn** is a plain rectangle, the screen below the menu bar (no rounded screen corners). `PaintBehind` accepts a complex
+    region, treats the part inside the window as its bounding box (so the update area can be larger than strictly needed) and still
+    halts if the region reaches the screen outside the window (the desktop is not repainted). `CalcVisBehind` recomputes the one
+    window like `CalcVis` and ignores the region.
+  - **CopyMask**: srcCopy through a 1-bit mask map; the destination is untouched where the mask is clear.
+  - **CopyBits** now takes a colour port's `portBits` address (the port's PixMap), crops a source rectangle that reaches past the source
+    bitmap (the destination shrinks with it), applies complex mask, visible and clip regions pixel by pixel, and converts between
+    different colour tables for srcCopy by nearest squared RGB distance (QuickDraw uses an inverse table of limited resolution, so a
+    colour missing from the destination may map to a different entry); other modes with different tables still halt.
+  Mutation checks: all mutants killed after three rounds of added tests (the last survivors were an off-by-one in a clamp, a pen-size
+  reduction that only matters for round rectangles, and a region-edge case at column 639).
 - **Parity:** Monkey Island and Monkey Island 2 are byte-identical to the previous baseline; `make test` exits 0; ASan on Castle (90 s with
   the menu script) and on the new and touched menu, window and utility tests reports nothing.
 

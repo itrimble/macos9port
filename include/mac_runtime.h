@@ -206,6 +206,10 @@ int mac_stdfile_service(MacRuntime *rt, uint16_t opcode); /* Pack3 Standard File
 void mac_stdfile_destroy(MacRuntime *rt);
 int mac_stdput_service(MacRuntime *rt, uint32_t sp, uint32_t pc, int spec); /* Pack3 selectors 1 (SFPutFile) and 5 (StandardPutFile), mac_stdput.c */
 void mac_stdput_destroy(MacRuntime *rt);
+int mac_region_load_copy(MacRuntime *rt, uint32_t h, void *out); /* copy a region handle into a MacRgn (mac_rgn.h), mac_regions.c */
+int mac_region_window_view(MacRuntime *rt, uint32_t h, const int structure[4], int inside[4], int *outside); /* PaintBehind's view of a region, mac_regions.c */
+uint32_t mac_region_new_rect(MacRuntime *rt, int t, int l, int b, int r); /* a rectangular region handle of our own, mac_regions.c */
+int mac_shapes_service(MacRuntime *rt, uint16_t opcode); /* ovals and round rectangles, mac_shapes.c */
 int mac_devmgr_service(MacRuntime *rt, uint16_t opcode); /* Device Manager Control, mac_devmgr.c */
 int mac_dlgmgr_service(MacRuntime *rt, uint16_t opcode); /* GetNewDialog, ModalDialog and friends (mac_dlgmgr.c) */
 void mac_dlgmgr_destroy(MacRuntime *rt);

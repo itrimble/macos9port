@@ -1,4 +1,5 @@
 #include "mac_runtime.h"
+#include "mac_shape.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -112,7 +113,7 @@ static void pixel(Raster *r, int x, int y, int invert) {
 }
 
 static int paint(MacRuntime *rt,uint32_t port,Box box,uint32_t pattern,int mode,
-                 int invert,int frame) {
+                 int invert,int frame,const MacShape *outer,const MacShape *inner) {
     Raster r;
     if (mode<8 || mode>15) return fail(rt,"Unsupported QuickDraw pattern transfer mode.");
     if (range(rt,pattern,8,0)<0 || canvas(&r,rt,port)<0) return -1;
@@ -122,12 +123,17 @@ static int paint(MacRuntime *rt,uint32_t port,Box box,uint32_t pattern,int mode,
     if (frame && (!ph || !pw || (int16_t)rd(rt,port+66,2)<0)) return 1;
     Box clipped=intersect(box,r.clip);
     for (int y=clipped.t;y<clipped.b;y++) for(int x=clipped.l;x<clipped.r;x++) {
-        if (frame && x>=box.l+pw && x<box.r-pw && y>=box.t+ph && y<box.b-ph) continue;
+        if (outer && !mac_shape_contains(outer,x,y)) continue;                 /* an oval or round rectangle: only its rows */
+        if (frame && (inner ? mac_shape_contains(inner,x,y) : (x>=box.l+pw && x<box.r-pw && y>=box.t+ph && y<box.b-ph))) continue;
         pixel(&r,x,y,invert);
     }
     return 1;
 }
 
+/* An oval or round rectangle on a black-and-white port, with the same pattern, mode and clip rules as the rectangle calls (mac_shapes.c). */
+int mac_raster_shape(MacRuntime *rt,uint32_t port,int t,int l,int b,int r,uint32_t pattern,int mode,int invert,int frame,const MacShape *outer,const MacShape *inner) {
+    return paint(rt,port,(Box){t,l,b,r},pattern,mode,invert,frame,outer,inner);
+}
 int mac_raster_service(MacRuntime *rt,uint16_t opcode) {
     unsigned args;
     switch(opcode) {
@@ -154,7 +160,7 @@ int mac_raster_service(MacRuntime *rt,uint16_t opcode) {
         int mode=(opcode==0xa8a1 || opcode==0xa8a2)?(int)rd(rt,port+56,2):8;
         Box b;
         if(get_box(rt,rectptr,&b)<0)return -1;
-        rc=paint(rt,port,b,pat,mode,opcode==0xa8a4,opcode==0xa8a1);
+        rc=paint(rt,port,b,pat,mode,opcode==0xa8a4,opcode==0xa8a1,NULL,NULL);
     } else if(opcode==0xa879 || opcode==0xa87a || opcode==0xa87b) {
         uint32_t dest; Box b;
         if(opcode==0xa87b) { if(get_box(rt,arg,&b)<0)return -1; }
@@ -171,7 +177,7 @@ int mac_raster_service(MacRuntime *rt,uint16_t opcode) {
             if(ph<0 || pw<0)return fail(rt,"Negative QuickDraw pen size.");
             Box b={oldy<y?oldy:y,oldx<x?oldx:x,(oldy>y?oldy:y)+ph,(oldx>x?oldx:x)+pw};
             if(ph && pw && (int16_t)rd(rt,port+66,2)>=0)
-                rc=paint(rt,port,b,port+58,(int)rd(rt,port+56,2),0,0);
+                rc=paint(rt,port,b,port+58,(int)rd(rt,port+56,2),0,0,NULL,NULL);
         }
         if(rc>0) {wr(rt,port+48,2,(uint16_t)y);wr(rt,port+50,2,(uint16_t)x);}
     } else if(opcode==0xa89b) {

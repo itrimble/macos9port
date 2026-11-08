@@ -1,9 +1,11 @@
 #include "mac_runtime.h"
+#include "mac_shape.h"
 
 #include <stdio.h>
 #include <string.h>
 
 int mac_raster_service(MacRuntime *rt, uint16_t opcode);
+int mac_shapes_service(MacRuntime *rt, uint16_t opcode);
 static int fails;
 #define CHECK(x) do { if (!(x)) { fprintf(stderr,"FAIL %d: %s\n",__LINE__,#x);fails++;} } while(0)
 enum { PORT=0x700000, RECT=0x600000, STACK=0xf00000, AUX=0x600100 };
@@ -144,6 +146,38 @@ int main(void) {
         rect(&c,RECT,0,0,8,8);CHECK(call(&c,refused[i],RECT)==-1);
         CHECK(mac_cpu_halted(c.cpu) && strstr(mac_cpu_error(c.cpu),"color ports")!=NULL);mac_runtime_destroy(&c);
     }
+    /* Ovals and round rectangles on the 1-bit port. A 4 x 4 oval at (10, 10) is 2, 4, 4, 2 wide: x 11-12, 10-13, 10-13, 11-12 (byte 1 holds x 8-15). */
+    MacRuntime sh;if(init(&sh))return 1;                                                                                       /* a fresh 1-bit port: the one above was switched to colour */
+    #define SHP(op,setup) (mac_cpu_set(sh.cpu,MAC_A7,STACK),setup,mac_shapes_service(&sh,(op)))
+    clear(&sh);rect(&sh,RECT,10,10,14,14);
+    CHECK(SHP(0xa8b8,mac_cpu_write(sh.cpu,STACK,4,RECT))==1&&mac_cpu_get(sh.cpu,MAC_A7)==STACK+4);
+    CHECK(byte(&sh,10,1)==0x18&&byte(&sh,11,1)==0x3c&&byte(&sh,12,1)==0x3c&&byte(&sh,13,1)==0x18&&byte(&sh,9,1)==0&&byte(&sh,14,1)==0&&byte(&sh,10,0)==0);   /* PaintOval */
+    CHECK(SHP(0xa8b9,mac_cpu_write(sh.cpu,STACK,4,RECT))==1&&byte(&sh,11,1)==0&&byte(&sh,10,1)==0);                          /* EraseOval (background pattern white) */
+    /* an 8 x 8 oval is 4, 6, 6, 8, 8, 6, 6, 4 wide; its 1-pixel frame leaves the ends of the middle rows (x 10 and 17) and the solid ends */
+    clear(&sh);rect(&sh,RECT,10,10,18,18);CHECK(SHP(0xa8b7,mac_cpu_write(sh.cpu,STACK,4,RECT))==1);
+    CHECK(byte(&sh,10,1)==0x0f&&byte(&sh,10,2)==0x00&&byte(&sh,11,1)==0x19&&byte(&sh,11,2)==0x80&&byte(&sh,12,1)==0x10&&byte(&sh,12,2)==0x80);
+    CHECK(byte(&sh,13,1)==0x20&&byte(&sh,13,2)==0x40&&byte(&sh,14,1)==0x20&&byte(&sh,14,2)==0x40&&byte(&sh,15,1)==0x10&&byte(&sh,15,2)==0x80);
+    CHECK(byte(&sh,16,1)==0x19&&byte(&sh,16,2)==0x80&&byte(&sh,17,1)==0x0f&&byte(&sh,9,1)==0&&byte(&sh,18,1)==0);
+    CHECK(SHP(0xa8ba,mac_cpu_write(sh.cpu,STACK,4,RECT))==1&&byte(&sh,10,1)==0x00&&byte(&sh,13,1)==0x1f&&byte(&sh,13,2)==0x80);   /* InvertOval flips every oval pixel: row 10 clears, row 13 (x 10 and 17 set) becomes x 11-16 */
+    clear(&sh);rect(&sh,RECT,10,10,16,18);                                                                                    /* round rectangle 8 x 6 with 4 x 4 corners: first and last rows inset by 1 */
+    CHECK(SHP(0xa8b1,(mac_cpu_write(sh.cpu,STACK,2,4),mac_cpu_write(sh.cpu,STACK+2,2,4),mac_cpu_write(sh.cpu,STACK+4,4,RECT)))==1&&mac_cpu_get(sh.cpu,MAC_A7)==STACK+8);
+    CHECK(byte(&sh,10,1)==0x1f&&byte(&sh,10,2)==0x80&&byte(&sh,11,1)==0x3f&&byte(&sh,11,2)==0xc0&&byte(&sh,14,1)==0x3f&&byte(&sh,14,2)==0xc0&&byte(&sh,15,1)==0x1f&&byte(&sh,15,2)==0x80&&byte(&sh,9,1)==0&&byte(&sh,16,1)==0);
+    clear(&sh);rect(&sh,RECT,10,10,14,14);mac_cpu_write(sh.cpu,PORT+66,2,0xffff);CHECK(SHP(0xa8b7,mac_cpu_write(sh.cpu,STACK,4,RECT))==1&&byte(&sh,10,1)==0);   /* hidden pen: no frame */
+    CHECK(SHP(0xa8b8,mac_cpu_write(sh.cpu,STACK,4,RECT))==1&&byte(&sh,10,1)==0x18);                                           /* ... but a paint still draws */
+    mac_cpu_write(sh.cpu,PORT+66,2,0);
+    /* the frame of a round rectangle with a 2 x 2 pen: the outer shape minus the inset shape whose corners shrink by the pen (20 x 20, corners 8 x 8) */
+    clear(&sh);rect(&sh,RECT,10,10,30,30);mac_cpu_write(sh.cpu,PORT+52,4,0x00020002);
+    CHECK(SHP(0xa8b0,(mac_cpu_write(sh.cpu,STACK,2,8),mac_cpu_write(sh.cpu,STACK+2,2,8),mac_cpu_write(sh.cpu,STACK+4,4,RECT)))==1);
+    {MacShape o,n;CHECK(mac_shape_build(&o,10,10,30,30,8,8)==0&&mac_shape_build(&n,12,12,28,28,4,4)==0);
+     for(int y=8;y<32;y++)for(int x=8;x<32;x++){int want=mac_shape_contains(&o,x,y)&&!mac_shape_contains(&n,x,y);int got=(byte(&sh,y,x/8)>>(7-x%8))&1;if(want!=got){fprintf(stderr,"frame pixel %d,%d want %d\n",x,y,want);fails++;}}
+     mac_shape_free(&o);mac_shape_free(&n);}
+    mac_cpu_write(sh.cpu,PORT+52,4,0x00010001);
+    /* the pen mode applies to paints and frames: patXor twice puts the pixels back, patCopy twice leaves them set */
+    clear(&sh);rect(&sh,RECT,10,10,14,14);mac_cpu_write(sh.cpu,PORT+56,2,10);
+    CHECK(SHP(0xa8b8,mac_cpu_write(sh.cpu,STACK,4,RECT))==1&&byte(&sh,11,1)==0x3c);CHECK(SHP(0xa8b8,mac_cpu_write(sh.cpu,STACK,4,RECT))==1&&byte(&sh,11,1)==0);
+    mac_cpu_write(sh.cpu,PORT+56,2,8);CHECK(SHP(0xa8b8,mac_cpu_write(sh.cpu,STACK,4,RECT))==1&&SHP(0xa8b8,mac_cpu_write(sh.cpu,STACK,4,RECT))==1&&byte(&sh,11,1)==0x3c);
+    mac_cpu_write(sh.cpu,PORT+52,2,0xffff);CHECK(SHP(0xa8b7,mac_cpu_write(sh.cpu,STACK,4,RECT))==-1&&mac_cpu_halted(sh.cpu));         /* negative pen size */
+    mac_runtime_destroy(&sh);
     mac_runtime_destroy(&rt);
     printf("Mono raster checks: %s\n",fails?"FAILED":"ok");
     return fails?1:0;
