@@ -150,80 +150,128 @@ int volume_clear_folder_icon(const char *root, const char *rel) {
 
 #define RAMDISK_QUOTA_MARK ".os999-ramdisk-mb"
 
-static uint64_t dir_used_bytes(const char *path, int depth) {
-    if (depth > 16) return 0;
-    DIR *d = opendir(path);
-    if (!d) return 0;
-    uint64_t total = 0;
+#define RAMDISK_OWNER_MARK ".os999-ramdisk-owner"
+
+/* Only directories created here are disposable. An old quota marker alone
+ * does not establish ownership; never adopt existing user folders. */
+static int ramdisk_owner(int dir, int create) {
+    struct stat st, marker;
+    char expected[96], actual[96] = {0};
+    if (fstat(dir, &st) != 0) return -1;
+    int n = snprintf(expected, sizeof expected, "OS999 RAM disk 1 %llu %llu\n",
+                     (unsigned long long)st.st_dev, (unsigned long long)st.st_ino);
+    int flags = create ? O_WRONLY | O_CREAT | O_EXCL : O_RDONLY;
+    int fd = openat(dir, RAMDISK_OWNER_MARK, flags | O_NOFOLLOW | O_NONBLOCK, 0600);
+    if (fd < 0) return -1;
+    int ok = fstat(fd, &marker) == 0 && S_ISREG(marker.st_mode) && marker.st_nlink == 1;
+    if (ok && create) ok = write(fd, expected, (size_t)n) == n;
+    else if (ok) ok = read(fd, actual, sizeof actual) == n && !memcmp(actual, expected, (size_t)n);
+    if (close(fd) != 0) ok = 0;
+    return ok ? 0 : -1;
+}
+
+/* Descriptor-relative traversal never follows links, including during cleanup. */
+static int ramdisk_walk(int dir, int depth, int wipe, uint64_t *used) {
+    if (depth > 64) return -1;
+    int scan = openat(dir, ".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    DIR *d = scan < 0 ? NULL : fdopendir(scan);
+    if (!d) { if (scan >= 0) close(scan); return -1; }
+    int rc = 0;
     struct dirent *de;
-    while ((de = readdir(d)) != NULL) {
-        if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, "..") ||
-            !strcmp(de->d_name, RAMDISK_QUOTA_MARK) || !strcmp(de->d_name, FOLDER_MARK))
+    while ((de = readdir(d))) {
+        const char *name = de->d_name;
+        if (!strcmp(name, ".") || !strcmp(name, "..") ||
+            (depth == 0 && (!strcmp(name, RAMDISK_OWNER_MARK) || !strcmp(name, RAMDISK_QUOTA_MARK))))
             continue;
-        char child[OSPI_PATH];
-        int k = snprintf(child, sizeof child, "%s/%s", path, de->d_name);
-        if (k < 0 || (size_t)k >= sizeof child) continue;
         struct stat st;
-        if (lstat(child, &st) != 0) continue;
-        if (S_ISDIR(st.st_mode)) total += dir_used_bytes(child, depth + 1);
-        else if (S_ISREG(st.st_mode) && st.st_size > 0) total += (uint64_t)st.st_size;
+        if (fstatat(dir, name, &st, AT_SYMLINK_NOFOLLOW) != 0) { rc = -1; break; }
+        if (S_ISDIR(st.st_mode)) {
+            int child = openat(dir, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+            if (child < 0) { rc = -1; break; }
+            int result = ramdisk_walk(child, depth + 1, wipe, used);
+            close(child);
+            if (result != 0 || (wipe && unlinkat(dir, name, AT_REMOVEDIR) != 0)) { rc = -1; break; }
+        } else if (wipe) {
+            if (unlinkat(dir, name, 0) != 0) { rc = -1; break; }
+        } else if (S_ISREG(st.st_mode) && st.st_size > 0) {
+            *used += (uint64_t)st.st_size;
+        }
     }
     closedir(d);
-    return total;
+    return rc;
+}
+
+static int ramdisk_empty(int dir) {
+    int scan = openat(dir, ".", O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    DIR *d = scan < 0 ? NULL : fdopendir(scan);
+    if (!d) { if (scan >= 0) close(scan); return 0; }
+    int empty = 1;
+    struct dirent *de;
+    while ((de = readdir(d))) {
+        if (strcmp(de->d_name, ".") && strcmp(de->d_name, "..") &&
+            strcmp(de->d_name, RAMDISK_OWNER_MARK) && strcmp(de->d_name, RAMDISK_QUOTA_MARK)) {
+            empty = 0; break;
+        }
+    }
+    closedir(d);
+    return empty;
 }
 
 int volume_ram_disk_sync(const char *root, int enabled, int quota_mb, int wipe_contents) {
-    char dir[OSPI_PATH], qpath[OSPI_PATH + 32];
-    if (volume_join(dir, sizeof dir, root, "RAM Disk") != 0 ||
-        snprintf(qpath, sizeof qpath, "%s/%s", dir, RAMDISK_QUOTA_MARK) >= (int)sizeof qpath)
-        return -1;
-    if (!enabled) {
-        (void)unlink(qpath);
-        char fmark[OSPI_PATH + 32];
-        if (snprintf(fmark, sizeof fmark, "%s/%s", dir, FOLDER_MARK) < (int)sizeof fmark)
-            (void)unlink(fmark);
-        if (wipe_contents) (void)wipe_at(dir, 0);
-        else (void)rmdir(dir);
-        return 0;
+    int base = volume_directory_open(root, "");
+    if (base < 0) return -1;
+    int created = enabled && mkdirat(base, "RAM Disk", 0700) == 0;
+    int dir = openat(base, "RAM Disk", O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
+    if (dir < 0) { int ok = !enabled && errno == ENOENT; close(base); return ok ? 0 : -1; }
+    int rc = -1;
+    if (ramdisk_owner(dir, created) != 0) goto done;
+    /* Validate before truncation: reject links, FIFOs and hardlinked markers. */
+    int fd = openat(dir, RAMDISK_QUOTA_MARK, O_RDWR | O_CREAT | O_NOFOLLOW | O_NONBLOCK, 0600);
+    if (fd < 0) goto done;
+    struct stat st;
+    int safe = fstat(fd, &st) == 0 && S_ISREG(st.st_mode) && st.st_nlink == 1;
+    if (!safe) { close(fd); goto done; }
+    uint64_t used = 0;
+    if (wipe_contents && ramdisk_walk(dir, 0, 1, &used) != 0) { close(fd); goto done; }
+    if (enabled) {
+        char buf[16];
+        int mb = quota_mb < 1 ? 4 : quota_mb > 256 ? 256 : quota_mb;
+        int n = snprintf(buf, sizeof buf, "%d\n", mb);
+        rc = ftruncate(fd, 0) == 0 && write(fd, buf, (size_t)n) == n ? 0 : -1;
+        if (close(fd) != 0) rc = -1;
+    } else {
+        close(fd);
+        /* Preserve ownership and contents when disabling a nonempty disk. */
+        if (!ramdisk_empty(dir)) goto done;
+        if (unlinkat(dir, RAMDISK_QUOTA_MARK, 0) != 0 ||
+            unlinkat(dir, RAMDISK_OWNER_MARK, 0) != 0) goto done;
+        rc = unlinkat(base, "RAM Disk", AT_REMOVEDIR);
     }
-    int mb = quota_mb < 1 ? 4 : quota_mb > 256 ? 256 : quota_mb;
-    if (mkdir(dir, 0755) != 0 && errno != EEXIST) return -1;
-    if (wipe_contents) {
-        DIR *d = opendir(dir);
-        if (d) {
-            struct dirent *de;
-            while ((de = readdir(d)) != NULL) {
-                if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, "..") ||
-                    !strcmp(de->d_name, RAMDISK_QUOTA_MARK)) continue;
-                char child[OSPI_PATH];
-                if (snprintf(child, sizeof child, "%s/%s", dir, de->d_name) < (int)sizeof child)
-                    (void)wipe_at(child, 0);
-            }
-            closedir(d);
-        }
-    }
-    FILE *f = fopen(qpath, "w");
-    if (!f) return -1;
-    int ok = fprintf(f, "%d\n", mb) > 0;
-    return (fclose(f) == 0 && ok) ? 0 : -1;
+done:
+    close(dir); close(base);
+    return rc;
 }
 
 int volume_ram_disk_usage(const char *root, uint64_t *used_bytes, int *quota_mb) {
     if (used_bytes) *used_bytes = 0;
     if (quota_mb) *quota_mb = 0;
-    char dir[OSPI_PATH], qpath[OSPI_PATH + 32], buf[32] = {0};
-    if (volume_join(dir, sizeof dir, root, "RAM Disk") != 0 ||
-        snprintf(qpath, sizeof qpath, "%s/%s", dir, RAMDISK_QUOTA_MARK) >= (int)sizeof qpath)
-        return -1;
-    FILE *f = fopen(qpath, "r");
-    if (!f) return -1;
-    size_t got = fread(buf, 1, sizeof buf - 1, f);
-    fclose(f);
-    buf[got] = 0;
-    int mb = atoi(buf);
-    if (mb <= 0) return -1;
-    if (quota_mb) *quota_mb = mb;
-    if (used_bytes) *used_bytes = dir_used_bytes(dir, 0);
+    int dir = volume_directory_open(root, "RAM Disk");
+    if (dir < 0) return -1;
+    if (ramdisk_owner(dir, 0) != 0) { close(dir); return -1; }
+    int fd = openat(dir, RAMDISK_QUOTA_MARK, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+    struct stat st;
+    char buf[32] = {0}, *end;
+    ssize_t got = fd >= 0 && fstat(fd, &st) == 0 && S_ISREG(st.st_mode) && st.st_nlink == 1 ?
+                  read(fd, buf, sizeof buf - 1) : -1;
+    if (fd >= 0) close(fd);
+    long mb = got > 0 ? strtol(buf, &end, 10) : 0;
+    int valid = mb >= 1 && mb <= 256 && (*end == '\n' ? end[1] == 0 : *end == 0);
+    uint64_t used = 0;
+    int rc = valid ? ramdisk_walk(dir, 0, 0, &used) : -1;
+    close(dir);
+    if (rc != 0) return -1;
+    if (used_bytes) *used_bytes = used;
+    if (quota_mb) *quota_mb = (int)mb;
     return 0;
 }
 
