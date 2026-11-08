@@ -159,6 +159,7 @@ int mac_files_writable(MacRuntime *rt, const char *directory, unsigned max_files
 int mac_volume_blocks(int directory_fd, uint32_t *blocks);
 int mac_volume_info(MacRuntime *rt, uint32_t pb, int directory_fd);
 int mac_file_service(MacRuntime *rt, uint16_t opcode);
+int mac_fsspec_service(MacRuntime *rt, uint16_t opcode); /* HighLevelFSDispatch ($AA52): FSMakeFSSpec, FSpOpenDF, ... */
 int mac_color_init(MacRuntime *rt);
 int mac_color_service(MacRuntime *rt, uint16_t opcode);
 int mac_cursor_service(MacRuntime *rt, uint16_t opcode);

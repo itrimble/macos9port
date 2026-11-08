@@ -186,25 +186,20 @@ static int root_info(MacRuntime *rt, uint32_t pb) {
     return 0;
 }
 
-static int open_file(MacRuntime *rt, uint32_t pb) {
-    MacCpu *cpu = rt->cpu;
+/* Shared by PBOpen and FSpOpenDF: opens the named regular file into a free slot and returns its reference. */
+int mac_files_open_name(MacRuntime *rt, const char *name, unsigned permission, int *ref) {
     FileState *s = rt->file_state;
-    int volume = (int16_t)mac_cpu_read(cpu, pb + 22, 2);
-    unsigned permission = mac_cpu_read(cpu, pb + 27, 1);
-    char name[256];
-    int error = mac_files_read_name(cpu, mac_cpu_read(cpu, pb + 18, 4), name, sizeof name);
-    if (error) return error;
+    if (!s) return -35; /* nsvErr */
     if (rt->trace) fprintf(stderr, "file-open name=%s permission=%u\n", name, permission);
-    if (!s || (volume != 0 && volume != -1)) return -35; /* nsvErr */
     int index;
     for (index = 0; index < FILE_LIMIT; index++) if (s->files[index].fd < 0) break;
     if (index == FILE_LIMIT) return -42; /* tmfoErr */
     /* Save files shadow data files of the same name and may be writable. */
-    error = mac_files_open_save(rt, name, permission, &s->files[index]);
+    int error = mac_files_open_save(rt, name, permission, &s->files[index]);
     if (error < 0) return error;
     if (error == 0) {
-        mac_cpu_write(cpu, pb + 24, 2, REF_BASE + index);
-        if (rt->trace) fprintf(stderr, "file-open-result name=%s ref=%d writable=%d\n", name, REF_BASE + index, s->files[index].writable);
+        *ref = REF_BASE + index;
+        if (rt->trace) fprintf(stderr, "file-open-result name=%s ref=%d writable=%d\n", name, *ref, s->files[index].writable);
         return 0;
     }
     if (permission > 1) return -54; /* permErr: application data is read-only */
@@ -222,8 +217,22 @@ static int open_file(MacRuntime *rt, uint32_t pb) {
     }
     s->files[index] = (GuestFile){fd, 0, 0, {0}};
     memcpy(s->files[index].name, name, strlen(name) < FILE_NAME_MAX ? strlen(name) + 1 : 0);
-    mac_cpu_write(cpu, pb + 24, 2, REF_BASE + index);
-    if (rt->trace) fprintf(stderr, "file-open-result name=%s ref=%d bytes=%lld\n", name, REF_BASE + index, (long long)st.st_size);
+    *ref = REF_BASE + index;
+    if (rt->trace) fprintf(stderr, "file-open-result name=%s ref=%d bytes=%lld\n", name, *ref, (long long)st.st_size);
+    return 0;
+}
+
+static int open_file(MacRuntime *rt, uint32_t pb) {
+    MacCpu *cpu = rt->cpu;
+    int volume = (int16_t)mac_cpu_read(cpu, pb + 22, 2);
+    unsigned permission = mac_cpu_read(cpu, pb + 27, 1);
+    char name[256];
+    int error = mac_files_read_name(cpu, mac_cpu_read(cpu, pb + 18, 4), name, sizeof name);
+    if (error) return error;
+    if (!rt->file_state || (volume != 0 && volume != -1)) return -35; /* nsvErr */
+    int ref;
+    if ((error = mac_files_open_name(rt, name, permission, &ref))) return error;
+    mac_cpu_write(cpu, pb + 24, 2, (uint16_t)ref);
     return 0;
 }
 
@@ -340,6 +349,7 @@ static unsigned block_size(unsigned base, int wd, unsigned selector) {
 }
 
 int mac_file_service(MacRuntime *rt, uint16_t opcode) {
+    if (opcode == 0xaa52) return mac_fsspec_service(rt, opcode); /* HighLevelFSDispatch */
     unsigned base = opcode & ~0x400u;
     switch (base) {
     case 0xa000: case 0xa001: case 0xa002: case 0xa003: case 0xa008: case 0xa009:
