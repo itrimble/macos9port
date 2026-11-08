@@ -338,6 +338,37 @@ static void modal_loop(void) {
     CHECK(rig_open(&g) == 0); d = get_new(&g, 129, 0, 0xffffffffu, &rc); wr(&g.rt, hit, 2, 0xffff);
     post(&g, 3, 13, 0, 0, 0); post(&g, 3, 27, 0, 0, 0); post(&g, 1, 0, 0, OK_X); post(&g, 2, 0, 0, OK_X); modal(&g, 0, hit); CHECK(raw(&g.rt, hit, 2) == 0xffff && mac_cpu_get(g.rt.cpu, MAC_PC) == 0x10000);
     mac_runtime_destroy(&g.rt);
+    /* a guest filter procedure: called with (dialog, event, itemHit) below the stack; TRUE hands its itemHit back, FALSE lets the dialog handle the event */
+    {enum { FILT = 0x20000 };
+     for (unsigned mode = 0; mode < 4; mode++) {
+        CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); wr(&g.rt, hit, 2, 0xffff);
+        if (mode == 1) { post(&g, 1, 0, 0, OK_X); post(&g, 2, 0, 0, OK_X); } else if (mode != 3) post(&g, 3, 0x41, 0, 0, 0);
+        for (unsigned pass = 0; pass < (mode == 1 ? 2u : 1u); pass++) {
+            if (pass) { mac_cpu_set(g.rt.cpu, MAC_A7, SP); mac_cpu_set(g.rt.cpu, MAC_PC, TRAP_PC); CHECK(mac_dlgmgr_service(&g.rt, 0xa991) == 1); }
+            else CHECK(modal(&g, FILT, hit) == 1);
+            CHECK(g.rt.guest.active && mac_cpu_get(g.rt.cpu, MAC_PC) == FILT);                                        /* a guest call is under way: the CPU runs the filter */
+            uint32_t a7 = mac_cpu_get(g.rt.cpu, MAC_A7), ev = raw(&g.rt, a7 + 8, 4), ip = raw(&g.rt, a7 + 12, 4);
+            CHECK(raw(&g.rt, a7 + 4, 4) == d && ev == ip - 18 && ev < SP - 40 && a7 < ev && (ev & 1) == 0);         /* Pascal argument order; scratch above the callee's frame */
+            unsigned what = raw(&g.rt, ev, 2);
+            CHECK(what == (mode == 3 ? 0u : mode == 1 ? (pass ? 2u : 1u) : 3u) && raw(&g.rt, ip, 2) == 0);           /* the event offered (a null event when idle) */
+            if (mode == 0) wr(&g.rt, ip, 2, 4);                                                                      /* the filter stores itemHit 4 (the check box) ... */
+            mac_cpu_set(g.rt.cpu, MAC_A7, g.rt.guest.sp - 2);                                                        /* ... and returns into the stub with its result */
+            wr(&g.rt, g.rt.guest.sp - 2, 2, mode == 0 ? 0x0100 : 0x0000);                                            /* TRUE in mode 0, FALSE otherwise */
+            CHECK(mac_guest_return(&g.rt) == 0 && !mac_cpu_halted(g.rt.cpu));
+            if (mode == 1 && pass == 0) CHECK(raw(&g.rt, hit, 2) == 0xffff && mac_cpu_get(g.rt.cpu, MAC_PC) == 0x10000 && mac_cpu_get(g.rt.cpu, MAC_A7) == SP);   /* a press: nothing chosen yet, trap re-runs */
+        }
+        if (mode == 0) CHECK(raw(&g.rt, hit, 2) == 4 && mac_cpu_get(g.rt.cpu, MAC_A7) == SP + 8 && mac_cpu_get(g.rt.cpu, MAC_PC) == TRAP_PC && mac_cpu_ram(g.rt.cpu)[g.rt.screen_base + 90 * 640 + 74] == 0);   /* TRUE: the filter's answer, ModalDialog done, and the check box not toggled behind its back */
+        if (mode == 1) CHECK(raw(&g.rt, hit, 2) == 1 && mac_cpu_get(g.rt.cpu, MAC_A7) == SP + 8 && mac_cpu_get(g.rt.cpu, MAC_PC) == TRAP_PC); /* FALSE: the dialog took the click on OK itself */
+        if (mode >= 2) CHECK(raw(&g.rt, hit, 2) == 0xffff && mac_cpu_get(g.rt.cpu, MAC_A7) == SP && mac_cpu_get(g.rt.cpu, MAC_PC) == 0x10000);   /* FALSE, nothing chosen: the trap runs again */
+        mac_runtime_destroy(&g.rt);
+     }}
+    /* disposing the dialog while its filter runs is refused (so the completion's own "still open" check is only defence in depth) */
+    CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); post(&g, 3, 0x41, 0, 0, 0); CHECK(modal(&g, 0x20000, hit) == 1 && g.rt.guest.active);
+    wr(&g.rt, SP + 200, 4, d); CHECK(trap(&g, 0xa983, SP + 200) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
+    /* a filter whose dialog disappears under it, a filter outside RAM, an odd filter and the null event (no input) are handled */
+    CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); CHECK(modal(&g, 0x20001, hit) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
+    CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); CHECK(modal(&g, 0xfffffe, hit) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
+    CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); CHECK(modal(&g, 0x20000, hit) == 1 && raw(&g.rt, raw(&g.rt, mac_cpu_get(g.rt.cpu, MAC_A7) + 8, 4), 2) == 0); mac_runtime_destroy(&g.rt);   /* no events: a null event (what 0) */
     /* filters: the standard one is accepted, any other halts; ModalDialog with no dialog, a bad itemHit pointer and a changed stack halt */
     CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc);
     CHECK(modal(&g, mac_native_stub(0xbf1), hit) == 1 && !mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);

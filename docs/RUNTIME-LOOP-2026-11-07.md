@@ -353,3 +353,16 @@ the probe, not a window I watched, and I have not listened to any audio.
   identical). Headless frame at 60 s: the editor's "New Room" window with the Wicked Witch alert. The next halt is **ModalDialog filter
   procedures are unsupported**: running a guest filter procedure from inside ModalDialog (there is a guest-call helper, `mac_guestcall.c`)
   is the next piece.
+
+- **ModalDialog filter procedures (`src/mac_dlgmgr.c`, call helper `mac_guestcall.c`).** A guest filter `FUNCTION f(dlg; VAR event; VAR itemHit): BOOLEAN`
+  now runs: each pass of ModalDialog offers one event (or a null event when idle, so filters that blink or poll see idle calls) through
+  `mac_guest_call`, with an EventRecord and a zeroed itemHit in scratch below the stack (above the callee's frame). TRUE returns the filter's
+  itemHit as the answer without the dialog toggling anything; FALSE lets the dialog handle the event as before; the trap is re-executed
+  (rewind + yield) otherwise. The result Boolean is read from the high byte of the result word (the Pascal layout). A filter address that is
+  odd, in low memory or outside RAM halts. The boolean/guest-return plumbing was driven by hand in the test (no 68k code is executed there):
+  mutants for the boolean byte, skipped dialog handling, scratch overlapping the frame, the null event, toggling on TRUE and the rewind PC
+  were killed; "dialog already gone" in the completion is defence in depth only (disposing a dialog during ModalDialog already halts), so
+  that mutant survives by design. Decoration tables moved to `src/mac_dlgswallow.c` to keep `mac_dlgmgr.c` under 500 lines (498).
+  Headless: Room Editor 1.06 now shows its **Room Background Info?** dialog with the tile palette after the password alert and runs 60 s with no
+  halt; the PICT in the earlier dialog is still not shown and I did not click through to see whether the editor itself works. `make test` 0, ASan
+  clean on `test_mac_dlgmgr`, Monkey Island and Monkey Island 2 identical, Castle refreshed.

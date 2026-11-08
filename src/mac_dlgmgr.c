@@ -1,4 +1,5 @@
 #include "mac_dialog_draw.h"
+#include "mac_dlgswallow.h"
 #include "mac_ditl.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,6 +32,7 @@ typedef struct {
     int edit_item, sel_start, sel_end, def_item, cancel_item, hidden;   /* hidden: drawn nothing until ShowWindow */
     uint8_t *backdrop; int drawn;
     int modal, pressed; uint32_t sp, pc, hit_ptr;
+    uint32_t filter, scratch; MacEvent pend; int pend_real;     /* ModalDialog filterProc: the guest routine, its scratch (event + itemHit) and the event it is looking at */
     int select_busy; uint32_t select_dlg_ptr;                    /* DialogSelect waiting for the mouse-up of a press */
 } Dlg;
 typedef struct MacDlgMgr { Dlg *open[MAX_OPEN]; uint32_t port; /* the dialog SetPort last named, 0 once any other port is set */ } Mgr;
@@ -226,17 +228,62 @@ static unsigned handle_event(Dlg *d, const MacEvent *e) {
     int pressed = d->pressed; d->pressed = 0;
     return pressed && item == pressed ? (unsigned)item : 0;
 }
+static void finish_modal(MacRuntime *rt, Dlg *d, unsigned chosen, int toggle) {
+    if (toggle && chosen && chosen <= d->ditl.count && d->ditl.items[chosen - 1].kind == MAC_ITEM_CHECK) d->value[chosen - 1] = !d->value[chosen - 1];
+    for (unsigned k = 0; k < d->ditl.count; k++) mirror(rt, d, k);
+    wr(rt, d->hit_ptr, 2, chosen);
+    d->modal = 0; d->pressed = 0; d->filter = 0;
+    draw(rt, d);
+    mac_cpu_set(rt->cpu, MAC_A7, d->sp + 8);
+    mac_cpu_set(rt->cpu, MAC_PC, d->pc + 2);
+}
+/* The guest filter returned (mac_guestcall runs this with A7 and PC restored to the values at the call). TRUE: the item it stored in itemHit is
+ * the answer and the event is the filter's. FALSE: the dialog handles the event itself. Either way ModalDialog resumes at its own trap. */
+static int filter_done(void *vrt, void *ctx, uint32_t result) {
+    MacRuntime *rt = vrt; Dlg *d = ctx;
+    if (!find(rt, d->ptr) || !d->modal) return -1;
+    unsigned chosen = 0;
+    if ((result >> 8) & 0xff) {
+        uint32_t hit = rd(rt, d->scratch + 18, 2);
+        finish_modal(rt, d, hit, 0); return 0;
+    }
+    if (d->pend_real) chosen = handle_event(d, &d->pend);
+    if (chosen) { finish_modal(rt, d, chosen, 1); return 0; }
+    for (unsigned k = 0; k < d->ditl.count; k++) mirror(rt, d, k);
+    draw(rt, d);
+    mac_cpu_set(rt->cpu, MAC_A7, d->sp); mac_cpu_set(rt->cpu, MAC_PC, d->pc); mac_cpu_yield(rt->cpu);
+    return 0;
+}
+/* Offers one event (or a null event) to the guest filter: writes an EventRecord and a zero itemHit into scratch below the stack and calls
+ * filter(theDialog, VAR event, VAR itemHit): Boolean. */
+static int call_filter(MacRuntime *rt, Dlg *d, const MacEvent *e, int real) {
+    uint32_t at = (d->sp - 64) & ~1u;
+    if (!valid(rt, at - 32, 96)) return fail(rt, "ModalDialog has no stack room for its filter procedure.");
+    d->scratch = at; d->pend = *e; d->pend_real = real;
+    wr(rt, at, 2, e->what); wr(rt, at + 2, 4, e->message); wr(rt, at + 6, 4, e->when); wr(rt, at + 10, 2, (uint16_t)e->y); wr(rt, at + 12, 2, (uint16_t)e->x); wr(rt, at + 14, 2, e->modifiers);
+    wr(rt, at + 18, 2, 0);
+    uint8_t args[12]; uint32_t v[3] = { d->ptr, at, at + 18 };
+    for (int i = 0; i < 3; i++) for (int k = 0; k < 4; k++) args[i * 4 + k] = (uint8_t)(v[i] >> (24 - 8 * k));
+    mac_cpu_set(rt->cpu, MAC_PC, d->pc); mac_cpu_set(rt->cpu, MAC_A7, at);
+    return mac_guest_call(rt, d->filter, args, 12, 2, filter_done, d);
+}
 static int modal_dialog(MacRuntime *rt, uint32_t sp, uint32_t pc) {
     Dlg *d = front(rt);
     if (!d) return fail(rt, "ModalDialog with no open dialog is unsupported.");
     if (!d->modal) {
         if (!valid(rt, sp, 8)) return fail(rt, "ModalDialog stack is invalid.");
         uint32_t filter = rd(rt, sp + 4, 4), hit = rd(rt, sp, 4);
-        if (filter && filter != STD_FILTER) return fail(rt, "ModalDialog filter procedures are unsupported.");
+        if (filter == STD_FILTER) filter = 0;                                                          /* the standard filter is what the dialog does anyway */
+        else if (filter && (filter & 1 || filter < 0x400 || filter >= mac_cpu_ram_size(rt->cpu) - 2)) return fail(rt, "ModalDialog filter procedure is outside guest memory.");
         if (!valid(rt, hit, 2)) return fail(rt, "ModalDialog itemHit pointer is invalid.");
-        d->modal = 1; d->sp = sp; d->pc = pc; d->hit_ptr = hit; draw(rt, d);
+        d->modal = 1; d->sp = sp; d->pc = pc; d->hit_ptr = hit; d->filter = filter; draw(rt, d);
     } else if (pc != d->pc || sp != d->sp) return fail(rt, "ModalDialog called again while a dialog is in progress.");
     unsigned chosen = 0; MacEvent e; int before = d->pressed;
+    if (d->filter) {                                                                                    /* one event (or a null event) per pass through the guest filter */
+        int real = mac_dialog_next_event(rt, &e);
+        if (!real) e = (MacEvent){ 0, rt->modifiers, 0, rt->ticks, rt->mouse_x, rt->mouse_y };
+        return call_filter(rt, d, &e, real) < 0 ? -1 : 1;
+    }
     while (!chosen && mac_dialog_next_event(rt, &e)) chosen = handle_event(d, &e);
     if (!chosen) {
         for (unsigned k = 0; k < d->ditl.count; k++) mirror(rt, d, k);
@@ -244,13 +291,7 @@ static int modal_dialog(MacRuntime *rt, uint32_t sp, uint32_t pc) {
         mac_cpu_set(rt->cpu, MAC_PC, d->pc); mac_cpu_yield(rt->cpu);
         return 1;
     }
-    const MacDitlItem *it = &d->ditl.items[chosen - 1];
-    if (it->kind == MAC_ITEM_CHECK) d->value[chosen - 1] = !d->value[chosen - 1];
-    for (unsigned k = 0; k < d->ditl.count; k++) mirror(rt, d, k);
-    wr(rt, d->hit_ptr, 2, chosen);
-    d->modal = 0; d->pressed = 0;
-    draw(rt, d);
-    mac_cpu_set(rt->cpu, MAC_A7, d->sp + 8);
+    finish_modal(rt, d, chosen, 1);
     return 1;
 }
 
@@ -301,34 +342,9 @@ static int dialog_select(MacRuntime *rt, uint32_t sp, uint32_t pc) {
     return 1;
 }
 
-/* While a dialog is the current port, drawing the application does into it is not shown: our dialogs are drawn from their DITLs, and
- * nothing here gives a dialog a port to draw in. The small set of QuickDraw calls that only decorate (and DrawPicture, which is not shown; outlining the default button with
- * FrameRoundRect, a frame, an erase, a string) and the pen and text state calls that go with them are accepted and ignored, so they do
- * not land on the application's own window port; every other drawing call halts by name. */
-static int swallowed_args(uint16_t op) {
-    switch (op) {
-    case 0xa89b: case 0xa893: case 0xa894: case 0xa891: case 0xa892: case 0xa862: case 0xa863: case 0xa87c: return 4;   /* PenSize, MoveTo, Move, LineTo, Line, ForeColor, BackColor, BackPat */
-    case 0xa864: return 2;                                                                                  /* ColorBit */
-    case 0xa896: case 0xa897: return 0;                                                                     /* HidePen, ShowPen */
-    case 0xa89c: case 0xa887: case 0xa888: case 0xa889: case 0xa88a: return 2;                             /* PenMode, TextFont, TextFace, TextMode, TextSize */
-    case 0xa89d: return 4;                                                                                  /* PenPat */
-    case 0xa89e: return 0;                                                                                  /* PenNormal */
-    case 0xa8a1: case 0xa8a2: case 0xa8a3: case 0xa8a4: case 0xa8b7: case 0xa8b8: case 0xa8b9: case 0xa8ba: case 0xa884: return 4;   /* Frame/Paint/Erase/Invert Rect and Oval, DrawString */
-    case 0xa8a5: return 8;                                                                                  /* FillRect */
-    case 0xa8b0: case 0xa8b1: case 0xa8b2: case 0xa8b3: return 8;                                           /* Frame/Paint/Erase/Invert RoundRect */
-    case 0xa883: return 2;                                                                                  /* DrawChar */
-    case 0xa8f6: return 8;                                                                                  /* DrawPicture: NOT shown (a picture is content, not decoration; accepted so the program can run on) */
-    default: return -1;
-    }
-}
-static int drawing_trap(uint16_t op) {
-    return (op >= 0xa8a1 && op <= 0xa8a5) || (op >= 0xa8b0 && op <= 0xa8b4) || (op >= 0xa8b7 && op <= 0xa8bb) || (op >= 0xa8be && op <= 0xa8c2) ||
-           (op >= 0xa8c6 && op <= 0xa8ca) || (op >= 0xa8d2 && op <= 0xa8d6) || (op >= 0xa883 && op <= 0xa885) || op == 0xa891 || op == 0xa892 ||
-           op == 0xa8ec || op == 0xa8ef || op == 0xa8f6;
-}
 int mac_dlgmgr_service(MacRuntime *rt, uint16_t opcode) {
-    if (rt && rt->dlgmgr && M(rt)->port && rt->cpu && !mac_cpu_halted(rt->cpu) && find(rt, M(rt)->port) && (drawing_trap(opcode) || swallowed_args(opcode) >= 0)) {
-        int args = swallowed_args(opcode);
+    if (rt && rt->dlgmgr && M(rt)->port && rt->cpu && !mac_cpu_halted(rt->cpu) && find(rt, M(rt)->port) && (mac_dlg_drawing_trap(opcode) || mac_dlg_swallowed_args(opcode) >= 0)) {
+        int args = mac_dlg_swallowed_args(opcode);
         uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7);
         if (args >= 0 && !(sp & 1) && valid(rt, sp, (size_t)args + 2)) { mac_cpu_set(rt->cpu, MAC_A7, sp + (uint32_t)args); return 1; }
         char m[128]; snprintf(m, sizeof m, "QuickDraw trap $%04x with a dialog as the current port is unsupported.", opcode);
