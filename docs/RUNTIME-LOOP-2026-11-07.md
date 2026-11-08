@@ -581,3 +581,17 @@ the probe, not a window I watched, and I have not listened to any audio.
   the 520-step bound (lists are capped at 512), the CDEF size floor (checked twice).
   **Glider PRO (headless):** CNTL 128/129 (procID 2050, CDEF 128) are created, initialised and drawn by Glider's own CDEF; the run goes on to the application's own `GetCIcon` (`$AA1E`,
   colour icons 'cicn'), the next halt. **Not seen in a window.** The CDEF's drawing is only as good as our pen, text and menu calls; no frame has been checked yet.
+
+- **Colour icons and the Glider PRO room editor on screen (headless).** `GetCIcon` ($AA1E), `PlotCIcon` ($AA1F) and `DisposeCIcon` ($AA25): new `src/mac_cicn.c`. The 'cicn' layout (PixMap 50,
+  mask BitMap 14, icon BitMap 14, iconData 4, mask bits, bitmap bits, colour table, pixels) was checked against Glider's 906-byte icons (82 + 128 + 128 + 56 + 512). GetCIcon keeps the
+  resource's bytes in a guest handle; PlotCIcon re-parses and bounds-checks them every time because the program can write them. Supported: unpacked chunky indexed 1/2/4/8-bit icons up to
+  256x256, a mask (rowBytes 0 = opaque), nearest-neighbour scaling, nearest-palette-entry matching (first of equals), the colour port's clip (`mac_color_target`, new in mac_color_raster.c;
+  complex clip regions halt as before), indexed-8 colour ports only. The 1-bit iconBMap is ignored. A missing id gives nil and ResError -192. Bug found by the new test and fixed: a nil
+  current port returned -1 without halting. Test `tests/test_mac_cicn.c`: 16 header-field corruptions, every truncation, limits and row floors on both sides, 11 corrupted-handle/guest-memory cases,
+  masking, scaling (square and not), clipping, ties, value-vs-position tables, a table value over 255. All mutants killed except the nil-port and colour-port checks, which a later check
+  also catches (equivalent in effect). ASan clean; `make test` 0; MI and MI2 identical; Castle refreshed.
+  **Glider PRO (headless frames, one run):** the New House flow now reaches the editor: "Untitled House - No rooms", a Tools window with a 16-icon colour palette, the pop-up control (Glider's own
+  CDEF, "Blowers"), a Map window with a grid and scroll bars; a scripted click on a tool icon moves the selection frame and its caption changes ("Floor Vent"), so mouse input reaches the app. The
+  House menu opens (New House, Save House, House/Room/Object Info, Cut/Copy/Clear/Duplicate, Bring To Front, Go To Room, window toggles); it has **no "New Room"**. A scripted double-click on a Map
+  cell did nothing visible: not yet understood (double-click timing under scripting, or the Map window's click handling). The run no longer halts: it idles in the event loop. Not checked: that the
+  editor window overlaps are right, text positions, or any window in a real session.

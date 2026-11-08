@@ -97,7 +97,7 @@ RUNTIME += src/mac_numconv.c src/mac_help.c src/mac_appleevents.c
 RUNTIME += src/mac_sound.c src/mac_sound_render.c
 RUNTIME += src/mac_sound_double.c
 RUNTIME += src/mac_sound_resample.c
-RUNTIME += src/mac_time.c src/mac_delay.c src/mac_guestcall.c src/mac_ditl.c src/mac_stdfile_list.c src/mac_window_inval.c src/mac_random.c src/mac_text_state.c src/mac_font.c src/mac_text.c src/mac_textedit.c src/mac_sysfont.c src/mac_dlgswallow.c src/mac_sound_volume.c src/mac_scrap.c src/mac_resload.c src/mac_handcopy.c src/mac_colorindex.c src/mac_window_title.c src/mac_files_rf.c src/mac_files_hvol.c src/mac_files_crf.c src/mac_cmpstring.c src/mac_alias.c src/mac_controls.c src/mac_cdef.c src/mac_control_draw.c src/mac_qdcolor.c src/mac_window_stack.c src/mac_menuselect.c src/mac_toolutil.c src/mac_stdprocs.c src/mac_rgn.c src/mac_appfork.c src/mac_dialog_draw.c src/mac_alert.c src/mac_stdput.c src/mac_dlgmgr.c src/mac_devmgr.c src/mac_shape.c src/mac_shapes.c src/mac_stdfile.c src/mac_stdfile_draw.c
+RUNTIME += src/mac_time.c src/mac_delay.c src/mac_guestcall.c src/mac_ditl.c src/mac_stdfile_list.c src/mac_window_inval.c src/mac_random.c src/mac_text_state.c src/mac_font.c src/mac_text.c src/mac_textedit.c src/mac_sysfont.c src/mac_dlgswallow.c src/mac_sound_volume.c src/mac_scrap.c src/mac_resload.c src/mac_handcopy.c src/mac_colorindex.c src/mac_window_title.c src/mac_files_rf.c src/mac_files_hvol.c src/mac_files_crf.c src/mac_cmpstring.c src/mac_alias.c src/mac_controls.c src/mac_cdef.c src/mac_cicn.c src/mac_control_draw.c src/mac_qdcolor.c src/mac_window_stack.c src/mac_menuselect.c src/mac_toolutil.c src/mac_stdprocs.c src/mac_rgn.c src/mac_appfork.c src/mac_dialog_draw.c src/mac_alert.c src/mac_stdput.c src/mac_dlgmgr.c src/mac_devmgr.c src/mac_shape.c src/mac_shapes.c src/mac_stdfile.c src/mac_stdfile_draw.c
 RUNTIME += src/mac_files_write.c src/mac_files_info.c src/mac_fsspec.c
 RUNTIME_HDRS += include/mac_files_int.h
 RUNTIME_HDRS += include/mac_time.h
@@ -396,6 +396,9 @@ build/test_mac_controls: $(RUNTIME_OBJ) tests/test_mac_controls.c $(RUNTIME_HDRS
 build/test_mac_cdef: $(RUNTIME_OBJ) tests/test_mac_cdef.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_cdef.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
+build/test_mac_cicn: $(RUNTIME_OBJ) tests/test_mac_cicn.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_cicn.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
 build/test_mac_window_inval: $(RUNTIME_OBJ) tests/test_mac_window_inval.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_window_inval.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 build/test_mac_menu_setitem: $(RUNTIME_OBJ) tests/test_mac_menu_setitem.c $(RUNTIME_HDRS) $(CPUOBJ)
@@ -428,7 +431,7 @@ build/test_mac_system_volume: $(RUNTIME_OBJ) tests/test_mac_system_volume.c $(RU
 build/test_mac_regions: $(RUNTIME_OBJ) tests/test_mac_regions.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_regions.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
-test: build/test_mac_cdef build/test_mac_controls build/test_mac_menu_records build/test_mac_multi_window build/test_mac_window_resource build/test_mac_paintbehind build/test_mac_menu build/test_mac_drive_queue build/test_mac_reservation build/test_mac_color_pen build/test_mac_system_volume build/test_mac_regions build/test_mac_window build/test_mac_window_nogrow build/test_mac_clock_globals build/test_mac_random build/test_mac_supervisor build/test_mac_text_state build/test_mac_text build/test_mac_sound_volume build/test_mac_scrap build/test_mac_handcopy build/test_mac_colorindex build/test_mac_files_rf build/test_mac_sysfont build/test_mac_textedit build/test_mac_rgn build/test_mac_stdprocs build/test_mac_shape build/test_mac_menu_color build/test_mac_devmgr build/test_mac_dlgmgr build/test_mac_stdput build/test_mac_menuselect build/test_mac_toolutil build/test_mac_window_inval build/test_mac_menu_setitem build/test_mac_volume build/test_mac_pixels build/test_mac_pixmap build/test_mac_vbl
+test: build/test_mac_cicn build/test_mac_cdef build/test_mac_controls build/test_mac_menu_records build/test_mac_multi_window build/test_mac_window_resource build/test_mac_paintbehind build/test_mac_menu build/test_mac_drive_queue build/test_mac_reservation build/test_mac_color_pen build/test_mac_system_volume build/test_mac_regions build/test_mac_window build/test_mac_window_nogrow build/test_mac_clock_globals build/test_mac_random build/test_mac_supervisor build/test_mac_text_state build/test_mac_text build/test_mac_sound_volume build/test_mac_scrap build/test_mac_handcopy build/test_mac_colorindex build/test_mac_files_rf build/test_mac_sysfont build/test_mac_textedit build/test_mac_rgn build/test_mac_stdprocs build/test_mac_shape build/test_mac_menu_color build/test_mac_devmgr build/test_mac_dlgmgr build/test_mac_stdput build/test_mac_menuselect build/test_mac_toolutil build/test_mac_window_inval build/test_mac_menu_setitem build/test_mac_volume build/test_mac_pixels build/test_mac_pixmap build/test_mac_vbl
 
 build/test_mac_video_config: $(RUNTIME_OBJ) tests/test_mac_video_config.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_video_config.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
@@ -607,6 +610,7 @@ test: build/test_os999_startup build/test_ospi build/test_archive_install build/
 	./build/test_mac_window_inval
 	./build/test_mac_controls
 	./build/test_mac_cdef
+	./build/test_mac_cicn
 	./build/test_mac_regions
 	./build/test_mac_system_volume
 	./build/test_mac_color_pen

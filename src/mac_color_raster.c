@@ -1,6 +1,7 @@
 #include "mac_runtime.h"
 #include "mac_qdcolor.h"
 #include "mac_shape.h"
+#include "mac_cicn.h"
 #include <limits.h>
 #include <string.h>
 
@@ -189,4 +190,31 @@ int mac_color_raster_service(MacRuntime *rt,uint16_t opcode) {
     int rc=opcode==0xa862 || opcode==0xa863?constant_color(rt,port,rd(rt,sp,4),opcode==0xa863):opcode==0xaa14 || opcode==0xaa15?rgb(rt,port,rd(rt,sp,4),opcode==0xaa15):draw(rt,port,sp,opcode,NULL,0,NULL,NULL);
     if(rc>0)mac_cpu_set(rt->cpu,MAC_A7,sp+args);
     return rc;
+}
+
+int mac_color_target(MacRuntime *rt,uint32_t port,MacColorTarget *out) {
+    if(!port)return fail(rt,"There is no current graphics port.");
+    if(valid(rt,port,108,0)<0)return -1;
+    if((rd(rt,port+6,2)&0xc000)!=0xc000)return 0;
+    uint32_t pm;
+    if(handle(rt,rd(rt,port+2,4),50,&pm)<0)return -1;
+    unsigned row=rd(rt,pm+4,2);
+    if((row&0xc000)!=0x8000 || rd(rt,pm+30,2)!=0 || rd(rt,pm+32,2)!=8 || rd(rt,pm+34,2)!=1 || rd(rt,pm+36,2)!=8 || rd(rt,pm+16,2)!=0)
+        return fail(rt,"Only unpacked indexed-8 color PixMaps are supported.");
+    row&=0x3fff;
+    Box bounds,clip,rg;
+    if(box(rt,pm+6,&bounds)<0 || box(rt,port+16,&clip)<0)return -1;
+    int width=bounds.r-bounds.l,height=bounds.b-bounds.t;
+    uint32_t base=rd(rt,pm,4);
+    if(width<0 || height<0 || (unsigned)width>row || (uint64_t)row*(unsigned)height>8u*1024u*1024u)return fail(rt,"Color PixMap dimensions exceed raster budget.");
+    if(valid(rt,base,(size_t)row*(unsigned)height,0)<0)return -1;
+    clip=intersect(clip,bounds);
+    for(unsigned off=24;off<=28;off+=4) {
+        if(region(rt,rd(rt,port+off,4),&rg)<0)return -1;
+        clip=intersect(clip,rg);
+    }
+    out->pixels=mac_cpu_ram(rt->cpu)+base;out->row=(int)row;
+    out->bt=bounds.t;out->bl=bounds.l;out->bb=bounds.b;out->br=bounds.r;
+    out->ct=clip.t;out->cl=clip.l;out->cb=clip.b;out->cr=clip.r;
+    return 1;
 }
