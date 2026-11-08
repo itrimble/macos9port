@@ -1,3 +1,4 @@
+#include "native_settings.h"
 #include "native_launch.h"
 #include "ospi.h"
 #include "mac_resource.h"
@@ -251,61 +252,6 @@ static void summarize_log(const char *path, char *out, size_t n) {
     }
 }
 
-static const char *json_field(const char *start, const char *end, const char *key) {
-    char pat[48];
-    int n = snprintf(pat, sizeof pat, "\"%s\"", key);
-    if (n <= 0 || (size_t)n >= sizeof pat) return NULL;
-    for (const char *p = start; p && p + n < end; p++) {
-        if (memcmp(p, pat, (size_t)n) == 0) {
-            p += n;
-            while (p < end && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) p++;
-            if (p < end && *p == ':') {
-                p++;
-                while (p < end && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) p++;
-                return p < end ? p : NULL;
-            }
-        }
-    }
-    return NULL;
-}
-
-static void apply_guest_cp_env(const char *root) {
-    char path[PATH_MAX], buf[16384];
-    if (!root || snprintf(path, sizeof path, "%s/.os999-control-panels.json", root) >= (int)sizeof path)
-        return;
-    int fd = open(path, O_RDONLY | O_NOFOLLOW);
-    if (fd < 0) return;
-    ssize_t got = read(fd, buf, sizeof buf - 1);
-    close(fd);
-    if (got <= 0) return;
-    buf[got] = 0;
-    const char *end = buf + got;
-    const char *mem = json_field(buf, end, "memory");
-    if (mem && *mem == '{') {
-        const char *mend = strchr(mem, '}');
-        if (mend) {
-            const char *gm = json_field(mem, mend, "guest_ram_mb");
-            if (gm && !getenv("OS999_GUEST_HEAP_MB")) {
-                char num[16];
-                snprintf(num, sizeof num, "%d", atoi(gm));
-                setenv("OS999_GUEST_HEAP_MB", num, 1);
-            }
-            const char *hg = json_field(mem, mend, "heap_guard");
-            if (hg && !getenv("OS999_GUEST_GUARD"))
-                setenv("OS999_GUEST_GUARD", strncmp(hg, "true", 4) == 0 ? "1" : "0", 1);
-        }
-    }
-    const char *net = json_field(buf, end, "network");
-    if (net && *net == '{') {
-        const char *nend = strchr(net, '}');
-        if (nend) {
-            const char *iso = json_field(net, nend, "guest_isolated");
-            if (iso && !getenv("OS999_MACTCP_ISOLATED"))
-                setenv("OS999_MACTCP_ISOLATED", strncmp(iso, "false", 5) == 0 ? "0" : "1", 1);
-        }
-    }
-}
-
 /* Saves never land in the game folder or the volume. They go beside the
  * volume under "Saves/<application folder name>", one directory per app, so
  * reinstalling or removing a game leaves its saves in place. The parent is
@@ -359,6 +305,7 @@ int native_open(const char *root, const char *full, char *err, size_t n) {
         runtime_bridge_close(bridge); runtime_bridge_unlink(bridge_name);
         return problem(err, n, "Could not create the private runtime log.");
     }
+    NativeSettings settings = native_settings_load(root);
     pid_t mid = fork();
     if (mid == 0) {
         if (setsid() < 0) _exit(125);
@@ -370,7 +317,7 @@ int native_open(const char *root, const char *full, char *err, size_t n) {
             if (input > STDERR_FILENO) close(input);
             if (log > STDERR_FILENO) close(log);
             if (!getenv("OSPI_PERF_TRACE")) setenv("OSPI_PERF_TRACE", "1", 1);
-            apply_guest_cp_env(root);
+            native_settings_apply(&settings);
             char *argv[] = {runtime, "--window", "--indexed", "--interactive",
                             "--bridge", bridge_name, "--saves", saves, fork_path, NULL};
             execv(runtime, argv);

@@ -1,5 +1,4 @@
 #include "control_panel_store.h"
-
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -9,9 +8,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
-
 enum { MAX_JSON_BYTES = 65536 };
-
 static int valid_ident(const char *s, size_t limit) {
     if (!s || !s[0]) return 0;
     size_t i = 0;
@@ -22,7 +19,6 @@ static int valid_ident(const char *s, size_t limit) {
     }
     return 1;
 }
-
 static int find_entry(const os999_cp_store_t *store, const char *panel_id, const char *key) {
     for (int i = 0; i < store->count; i++) {
         if (strcmp(store->entries[i].panel_id, panel_id) == 0 &&
@@ -230,12 +226,17 @@ int os999_cp_store_load(os999_cp_store_t *store) {
         pthread_mutex_unlock(&store->lock);
         return -1;
     }
-    int fd = open(store->path, O_RDONLY | O_NOFOLLOW);
+    int fd = open(store->path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
     if (fd < 0) {
         pthread_mutex_unlock(&store->lock);
         return -1;
     }
-    size_t size = (size_t)lst.st_size;
+    struct stat live;
+    if (fstat(fd, &live) != 0 || !S_ISREG(live.st_mode) ||
+        live.st_dev != lst.st_dev || live.st_ino != lst.st_ino || live.st_size != lst.st_size) {
+        close(fd); pthread_mutex_unlock(&store->lock); return -1;
+    }
+    size_t size = (size_t)live.st_size;
     char *buf = malloc(size + 1);
     if (!buf) {
         close(fd);

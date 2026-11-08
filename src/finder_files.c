@@ -172,40 +172,45 @@ static int inside_source(int from, const char *name, int to) {
     }
     close(current); return 1;
 }
-static uint64_t fd_dir_bytes(int dir_fd, int depth) {
-    if (depth > 16) { close(dir_fd); return 0; }
-    DIR *d = fdopendir(dir_fd);
-    if (!d) { close(dir_fd); return 0; }
-    uint64_t sum = 0;
-    struct dirent *e;
-    while ((e = readdir(d))) {
-        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..") ||
-            !strcmp(e->d_name, ".os999-ramdisk-mb") || !strcmp(e->d_name, ".os999-folder"))
-            continue;
-        struct stat st;
-        if (fstatat(dirfd(d), e->d_name, &st, AT_SYMLINK_NOFOLLOW)) continue;
-        if (S_ISDIR(st.st_mode)) {
-            int sub = openat(dirfd(d), e->d_name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW);
-            if (sub >= 0) sum += fd_dir_bytes(sub, depth + 1);
-        } else if (S_ISREG(st.st_mode) && st.st_size > 0) sum += (uint64_t)st.st_size;
-    }
-    closedir(d);
-    return sum;
+static int is_ramdisk_path(const char *path) {
+    return path && (!strcasecmp(path, "RAM Disk") || !strncasecmp(path, "RAM Disk/", 9));
 }
-
+static uint64_t entry_bytes(int parent, const char *name, int depth) {
+    if (depth > 64) return UINT64_MAX;
+    int fd = openat(parent, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+    if (fd < 0) return UINT64_MAX;
+    struct stat st;
+    uint64_t total = UINT64_MAX;
+    if (fstat(fd, &st) != 0) goto done;
+    if (S_ISREG(st.st_mode) && st.st_size >= 0) {
+        total = (uint64_t)st.st_size;
+#ifdef __APPLE__
+        ssize_t fork = fgetxattr(fd, "com.apple.ResourceFork", NULL, 0, 0, 0);
+#else
+        ssize_t fork = fgetxattr(fd, "user.com.apple.ResourceFork", NULL, 0);
+#endif
+        if (fork > 0) total += (uint64_t)fork;
+    } else if (S_ISDIR(st.st_mode)) {
+        DIR *d = fdopendir(fd);
+        if (!d) goto done;
+        total = 0;
+        struct dirent *e;
+        while ((e = readdir(d))) {
+            if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+            uint64_t size = entry_bytes(fd, e->d_name, depth + 1);
+            if (size == UINT64_MAX || size > UINT64_MAX - total) { total = UINT64_MAX; break; }
+            total += size;
+        }
+        closedir(d); return total;
+    }
+done:
+    close(fd); return total;
+}
 static int ramdisk_remaining(const char *root, const char *dest, uint64_t *avail) {
-    if (!dest || (strcasecmp(dest, "RAM Disk") != 0 && strncasecmp(dest, "RAM Disk/", 9) != 0))
-        return 0;
-    int rd = finder_directory_open(root, "RAM Disk");
-    if (rd < 0) return 0;
-    int qfd = openat(rd, ".os999-ramdisk-mb", O_RDONLY | O_NOFOLLOW);
-    if (qfd < 0) { close(rd); return 0; }
-    char buf[32] = {0};
-    ssize_t got = read(qfd, buf, sizeof buf - 1);
-    close(qfd);
-    int mb = got > 0 ? atoi(buf) : 0;
-    if (mb <= 0) { close(rd); return 0; }
-    uint64_t used = fd_dir_bytes(rd, 0);
+    if (!is_ramdisk_path(dest)) return 0;
+    uint64_t used = 0; int mb = 0;
+    /* Ownership and regular nonblocking metadata validation are centralized. */
+    if (volume_ram_disk_usage(root, &used, &mb) != 0) return -1;
     uint64_t quota = (uint64_t)mb * 1024ull * 1024ull;
     *avail = quota > used ? quota - used : 0;
     return 1;
@@ -221,6 +226,13 @@ static int copy_to(const char *root, const char *rel, const char *name, const ch
     if (inside_source(from, name, to)) goto done;
     uint64_t rd_avail = 0;
     int rd_lim = ramdisk_remaining(root, destination, &rd_avail);
+    if (rd_lim < 0) goto done;
+    if (rd_lim) {
+        uint64_t size = entry_bytes(from, name, 0);
+        uint64_t fork_size = absent(from, sourcefork) ? 0 : entry_bytes(from, sourcefork, 0);
+        if (size == UINT64_MAX || fork_size == UINT64_MAX || size > rd_avail || fork_size > rd_avail - size)
+            goto done;
+    }
     for (int i = duplicate ? 1 : 0; i <= 100; i++) {
         int n = i == 0 ? snprintf(next, sizeof next, "%s", name) :
                 i == 1 ? snprintf(next, sizeof next, "%s copy", name) :
@@ -343,12 +355,17 @@ int finder_move(const char *root, const char *rel, const char *name, const char 
         (!strcmp(name, "Trash") || !strcmp(name, "System Folder")))) return -1;
     int from = finder_directory_open(root, rel), to = finder_directory_open(root, destination);
     if (from < 0 || to < 0) { if (from >= 0) close(from); if (to >= 0) close(to); return -1; }
-    struct stat a, b, src_st; int result = -1;
+    struct stat a, b; int result = -1;
     uint64_t rd_avail = 0;
-    if (ramdisk_remaining(root, destination, &rd_avail) &&
-        !fstatat(from, name, &src_st, AT_SYMLINK_NOFOLLOW) &&
-        S_ISREG(src_st.st_mode) && src_st.st_size > 0 && (uint64_t)src_st.st_size > rd_avail) {
-        close(from); close(to); return -1;
+    int limited = ramdisk_remaining(root, destination, &rd_avail);
+    if (limited < 0) { close(from); close(to); return -1; }
+    if (limited && !is_ramdisk_path(rel)) {
+        uint64_t size = entry_bytes(from, name, 0);
+        char fork[OSPI_NAME + 6]; sidecar(fork, name);
+        uint64_t fork_size = absent(from, fork) ? 0 : entry_bytes(from, fork, 0);
+        if (size == UINT64_MAX || fork_size == UINT64_MAX || size > rd_avail || fork_size > rd_avail - size) {
+            close(from); close(to); return -1;
+        }
     }
     if (!fstat(from, &a) && !fstat(to, &b) && a.st_dev == b.st_dev && a.st_ino == b.st_ino) result = 0;
     else if (!inside_source(from, name, to)) result = move_pair(from, name, to, name);

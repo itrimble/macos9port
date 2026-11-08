@@ -8,6 +8,7 @@
 #include <strings.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <sys/xattr.h>
 
 static int wipe_at(const char *path, int depth) {
     struct stat st;
@@ -193,8 +194,20 @@ static int ramdisk_walk(int dir, int depth, int wipe, uint64_t *used) {
             if (result != 0 || (wipe && unlinkat(dir, name, AT_REMOVEDIR) != 0)) { rc = -1; break; }
         } else if (wipe) {
             if (unlinkat(dir, name, 0) != 0) { rc = -1; break; }
-        } else if (S_ISREG(st.st_mode) && st.st_size > 0) {
-            *used += (uint64_t)st.st_size;
+        } else if (S_ISREG(st.st_mode) && st.st_size >= 0) {
+            int file = openat(dir, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+            struct stat live;
+            if (file < 0) { rc = -1; break; }
+            if (fstat(file, &live) != 0 || !S_ISREG(live.st_mode) || live.st_size < 0) {
+                close(file); rc = -1; break;
+            }
+#ifdef __APPLE__
+            ssize_t fork = fgetxattr(file, "com.apple.ResourceFork", NULL, 0, 0, 0);
+#else
+            ssize_t fork = fgetxattr(file, "user.com.apple.ResourceFork", NULL, 0);
+#endif
+            close(file);
+            *used += (uint64_t)live.st_size + (fork > 0 ? (uint64_t)fork : 0);
         }
     }
     closedir(d);
