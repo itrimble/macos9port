@@ -34,7 +34,7 @@ static int implemented(unsigned key) {
     switch (0xa000 | key) {
     case 0xa800:
     case 0xa801: case 0xa803: case 0xa804: case 0xa807:
-    case 0xa9eb: case 0xa9ee:
+    case 0xa9eb: case 0xa9ee: case 0xa830:
     case 0xa8f6:
     case 0xa997: case 0xa994: case 0xa998: case 0xa99a: case 0xa9a4:
     case 0xaa52:
@@ -118,6 +118,8 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (sane) return sane > 0 ? 0 : -1;
     int numconv = mac_numconv_service(rt, opcode);
     if (numconv) return numconv > 0 ? 0 : -1;
+    int help = mac_help_service(rt, opcode);
+    if (help) return help > 0 ? 0 : -1;
     int memory = mac_memory_service(rt, opcode);
     if (memory) return memory > 0 ? 0 : -1;
     int resource = mac_resource_service(rt, opcode);

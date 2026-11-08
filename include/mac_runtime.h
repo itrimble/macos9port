@@ -149,6 +149,7 @@ int mac_palette_manager_service(MacRuntime *rt, uint16_t opcode);
 int mac_picture_service(MacRuntime *rt, uint16_t opcode);
 int mac_sane_service(MacRuntime *rt, uint16_t opcode);
 int mac_numconv_service(MacRuntime *rt, uint16_t opcode);
+int mac_help_service(MacRuntime *rt, uint16_t opcode); /* Help Manager dispatch, $A830 */
 int mac_menu_service(MacRuntime *rt, uint16_t opcode);
 int mac_toolbox_service(MacRuntime *rt, uint16_t opcode);
 int mac_raster_service(MacRuntime *rt, uint16_t opcode);
