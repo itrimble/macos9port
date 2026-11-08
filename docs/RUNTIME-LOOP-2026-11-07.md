@@ -166,7 +166,14 @@ resource.cfg all open and read). Observed: the game stops reading resources afte
 .003, which presumably hold the first room's pictures), the offscreen it copies to the window is all index 255 from 3 s on,
 and `AnimatePalette` is called once (254 entries, from the colour table at `00417294`). My reading, not verified: the SCI
 interpreter is parked before the first room, perhaps waiting on a kernel call (sound driver status, a cue, or a clock) that
-we answer differently from a real Mac. Next lead: log the interpreter's kernel-call dispatch to see which call repeats. The 20 s capture is silent (peak 0 over 960,000 frames), so
+we answer differently from a real Mac. Update, same day: the binary carries THINK C function names (a name follows the
+function it names, so a listed address is where the next function starts), which identifies it as Sierra's SCI interpreter. With
+a temporary instruction watch (not committed) the steady loop is, per tick: `KAnimate`, `KGetEvent`, `KWait`, two `KGetTime`,
+`BlastPixMap` (the `CopyBits` caller); `KDrawPic` ran once, `ShowPic` once and the `Iris` transition once; `KDoSound`,
+`KDoSync` and `KPalette` never ran in 12 s. Scripted mouse and key events reach `WaitNextEvent` (mouseDown, mouseUp, two keyDowns
+seen) and the game ignores them. A RAM diff 4 s apart shows only counters ticking at ~60 Hz plus stack. So the interpreter is
+alive, running a room script, and the room's picture never reaches the display buffer: either the picture drawn once was itself
+black, or the `Iris` reveal copies nothing. Not yet known which. The 12x35 `CopyBits` per tick is probably the software cursor. The 20 s capture is silent (peak 0 over 960,000 frames), so
 nothing is claimed about audio. No input was sent: input and play are unverified. Parity: Monkey Island and Monkey Island 2 are
 byte-identical to `baseline/games-outputs-regions`; ASan on Castle (10 s) and on the new tests reports nothing; `make test` exits 0.
 
