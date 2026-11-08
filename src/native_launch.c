@@ -1,6 +1,7 @@
 #include "native_launch.h"
 #include "ospi.h"
 #include "mac_resource.h"
+#include "application_probe.h"
 #include "runtime_bridge.h"
 
 #include <errno.h>
@@ -106,12 +107,22 @@ static int application_fork(const char *path, char *err, size_t n) {
         return problem(err, n, "Could not read this application's resource fork.");
     }
     fclose(f);
-    MacResourceFork fork;
-    MacResource code;
-    int result = mac_resource_open_container(&fork, bytes, size, err, n);
-    if (!result) result = mac_resource_find(&fork, MAC_RESOURCE_TYPE('C','O','D','E'), 0, &code);
+    StMacFile app;
+    st_macfile_init(&app);
+    StErr why = {0};
+    int result;
+    if (st_applesingle_detect(bytes, size)) {
+        result = st_applesingle_decode(bytes, size, &app, NULL, &why);
+    } else {
+        result = st_bytes_append(&app.rsrc, bytes, size) ? ST_ENOMEM : ST_OK;
+    }
+    MacApplicationKind kind;
+    if (!result) result = mac_application_probe(&app, &kind, &why);
+    st_macfile_free(&app);
     free(bytes);
-    return result;
+    if (result == ST_ENOENT) return 1;
+    if (result) return problem(err, n, why.msg[0] ? why.msg : "Invalid application resource fork.");
+    return 0;
 }
 
 static int resolve_fork(const char *root, const char *full, char *out, size_t n,
@@ -150,6 +161,18 @@ static int resolve_fork(const char *root, const char *full, char *out, size_t n,
         if (strlen(resolved) >= n) return problem(err, err_n, "Application path is too long.");
         memcpy(out, resolved, strlen(resolved) + 1);
         return 0;
+    }
+    /* A data-fork PEF must not fall through to an unrelated sibling archive. */
+    int data = -1;
+    if (realpath(full, resolved) && contained(canonical_root, resolved))
+        data = open(resolved, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+    if (data >= 0) {
+        unsigned char magic[8];
+        struct stat st;
+        ssize_t got = fstat(data, &st) == 0 && S_ISREG(st.st_mode) ? read(data, magic, sizeof magic) : -1;
+        close(data);
+        if (got == sizeof magic && !memcmp(magic, "Joy!peff", 8))
+            return problem(err, err_n, "PEF/CFM applications are not supported by the 68k runtime.");
     }
     return 1;
 }
@@ -273,8 +296,10 @@ int native_open(const char *root, const char *full, char *err, size_t n) {
     char bridge_name[64];
     RuntimeBridge *bridge = runtime_bridge_create(bridge_name, sizeof bridge_name);
     if (!bridge) return problem(err, n, "Could not create a private guest display surface.");
-    char log_path[] = "/tmp/ospi-runtime-XXXXXX";
-    int log = mkstemp(log_path);
+    char log_path[PATH_MAX];
+    const char *tmp = getenv("TMPDIR");
+    int length = snprintf(log_path, sizeof log_path, "%s/ospi-runtime-XXXXXX", tmp && *tmp ? tmp : "/tmp");
+    int log = length < 0 || (size_t)length >= sizeof log_path ? -1 : mkstemp(log_path);
     if (log < 0) {
         runtime_bridge_close(bridge); runtime_bridge_unlink(bridge_name);
         return problem(err, n, "Could not create the private runtime log.");

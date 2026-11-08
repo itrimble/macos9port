@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from quake_package import verified_build
 
 
 def digest(path):
@@ -27,6 +28,7 @@ def verify(repo):
     links = {str(p.relative_to(bundle)): os.readlink(p) for p in bundle.rglob('*') if p.is_symlink()}
     if links != manifest['bundle_links']:
         raise ValueError('Browser framework links differ from the verified build')
+    verified_build(Path(os.environ['OS999_QUAKE_BUILD']))
     engine = Path(os.environ['OS999_QUAKE_BUILD']) / 'quake3'
     if digest(engine) != os.environ['OS999_QUAKE_SHA256']:
         raise ValueError('Quake engine differs from the verified bridge build')

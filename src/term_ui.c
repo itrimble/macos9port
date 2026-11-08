@@ -154,6 +154,13 @@ static int cell_selected(const TermSession *ts, int r, int c) {
     return 1;
 }
 
+/* Window scroll positions are measured from the oldest retained row. */
+static int visible_scrollback_rows(const Window *w) {
+    int count = w->term->vt.sb_count;
+    if (!count || !w->scroll) return 0;
+    return clamp_i((count * TERM_CELL_H - w->scroll) / TERM_CELL_H, 0, count);
+}
+
 void terminal_paint_window(Fb *fb, const Session *s, const Window *w, const Layout *lay) {
     (void)s;
     if (!fb || !w || !w->term || !lay) return;
@@ -175,9 +182,7 @@ void terminal_paint_window(Fb *fb, const Session *s, const Window *w, const Layo
     fb_clip(fb, lay->content.x, lay->content.y, lay->content.w, lay->content.h);
     fb_fill(fb, lay->content.x, lay->content.y, lay->content.w, lay->content.h, def_bg);
 
-    int max_sb = vt->sb_count;
-    int scroll_rows = max_sb > 0 ? clamp_i((max_sb * TERM_CELL_H - w->scroll) / TERM_CELL_H, 0, max_sb) : 0;
-    if (w->scroll == 0) scroll_rows = 0;
+    int scroll_rows = visible_scrollback_rows(w);
 
     int ox = lay->content.x + 4;
     int oy = lay->content.y + 3;
@@ -308,7 +313,7 @@ int terminal_copy(Session *s, Window *w) {
         int ce = (r == r1) ? c1 : ts->vt.cols - 1;
         size_t line_start = pos;
         for (int c = cs; c <= ce && pos + 2 < sizeof(buf); c++) {
-            const TermCell *cell = term_vt_cell(&ts->vt, r, c);
+            const TermCell *cell = term_vt_view_cell(&ts->vt, visible_scrollback_rows(w), r, c);
             uint32_t cp = cell && cell->cp >= 32 ? cell->cp : ' ';
             char utf8[4]; int n;
             if (cp < 0x80) { utf8[0] = (char)cp; n = 1; }
@@ -328,6 +333,10 @@ int terminal_copy(Session *s, Window *w) {
     }
     buf[pos] = '\0';
     session_set_clip(s, buf);
+    free(s->clipboard_large_out);
+    s->clipboard_large_out = NULL;
+    memcpy(s->clipboard_out, buf, pos + 1);
+    s->clipboard_write_request = 1;
     return 0;
 }
 

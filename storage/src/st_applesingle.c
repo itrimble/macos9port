@@ -22,16 +22,27 @@ int st_applesingle_decode(const uint8_t *p, size_t n, StMacFile *out, const StLi
     st_macfile_init(out);
     uint32_t ver = st_be32(p + 4);
     uint16_t count = st_be16(p + 24);
+    if (count > 256) return st_fail(err, ST_ELIMIT, "too many AppleSingle metadata entries");
     if (!st_span(n, 26, (uint64_t)count * 12))
         return st_fail(err, ST_EFORMAT, "AppleSingle entry table is truncated");
     int rc = ST_OK;
     for (uint16_t i = 0; i < count && rc == ST_OK; i++) {
         const uint8_t *d = p + 26 + (size_t)i * 12;
         uint32_t id = st_be32(d), off = st_be32(d + 4), len = st_be32(d + 8);
-        if (!st_span(n, off, len)) {
+        if (off < 26u + (uint32_t)count * 12u || !st_span(n, off, len)) {
             rc = st_fail(err, ST_EFORMAT, "AppleSingle entry %u lies outside the file", id);
             break;
         }
+        for (uint16_t j = 0; j < i; j++) {
+            const uint8_t *prev = p + 26 + (size_t)j * 12;
+            uint32_t po = st_be32(prev + 4), pl = st_be32(prev + 8);
+            if (st_be32(prev) == id || (len && pl && (uint64_t)off < (uint64_t)po + pl &&
+                (uint64_t)po < (uint64_t)off + len)) {
+                rc = st_fail(err, ST_EFORMAT, "duplicate or overlapping AppleSingle entry");
+                break;
+            }
+        }
+        if (rc) break;
         const uint8_t *e = p + off;
         switch (id) {
         case 1: rc = st_take(&out->data, e, len, lim, err); break;

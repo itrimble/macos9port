@@ -18,7 +18,7 @@ typedef struct {
 typedef enum {
     ST_FMT_UNKNOWN, ST_FMT_BINHEX, ST_FMT_MACBINARY, ST_FMT_APPLESINGLE, ST_FMT_APPLEDOUBLE,
     ST_FMT_ZIP, ST_FMT_SIT, ST_FMT_SIT5, ST_FMT_SITX, ST_FMT_CPT, ST_FMT_DC42, ST_FMT_NDIF,
-    ST_FMT_UDIF, ST_FMT_HFS_IMAGE
+    ST_FMT_UDIF, ST_FMT_HFS_IMAGE, ST_FMT_ISO
 } StFormat;
 
 StFormat st_detect(const uint8_t *p, size_t n, const uint8_t *rsrc, size_t rsrc_n);

@@ -10,6 +10,7 @@ cd "$repo"
 . scripts/package-inputs.sh
 python3 scripts/verify-package-inputs.py
 python3 tests/test_complete_package.py
+python3 tests/test_quake_package.py
 # Make does not track dependency flags: force every existing SDL-linked target.
 make -j2 -W src/main.c -W src/runtime_audio.c -W src/desktop_sound.c \
     -W src/browser_overlay_mac.m test all test-wallpapers test-desktop-sound
@@ -40,7 +41,8 @@ receipt={'tree':os.environ['OS999_SOURCE_TREE'],'result':'pass','artifact':str(a
          'title':os.environ.get('OS999_BUILD_TITLE','OS999 integration'),
          'files':files,'scope':'Automated build/tests, signature and relocated seed; GUI acceptance pending'}
 receipt['relocation']=json.loads((pathlib.Path(os.environ['OS999_RECEIPT_DIR'])/'relocation.json').read_text())
-receipt['inputs']={'sdl2':json.loads((pathlib.Path(os.environ['OS999_RECEIPT_DIR'])/'sdl2-provenance.json').read_text()),'browser_manifest_sha256':hashlib.sha256(pathlib.Path(os.environ['OS999_BROWSER_PROVENANCE']).read_bytes()).hexdigest(),
+receipt['inputs']={'quake_profile':json.loads((pathlib.Path(os.environ['OS999_QUAKE_BUILD'])/'arena111-package.json').read_text()),
+                   'sdl2':json.loads((pathlib.Path(os.environ['OS999_RECEIPT_DIR'])/'sdl2-provenance.json').read_text()),'browser_manifest_sha256':hashlib.sha256(pathlib.Path(os.environ['OS999_BROWSER_PROVENANCE']).read_bytes()).hexdigest(),
                    'quake_commit':os.environ['OS999_QUAKE_REF'], 'quake_prepackage_sha256':os.environ['OS999_QUAKE_SHA256'],
                    'quake_protocol_sha256':hashlib.sha256(pathlib.Path('include/os999_quake_bridge.h').read_bytes()).hexdigest()}
 path=pathlib.Path(os.environ['OS999_RECEIPT_DIR'])/'receipt.json'

@@ -59,7 +59,6 @@ static int inside(int x, int y, int left, int top, int width, int height) {
     return x >= left && y >= top && x < left + width && y < top + height;
 }
 
-
 int main(int argc, char **argv) {
     if (argc == 3 && strcmp(argv[1], "--seed") == 0) {
         return volume_seed(argv[2]) == 0 ? 0 : 1;
@@ -241,6 +240,7 @@ int main(int argc, char **argv) {
     int guest_width = 0, guest_height = 0, guest_placed = 0;
     int guest_drag = 0, guest_mouse_capture = 0, guest_focus = 0;
     for (int i = 1; i < argc; i++) {
+        if (!strcmp(argv[i], "--quake-demo")) session_command(s, CMD_QUAKE3_DEMO);
         if (!strcmp(argv[i], "--tailscale")) session_command(s, CMD_TAILSCALE);
         if (!strcmp(argv[i], "--terminal")) session_command(s, CMD_TERMINAL_SHELL);
     }

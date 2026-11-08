@@ -199,13 +199,15 @@ static int read_fd(int fd, StBytes *b, const StLimits *lim, StErr *err) {
 }
 
 int st_vol_read(StVolume *v, const char *rel, StMacFile *out, const StLimits *lim, StErr *err) {
+    StLimits defaults = st_limits_default();
+    if (!lim) lim = &defaults;
     int dir;
     char leaf[300], side[310];
     int rc = st_vol_parent(v, rel, 0, &dir, leaf, sizeof leaf, err);
     if (rc) return rc;
     st_macfile_init(out);
     st_vol_guest_name(leaf, out->name, sizeof out->name);
-    int fd = openat(dir, leaf, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+    int fd = openat(dir, leaf, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC);
     if (fd < 0) {
         int e = errno;
         close(dir);
@@ -216,26 +218,15 @@ int st_vol_read(StVolume *v, const char *rel, StMacFile *out, const StLimits *li
     if (rc == ST_OK && fstat(fd, &st) == 0) out->mtime = (uint32_t)(st.st_mtime + ST_MAC_EPOCH_DELTA);
     close(fd);
     snprintf(side, sizeof side, "%s.rsrc", leaf);
-    fd = rc ? -1 : openat(dir, side, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+    fd = rc ? -1 : openat(dir, side, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC);
     if (fd >= 0) {
         StBytes s = {0};
         rc = read_fd(fd, &s, lim, err);
         close(fd);
-        StMacFile meta;
-        if (rc == ST_OK && st_applesingle_detect(s.p, s.n) &&
-            st_applesingle_decode(s.p, s.n, &meta, lim, NULL) == ST_OK) {
-            memcpy(out->finfo, meta.finfo, 16);
-            memcpy(out->fxinfo, meta.fxinfo, 16);
-            if (meta.ctime) out->ctime = meta.ctime;
-            if (meta.mtime) out->mtime = meta.mtime;
-            out->rsrc = meta.rsrc;
-            st_bytes_free(&meta.data);
-            st_bytes_free(&s);
-        } else if (rc == ST_OK) {
-            out->rsrc = s; /* raw resource fork export */
-        } else {
-            st_bytes_free(&s);
-        }
+        if (rc == ST_OK) rc = st_sidecar_apply(out, &s, lim, err);
+        st_bytes_free(&s);
+    } else if (!rc && errno != ENOENT) {
+        rc = st_fail(err, ST_EPATH, "cannot read resource sidecar");
     }
     close(dir);
     if (rc) st_macfile_free(out);
@@ -279,7 +270,7 @@ int st_vol_list(StVolume *v, const char *rel, StVolumeEntry **out, size_t *count
         x->data_size = x->is_dir ? 0 : (uint64_t)st.st_size;
         char side[310];
         snprintf(side, sizeof side, "%s.rsrc", e->d_name);
-        int sfd = x->is_dir ? -1 : openat(dirfd(d), side, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+        int sfd = x->is_dir ? -1 : openat(dirfd(d), side, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC);
         if (sfd >= 0) {
             StBytes s = {0};
             StMacFile meta;

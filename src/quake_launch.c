@@ -4,6 +4,10 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <fcntl.h>
+#ifdef __APPLE__
+#include <CommonCrypto/CommonDigest.h>
+#endif
 
 static int is_exec(const char *p) { struct stat st; return p[0] && !stat(p, &st) && S_ISREG(st.st_mode) && !access(p, X_OK); }
 static int is_file(const char *p) { struct stat st; return !stat(p, &st) && S_ISREG(st.st_mode); }
@@ -57,16 +61,68 @@ int quake_launch_resolve(QuakeLaunch *q, const char *exe_dir, const char *home) 
     return -2;
 }
 
+/* Host preflight validates the unmodified original. The separate engine also
+ * authenticates the overlay and signed native modules before loading them. */
+static int arena_data(QuakeLaunch *q, const char *dir) {
+#ifdef __APPLE__
+    static const char expected[] = "e77abad2466f45a0a7ea018445528f9b95a0fe7789fa1abc1a7718bbf0754b08";
+    char path[1100], hex[65]; unsigned char buf[16384], digest[CC_SHA256_DIGEST_LENGTH];
+    struct stat st;
+    if (!dir || !dir[0] || snprintf(path, sizeof path, "%s/demoq3/pak0.pk3", dir) >= (int)sizeof path) return -3;
+    int fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+    if (fd < 0) return -3;
+    if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_size != 46853694) { close(fd); return -3; }
+    CC_SHA256_CTX ctx; CC_SHA256_Init(&ctx);
+    ssize_t n;
+    while ((n = read(fd, buf, sizeof buf)) > 0) CC_SHA256_Update(&ctx, buf, (CC_LONG)n);
+    close(fd);
+    if (n < 0) return -3;
+    CC_SHA256_Final(digest, &ctx);
+    for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) snprintf(hex + i * 2, 3, "%02x", digest[i]);
+    if (strcmp(hex, expected)) return -3;
+    snprintf(q->game, sizeof q->game, "demoq3");
+    return fmt(q->datapath, sizeof q->datapath, dir, "");
+#else
+    (void)q; (void)dir;
+    return -3;
+#endif
+}
+
+int quake_launch_resolve_demo(QuakeLaunch *q, const char *exe_dir, const char *home) {
+    int found = quake_launch_resolve(q, exe_dir, home);
+    if (found == -1) return -1;
+    q->arena_demo = 1;
+    if (!home || !home[0] || fmt(q->homepath, sizeof q->homepath, home,
+            "/Library/Application Support/OS999/Quake3-Arena111") != 0) return -3;
+    const char *data = getenv("OS999_QUAKE3_DATA");
+    if (data) return arena_data(q, data); /* Explicit bad data never falls back. */
+    char path[1100];
+    if (snprintf(path, sizeof path, "%s/Library/Application Support/OS999/Quake3", home) >= (int)sizeof path) return -3;
+    return arena_data(q, path);
+}
+
 int quake_launch_argv(const QuakeLaunch *q, char *argv[], int max) {
-    static char base_arg[1100], cd_arg[1100];
-    if (!q || !argv || max < 11) return 0;
-    snprintf(base_arg, sizeof base_arg, "%s", q->basepath);
-    snprintf(cd_arg, sizeof cd_arg, "%s", q->datapath);
+    static char base_arg[1100], cd_arg[1100], home_arg[1100];
+    if (!q || !argv || max < (q->arena_demo ? 23 : 11)) return 0;
+    /* The engine joins argv into its own command language. Preserve spaces
+     * and reject characters that could terminate a quoted path. */
+    const char *paths[] = {q->basepath, q->datapath, q->homepath};
+    for (int i = 0; i < 3; i++)
+        if (strpbrk(paths[i], "\"\r\n")) return 0;
+    snprintf(base_arg, sizeof base_arg, "\"%s\"", q->basepath);
+    snprintf(cd_arg, sizeof cd_arg, "\"%s\"", q->datapath);
+    snprintf(home_arg, sizeof home_arg, "\"%s\"", q->homepath);
     int n = 0;
     argv[n++] = (char *)q->binary;
     argv[n++] = "+set"; argv[n++] = "fs_basepath"; argv[n++] = base_arg;
     argv[n++] = "+set"; argv[n++] = "fs_cdpath"; argv[n++] = cd_arg;
     if (strcmp(q->game, "baseq3")) { argv[n++] = "+set"; argv[n++] = "fs_game"; argv[n++] = (char *)q->game; }
+    if (q->arena_demo) {
+        argv[n++] = "+set"; argv[n++] = "os999_demoProfile"; argv[n++] = "arena-1.11";
+        argv[n++] = "+set"; argv[n++] = "fs_homepath"; argv[n++] = home_arg;
+        argv[n++] = "+set"; argv[n++] = "sv_pure"; argv[n++] = "0";
+        argv[n++] = "+set"; argv[n++] = "net_noudp"; argv[n++] = "1";
+    }
     argv[n] = NULL;
     return n;
 }

@@ -1,6 +1,8 @@
 #include "st_int.h"
 
 #include <errno.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -83,8 +85,12 @@ int st_take(StBytes *b, const uint8_t *src, size_t n, const StLimits *lim, StErr
 }
 
 int st_read_file(const char *path, uint64_t max, StBytes *out, StErr *err) {
-    FILE *f = fopen(path, "rb");
-    if (!f) return st_fail(err, ST_EIO, "cannot open %s: %s", path, strerror(errno));
+    int fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+    FILE *f = fd >= 0 ? fdopen(fd, "rb") : NULL;
+    if (!f) {
+        if (fd >= 0) close(fd);
+        return st_fail(err, ST_EIO, "cannot open %s: %s", path, strerror(errno));
+    }
     struct stat st;
     if (fstat(fileno(f), &st) != 0 || !S_ISREG(st.st_mode)) {
         fclose(f);

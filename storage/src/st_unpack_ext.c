@@ -23,7 +23,7 @@ static int is_sidecar(const char *name) {
 }
 
 static int read_at(int dir, const char *name, StBytes *b, const StLimits *lim, StErr *err) {
-    int fd = openat(dir, name, O_RDONLY | O_NOFOLLOW);
+    int fd = openat(dir, name, O_RDONLY | O_NONBLOCK | O_NOFOLLOW);
     if (fd < 0) return st_fail(err, ST_EIO, "cannot open %s", name);
     struct stat st;
     int rc = ST_OK;
@@ -39,24 +39,6 @@ static int read_at(int dir, const char *name, StBytes *b, const StLimits *lim, S
     }
     close(fd);
     return rc;
-}
-
-static void apply_sidecar(StMacFile *f, StBytes *s, const StLimits *lim) {
-    StMacFile meta;
-    if (st_applesingle_detect(s->p, s->n) && st_applesingle_decode(s->p, s->n, &meta, lim, NULL) == ST_OK) {
-        memcpy(f->finfo, meta.finfo, 16);
-        memcpy(f->fxinfo, meta.fxinfo, 16);
-        if (meta.ctime) f->ctime = meta.ctime;
-        if (meta.mtime) f->mtime = meta.mtime;
-        st_bytes_free(&f->rsrc);
-        f->rsrc = meta.rsrc;
-        st_bytes_free(&meta.data);
-        st_bytes_free(s);
-    } else {
-        st_bytes_free(&f->rsrc);
-        f->rsrc = *s;
-        memset(s, 0, sizeof *s);
-    }
 }
 
 static int import_dir(int fd, const char *prefix, StArchive *out, const StLimits *lim, StErr *err, int depth) {
@@ -95,13 +77,17 @@ static int import_dir(int fd, const char *prefix, StArchive *out, const StLimits
             snprintf(path, sizeof path, "%s%s%s", prefix, *prefix ? "/" : "", side);
             StBytes s = {0};
             rc = read_at(fd, nm, &s, lim, err);
-            if (rc == ST_OK) apply_sidecar(&f, &s, lim);
+            if (rc == ST_OK) rc = st_sidecar_apply(&f, &s, lim, err);
             st_bytes_free(&s);
         } else {
             rc = read_at(fd, nm, &f.data, lim, err);
             snprintf(side, sizeof side, "%s.rsrc", nm);
             StBytes s = {0};
-            if (rc == ST_OK && read_at(fd, side, &s, lim, NULL) == ST_OK) apply_sidecar(&f, &s, lim);
+            struct stat meta_stat;
+            if (rc == ST_OK && fstatat(fd, side, &meta_stat, AT_SYMLINK_NOFOLLOW) == 0) {
+                rc = read_at(fd, side, &s, lim, err);
+                if (rc == ST_OK) rc = st_sidecar_apply(&f, &s, lim, err);
+            } else if (rc == ST_OK && errno != ENOENT) rc = st_fail(err, ST_EIO, "cannot inspect resource sidecar");
             st_bytes_free(&s);
         }
         if (rc == ST_OK) rc = st_archive_add(out, path, 0, &f, lim, err);
@@ -198,19 +184,30 @@ int st_unpack_file(const char *path, int allow_external, StArchive *out, StUnpac
     int rc = st_read_file(path, lim->max_entry, &b, err);
     if (rc) return rc;
     char side[4096];
-    snprintf(side, sizeof side, "%s.rsrc", path);
-    if (st_read_file(side, lim->max_entry, &r, NULL) == ST_OK) {
-        StMacFile meta;
-        if (st_applesingle_detect(r.p, r.n) && st_applesingle_decode(r.p, r.n, &meta, lim, NULL) == ST_OK) {
-            st_bytes_free(&r);
-            r = meta.rsrc;
-            st_bytes_free(&meta.data);
-        }
-    }
+    int k = snprintf(side, sizeof side, "%s.rsrc", path);
+    StMacFile meta;
+    st_macfile_init(&meta);
+    struct stat side_stat;
+    int has_meta = 0;
+    if (k < 0 || (size_t)k >= sizeof side) rc = st_fail(err, ST_EPATH, "sidecar path too long");
+    else if (lstat(side, &side_stat) == 0) {
+        if (!S_ISREG(side_stat.st_mode)) rc = st_fail(err, ST_EPATH, "resource sidecar is not a regular file");
+        else rc = read_at(AT_FDCWD, side, &r, lim, err);
+        if (!rc) rc = st_sidecar_apply(&meta, &r, lim, err);
+        has_meta = !rc;
+    } else if (errno != ENOENT) rc = st_fail(err, ST_EIO, "cannot inspect resource sidecar");
+    if (rc) { st_bytes_free(&b); st_bytes_free(&r); st_macfile_free(&meta); return rc; }
     const char *base = strrchr(path, '/');
     StUnpackInfo local;
     if (!info) info = &local;
-    rc = st_unpack(b.p, b.n, r.p, r.n, base ? base + 1 : path, out, info, lim, err);
+    rc = st_unpack(b.p, b.n, meta.rsrc.p, meta.rsrc.n, base ? base + 1 : path, out, info, lim, err);
+    if (!rc && has_meta && !info->chain[0] && out->n == 1) {
+        memcpy(out->v[0].file.finfo, meta.finfo, 16);
+        memcpy(out->v[0].file.fxinfo, meta.fxinfo, 16);
+        out->v[0].file.ctime = meta.ctime;
+        out->v[0].file.mtime = meta.mtime;
+    }
+    st_macfile_free(&meta);
     st_bytes_free(&b);
     st_bytes_free(&r);
     if (rc == ST_OK && allow_external >= ST_EXT_ARCHIVE && !info->chain[0]) {

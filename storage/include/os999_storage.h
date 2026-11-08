@@ -127,6 +127,11 @@ int st_adc_decode(const uint8_t *p, size_t n, StBytes *out, size_t want, StErr *
  * partition map, or HFS wrapper). Returns 0 and sets offset/length. */
 int st_find_hfs(const uint8_t *raw, size_t n, size_t *off, size_t *len, StErr *err);
 
+/* ISO9660 primary tree; HFS hybrids should use the HFS view for Mac forks. */
+int st_iso_detect(const uint8_t *p, size_t n);
+int st_iso_read(const uint8_t *p, size_t n, StArchive *out, char *name, size_t cap,
+                const StLimits *lim, StErr *err);
+
 /* ---- HFS / HFS+ (L03) ---- */
 /* Read every file and folder of the volume into out. */
 int st_hfs_read(const uint8_t *vol, size_t n, StArchive *out, char *vol_name, size_t vol_cap,

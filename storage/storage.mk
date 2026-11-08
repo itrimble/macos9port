@@ -13,7 +13,7 @@ ifeq ($(STORAGE_HAVE_BZ2),1)
 STORAGE_INC += -DOS999_STORAGE_BZIP2
 STORAGE_LIBS += -lbz2
 endif
-STORAGE_TESTS := codecs archives images volume runtime fuzz real
+STORAGE_TESTS := codecs archives images volume runtime fuzz real lifecycle
 STORAGE_TEST_BINS := $(STORAGE_TESTS:%=$(STORAGE_OUT)/test_storage_%)
 STORAGE_SAN := -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1
 
@@ -42,3 +42,6 @@ storage-asan:
 	    STORAGE_CFLAGS="-std=c11 -Wall -Wextra -D_DEFAULT_SOURCE $(STORAGE_SAN)" \
 	    build/storage-asan/libos999storage.a $(STORAGE_TESTS:%=build/storage-asan/test_storage_%)
 	@for t in $(STORAGE_TESTS:%=build/storage-asan/test_storage_%); do $$t || exit 1; done
+
+$(STORAGE_OUT)/test_storage_lifecycle: tests/test_storage_lifecycle.c tests/storage_fixture.h src/application_probe.c src/mac_resource.c include/application_probe.h $(STORAGE_OUT)/libos999storage.a
+	$(CC) $(STORAGE_CFLAGS) $(STORAGE_INC) -Iinclude -Istorage/tests -Itests -o $@ tests/test_storage_lifecycle.c src/application_probe.c src/mac_resource.c $(STORAGE_OUT)/libos999storage.a $(STORAGE_LIBS)

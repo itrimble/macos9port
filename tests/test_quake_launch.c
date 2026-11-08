@@ -10,7 +10,7 @@ static int checks, failures;
 
 static void touch(const char *p, int exec) { FILE *f = fopen(p, "w"); if (f) { fputs("x", f); fclose(f); } chmod(p, exec ? 0755 : 0644); }
 
-int main(void) {
+int main(int argc, char **args) {
     char root[] = "/tmp/os999-quake-XXXXXX";
     if (!mkdtemp(root)) return 1;
     char p[512], exe[512], home[512];
@@ -45,6 +45,38 @@ int main(void) {
     setenv("OS999_QUAKE3", "/nonexistent/quake3", 1);
     CHECK(quake_launch_resolve(&q, exe, home) == 0);            /* bad override falls back */
     unsetenv("OS999_QUAKE3");
+    CHECK(quake_launch_resolve_demo(&q, exe, home) == -3);
+    char arena[512]; snprintf(arena, sizeof arena, "%s/arena", root); mkdir(arena, 0755);
+    snprintf(p, sizeof p, "%s/demoq3", arena); mkdir(p, 0755);
+    snprintf(p, sizeof p, "%s/demoq3/pak0.pk3", arena); touch(p, 0);
+    setenv("OS999_QUAKE3_DATA", arena, 1);
+    CHECK(quake_launch_resolve_demo(&q, exe, home) == -3); /* modified/short original */
+    setenv("OS999_QUAKE3_DATA", "/nonexistent", 1);
+    CHECK(quake_launch_resolve_demo(&q, exe, home) == -3); /* no fallback */
+    memset(&q, 0, sizeof q); q.arena_demo = 1;
+    strcpy(q.game, "demoq3"); strcpy(q.homepath, "/tmp/arena-home");
+    char *demo_argv[24];
+    CHECK(quake_launch_argv(&q, demo_argv, 22) == 0);
+    CHECK(quake_launch_argv(&q, demo_argv, 24) == 22 && demo_argv[22] == NULL);
+    CHECK(!strcmp(demo_argv[11], "os999_demoProfile") && !strcmp(demo_argv[12], "arena-1.11"));
+    CHECK(!strcmp(demo_argv[14], "fs_homepath") && !strcmp(demo_argv[17], "sv_pure"));
+    CHECK(!strcmp(demo_argv[20], "net_noudp") && !strcmp(demo_argv[21], "1"));
+    strcpy(q.basepath, "/tmp/engine with spaces");
+    strcpy(q.datapath, "/tmp/data with spaces");
+    CHECK(quake_launch_argv(&q, demo_argv, 24) == 22);
+    CHECK(!strcmp(demo_argv[3], "\"/tmp/engine with spaces\"") &&
+          !strcmp(demo_argv[6], "\"/tmp/data with spaces\"") &&
+          !strcmp(demo_argv[15], "\"/tmp/arena-home\""));
+    strcpy(q.basepath, "/tmp/bad\"path");
+    CHECK(quake_launch_argv(&q, demo_argv, 24) == 0);
+    strcpy(q.basepath, "/tmp/bad\npath");
+    CHECK(quake_launch_argv(&q, demo_argv, 24) == 0);
+    if (argc > 1) { /* Optional authentic fixture stays outside Git. */
+        setenv("OS999_QUAKE3_DATA", args[1], 1);
+        CHECK(quake_launch_resolve_demo(&q, exe, home) == 0);
+        CHECK(q.arena_demo && !strcmp(q.game, "demoq3"));
+    }
+    unsetenv("OS999_QUAKE3_DATA");
     printf("quake launch: %d checks, %d failures\n", checks, failures);
     return failures != 0;
 }

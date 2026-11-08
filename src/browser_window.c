@@ -106,10 +106,17 @@ int bw_new_tab(int w, const char *url, int activate) {
 void bw_close_tab(int w, int t) {
     BrowserWin *b = &BS.win[w];
     if (t < 0 || t >= b->ntabs) return;
+    int active = b->active;
     bh_send(OS999B_DESTROY, b->tabs[t].id, 0, 0, 0, 0, NULL);
     memmove(&b->tabs[t], &b->tabs[t + 1], (size_t)(b->ntabs - t - 1) * sizeof b->tabs[0]);
     b->ntabs--;
     if (b->ntabs == 0) { bw_close_window(w); return; }
+    if (t != active) {
+        /* The current page, focus and unfinished address edit stay intact. */
+        b->active = active - (t < active);
+        return;
+    }
+    b->active = -1;  /* the old focused tab was destroyed, not the shifted tab */
     bw_activate_tab(w, t < b->ntabs ? t : b->ntabs - 1);
 }
 

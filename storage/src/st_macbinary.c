@@ -23,6 +23,9 @@ int st_macbinary_detect(const uint8_t *p, size_t n) {
 }
 
 int st_macbinary_decode(const uint8_t *p, size_t n, StMacFile *out, const StLimits *lim, StErr *err) {
+    if (n >= 128 && p[0] == 0 && !memcmp(p + 102, "mBIN", 4) &&
+        st_crc16_xmodem(0, p, 124) != st_be16(p + 124))
+        return st_fail(err, ST_ECHECKSUM, "MacBinary header checksum mismatch");
     int ver = st_macbinary_detect(p, n);
     if (!ver) return st_fail(err, ST_EFORMAT, "not a MacBinary file");
     st_macfile_init(out);

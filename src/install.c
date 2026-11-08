@@ -1,4 +1,5 @@
 #include "ospi.h"
+#include "install_int.h"
 #include "archive_fs.h"
 #include "modern_network.h"
 #include "os999_unpack.h"
@@ -297,21 +298,11 @@ static int fetch_archive(const char *page, const char *file_url, const char *des
     return -1;
 }
 
-static int sit_name(const char *name) {
-    size_t n = name ? strlen(name) : 0;
-    return n > 4 && strcasecmp(name + n - 4, ".sit") == 0;
-}
-
-static int path_within(const char *root, const char *path) {
-    size_t n = strlen(root);
-    return strncmp(root, path, n) == 0 && (path[n] == 0 || path[n] == '/');
-}
-
 /* Expand an archive into dest_rel (an existing, empty volume folder) through
  * the storage stack: content-based detection, forks and Finder info kept in
  * "<name>.rsrc" sidecars, all-or-nothing install, unar only as the fallback
  * for StuffIt methods we do not decode. */
-static int expand_archive(const char *root, const char *archive, const char *dest_rel, char *err, size_t err_n) {
+int install_expand_archive(const char *root, const char *archive, const char *dest_rel, char *err, size_t err_n) {
     StArchive a = {0};
     StUnpackInfo info;
     StErr e = {0};
@@ -335,64 +326,6 @@ static int expand_archive(const char *root, const char *archive, const char *des
     return 0;
 }
 
-int install_sit(const char *root, const char *archive_rel, char *created_rel, size_t created_n,
-                char *err, size_t err_n) {
-    if (created_rel && created_n) created_rel[0] = 0;
-    if (err && err_n) err[0] = 0;
-    if (!root || !archive_rel || !sit_name(archive_rel)) {
-        set_err(err, err_n, "This is not a supported .sit archive.");
-        return -1;
-    }
-    char full[OSPI_PATH], root_real[PATH_MAX], archive_real[PATH_MAX];
-    struct stat st;
-    if (volume_join(full, sizeof full, root, archive_rel) != 0 || lstat(full, &st) != 0 ||
-        !S_ISREG(st.st_mode) || st.st_size < 0 || st.st_size > 200000000 ||
-        !realpath(root, root_real) || !realpath(full, archive_real) || !path_within(root_real, archive_real)) {
-        set_err(err, err_n, "This .sit file is not a regular archive inside the OS999 volume.");
-        return -1;
-    }
-    char parent[OSPI_PATH] = "", base[OSPI_NAME], folder[OSPI_NAME], destination_rel[OSPI_PATH];
-    const char *slash = strrchr(archive_rel, '/');
-    const char *leaf = slash ? slash + 1 : archive_rel;
-    if (slash) {
-        size_t n = (size_t)(slash - archive_rel);
-        if (!n || n >= sizeof parent) {
-            set_err(err, err_n, "The archive folder path is invalid.");
-            return -1;
-        }
-        memcpy(parent, archive_rel, n);
-        parent[n] = 0;
-    }
-    size_t base_n = strlen(leaf) - 4;
-    if (base_n >= sizeof base) base_n = sizeof base - 1;
-    memcpy(base, leaf, base_n);
-    base[base_n] = 0;
-    while (base_n && (base[base_n - 1] == '.' || base[base_n - 1] == ' ')) base[--base_n] = 0;
-    if (!base[0] || !strcmp(base, ".") || !strcmp(base, "..")) snprintf(base, sizeof base, "Expanded");
-    if (volume_mkdir_unique(root, parent, base, folder, sizeof folder) != 0) {
-        set_err(err, err_n, "Could not create a new folder beside the archive.");
-        return -1;
-    }
-    int k = parent[0] ? snprintf(destination_rel, sizeof destination_rel, "%s/%s", parent, folder) :
-                        snprintf(destination_rel, sizeof destination_rel, "%s", folder);
-    char destination[OSPI_PATH];
-    if (k < 0 || (size_t)k >= sizeof destination_rel ||
-        volume_join(destination, sizeof destination, root, destination_rel) != 0) {
-        set_err(err, err_n, "The extracted folder path is too long.");
-        return -1;
-    }
-    if (created_rel && created_n) snprintf(created_rel, created_n, "%s", destination_rel);
-    int expanded = expand_archive(root, archive_real, destination_rel, err, err_n);
-    if (expanded != 0) {
-        if (expanded != -2) {
-            rmdir(destination);
-            if (created_rel && created_n) created_rel[0] = 0;
-        }
-        return -1;
-    }
-    return 0;
-}
-
 int install_garden(const char *root, const char *page_url, char *created_rel, size_t created_n, char *err,
                    size_t err_n) {
     if (created_rel && created_n) {
@@ -402,8 +335,8 @@ int install_garden(const char *root, const char *page_url, char *created_rel, si
         set_err(err, err_n, "That link is not a macintoshgarden.org page.");
         return -1;
     }
-    char page_tmp[] = "/tmp/ospi-page-XXXXXX";
-    int pfd = mkstemp(page_tmp);
+    char page_tmp[OSPI_PATH];
+    int pfd = install_tempfile(page_tmp, sizeof page_tmp, "page");
     if (pfd < 0) {
         set_err(err, err_n, "Could not start the download.");
         return -1;
@@ -446,8 +379,8 @@ int install_garden(const char *root, const char *page_url, char *created_rel, si
         set_err(err, err_n, "Could not create a folder in Applications.");
         return -1;
     }
-    char arch_tmp[] = "/tmp/ospi-arch-XXXXXX";
-    int afd = mkstemp(arch_tmp);
+    char arch_tmp[OSPI_PATH];
+    int afd = install_tempfile(arch_tmp, sizeof arch_tmp, "archive");
     if (afd < 0) {
         set_err(err, err_n, "Could not start the download.");
         return -1;
@@ -473,7 +406,7 @@ int install_garden(const char *root, const char *page_url, char *created_rel, si
     if (created_rel && created_n) {
         snprintf(created_rel, created_n, "%s", rel);
     }
-    int expanded = expand_archive(root, kept, rel, err, err_n);
+    int expanded = install_expand_archive(root, kept, rel, err, err_n);
     if (expanded != 0) {
         char why[300];
         snprintf(why, sizeof why, "Archive saved in Applications, but it could not be expanded. %s", err && err_n ? err : "");

@@ -8,6 +8,8 @@ typedef struct {
     char binary[1024];   /* the quake3 executable */
     char basepath[1024]; /* directory holding baseq3/ and demota/ game modules */
     char datapath[1024]; /* user directory searched for pak0.pk3 (fs_cdpath) */
+    int arena_demo;
+    char homepath[1024];
     char game[16];       /* "baseq3" (full game) or "demota" (demo) */
 } QuakeLaunch;
 
@@ -15,6 +17,8 @@ typedef struct {
  * OS999_QUAKE3 (binary) and OS999_QUAKE3_DATA (data) override. Returns 0 when
  * ready, -1 when the engine is missing, -2 when no pak0.pk3 game data exists. */
 int quake_launch_resolve(QuakeLaunch *q, const char *exe_dir, const char *home);
+/* Explicit Arena 1.11 opt-in. -3 means unsupported or unverified data. */
+int quake_launch_resolve_demo(QuakeLaunch *q, const char *exe_dir, const char *home);
 /* Build argv for the resolved launch; returns the argument count. */
 int quake_launch_argv(const QuakeLaunch *q, char *argv[], int max);
 #endif

@@ -376,8 +376,36 @@ static void check_application(Session *s) {
     s->nwin = 0;
 }
 
+static void check_tab_closure(void) {
+    BS = (BrowserState){.fd = -1, .norder = 1, .order = {0}, .focus_win = 0, .focus = 1};
+    BrowserWin *b = &BS.win[0];
+    *b = (BrowserWin){.open = 1, .ntabs = 4, .active = 2, .editing = 1};
+    for (int i = 0; i < 4; i++) b->tabs[i].id = 10 + i;
+    snprintf(b->edit, sizeof b->edit, "unfinished search");
+    int gained = focus_gain, lost = focus_loss;
+    bw_close_tab(0, 0);                         /* background tab before active */
+    CHECK(b->ntabs == 3 && b->active == 1 && bw_tab(0)->id == 12);
+    CHECK(b->editing && !strcmp(b->edit, "unfinished search"));
+    CHECK(focus_gain == gained && focus_loss == lost);
+    bw_close_tab(0, 2);                         /* background tab after active */
+    CHECK(b->ntabs == 2 && b->active == 1 && bw_tab(0)->id == 12);
+    CHECK(b->editing && focus_gain == gained && focus_loss == lost);
+    bw_close_tab(0, 1);                         /* active last tab selects left */
+    CHECK(b->ntabs == 1 && b->active == 0 && bw_tab(0)->id == 11);
+    CHECK(!b->editing && focus_gain == gained + 1);
+    bw_close_tab(0, 0);
+    CHECK(!b->open && !BS.norder && BS.focus_win == -1);
+    BS.norder = 1; BS.order[0] = 0; BS.focus_win = 0;
+    *b = (BrowserWin){.open = 1, .ntabs = 3, .active = 1};
+    for (int i = 0; i < 3; i++) b->tabs[i].id = 20 + i;
+    bw_close_tab(0, 1);                         /* active middle selects right */
+    CHECK(b->ntabs == 2 && b->active == 1 && bw_tab(0)->id == 22);
+    browser_window_close();
+}
+
 int main(void) {
     check_mask();
+    check_tab_closure();
     unsetenv("OSPI_BROWSER_URL");
     Session *s = calloc(1, sizeof *s);
     if (!s) return 1;

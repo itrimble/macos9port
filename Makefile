@@ -32,7 +32,7 @@ AUDIO_SRC := src/audio_decoder.c src/audio_dsp.c src/audio_midi.c src/audio_outp
 AUDIO_HDRS := include/volume_directory.h include/audio_decoder.h include/audio_dsp.h include/audio_midi.h include/audio_output.h include/audio_service.h
 
 include config/core-sources.mk
-HDRS := include/quake_launch.h include/term_font.h include/tailnet.h include/finder_edit.h include/app_switcher.h include/desktop_gesture.h include/finder_apps.h include/finder_print.h include/finder_recent.h include/finder_batch.h include/finder_drag.h include/finder_selection.h include/finder_popup.h include/finder_state.h include/finder_settings.h include/finder_search.h include/finder_files.h include/desktop_finder.h include/modern_network.h include/folder_navigation.h include/desktop_commands.h include/desktop_help.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h include/term.h include/mac_movie.h include/movie_window.h
+HDRS := src/install_int.h include/application_probe.h include/quake_launch.h include/term_font.h include/tailnet.h include/finder_edit.h include/app_switcher.h include/desktop_gesture.h include/finder_apps.h include/finder_print.h include/finder_recent.h include/finder_batch.h include/finder_drag.h include/finder_selection.h include/finder_popup.h include/finder_state.h include/finder_settings.h include/finder_search.h include/finder_files.h include/desktop_finder.h include/modern_network.h include/folder_navigation.h include/desktop_commands.h include/desktop_help.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h include/term.h include/mac_movie.h include/movie_window.h
 
 PRINT_HOST := src/desktop_print_stub.c
 SHORTCUT_HOST := src/desktop_shortcuts_stub.c
@@ -210,8 +210,8 @@ build/test_mac_memory: $(RUNTIME_OBJ) tests/test_mac_memory.c $(RUNTIME_HDRS) $(
 build/test_mac_traps: $(RUNTIME_OBJ) tests/test_mac_traps.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_traps.c $(CPUOBJ) -lm -o $@
 
-build/test_native_launch: src/native_launch.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c include/native_launch.h include/mac_resource.h include/runtime_bridge.h
-	$(CC) $(CFLAGS) -pthread src/native_launch.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c -o $@
+build/test_native_launch: $(STORAGE_A) src/application_probe.c include/application_probe.h src/native_launch.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c include/native_launch.h include/mac_resource.h include/runtime_bridge.h
+	$(CC) $(CFLAGS) -pthread src/native_launch.c src/application_probe.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c $(STORAGE_LINK) -o $@
 
 build/test_mac_events: $(RUNTIME_OBJ) tests/test_mac_events.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_events.c $(CPUOBJ) -lm -o $@
@@ -444,7 +444,8 @@ app: build/ospi build/ospi-runtime build/os999-tailnet macos/Info.plist wallpape
 	cp assets/icons/ospi-icons.icl8 "$(APP_BUNDLE)/Contents/Resources/"
 	cp macos/Info.plist "$(APP_BUNDLE)/Contents/Info.plist"
 	printf 'APPL????' > "$(APP_BUNDLE)/Contents/PkgInfo"
-	@if [ -d "$(APP_BUNDLE)/Contents/Resources/Quake3" ]; then codesign --force --sign - "$(APP_BUNDLE)/Contents/Resources/Quake3/baseq3/"*.so "$(APP_BUNDLE)/Contents/Resources/Quake3/quake3"; fi
+	@if [ -f "$(QUAKE_BUILD)/arena111-package.json" ]; then python3 scripts/quake_package.py "$(QUAKE_BUILD)" "$(APP_BUNDLE)/Contents/Resources/Quake3"; elif [ -d "$(APP_BUNDLE)/Contents/Resources/Quake3" ]; then codesign --force --sign - "$(APP_BUNDLE)/Contents/Resources/Quake3/baseq3/"*.so; fi
+	@if [ -d "$(APP_BUNDLE)/Contents/Resources/Quake3" ]; then codesign --force --sign - "$(APP_BUNDLE)/Contents/Resources/Quake3/quake3"; fi
 	codesign --force --sign - "$(APP_BUNDLE)"
 
 ifeq ($(shell uname -s),Darwin)

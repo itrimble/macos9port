@@ -98,7 +98,7 @@ static const NativeSurfaceBackend backend = {
 
 /* OS999 > Quake III Arena: start the separately built, GPL-2 engine as its own
  * process. Nothing from Quake links into OS999. */
-int session_open_quake(Session *s) {
+static int open_quake(Session *s, int demo) {
     if (native_surface_active()) {
         dialog_info(s, "Quake III Arena", "Close the current guest application first.");
         return -1;
@@ -114,9 +114,14 @@ int session_open_quake(Session *s) {
     char *slash = strrchr(exe, '/');
     if (slash) *slash = 0;
     QuakeLaunch q;
-    int ready = quake_launch_resolve(&q, exe[0] ? exe : NULL, getenv("HOME"));
+    int ready = demo ? quake_launch_resolve_demo(&q, exe[0] ? exe : NULL, getenv("HOME"))
+                     : quake_launch_resolve(&q, exe[0] ? exe : NULL, getenv("HOME"));
     if (ready == -1) {
         dialog_info(s, "Quake III Arena", "The Quake III engine is not installed. Build quake/ and package it with make app.");
+        return -1;
+    }
+    if (ready == -3) {
+        dialog_info(s, "Quake III Arena Demo", "Requires the original Arena 1.11 demo pak0.pk3 in ~/Library/Application Support/OS999/Quake3/demoq3. Local play only; modified data is rejected.");
         return -1;
     }
     if (ready == -2) {
@@ -127,8 +132,8 @@ int session_open_quake(Session *s) {
 #endif
         return -1;
     }
-    char *argv[16];
-    if (!quake_launch_argv(&q, argv, 16)) return -1;
+    char *argv[24];
+    if (!quake_launch_argv(&q, argv, 24)) return -1;
     char path[] = "/tmp/os999-quake-surface-XXXXXX";
     int fd = mkstemp(path);
     if (fd < 0) return -1;
@@ -165,3 +170,6 @@ int session_open_quake(Session *s) {
     s->app_request = 2;
     return 0;
 }
+
+int session_open_quake(Session *s) { return open_quake(s, 0); }
+int session_open_quake_demo(Session *s) { return open_quake(s, 1); }

@@ -44,7 +44,7 @@ enum {
     CMD_PASTE, /* CMD_COPY is the shared 422 id below; the terminal handles it when front. */
     CMD_TERM_CLEAR,
     CMD_TERM_THEME,
-    CMD_TERM_PASTE_DO, CMD_TAILSCALE, CMD_QUAKE3
+    CMD_TERM_PASTE_DO, CMD_TAILSCALE, CMD_QUAKE3, CMD_QUAKE3_DEMO
 };
 /* Theme commands are separate from desktop picture commands. */
 enum { CMD_THEME_BASE = 200, CMD_THEME_LAST = 215, CMD_THEME_NEXT = 216 };
@@ -395,6 +395,9 @@ int garden_pick_url(const char *html, char *out, size_t n);
 int garden_alt_url(const char *url, int which, char *out, size_t n);
 int install_garden(const char *root, const char *page_url, char *created_rel, size_t created_n,
                    char *err, size_t err_n);
+int install_archive_supported(const char *name);
+int install_archive(const char *root, const char *archive_rel, char *created_rel, size_t created_n,
+                    char *err, size_t err_n);
 int install_sit(const char *root, const char *archive_rel, char *created_rel, size_t created_n,
                 char *err, size_t err_n);
 int classic_is_program(const char *name);

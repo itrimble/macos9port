@@ -301,6 +301,7 @@ void session_command(Session *s, int cmd) {
         context_close(); appearance_panel_close();
         while (s->nwin) close_index(s, s->nwin - 1); break;
     case CMD_TAILSCALE: terminal_tailnet_open(s); break;
+    case CMD_QUAKE3_DEMO: session_open_quake_demo(s); break;
     case CMD_QUAKE3: session_open_quake(s); break;
     case CMD_TERMINAL_SHELL:
         terminal_open(s, TERM_MODE_SHELL);

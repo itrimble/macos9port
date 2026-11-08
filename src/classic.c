@@ -286,6 +286,9 @@ int classic_launch(const char *path, const char *hint, char *err, size_t err_n) 
 int classic_open(const char *root, const char *full, const char *name, char *err, size_t err_n) {
     int native = native_open(root, full, err, err_n);
     if (native != 1) return native;
+    /* A selected non-archive must never launch an unrelated sibling archive.
+     * Explicit archive callers retain the separate legacy fallback. */
+    if (!classic_is_program(name)) return 1;
     char launch[OSPI_PATH];
     char hint[40];
     int picked = classic_bundle(root, full, name, launch, sizeof launch, hint, sizeof hint);

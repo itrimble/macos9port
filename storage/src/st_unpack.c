@@ -22,7 +22,9 @@ StFormat st_detect(const uint8_t *p, size_t n, const uint8_t *rsrc, size_t rsrc_
     case ST_IMG_RAW: return ST_FMT_HFS_IMAGE;
     default: break;
     }
-    if (st_macbinary_detect(p, n)) return ST_FMT_MACBINARY;
+    if (st_iso_detect(p, n)) return ST_FMT_ISO;
+    if (st_macbinary_detect(p, n) || (n >= 128 && p[0] == 0 && !memcmp(p + 102, "mBIN", 4)))
+        return ST_FMT_MACBINARY;
     if (st_binhex_detect(p, n)) return ST_FMT_BINHEX;
     return ST_FMT_UNKNOWN;
 }
@@ -30,7 +32,7 @@ StFormat st_detect(const uint8_t *p, size_t n, const uint8_t *rsrc, size_t rsrc_
 const char *st_format_name(StFormat f) {
     static const char *names[] = {"plain file", "BinHex", "MacBinary", "AppleSingle", "AppleDouble",
                                   "ZIP", "StuffIt", "StuffIt 5", "StuffIt X", "Compact Pro",
-                                  "Disk Copy 4.2", "NDIF disk image", "UDIF disk image", "HFS disk image"};
+                                  "Disk Copy 4.2", "NDIF disk image", "UDIF disk image", "HFS disk image", "ISO9660 disk image"};
     return (unsigned)f < sizeof names / sizeof *names ? names[f] : "unknown";
 }
 
@@ -100,6 +102,13 @@ static int unwrap(const uint8_t *p, size_t n, const uint8_t *rsrc, size_t rn, co
             }
         }
         st_bytes_free(&raw);
+        return rc;
+    }
+    case ST_FMT_ISO: {
+        char volume[256];
+        chain_add(info, st_format_name(fmt));
+        rc = st_iso_read(p, n, out, volume, sizeof volume, lim, err);
+        if (!rc && info) snprintf(info->volume, sizeof info->volume, "%s", volume);
         return rc;
     }
     case ST_FMT_APPLEDOUBLE:

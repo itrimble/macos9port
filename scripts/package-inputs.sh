@@ -49,7 +49,7 @@ PY
 export OS999_QUAKE_SOURCE="$OS999_RECEIPT_DIR/quake-source"
 git -C "$OS999_QUAKE_REPOSITORY" worktree add --detach "$OS999_QUAKE_SOURCE" "$OS999_QUAKE_REF"
 cmp include/os999_quake_bridge.h "$OS999_QUAKE_SOURCE/code/darwin/os999_bridge.h"
-make -C "$OS999_QUAKE_SOURCE/code/darwin" -j2 all test-os999-bridge
+make -C "$OS999_QUAKE_SOURCE/code/darwin" -j2 all test-os999-md4 test-os999-bridge
 export OS999_QUAKE_BUILD="$OS999_QUAKE_SOURCE/build/darwin"
 OS999_QUAKE_SHA256=$(shasum -a 256 "$OS999_QUAKE_BUILD/quake3" | cut -d ' ' -f1)
 export OS999_QUAKE_SHA256

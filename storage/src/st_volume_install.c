@@ -162,6 +162,12 @@ int st_vol_install(StVolume *v, const char *dest, const StArchive *ar, StErr *er
         if (rc == ST_OK && !ar->v[i].is_dir && add_line(&m, 'F', rel)) rc = st_fail(err, ST_EPATH, "unsafe path %s", rel);
     }
     st_bytes_free(&seen);
+    /* Recovery has a bounded 4096-entry plan. Reject oversized installs
+     * before any filesystem mutation rather than leaving untracked files. */
+    size_t planned = 0;
+    for (size_t i = 0; i < m.n; i++) if (m.p[i] == '\n') planned++;
+    if (rc == ST_OK && planned > 4096)
+        rc = st_fail(err, ST_ELIMIT, "install exceeds the 4096-entry recovery plan");
     if (rc == ST_OK) rc = write_manifest(v, &m, err);
     if (rc) { st_bytes_free(&m); return rc; }
     if (*dest) rc = st_vol_mkdirs(v, dest, err);

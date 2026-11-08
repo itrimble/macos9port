@@ -34,7 +34,8 @@ static int write_tool(const char *path, const char *script) {
 }
 
 static void test_sit_install(const char *root) {
-    char tool_dir[] = "/tmp/ospi-tools-XXXXXX";
+    char tool_dir[OSPI_PATH];
+    snprintf(tool_dir, sizeof tool_dir, "%s/ospi-tools-XXXXXX", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp");
     char *tools = mkdtemp(tool_dir);
     CHECK(tools != NULL);
     if (!tools) return;
@@ -105,6 +106,10 @@ static void test_sit_install(const char *root) {
         CHECK(find_win(s, "Click") >= 0);
         session_destroy(s);
     }
+    char unrelated[OSPI_PATH];
+    snprintf(unrelated, sizeof unrelated, "%s/Widget", appdir);
+    CHECK(write_bytes(unrelated, "\0binary", 7) == 0);
+    CHECK(classic_open(root, unrelated, "Widget", err, sizeof err) == 1);
     CHECK(access(sentinel, F_OK) != 0);
     CHECK(setenv("OSPI_TEST_UNAR_MODE", "fail", 1) == 0);
     CHECK(install_garden(root, "https://macintoshgarden.org/apps/sit-probe", rel, sizeof rel, err, sizeof err) != 0);
@@ -157,6 +162,15 @@ static void test_native_install(const char *root) {
     CHECK(access(data, F_OK) == 0 && st_read_file(side, 1 << 20, &sb, &e) == ST_OK);
     CHECK(st_applesingle_detect(sb.p, sb.n) == 2 && st_applesingle_decode(sb.p, sb.n, &meta, NULL, &e) == ST_OK);
     CHECK(meta.rsrc.n == 19 && !memcmp(meta.finfo, "APPLNATG", 8));
+    /* The same native payload is accepted under its real MacBinary suffix. */
+    snprintf(path, sizeof path, "%s/Applications/MacBinary.bin", root);
+    CHECK(write_bytes(path, mb.p, mb.n) == 0);
+    CHECK(session_is_sit("MacBinary.bin") && session_is_sit("Disk.dmg") && session_is_sit("CD.iso"));
+    CHECK(!session_is_sit("plain.txt"));
+    CHECK(install_archive(root, "Applications/MacBinary.bin", rel, sizeof rel, err, sizeof err) == 0);
+    CHECK(!strcmp(rel, "Applications/MacBinary"));
+    snprintf(data, sizeof data, "%s/%s/Native Game.rsrc", root, rel);
+    CHECK(access(data, F_OK) == 0);
     st_macfile_free(&meta);
     st_bytes_free(&sb);
     st_bytes_free(&mb);
@@ -173,7 +187,8 @@ static void test_native_install(const char *root) {
 }
 
 int main(void) {
-    char root_template[] = "/tmp/ospi-sit-test-XXXXXX";
+    char root_template[OSPI_PATH];
+    snprintf(root_template, sizeof root_template, "%s/ospi-sit-test-XXXXXX", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp");
     char *root = mkdtemp(root_template);
     CHECK(root != NULL);
     if (!root) return 1;

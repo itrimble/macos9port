@@ -30,6 +30,9 @@ static inline void st_putle32(uint8_t *p, uint32_t v) {
     p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24);
 }
 
+/* Decode metadata or copy a raw fork; malformed container magic fails closed. */
+int st_sidecar_apply(StMacFile *f, const StBytes *s, const StLimits *lim, StErr *err);
+
 /* True when [off, off+len) lies inside n bytes, without overflow. */
 static inline int st_span(size_t n, uint64_t off, uint64_t len) {
     return off <= n && len <= n - off;

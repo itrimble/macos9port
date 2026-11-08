@@ -430,7 +430,39 @@ static void test_nerd_glyphs_and_clipping(void) {
     term_vt_free(&vt);
 }
 
+static void test_copy_visible_scrollback(void) {
+    char vol[OSPI_PATH]; make_temp_vol(vol, sizeof vol);
+    Session *s = session_create(vol);
+    CHECK(s != NULL);
+    if (!s) return;
+    session_command(s, CMD_TERMINAL_CONSOLE);
+    Window *w = terminal_front(s);
+    CHECK(w != NULL);
+    if (!w) { session_destroy(s); return; }
+    TermSession *ts = w->term;
+    term_vt_free(&ts->vt);
+    term_vt_init(&ts->vt, 5, 20);
+    for (int i = 0; i < 12; i++) {
+        char line[32];
+        snprintf(line, sizeof line, "Line-%02d%s", i, i < 11 ? "\r\n" : "");
+        term_vt_feed(&ts->vt, line, strlen(line));
+    }
+    ts->sel_active = 1;
+    ts->sel_start_row = ts->sel_start_col = 0;
+    ts->sel_end_row = 1; ts->sel_end_col = 6;
+    w->scroll = TERM_CELL_H;
+    session_command(s, CMD_COPY);
+    CHECK(strcmp(s->clip, "Line-01\nLine-02") == 0);
+    CHECK(s->clipboard_write_request == 1);
+    CHECK(strcmp(session_clipboard_output(s), "Line-01\nLine-02") == 0);
+    w->scroll = terminal_max_scroll(w);
+    session_command(s, CMD_COPY);
+    CHECK(strcmp(s->clip, "Line-07\nLine-08") == 0);
+    session_destroy(s);
+}
+
 int main(void) {
+    test_copy_visible_scrollback();
     test_utilities_launcher_and_login_zsh();
     test_nerd_glyphs_and_clipping();
     test_vt_basic_and_colors();

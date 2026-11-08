@@ -70,7 +70,8 @@ static int helper(int argc, char **argv) {
 
 int main(int argc, char **argv) {
     if (argc > 1) return helper(argc, argv);
-    char directory[] = "/tmp/ospi-native-test-XXXXXX";
+    char directory[PATH_MAX];
+    snprintf(directory, sizeof directory, "%s/ospi-native-test-XXXXXX", getenv("TMPDIR") ? getenv("TMPDIR") : "/tmp");
     CHECK(mkdtemp(directory) != NULL);
     /* The volume sits one level down so the launcher's "Saves" folder lands
      * beside it, inside this test's own temporary directory. */

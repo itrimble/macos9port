@@ -8,6 +8,9 @@ import re
 from pathlib import Path
 import shutil
 import subprocess
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from quake_package import verified_modules
 
 MAGIC = {b'\xcf\xfa\xed\xfe', b'\xce\xfa\xed\xfe', b'\xca\xfe\xba\xbe',
          b'\xfe\xed\xfa\xcf', b'\xbe\xba\xfe\xca', b'\xca\xfe\xba\xbf'}
@@ -99,6 +102,7 @@ def package(app, browser, identity):
     processes = run('/bin/ps', '-axo', 'command=')
     if str(app / 'Contents/MacOS') in processes:
         raise ValueError('Target bundle is running; build a new bundle')
+    protected = verified_modules(app / 'Contents/Resources/Quake3')
     frameworks = app / 'Contents/Frameworks'
     frameworks.mkdir(exist_ok=True)
     target = frameworks / 'OS999Browser.app'
@@ -126,6 +130,10 @@ def package(app, browser, identity):
         manifest.append({'source': str(origin), 'source_sha256': digest(origin),
                          'bundled': str(dest.relative_to(app)), 'reason': 'SDL2-compat dlopen'})
     for binary in queue:
+        if binary in protected:
+            if any(not dep.startswith(('/System/', '/usr/lib/')) for dep in dependencies(binary)):
+                raise ValueError('Authenticated module requires dependency rewriting: ' + str(binary))
+            continue
         for dep in dependencies(binary):
             if dep.startswith(('/System/', '/usr/lib/')):
                 continue
@@ -166,6 +174,8 @@ def package(app, browser, identity):
     (resources / 'HostLibraries.json').write_text(json.dumps(manifest, indent=2) + '\n')
     # Sign inner code first. Preserve helper sandbox entitlements when present.
     for binary in queue:
+        if binary in protected:
+            continue  # signed before its SHA was embedded into the engine
         run('/usr/bin/codesign', '--force', '--sign', identity, '--timestamp=none',
             '--preserve-metadata=entitlements', binary)
     bundles = [p for p in app.rglob('*') if p.is_dir() and not p.is_symlink()
@@ -174,6 +184,8 @@ def package(app, browser, identity):
         run('/usr/bin/codesign', '--force', '--sign', identity, '--timestamp=none',
             '--preserve-metadata=entitlements', bundle)
     run('/usr/bin/codesign', '--verify', '--deep', '--strict', app)
+    if verified_modules(app / 'Contents/Resources/Quake3') != protected:
+        raise ValueError('Authenticated modules changed during packaging')
     print(json.dumps({'artifact': str(app), 'host_libraries': len(manifest),
                       'mach_objects': len(queue), 'signature': 'verified'}))
 
