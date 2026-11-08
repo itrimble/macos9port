@@ -379,6 +379,11 @@ static void modal_loop(void) {
     CHECK(rig_open(&g) == 0); CHECK(modal(&g, 0, hit) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
     CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); CHECK(modal(&g, 0, 0x1000000) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
     CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); modal(&g, 0, hit); wr(&g.rt, SP - 2, 4, hit); CHECK(trap(&g, 0xa991, SP - 4) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
+    /* an enabled user item is hit by the press itself (ModalDialog returns its number on mouse-down); a press outside every item returns nothing */
+    CHECK(rig_open(&g) == 0); d = get_new(&g, 130, 0, 0xffffffffu, &rc); wr(&g.rt, hit, 2, 0xffff); post(&g, 1, 0, 0, 100, 70); modal(&g, 0, hit);
+    CHECK(raw(&g.rt, hit, 2) == 2 && mac_cpu_get(g.rt.cpu, MAC_A7) == SP + 8 && mac_cpu_get(g.rt.cpu, MAC_PC) == TRAP_PC); mac_runtime_destroy(&g.rt);
+    CHECK(rig_open(&g) == 0); d = get_new(&g, 130, 0, 0xffffffffu, &rc); wr(&g.rt, hit, 2, 0xffff); post(&g, 1, 0, 0, 340, 70); modal(&g, 0, hit);
+    CHECK(raw(&g.rt, hit, 2) == 0xffff && mac_cpu_get(g.rt.cpu, MAC_A7) == SP); mac_runtime_destroy(&g.rt);
     /* disposing a dialog while ModalDialog is running halts */
     CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); modal(&g, 0, hit); wr(&g.rt, SP + 40, 4, d); CHECK(trap(&g, 0xa983, SP + 40) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
 }

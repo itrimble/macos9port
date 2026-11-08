@@ -28,15 +28,14 @@ static void trap_path(MacRuntime *rt) {
 
 static void halting_selectors(const char *data, const char *saves) {
     static const struct { unsigned selector; const char *name; } cases[] = {
-        {5, "FSpDirCreate"}, {9, "FSpSetFLock"}, {10, "FSpRstFLock"}, {12, "FSpCatMove"}, {15, "FSpExchangeFiles"},
+        {9, "FSpSetFLock"}, {10, "FSpRstFLock"}, {12, "FSpCatMove"}, {15, "FSpExchangeFiles"},
     };
     for (unsigned i = 0; i < sizeof cases / sizeof *cases; i++) {
         MacRuntime rt = fresh();
         CHECK(mac_files_root(&rt, data) == 0 && mac_files_writable(&rt, saves, 8, 4096) == 0);
         spec_of(&rt, SPEC, -1, 2, "Game Data");
         spec_of(&rt, SPEC2, -1, 2, "Game Data");
-        if (cases[i].selector == 5) { w32(&rt, S, REFBUF); w16(&rt, S + 4, 0); w32(&rt, S + 6, SPEC); }
-        else { w32(&rt, S, SPEC); w32(&rt, S + 4, SPEC2); }
+        w32(&rt, S, SPEC); w32(&rt, S + 4, SPEC2);
         expect_halt(&rt, cases[i].selector, cases[i].name);
         mac_files_destroy(&rt);
         mac_cpu_destroy(rt.cpu);
@@ -64,7 +63,7 @@ int main(void) {
         spec_of(&rt, SPEC, -1, 2, bad[i]);
         CHECK(create(&rt, SPEC, 0, 0) == -37);
     }
-    spec_of(&rt, SPEC, -1, 9, "Pilot 9");
+    spec_of(&rt, SPEC, -1, 100, "Pilot 9");
     CHECK(create(&rt, SPEC, 0, 0) == -120);
     spec_of(&rt, SPEC, 3, 2, "Pilot 9");
     CHECK(create(&rt, SPEC, 0, 0) == -35);

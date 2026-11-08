@@ -46,8 +46,8 @@ static void read_only_volume(const char *data) {
     CHECK(make_at(&rt, -1, 2, 0, SPEC) == 0 && spec_is(&rt, SPEC, -1, 1, "OS Pi Data")); /* NULL fileName */
     CHECK(make(&rt, -1, 2, "Other:Game Data", SPEC) == -35);
     CHECK(make(&rt, 7, 2, "Game Data", SPEC) == -35);
-    CHECK(make(&rt, -2, 2, "Game Data", SPEC) == -35);
-    CHECK(make(&rt, -1, 5, "Game Data", SPEC) == -120);
+    CHECK(make(&rt, -2, 2, "Game Data", SPEC) == -35);              /* the System volume exists only when the runtime has one */
+    CHECK(make(&rt, -1, 100, "Game Data", SPEC) == -120);          /* 3 to 66 are folder IDs (see the folders test); 100 is none */
     CHECK(make(&rt, -1, 1, "Game Data", SPEC) == -120);
     CHECK(make(&rt, -1, 2, "sub:file", SPEC) == -35);           /* "sub" is read as a volume name */
     CHECK(make(&rt, -1, 2, "Game Data:", SPEC) == -35);
@@ -103,7 +103,7 @@ static void read_only_volume(const char *data) {
     CHECK(open_df(&rt, SPEC, 1) == -43);
     spec_of(&rt, SPEC, -1, 2, "sub");
     CHECK(open_df(&rt, SPEC, 1) == -43);
-    spec_of(&rt, SPEC, -1, 3, "Game Data");                          /* unknown parent directory */
+    spec_of(&rt, SPEC, -1, 100, "Game Data");                        /* unknown parent directory */
     CHECK(open_df(&rt, SPEC, 1) == -120);
     spec_of(&rt, SPEC, 5, 2, "Game Data");                           /* unknown volume */
     CHECK(open_df(&rt, SPEC, 1) == -35);

@@ -59,7 +59,7 @@ static Dlg *front(MacRuntime *rt) {
     for (int i = MAX_OPEN - 1; rt->dlgmgr && i >= 0; i--) if (M(rt)->open[i]) return M(rt)->open[i];
     return NULL;
 }
-static int enabled(const Dlg *d, unsigned k) { const MacDitlItem *it = &d->ditl.items[k]; return !it->disabled && (it->kind == MAC_ITEM_BUTTON || it->kind == MAC_ITEM_CHECK || it->kind == MAC_ITEM_RADIO || it->kind == MAC_ITEM_EDIT); }
+static int enabled(const Dlg *d, unsigned k) { const MacDitlItem *it = &d->ditl.items[k]; return !it->disabled && (it->kind == MAC_ITEM_USER || it->kind == MAC_ITEM_BUTTON || it->kind == MAC_ITEM_CHECK || it->kind == MAC_ITEM_RADIO || it->kind == MAC_ITEM_EDIT); }
 static void mirror(MacRuntime *rt, const Dlg *d, unsigned k) {
     if (!d->handle[k]) return;
     uint32_t block = d->block[k];                                     /* never the master pointer in guest memory: the guest may have changed it */
@@ -163,6 +163,7 @@ static unsigned handle_event(Dlg *d, const MacEvent *e) {
     if (e->what == 1) {
         if (!item) return 0;
         if (d->ditl.items[item - 1].kind == MAC_ITEM_EDIT) { select_edit(d, item); return (unsigned)item; }
+        if (d->ditl.items[item - 1].kind == MAC_ITEM_USER) return (unsigned)item;   /* an enabled user item is hit by the press itself */
         d->pressed = item; return 0;
     }
     int pressed = d->pressed; d->pressed = 0;
@@ -269,6 +270,7 @@ static int dialog_select(MacRuntime *rt, uint32_t sp, uint32_t pc) {
         if (e.what == 1) {
             int item = hit_item(d, e.x, e.y);
             if (item && d->ditl.items[item - 1].kind == MAC_ITEM_EDIT) { select_edit(d, item); chosen = (unsigned)item; }
+            else if (item && d->ditl.items[item - 1].kind == MAC_ITEM_USER) chosen = (unsigned)item;
             else if (item) { d->pressed = item; d->select_busy = 1; d->sp = sp; d->pc = pc; draw(rt, d); mac_cpu_set(rt->cpu, MAC_PC, pc); mac_cpu_yield(rt->cpu); return 1; }
         } else if (e.what == 3 || e.what == 5) chosen = handle_event(d, &e);
         else if (e.what == 6 || e.what == 8) draw(rt, d);

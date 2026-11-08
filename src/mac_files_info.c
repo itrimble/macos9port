@@ -43,7 +43,7 @@ static int listing(const FileState *s, char (**out)[256], unsigned *count) {
             if (++scanned > ENTRY_LIMIT || *count >= LIST_LIMIT) { error = -50; break; }
             size_t length = strlen(e->d_name);
             if (!length || length > 255 || !strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
-            if (pass && !mac_files_save_name_ok(e->d_name)) continue;
+            if (pass && (!mac_files_save_name_ok(e->d_name) || mac_files_in_folder(e->d_name))) continue;
             int supported = 1;
             for (size_t i = 0; i < length; i++)
                 if ((unsigned char)e->d_name[i] < 32 || (unsigned char)e->d_name[i] >= 127 ||

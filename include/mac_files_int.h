@@ -6,6 +6,12 @@
 #include <dirent.h>
 #include <stdint.h>
 
+/* A save-namespace name that stands for a file in a folder ("d<id>-name", see mac_fsspec.c): never listed as a root file. */
+static inline int mac_files_in_folder(const char *n) {
+    if (n[0] != 'd' || n[1] < '0' || n[1] > '9') return 0;
+    const char *p = n + 1; while (*p >= '0' && *p <= '9') p++;
+    return *p == '-' && p - n <= 3;
+}
 enum { FILE_LIMIT = 32, REF_BASE = 128, PB_BYTES = 50, FILE_NAME_MAX = 31 };
 
 /* An open fork. Writable refs hold a hidden staging copy in the save

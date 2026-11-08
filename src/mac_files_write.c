@@ -293,7 +293,7 @@ int mac_files_overlay_count(const FileState *s, unsigned *count) {
         struct dirent *e = readdir(dir);
         if (!e) { if (errno) error = -36; break; }
         if (++scanned > ENTRY_LIMIT) { error = -50; break; }
-        if (!mac_files_save_name_ok(e->d_name)) continue;
+        if (!mac_files_save_name_ok(e->d_name) || mac_files_in_folder(e->d_name)) continue;
         struct stat st;
         if (fstatat(s->saves, e->d_name, &st, AT_SYMLINK_NOFOLLOW)) { error = -36; break; }
         if (S_ISREG(st.st_mode) && fstatat(s->directory, e->d_name, &st, AT_SYMLINK_NOFOLLOW)) (*count)++;

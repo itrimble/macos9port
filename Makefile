@@ -482,13 +482,17 @@ build/test_mac_files_write: $(RUNTIME_OBJ) tests/test_mac_files_write.c $(RUNTIM
 
 # FSSpec calls (HighLevelFSDispatch) and Gestalt 'fs  '; `test` depends on this aggregate.
 .PHONY: test-fsspec
-test-fsspec: build/test_mac_fsspec build/test_mac_fsspec_write
+test-fsspec: build/test_mac_fsspec build/test_mac_fsspec_write build/test_mac_fsspec_folders
 	./build/test_mac_fsspec
 	./build/test_mac_fsspec_write
+	./build/test_mac_fsspec_folders
 test: test-fsspec
 
 build/test_mac_fsspec: $(RUNTIME_OBJ) tests/test_mac_fsspec.c tests/fsspec_test.h $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_fsspec.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_fsspec_folders: $(RUNTIME_OBJ) tests/test_mac_fsspec_folders.c tests/fsspec_test.h $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_fsspec_folders.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_fsspec_write: $(RUNTIME_OBJ) tests/test_mac_fsspec_write.c tests/fsspec_test.h $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_fsspec_write.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
