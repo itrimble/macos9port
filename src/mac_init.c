@@ -102,6 +102,9 @@ int mac_init_run(MacRuntime *rt, const MacResourceFork *fork, size_t budget, Mac
     save(rt, &snap);
     rt->init_guard = 1;
     rt->init_violation = 0;
+    /* GetResource and friends must see the extension's own resources. */
+    MacResourceFork host = rt->fork;
+    rt->fork = *fork;
     int result = 0;
     for (size_t k = 0; k < n && result == 0; k++) {
         MacResource r;
@@ -131,6 +134,7 @@ int mac_init_run(MacRuntime *rt, const MacResourceFork *fork, size_t budget, Mac
             if (rep) snprintf(rep->error, sizeof rep->error, "%s",
                               mac_cpu_error(rt->cpu) ? mac_cpu_error(rt->cpu) : "halted");
             rt->init_guard = 0;
+            rt->fork = host;
             return -2;
         }
         if (rt->init_violation) result = fail(rep, "INIT tried to patch a protected trap.");
@@ -138,6 +142,12 @@ int mac_init_run(MacRuntime *rt, const MacResourceFork *fork, size_t budget, Mac
         else if (rep) rep->count++;
     }
     rt->init_guard = 0;
+    rt->fork = host;
+    /* Resources loaded from the extension's fork stay in memory but are no
+     * longer cached against file 0, so the next extension cannot be handed them. */
+    for (size_t i = 0; i < rt->handle_count; i++)
+        if (rt->handles[i].resource && rt->handles[i].resource_owner == 0 && !rt->handles[i].loaded_code)
+            rt->handles[i].resource = 0;
     if (result != 0) rollback(rt, &snap);
     restore_regs(rt, &snap);
     return result;

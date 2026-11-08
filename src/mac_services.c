@@ -19,6 +19,7 @@ static unsigned requested_key(uint16_t instruction, uint16_t requested) {
 }
 
 static int implemented(unsigned key) {
+    if (mac_env_implemented(key)) return 1;
     if (key < 0x800) {
         switch (key) {
         case 0x58: case 0x59: case 0x5a: return 1;
@@ -175,6 +176,8 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (pixmap) return pixmap > 0 ? 0 : -1;
     int vbl = mac_vbl_service(rt, opcode);
     if (vbl) return vbl > 0 ? 0 : -1;
+    int env = mac_env_service(rt, opcode);
+    if (env) return env > 0 ? 0 : -1;
     if (opcode == 0xa9f4) {
         rt->exited = 1;
         mac_cpu_halt(cpu, "Guest called ExitToShell.");

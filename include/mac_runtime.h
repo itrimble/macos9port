@@ -113,6 +113,8 @@ int mac_menu_service(MacRuntime *rt, uint16_t opcode);
 int mac_toolbox_service(MacRuntime *rt, uint16_t opcode);
 int mac_raster_service(MacRuntime *rt, uint16_t opcode);
 int mac_system_service(MacRuntime *rt, uint16_t opcode);
+int mac_env_service(MacRuntime *rt, uint16_t opcode);
+int mac_env_implemented(unsigned key); /* trap_key() values */
 /* Host-side Gestalt registration. 0 ok, -1 duplicate/full. */
 int mac_gestalt_set(MacRuntime *rt, uint32_t selector, uint32_t value, uint32_t proc);
 int mac_geometry_service(MacRuntime *rt, uint16_t opcode);
