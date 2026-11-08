@@ -18,7 +18,7 @@ find_path(OS999_AV_INCLUDE_DIR libavformat/avformat.h REQUIRED)
 add_library(os999_mobile_dependencies INTERFACE)
 target_include_directories(os999_mobile_dependencies INTERFACE ${OS999_AV_INCLUDE_DIR})
 target_link_libraries(os999_mobile_dependencies INTERFACE
-    os999_mobile_storage CURL::libcurl Threads::Threads)
+    os999_mobile_storage CURL::libcurl Threads::Threads ${CMAKE_DL_LIBS})
 foreach(component avformat avcodec swresample avutil swscale)
     find_library(OS999_${component}_LIBRARY NAMES ${component} REQUIRED)
     target_link_libraries(os999_mobile_dependencies INTERFACE ${OS999_${component}_LIBRARY})

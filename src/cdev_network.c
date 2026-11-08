@@ -45,7 +45,6 @@ static void sync_session(const NetworkState *st, const os999_cdev_host_t *host) 
         .timeout_sec = st->timeout_sec
     };
     net_set_config(&cfg);
-    setenv("OS999_MACTCP_ISOLATED", st->guest_isolated ? "1" : "0", 1);
     if (!host || !host->session) return;
     Session *s = host->session;
     s->net_connect_via = st->connect_via;
@@ -137,8 +136,7 @@ static int network_event(os999_cdev_t *self, const os999_cdev_host_t *host,
     }
     for (int i = 0; i < 2; i++) {
         if (rect_has(cfg_btn(c, i), x, y)) {
-            g_net.configure_mode = i;
-            apply_and_save(self, host);
+            /* Host addressing is not implemented by this panel. */
             return 1;
         }
     }
@@ -148,8 +146,7 @@ static int network_event(os999_cdev_t *self, const os999_cdev_host_t *host,
         return 1;
     }
     if (rect_has(guest_iso_chk(c), x, y)) {
-        g_net.guest_isolated = !g_net.guest_isolated;
-        apply_and_save(self, host);
+        /* No guest broker/runtime enforcement is wired here yet. */
         return 1;
     }
     if (rect_has(redirect_chk(c), x, y)) {
@@ -197,7 +194,7 @@ static void network_render(os999_cdev_t *self, const os999_cdev_host_t *host,
     fb_text(fb, c.x + 60, c.y + 63, fg, "Configure:");
     for (int i = 0; i < 2; i++)
         cdev_ui_button(fb, cfg_btn(c, i), k_cfg_labels[i],
-                       g_net.configure_mode == i, g_net.connect_via != 2);
+                       g_net.configure_mode == i, 0);
 
     char transport[112];
     snprintf(transport, sizeof transport, "HTTPS/TLS Validator: %s   |   Tailscale CLI: %s",
@@ -206,26 +203,27 @@ static void network_render(os999_cdev_t *self, const os999_cdev_host_t *host,
 
     cdev_ui_group(fb, (Rect){c.x, c.y + 124, 352, 232}, "TLS Policy & Legacy Isolation");
     cdev_ui_checkbox(fb, https_chk(c), "Require HTTPS & Verified TLS", 1);
-    cdev_ui_checkbox(fb, guest_iso_chk(c), "Isolate Classic MacTCP Guests", g_net.guest_isolated);
+    fb_text(fb, c.x + 16, c.y + 186, desktop_theme_color(THEME_DISABLED),
+            "Guest isolation: not connected");
     cdev_ui_checkbox(fb, redirect_chk(c), "Allow HTTPS Mirror Redirects", g_net.allow_redirects);
     fb_text(fb, c.x + 16, c.y + 255, fg, "Timeout:");
     for (int i = 0; i < 4; i++)
         cdev_ui_button(fb, timeout_btn(c, i), k_timeout_labels[i],
                        g_net.timeout_sec == k_timeouts[i], 1);
     fb_text(fb, c.x + 16, c.y + 294, desktop_theme_color(THEME_DISABLED),
-            g_net.guest_isolated ? "MacTCP: Sandboxed loopback/policy" : "MacTCP: Host-bridged");
+            "Host addressing is managed by macOS.");
     fb_text(fb, c.x + 16, c.y + 316, desktop_theme_color(THEME_DISABLED),
             "No guest trust-store or proxy injection.");
 
     Rect svc = {c.x + 364, c.y + 124, c.w - 364, 232};
     cdev_ui_group(fb, svc, "Network Tools");
     cdev_ui_icon(fb, svc.x + 16, svc.y + 26, "wireless");
-    uint32_t dot = g_net.connect_via == 2 ? 0xFFC83838u : 0xFF28A448u;
+    uint32_t dot = g_net.connect_via == 2 ? 0xFFC83838u : 0xFF888888u;
     fb_fill(fb, svc.x + 58, svc.y + 34, 12, 12, dot);
     fb_frame(fb, svc.x + 58, svc.y + 34, 12, 12, desktop_theme_color(THEME_FRAME));
     fb_text(fb, svc.x + 78, svc.y + 33, fg,
             g_net.connect_via == 2 ? "Offline Mode" :
-            g_net.connect_via == 1 ? "Tailnet Mesh" : "HTTPS Active");
+            g_net.connect_via == 1 ? "Tailscale preference" : "Host HTTPS policy");
     fb_text(fb, svc.x + 16, svc.y + 70, desktop_theme_color(THEME_DISABLED),
             g_net.https_only ? "TLS 1.2/1.3 enforced" : "Mixed transport");
     cdev_ui_button(fb, tailscale_btn(c), "Open Tailscale...", 0, 1);

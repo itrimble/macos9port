@@ -206,3 +206,42 @@ Bluetooth driver follow-up: production source manifest now links the macOS
 backend; 31 fake-IOBluetooth-boundary checks cover real driver negotiation and
 teardown. Combined desktop lifecycle hooks are tested; menu/panel hooks remain pending. No physical
 peer acceptance is claimed. [Driver handoff](BLUETOOTH-DESKTOP-DRIVER-2026-11-08.md).
+
+## Control Panels integration checkpoint
+
+The next candidate combines all eight producer panels with Build10's startup,
+Bluetooth lifecycle, host automation, movie player, storage and Quake work.
+The original producer worktree and Build9/Build10 artifacts remain unchanged.
+
+### Safety corrections
+
+- RAM Disk cleanup requires an ownership marker bound to the directory inode.
+  Existing unowned directories are refused; the panel reports unavailable and
+  preserves their contents. Metadata refuses symlinks, hard links and FIFOs.
+- Finder quotas include resource forks and sidecars, fail closed on errors and
+  avoid charging same-disk moves twice.
+- Native guest launch reads validated typed preferences before forking; unsafe
+  settings files cannot block on FIFOs or silently control launch policy.
+- Guest heap fallback preserves its stack reserve. Handle resize and relocation
+  check redzones before moving or replacing their guards.
+- Menu mute updates the panel cache and saved preferences, so reopening the
+  Sound panel or restarting cannot restore an obsolete mute setting.
+- Movie/session owners are destroyed before the shared audio service. The
+  production cleanup helper has a real decoded-audio lifecycle regression test.
+
+### Scope boundaries
+
+Network HTTPS policy, redirect and timeout controls have real host consumers.
+Guest isolation and host-addressing controls are visibly unavailable because the
+runtime/broker enforcement and host address configuration are not connected.
+Tailscale selection is a preference, not proof of a connected mesh. Offline
+applies to the integrated host download/browser launch policy, not a system-wide
+radio or socket kill switch. Bluetooth radio use remains separately unverified.
+
+The RAM Disk is an owned, quota-limited scratch directory on the host filesystem;
+it is not a RAM-backed mount. Panel memory bars are configured sizes, not measured
+host allocation. Guest guard checks are software redzones, not OS guard pages.
+
+Focused and full combined validation results belong to the numbered build receipt.
+Source tests do not establish visual, audible, real-radio, guest ABI, mobile-device
+or classic-application acceptance.

@@ -242,9 +242,9 @@ test-system-icons: build/test_system_icon_positions build/test_system_icon_drag
 	./build/test_system_icon_drag
 test: test-system-icons
 
-build/test_quake_surface: $(STORAGE_A) src/application_probe.c include/application_probe.h tests/test_quake_surface.c src/quake_session.c src/native_launch.c src/runtime_bridge.c src/mac_resource.c src/quake_launch.c include/os999_quake_bridge.h include/native_launch.h
+build/test_quake_surface: src/control_panel_store.c include/native_settings.h include/control_panel_store.h $(STORAGE_A) src/application_probe.c include/application_probe.h tests/test_quake_surface.c src/quake_session.c src/native_launch.c src/runtime_bridge.c src/mac_resource.c src/quake_launch.c include/os999_quake_bridge.h include/native_launch.h
 	mkdir -p build
-	$(CC) $(CFLAGS) -Isrc -o $@ tests/test_quake_surface.c src/native_launch.c src/application_probe.c src/runtime_bridge.c src/mac_resource.c src/quake_launch.c $(STORAGE_LINK) -pthread
+	$(CC) $(CFLAGS) -Isrc -o $@ tests/test_quake_surface.c src/control_panel_store.c src/native_launch.c src/application_probe.c src/runtime_bridge.c src/mac_resource.c src/quake_launch.c $(STORAGE_LINK) -pthread
 .PHONY: test-quake-surface
 test-quake-surface: build/test_quake_surface
 	./build/test_quake_surface
@@ -318,9 +318,9 @@ build/test_controlpanels: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_control
 	mkdir -p build
 	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_controlpanels.c $(FT_LIBS) -lm $(NET_LIBS)
 
-build/test_controlpanels_fx: $(CORE) $(STORAGE_A) src/os999_startup.c tests/test_controlpanels_fx.c $(HDRS) include/os999_startup.h
+build/test_controlpanels_fx: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_controlpanels_fx.c $(HDRS) include/os999_startup.h
 	mkdir -p build
-	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) src/os999_startup.c tests/test_controlpanels_fx.c $(FT_LIBS) -lm $(NET_LIBS)
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_controlpanels_fx.c $(FT_LIBS) -lm $(NET_LIBS)
 
 .PHONY: test-controlpanels
 test-controlpanels: build/test_controlpanels build/test_controlpanels_fx build/test_mac_memory build/fixture_cdev.so
@@ -333,3 +333,16 @@ QT_LIFECYCLE_SRC := $(CORE) $(AUDIO_SRC) $(VIDEO_SRC) src/desktop_host.c src/des
 build/test_quicktime_lifecycle: $(QT_LIFECYCLE_SRC) $(STORAGE_A) tests/test_quicktime_lifecycle.c $(HDRS) $(AUDIO_HDRS) include/desktop_host.h
 	$(CC) $(CFLAGS) $(SDL_CFLAGS) $(FFMPEG_CFLAGS) -o $@ $(QT_LIFECYCLE_SRC) $(STORAGE_LINK) tests/test_quicktime_lifecycle.c $(SDL_LIBS) $(FFMPEG_LIBS) $(FT_LIBS) $(NET_LIBS) -pthread -lm
 test-quicktime: build/test_quicktime_lifecycle
+
+# Safety fixtures deliberately stub unrelated volume APIs; do not link CORE.
+build/test_ramdisk_safety: tests/test_ramdisk_safety.c src/volume_folders.c include/ospi.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -Werror tests/test_ramdisk_safety.c src/volume_folders.c -o $@
+build/test_controlpanels_storage_safety: tests/test_controlpanels_storage_safety.c src/control_panel_store.c src/finder_files.c src/volume_folders.c $(HDRS)
+	@mkdir -p build
+	$(CC) $(CFLAGS) -Werror tests/test_controlpanels_storage_safety.c src/control_panel_store.c src/finder_files.c src/volume_folders.c -pthread -o $@
+test-controlpanels: test-controlpanels-safety
+.PHONY: test-controlpanels-safety
+test-controlpanels-safety: build/test_ramdisk_safety build/test_controlpanels_storage_safety
+	./build/test_ramdisk_safety
+	./build/test_controlpanels_storage_safety

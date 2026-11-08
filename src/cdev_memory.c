@@ -16,6 +16,7 @@ typedef struct {
     int ram_disk_mb;
 } MemoryState;
 
+static int g_ram_disk_error;
 static MemoryState g_mem = {0, 512, 8, 1, 0, 0, 8};
 
 static const int k_cache_steps[6] = {256, 512, 1024, 2048, 4096, 8192};
@@ -45,7 +46,8 @@ static void sync_session(const MemoryState *st, const os999_cdev_host_t *host, i
     s->ram_disk_clear_on_quit = !!st->clear_on_quit;
     s->ram_disk_mb = st->ram_disk_enabled ? st->ram_disk_mb : 0;
     if (s->root[0] && (sync_fs || st->ram_disk_enabled)) {
-        (void)volume_ram_disk_sync(s->root, st->ram_disk_enabled, st->ram_disk_mb, 0);
+        g_ram_disk_error = volume_ram_disk_sync(s->root, st->ram_disk_enabled, st->ram_disk_mb, 0);
+        if (g_ram_disk_error) s->ram_disk_mb = 0;
         if (sync_fs) reload_folders(s);
     }
 }
@@ -74,6 +76,7 @@ static int memory_load(os999_cdev_t *self, const os999_cdev_host_t *host) {
 
 static int memory_init(os999_cdev_t *self, const os999_cdev_host_t *host) {
     self->priv = &g_mem;
+    g_ram_disk_error = 0;
     g_mem = (MemoryState){0, 512, 8, 1, 0, 0, 8};
     return memory_load(self, host);
 }
@@ -237,7 +240,7 @@ static void memory_render(os999_cdev_t *self, const os999_cdev_host_t *host,
     for (int i = 0; i < 4; i++)
         cdev_ui_button(fb, guest_btn(c, i), k_guest_labels[i],
                        g_mem.guest_ram_mb == k_guest_mb[i], 1);
-    cdev_ui_checkbox(fb, guard_chk(c), "Strict Bounds & Guard Pages", g_mem.heap_guard);
+    cdev_ui_checkbox(fb, guard_chk(c), "Software Bounds & Redzones", g_mem.heap_guard);
     fb_text(fb, c.x + 314, c.y + 196, desktop_theme_color(THEME_DISABLED),
             "24-bit guest A5 & redzone guard.");
 
@@ -246,7 +249,7 @@ static void memory_render(os999_cdev_t *self, const os999_cdev_host_t *host,
     fb_text(fb, c.x + 16, c.y + 290, desktop_theme_color(THEME_DISABLED),
             g_mem.clear_on_quit ? "Policy: Wipes scratch files on quit" : "Policy: Keeps RAM Disk files");
     fb_text(fb, c.x + 16, c.y + 314, desktop_theme_color(THEME_DISABLED),
-            "Mounts as \"RAM Disk\" in OS999 HD.");
+            "Host-backed scratch directory.");
 
     cdev_ui_checkbox(fb, ramdisk_chk(c), "Enable Scratch RAM Disk", g_mem.ram_disk_enabled);
     for (int i = 0; i < 4; i++)
@@ -256,11 +259,13 @@ static void memory_render(os999_cdev_t *self, const os999_cdev_host_t *host,
     if (s && s->root[0] && g_mem.ram_disk_enabled)
         (void)volume_ram_disk_usage(s->root, &rd_used, &rd_q);
     char rdl[64];
-    if (g_mem.ram_disk_enabled)
-        snprintf(rdl, sizeof rdl, "Mounted: %llu KB used / %d MB quota",
+    if (g_ram_disk_error)
+        snprintf(rdl, sizeof rdl, "Unavailable: existing data preserved");
+    else if (g_mem.ram_disk_enabled)
+        snprintf(rdl, sizeof rdl, "Scratch: %llu KB used / %d MB quota",
                  (unsigned long long)((rd_used + 1023ull) / 1024ull), g_mem.ram_disk_mb);
     else
-        snprintf(rdl, sizeof rdl, "Unmounted (enable to mount RAM Disk)");
+        snprintf(rdl, sizeof rdl, "Disabled (host-backed scratch storage)");
     fb_text(fb, c.x + 306, c.y + 324, desktop_theme_color(THEME_DISABLED), rdl);
 }
 

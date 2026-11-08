@@ -406,14 +406,13 @@ static void test_keyboard_energy_memory_network(void) {
     /* TCP/IP & Network: Offline blocks net_download, install_garden, and CMD_BROWSER. */
     session_command(s, CMD_CP_NETWORK);
     click_at(s, c.x + 166 + 2 * 136 + 64, c.y + 36, 1); /* Offline */
-    click_at(s, c.x + 40, c.y + 192, 1); /* Toggle Isolate MacTCP Guests -> OFF */
+    click_at(s, c.x + 40, c.y + 192, 1); /* Unsupported isolation control must not change preference. */
     click_at(s, c.x + 40, c.y + 224, 1); /* Toggle Allow Redirects -> OFF */
     control_panels_close();
 
     Os999NetConfig ncfg;
     net_get_config(&ncfg);
-    CHECK(ncfg.connect_via == 2 && ncfg.https_only == 1 && ncfg.allow_redirects == 0 && ncfg.guest_isolated == 0);
-    CHECK(getenv("OS999_MACTCP_ISOLATED") && strcmp(getenv("OS999_MACTCP_ISOLATED"), "0") == 0);
+    CHECK(ncfg.connect_via == 2 && ncfg.https_only == 1 && ncfg.allow_redirects == 0 && ncfg.guest_isolated == 1);
 
     char dl_dst[OSPI_PATH + 64], g_rel[OSPI_PATH], g_err[128];
     snprintf(dl_dst, sizeof dl_dst, "%s/Documents/never.bin", root);
@@ -443,11 +442,46 @@ static void test_keyboard_energy_memory_network(void) {
     rm_tree(root);
 }
 
+static void test_unmanaged_scratch_refusal(void) {
+    char root[] = "/tmp/os999-cp-unowned-XXXXXX", path[OSPI_PATH];
+    CHECK(mkdtemp(root) != NULL);
+    CHECK(volume_seed(root) == 0);
+    snprintf(path, sizeof path, "%s/RAM Disk", root);
+    CHECK(mkdir(path, 0700) == 0);
+    snprintf(path, sizeof path, "%s/RAM Disk/user.txt", root);
+    FILE *file = fopen(path, "wb");
+    CHECK(file != NULL);
+    if (file) { fputs("existing user data", file); fclose(file); }
+    Session *s = session_create(root);
+    CHECK(s != NULL);
+    if (s) {
+        Rect c = cp_content_rect(cp_window_rect(s));
+        session_command(s, CMD_CP_MEMORY);
+        click_at(s, c.x + 320, c.y + 268, 1);
+        CHECK(s->ram_disk_mb == 0);
+        click_at(s, c.x + 32, c.y + 268, 1);
+        CHECK(s->ram_disk_clear_on_quit == 1);
+        session_destroy(s);
+    }
+    /* Persisted enable/clear preferences must remain safe on the next launch. */
+    s = session_create(root);
+    CHECK(s != NULL);
+    if (s) { CHECK(s->ram_disk_mb == 0); session_destroy(s); }
+    char text[32] = {0};
+    file = fopen(path, "rb");
+    CHECK(file != NULL);
+    if (file) { (void)fread(text, 1, sizeof text - 1, file); fclose(file); }
+    CHECK(strcmp(text, "existing user data") == 0);
+    os999_cdev_unregister_all();
+    rm_tree(root);
+}
+
 int main(int argc, char **argv) {
     const char *icons_path = argc > 1 ? argv[1] : "assets/icons/ospi-icons.icl8";
     CHECK(desktop_assets_load(icons_path));
     test_general_appearance_sound_monitors();
     test_keyboard_energy_memory_network();
+    test_unmanaged_scratch_refusal();
     desktop_assets_reset();
     printf("controlpanels_fx: %s\n", failures ? "FAILED" : "ok");
     return failures ? 1 : 0;

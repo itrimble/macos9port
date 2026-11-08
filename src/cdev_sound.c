@@ -1,5 +1,6 @@
 #include "os999_cdev.h"
 #include "cdev_ui.h"
+#include "control_panels.h"
 #include "desktop_theme.h"
 
 #include <stdio.h>
@@ -49,6 +50,16 @@ static void sync_session(const SoundState *st, const os999_cdev_host_t *host) {
     s->host_startup_enabled = !!st->startup_intro;
     s->startup_sync_request = 1;
     snprintf(s->alert_sound, sizeof s->alert_sound, "%s", k_alerts[st->alert_index].id);
+}
+
+int control_panels_sound_mute_changed(Session *s, int muted) {
+    if (!s) return -1;
+    g_snd.muted = !!muted;
+    s->sound_muted = g_snd.muted;
+    s->host_sound_enabled = !g_snd.muted;
+    os999_cp_store_t *store = control_panels_store(s);
+    if (!store || os999_cp_store_set_bool(store, "sound", "muted", g_snd.muted)) return -1;
+    return os999_cp_store_save(store);
 }
 
 static int sound_load(os999_cdev_t *self, const os999_cdev_host_t *host) {

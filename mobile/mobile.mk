@@ -27,6 +27,9 @@ MCPPFLAGS += -Istorage/include
 CURL_PKG_PATH := $(shell brew --prefix curl 2>/dev/null)/lib/pkgconfig
 NET_CFLAGS := $(shell PKG_CONFIG_PATH=$(CURL_PKG_PATH):$(PKG_CONFIG_PATH) pkg-config --cflags libcurl 2>/dev/null)
 NET_LIBS := $(shell PKG_CONFIG_PATH=$(CURL_PKG_PATH):$(PKG_CONFIG_PATH) pkg-config --libs libcurl 2>/dev/null)
+ifeq ($(shell uname -s),Linux)
+NET_LIBS += -ldl
+endif
 MCPPFLAGS += $(NET_CFLAGS)
 DESK := $(CORE) src/os999_startup.c src/os999_startup_sprite.c
 KBD := $(addprefix $(KBD_DIR)/src/,kbd_core.c kbd_keys.c kbd_layout.c kbd_text.c kbd_touch.c \

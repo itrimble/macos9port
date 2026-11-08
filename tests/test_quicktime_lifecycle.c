@@ -1,4 +1,6 @@
 #include "desktop_host.h"
+#include "desktop_sound.h"
+#include "control_panels.h"
 #include "audio_service.h"
 #include "movie_window.h"
 #include "quicktime_movie.h"
@@ -43,6 +45,25 @@ int main(int argc, char **argv) {
         desktop_host_end_session(s);
         assert(!audio_service_is_initialized());
     }
+    /* Menu mute must update the panel cache and survive a fresh host/session. */
+    desktop_host_init(root);
+    Session *s = session_create(root); assert(s);
+    assert(desktop_sound_enabled());
+    session_command(s, CMD_SOUND_TOGGLE);
+    desktop_host_tick(s, 0);
+    assert(!desktop_sound_enabled() && s->sound_muted);
+    assert(os999_cp_store_get_bool(control_panels_store(s), "sound", "muted", 0));
+    session_command(s, CMD_CP_SOUND);
+    assert(s->sound_muted);
+    desktop_host_end_session(s);
+    desktop_host_init(root);
+    s = session_create(root); assert(s);
+    assert(!desktop_sound_enabled() && s->sound_muted);
+    session_command(s, CMD_SOUND_TOGGLE);
+    desktop_host_tick(s, 0);
+    session_command(s, CMD_CP_SOUND);
+    assert(desktop_sound_enabled() && !s->sound_muted);
+    desktop_host_end_session(s);
     desktop_host_end_session(NULL); /* partial-startup cleanup */
     printf("Movie/session/audio shutdown and reinitialization passed; volume %s\n", root);
     return 0;

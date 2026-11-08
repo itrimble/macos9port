@@ -117,7 +117,8 @@ void desktop_host_tick(Session *s, int guest_active) {
         s->sound_toggle_request = 0;
         if (!desktop_sound_set_enabled(!desktop_sound_enabled()))
             fprintf(stderr, "OS999 Stylized: could not save sound preference\n");
-        s->sound_muted = !desktop_sound_enabled();
+        if (control_panels_sound_mute_changed(s, !desktop_sound_enabled()) != 0)
+            fprintf(stderr, "OS999 Stylized: could not save panel sound preference\n");
     }
     if (s->volume_sync_request) {
         s->volume_sync_request = 0;

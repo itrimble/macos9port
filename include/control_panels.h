@@ -11,6 +11,8 @@ typedef struct {
     void (*play_sound)(const char *sound_name);
 } ControlPanelsAudioHooks;
 
+int control_panels_sound_mute_changed(Session *s, int muted);
+
 void control_panels_set_audio_hooks(const ControlPanelsAudioHooks *hooks);
 
 int control_panels_session_init(Session *s);
