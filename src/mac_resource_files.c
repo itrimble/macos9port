@@ -56,12 +56,22 @@ static int resolve(int root,const char *name,char path[256]) {
 }
 static int read_fork(MacRuntime *rt,const char *name,MacOpenResource *out) {
     int root=mac_files_directory_fd(rt);if(root<0)return -35;
-    char path[256];int error=resolve(root,name,path);
-    if(error && rt->trace)fprintf(stderr,"resource-open name=%s error=%d\n",name,error);
-    if(error==-1){mac_cpu_halt(rt->cpu,"Native resource fork opening is unsupported; an exported .rsrc fork is required.");return -1;}
-    if(error)return error;
-    int fd=openat(root,path,O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC);
-    if(fd<0)return errno==ELOOP||errno==EACCES?-54:errno==ENOENT?-43:-36;
+    char path[256];int error=0,fd=-1;
+    /* A resource fork on the save overlay ("<name>.rsrc", see mac_files_rf.c) shadows the application volume's export and is writable. */
+    const FileState *fs=rt->file_state;out->writable=0;
+    if(fs && fs->saves>=0 && strlen(name)+5<=FILE_NAME_MAX) {
+        snprintf(path,sizeof path,"%s.rsrc",name);
+        fd=openat(fs->saves,path,O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC);
+        if(fd>=0){out->writable=1;snprintf(out->sidecar,sizeof out->sidecar,"%s",path);}
+    }
+    if(fd<0) {
+        error=resolve(root,name,path);
+        if(error && rt->trace)fprintf(stderr,"resource-open name=%s error=%d\n",name,error);
+        if(error==-1){mac_cpu_halt(rt->cpu,"Native resource fork opening is unsupported; an exported .rsrc fork is required.");return -1;}
+        if(error)return error;
+        fd=openat(root,path,O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC);
+        if(fd<0)return errno==ELOOP||errno==EACCES?-54:errno==ENOENT?-43:-36;
+    }
     struct stat st;
     if(fstat(fd,&st)||!S_ISREG(st.st_mode)){close(fd);return -36;}
     if(st.st_size<16||st.st_size>FORK_BYTE_LIMIT){close(fd);return -199;}
@@ -89,7 +99,8 @@ static struct MacResourceChain *ensure(MacRuntime *rt) {
     }
     return rt->resource_chain;
 }
-static int open_resource(MacRuntime *rt,uint32_t pointer,int16_t *ref) {
+int mac_resource_open_by_pointer(MacRuntime *rt,uint32_t pointer,int16_t *ref);
+int mac_resource_open_by_pointer(MacRuntime *rt,uint32_t pointer,int16_t *ref) {
     MacCpu *cpu=rt->cpu;
     if(!pointer||!valid(cpu,pointer,1))return -37;
     unsigned length=mac_cpu_ram(cpu)[pointer];
@@ -166,7 +177,7 @@ int mac_resource_file_service(MacRuntime *rt,uint16_t opcode) {
     if((sp&1)||!valid(cpu,sp,args+width)){mac_cpu_halt(cpu,"Invalid resource file stack.");return -1;}
     int error=0;int16_t value=-1;
     struct MacResourceChain *c=rt->resource_chain;
-    if(opcode==0xa997)error=open_resource(rt,mac_cpu_read(cpu,sp,4),&value);
+    if(opcode==0xa997)error=mac_resource_open_by_pointer(rt,mac_cpu_read(cpu,sp,4),&value);
     else if(opcode==0xa994)value=c?c->current:MAC_APP_RES_REF;
     else if(opcode==0xa9a4) {
         uint32_t h=mac_cpu_read(cpu,sp,4);error=-192;

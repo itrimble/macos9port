@@ -1,4 +1,5 @@
 #include "mac_files_int.h"
+#include "mac_resource_chain.h"
 
 #include <fcntl.h>
 #include <stdio.h>
@@ -297,6 +298,20 @@ int mac_fsspec_service(MacRuntime *rt, uint16_t opcode) {
     case 8: error = set_finfo(rt, sp); break;
     case 11: error = rename_file(rt, sp); break;
     case 5: case 9: case 10: case 12: case 15: error = deferred(rt, selector, sp); break;
+    case 13: {   /* FSpOpenResFile(spec, permission): INTEGER result is the file reference (or -1), the error goes to ResError ($A60) */
+        Spec spec; int16_t ref = -1;
+        uint32_t spec_ptr = mac_cpu_read(cpu, sp + 2, 4);
+        error = read_spec(rt, spec_ptr, &spec);
+        if (!error && spec.root) error = -37;
+        if (!error) { /* the resource layer reads a Pascal name: use the spec's own name field */
+            error = mac_resource_open_by_pointer(rt, spec_ptr + 6, &ref);
+        }
+        if (mac_cpu_halted(cpu)) return -1;
+        mac_cpu_write(cpu, 0xa60, 2, (uint16_t)error);
+        mac_cpu_write(cpu, sp + args, 2, (uint16_t)(error ? -1 : ref));
+        mac_cpu_set(cpu, MAC_A7, sp + args);
+        return 1;
+    }
     default: return unsupported(rt, selector, "resource forks and resource files are outside this volume model");
     }
     if (error == -1 && mac_cpu_halted(cpu)) return -1;

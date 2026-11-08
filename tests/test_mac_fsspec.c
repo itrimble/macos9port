@@ -13,7 +13,7 @@ static void gestalt(void) {
 
 static void unimplemented_halts(void) {
     static const struct { unsigned selector; const char *name; } cases[] = {
-        {3, "FSpOpenRF"}, {13, "FSpOpenResFile"}, {14, "FSpCreateResFile"}, {0, "selector 0"}, {16, "selector 16"}, {0x7fff, "unknown"},
+        {3, "FSpOpenRF"}, {14, "FSpCreateResFile"}, {0, "selector 0"}, {16, "selector 16"}, {0x7fff, "unknown"},
     };
     for (unsigned i = 0; i < sizeof cases / sizeof *cases; i++) {
         MacRuntime rt = fresh();

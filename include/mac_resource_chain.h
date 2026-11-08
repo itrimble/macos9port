@@ -14,4 +14,6 @@ uint32_t mac_runtime_resource_owned(MacRuntime *rt, uint32_t type, int16_t id, i
 int mac_resource_file_service(MacRuntime *rt, uint16_t opcode);
 void mac_resource_chain_destroy(MacRuntime *rt);
 int mac_files_directory_fd(const MacRuntime *rt);
+/* Opens the resource file named by the Pascal string at guest `pointer` (the overlay's writable sidecar first, else the application volume's export). */
+int mac_resource_open_by_pointer(MacRuntime *rt,uint32_t pointer,int16_t *ref);
 #endif

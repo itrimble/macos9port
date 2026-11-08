@@ -541,3 +541,16 @@ the probe, not a window I watched, and I have not listened to any audio.
   opening the new house as a *Resource Manager* file. The overlay now has `Untitled House` (0 bytes) and `Untitled House.rsrc` (286 bytes, an empty valid fork). What is left is a
   **writable Resource Manager**: FSpOpenResFile/OpenResFile of overlay forks, AddResource/WriteResource/ChangedResource/UpdateResFile/CloseResFile with a map serializer (today
   resource files are read-only exports). That is the next large piece; not started.
+
+- **Glider PRO: FSpOpenResFile, custom-WDEF windows, windows behind a window, HiliteWindow (headless).** `FSpOpenResFile` (HighLevelFSDispatch selector 13) now opens the
+  overlay sidecar ("Untitled House.rsrc") as a **read-only-in-memory Resource Manager file** (the resource chain looks in the `--saves` overlay first, then the application
+  volume's export; the file is marked writable for a later write-back; OpenResFile by name uses the same lookup; the result word is the reference or -1 with the error in
+  ResError). **Not done: writing resources back** (AddResource / WriteResource / UpdateResFile and the map serializer): that is still the large missing half. Then the editor
+  asked for windows: **custom window definitions** (procID = id*16+variant, e.g. 2064 = WDEF 129) are not run: they are accepted for ids 1-255 and shown with this runtime's
+  titled chrome (a stated approximation: the program's own frame, grow box and hit-testing are not provided; GetWVariant-style queries see procID 4); **NewCWindow behind a
+  given window** (inserted directly behind it in the WindowList; behind an unknown pointer halts; visible-behind-visible still halts as it needs compositing); and
+  **HiliteWindow** (`$A91C`: the record's hilited byte and the chrome follow the flag, no event). Test updates: procIDs that used to be pinned as refused (16, 160, 176, 99) are now
+  accepted or replaced by 7/15/4096; `test_mac_fsspec` no longer lists selector 13 as unimplemented. Mutants killed except two equivalent ones; ASan clean; `make test` 0;
+  Monkey Island and Monkey Island 2 identical; Castle refreshed. **Next halt (headless):** `$A954` = **NewControl**: the editor's windows carry controls (scroll bars, buttons); there is
+  **no Control Manager in this runtime at all** (no NewControl/DrawControls/TrackControl/SetCtlValue...). That is the next large subsystem, and it also blocks the writable-resource work from
+  being exercised: the New House flow stops there after opening the house file.

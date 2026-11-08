@@ -63,7 +63,7 @@ static void failures(void) {
     for(unsigned kind=0;kind<7;kind++) {
         uint8_t b[2048];fixture(b,kind==1?20:kind==2?26:23);
         if(kind==2)w16(b+260+24,0x280a);
-        if(kind==3)w16(b+260+8,99);
+        if(kind==3)w16(b+260+8,7);   /* not a standard or custom window definition id */
         MacRuntime r=fresh(b);uint32_t before=r.heap_next;
         if(kind==0)w16(mac_cpu_ram(r.cpu)+SP+8,130);
         if(kind==4)w32(mac_cpu_ram(r.cpu)+SP+4,SP-100);

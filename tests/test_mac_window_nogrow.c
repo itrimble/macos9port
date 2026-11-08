@@ -48,10 +48,17 @@ int main(void) {
     CHECK(mac_window_hit(&a,100,100)==3 && mac_window_hit(&a,100,27)==4 && mac_window_hit(&a,10,10)==0);
     mac_cpu_destroy(a.cpu);mac_cpu_destroy(z.cpu);
     /* Every other procID still halts with a named diagnostic. */
-    int unsupported[]={0,3,5,8,16,160,176};
+    int unsupported[]={0,3,5,8,15,4096,5000};
     for(unsigned i=0;i<sizeof unsupported/sizeof *unsupported;i++) {
         MacRuntime r=fresh();new_args(&r,unsupported[i]);
         CHECK(mac_window_service(&r,0xaa45)<0 && mac_cpu_halted(r.cpu) && r.window_count==0);
+        mac_cpu_destroy(r.cpu);
+    }
+    /* A procID that names the program's own window definition (id*16+variant, ids 1-255) is shown with titled chrome instead of being run. */
+    int custom[]={16,160,176,2064,4095};
+    for(unsigned i=0;i<sizeof custom/sizeof *custom;i++) {
+        MacRuntime r=fresh();new_args(&r,custom[i]);
+        CHECK(mac_window_service(&r,0xaa45)==1 && !mac_cpu_halted(r.cpu) && r.window.proc_id==4 && r.window_count==1);
         mac_cpu_destroy(r.cpu);
     }
     puts("noGrowDocProc chrome checks passed");return 0;

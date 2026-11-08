@@ -27,3 +27,10 @@ int mac_window_stack_ok(MacRuntime *rt,uint32_t address,int show) {
     for(int y=a[0];y<a[2];y++)memcpy(ram+t->backdrop+y*640+a[1],ram+w->backdrop+y*640+a[1],(size_t)(a[3]-a[1]));
     return 1;
 }
+
+/* See mac_window_int.h: a custom WDEF is approximated, not executed; its own frame and hit-testing are not provided. */
+int mac_window_custom_wdef(int *proc) {
+    if (*proc < 16 || *proc > 4095) return 0;
+    *proc = 4;
+    return 1;
+}

@@ -7,6 +7,11 @@ static inline int mac_window_titled(int proc){return proc==4||proc==12;}
 static inline int mac_window_frame(int proc){return proc==1?7:1;}
 static inline int mac_window_top_extent(int proc){return mac_window_titled(proc)?20:mac_window_frame(proc);}
 void mac_window_draw(MacRuntime *rt, int clear_content);
+/* A procID that names a program's own window definition (WDEF id = procID / 16, variant = procID % 16, ids 1 to 255) is not run: it is shown with this runtime's
+ * titled-window chrome (proc 4, no grow box) and *proc becomes 4. Returns 1 if it was such a procID. */
+int mac_window_custom_wdef(int *proc);
+void mac_window_publish_behind(MacRuntime *rt,uint32_t behind); /* mac_window_registry.c */
+void mac_window_hilite(MacRuntime *rt, MacWindowState *w, int on); /* HiliteWindow (mac_window_title.c) */
 int mac_window_set_title(MacRuntime *rt, MacWindowState *w, uint32_t src); /* SetWTitle (mac_window_title.c) */
 void mac_window_draw_clipped(MacRuntime *rt,const int16_t clip[4]);
 int mac_window_hit(MacRuntime *rt, int x, int y);

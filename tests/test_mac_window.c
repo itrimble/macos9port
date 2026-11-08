@@ -140,10 +140,41 @@ static void lifecycle(void) {
     CHECK(mac_cpu_ram(rt.cpu)[rt.screen_base+40*640+50]==77);
     mac_cpu_destroy(rt.cpu);
 }
+static int hilite(MacRuntime *r,uint32_t w,int on,int junk){mac_cpu_set(r->cpu,MAC_A7,SP);wr(r,SP,2,(on?0x0100:0)|junk);wr(r,SP+2,4,w);return mac_window_service(r,0xa91c);}
+static void hiliting(void){
+ /* HiliteWindow: record byte +111 and our chrome follow the flag (the Boolean is the high byte), no event, a hidden window draws nothing */
+ MacRuntime r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
+ const uint8_t *scr=mac_cpu_ram(r.cpu)+r.screen_base;static uint8_t a[307200],b[307200];unsigned events=r.event_count;
+ CHECK(hilite(&r,STORAGE,0,0)==1 && mac_cpu_get(r.cpu,MAC_A7)==SP+6 && rd(&r,STORAGE+111,1)==0 && !r.window.active);memcpy(a,scr,sizeof a);
+ CHECK(hilite(&r,STORAGE,1,0x55)==1 && rd(&r,STORAGE+111,1)==1 && r.window.active);memcpy(b,scr,sizeof b);                       /* a nonzero low byte is not the flag */
+ CHECK(memcmp(a,b,sizeof a)!=0);                                                                                              /* the close box appears */
+ CHECK(hilite(&r,STORAGE,0,0xff)==1 && rd(&r,STORAGE+111,1)==0 && !memcmp(a,scr,sizeof a) && r.event_count==events);          /* and goes away again, with no event */
+ CHECK(hilite(&r,0x7770,1,0)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
+ r=fresh();new_args(&r,STORAGE,0);CHECK(mac_window_service(&r,0xaa45)==1);memcpy(a,mac_cpu_ram(r.cpu)+r.screen_base,sizeof a);
+ CHECK(hilite(&r,STORAGE,1,0)==1 && rd(&r,STORAGE+111,1)==1 && !memcmp(a,mac_cpu_ram(r.cpu)+r.screen_base,sizeof a));mac_cpu_destroy(r.cpu);
+}
+static void custom_wdef_and_behind(void){
+ /* a procID naming the program's own WDEF (id*16+variant) is shown with titled chrome, not run */
+ MacRuntime r=fresh();new_args(&r,STORAGE,0);wr(&r,SP+10,2,160);CHECK(mac_window_service(&r,0xaa45)==1 && r.window.proc_id==4);mac_cpu_destroy(r.cpu);
+ r=fresh();new_args(&r,STORAGE,0);wr(&r,SP+10,2,16);CHECK(mac_window_service(&r,0xaa45)==1 && r.window.proc_id==4);mac_cpu_destroy(r.cpu);
+ r=fresh();new_args(&r,STORAGE,0);wr(&r,SP+10,2,4095);CHECK(mac_window_service(&r,0xaa45)==1 && r.window.proc_id==4);mac_cpu_destroy(r.cpu);
+ r=fresh();new_args(&r,STORAGE,0);wr(&r,SP+10,2,2064);CHECK(mac_window_service(&r,0xaa45)==1 && r.window.proc_id==4);mac_cpu_destroy(r.cpu);   /* WDEF 129, as Glider PRO's editor asks for */
+ r=fresh();new_args(&r,STORAGE,0);wr(&r,SP+10,2,4096);CHECK(mac_window_service(&r,0xaa45)==-1);mac_cpu_destroy(r.cpu);
+ r=fresh();new_args(&r,STORAGE,0);wr(&r,SP+10,2,15);CHECK(mac_window_service(&r,0xaa45)==-1);mac_cpu_destroy(r.cpu);
+ /* behind a particular registered window: inserted directly behind it in the WindowList; behind an unknown pointer halts */
+ r=fresh();new_args(&r,STORAGE,0);CHECK(mac_window_service(&r,0xaa45)==1);new_args(&r,STORAGE+0x400,0);CHECK(mac_window_service(&r,0xaa45)==1);   /* order: second, first */
+ new_args(&r,STORAGE+0x800,0);wr(&r,SP+6,4,STORAGE+0x400);CHECK(mac_window_service(&r,0xaa45)==1);                                                  /* behind the front one */
+ CHECK(r.window_count==3 && r.window_order[0]==STORAGE+0x400 && r.window_order[1]==STORAGE+0x800 && r.window_order[2]==STORAGE);
+ CHECK(rd(&r,0x9d6,4)==STORAGE+0x400 && rd(&r,STORAGE+0x400+144,4)==STORAGE+0x800 && rd(&r,STORAGE+0x800+144,4)==STORAGE && rd(&r,STORAGE+144,4)==0);
+ new_args(&r,STORAGE+0xc00,0);wr(&r,SP+6,4,STORAGE);CHECK(mac_window_service(&r,0xaa45)==1 && r.window_order[3]==STORAGE+0xc00);                           /* behind the last: at the back */
+ new_args(&r,STORAGE+0x1000,0);wr(&r,SP+6,4,0x7770);CHECK(mac_window_service(&r,0xaa45)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
+ r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);new_args(&r,STORAGE+0x400,1);wr(&r,SP+6,4,STORAGE);                          /* visible behind a visible window: still needs compositing */
+ CHECK(mac_window_service(&r,0xaa45)==-1);mac_cpu_destroy(r.cpu);
+}
 static void failures(void) {
     for(int kind=0;kind<12;kind++) {
         MacRuntime rt=fresh();new_args(&rt,STORAGE,1);
-        if(kind==0)wr(&rt,SP+10,2,99);
+        if(kind==0)wr(&rt,SP+10,2,7);                               /* not a window definition id/variant we know */
         if(kind==1)wr(&rt,SP+18,4,MAC_RUNTIME_RAM-6);
         if(kind==2)wr(&rt,SP+14,4,MAC_RUNTIME_RAM-2),wr(&rt,MAC_RUNTIME_RAM-2,1,13);
         if(kind==3)wr(&rt,SP+22,4,SP);
@@ -312,4 +343,4 @@ static void offscreen(void) {
  CHECK(resize(&r,600,470,1)==-1 && r.window.bounds[2]==300 && r.window.bounds[3]==450);mac_cpu_destroy(r.cpu);
  r=fresh();new_args(&r,STORAGE,0);CHECK(mac_window_service(&r,0xaa45)==1);CHECK(resize(&r,600,470,1)==1 && r.window.bounds[2]==510);mac_cpu_destroy(r.cpu);
 }
-int main(void){calc_vis_behind();show_hide_checks();moving();titling();sizing();offscreen();calc_vis();lifecycle();failures();puts("one-window lifecycle, drawing, and update checks passed");}
+int main(void){calc_vis_behind();show_hide_checks();moving();titling();sizing();offscreen();calc_vis();lifecycle();failures();custom_wdef_and_behind();hiliting();puts("one-window lifecycle, drawing, and update checks passed");}

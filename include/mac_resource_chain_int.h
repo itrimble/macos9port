@@ -10,6 +10,8 @@ typedef struct {
     ino_t inode;
     int16_t ref;
     uint32_t serial;
+    int writable;          /* opened from the save overlay: UpdateResFile / CloseResFile write it back */
+    char sidecar[40];      /* its file name in the overlay */
 } MacOpenResource;
 struct MacResourceChain {
     MacOpenResource files[MAC_FORK_LIMIT];

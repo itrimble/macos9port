@@ -16,3 +16,11 @@ int mac_window_set_title(MacRuntime *rt, MacWindowState *w, uint32_t src) {
     if (w->visible) mac_window_draw(rt, 0);
     return 1;
 }
+
+/* HiliteWindow(theWindow, fHilite) ($A91C): highlights or unhighlights the window's frame without making it active or queueing an event (the record's hilited
+ * byte at +111 follows the flag, and a visible window redraws, which draws the close and zoom boxes only while hilited). */
+void mac_window_hilite(MacRuntime *rt, MacWindowState *w, int on) {
+    mac_cpu_write(rt->cpu, w->address + 111, 1, on ? 1 : 0);
+    w->active = on ? 1 : 0;
+    if (w->visible) mac_window_draw(rt, 0);
+}

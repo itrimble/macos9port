@@ -36,6 +36,13 @@ static void links(MacRuntime *rt) {
     for(unsigned i=0;i<rt->window_count;i++)
         mac_cpu_write(rt->cpu,rt->window_order[i]+144,4,i+1<rt->window_count?rt->window_order[i+1]:0);
 }
+/* Inserts the selected (new) window into the WindowList: in front (behind = -1), at the back (0), or directly behind the registered window `behind`. */
+void mac_window_publish_behind(MacRuntime *rt,uint32_t behind) {
+    unsigned at=behind==UINT32_MAX?0:rt->window_count;
+    if(behind && behind!=UINT32_MAX){unsigned k=0;while(k<rt->window_count && rt->window_order[k]!=behind)k++;if(k<rt->window_count)at=k+1;}
+    for(unsigned i=rt->window_count;i>at;i--)rt->window_order[i]=rt->window_order[i-1];
+    rt->window_order[at]=rt->window.address;rt->window_count++;links(rt);
+}
 void mac_window_publish(MacRuntime *rt,int front) {
     unsigned at=front?0:rt->window_count;
     for(unsigned i=rt->window_count;i>at;i--)rt->window_order[i]=rt->window_order[i-1];

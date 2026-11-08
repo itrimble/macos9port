@@ -1,6 +1,8 @@
 /* Resource-fork sidecars on the save overlay (PBOpenRF/PBHOpenRF), CreateResFile, PBHGetVol/PBHSetVol, CmpString and ResolveAliasFile. */
 #include "mac_runtime.h"
 #include "mac_resource.h"
+#include "mac_resource_chain.h"
+int mac_fsspec_service(MacRuntime *rt, uint16_t opcode);
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -66,6 +68,19 @@ int main(void) {
     CHECK(create_res(&r, "bad:name") == -50);
     CHECK(create_res(&r, "House") == -49);                                                                                                       /* House's fork already holds 14 bytes */
     {   MacRuntime q = {0}; q.cpu = mac_cpu_create(RAM); CHECK(create_res(&q, "X") == -35); mac_cpu_destroy(q.cpu); }                          /* no file system */
+    /* FSpOpenResFile (HighLevelFSDispatch selector 13) opens the overlay sidecar as a Resource Manager file: a reference number in the result, ResError 0 */
+    r.fork = (MacResourceFork){0};
+    {   int16_t refs[3];
+        for (unsigned k = 0; k < 3; k++) {
+            const char *nm = k == 2 ? "Missing" : "Fresh"; memset(mac_cpu_ram(r.cpu) + 0x2000, 0, 80); w(&r, 0x2000, 2, 0); w(&r, 0x2002, 4, 2); pstr(&r, 0x2006, nm);
+            mac_cpu_set(r.cpu, MAC_A7, 0xf000); mac_cpu_set(r.cpu, MAC_D0, 13); w(&r, 0xf000, 2, 0); w(&r, 0xf002, 4, 0x2000); w(&r, 0xf006, 2, 0x4444); w(&r, 0xa60, 2, 0x5555);
+            CHECK(mac_fsspec_service(&r, 0xaa52) == 1 && mac_cpu_get(r.cpu, MAC_A7) == 0xf006); refs[k] = (int16_t)rd(&r, 0xf006, 2);
+            if (k < 2) CHECK(refs[k] >= 256 && rd(&r, 0xa60, 2) == 0); else CHECK(refs[k] == -1 && (int16_t)rd(&r, 0xa60, 2) == -43);
+        }
+        CHECK(refs[0] == refs[1]);                                                                                                          /* opening it again returns the same reference */
+        memset(mac_cpu_ram(r.cpu) + 0x2000, 0, 80); w(&r, 0x2002, 4, 1); pstr(&r, 0x2006, "OS Pi Data");                                          /* parID 1: the volume root itself */
+        mac_cpu_set(r.cpu, MAC_A7, 0xf000); mac_cpu_set(r.cpu, MAC_D0, 13); w(&r, 0xf000, 2, 0); w(&r, 0xf002, 4, 0x2000);
+        CHECK(mac_fsspec_service(&r, 0xaa52) == 1 && (int16_t)rd(&r, 0xf006, 2) == -1 && (int16_t)rd(&r, 0xa60, 2) != 0); }
     mac_cpu_set(r.cpu, MAC_A7, RAM - 2); CHECK(mac_files_crf_service(&r, 0xa9b1) == -1 && mac_cpu_halted(r.cpu)); mac_cpu_destroy(r.cpu);
     /* PBHGetVol / PBHSetVol: the one volume, root directory 2 */
     r = (MacRuntime){0}; r.cpu = mac_cpu_create(RAM); r.heap_next = 0x3000; r.heap_limit = 0x8000; CHECK(mac_files_root(&r, data) == 0);
