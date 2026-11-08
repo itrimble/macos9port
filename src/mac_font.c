@@ -1,4 +1,5 @@
 #include "mac_font.h"
+#include "mac_sysfont.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -79,6 +80,12 @@ int mac_font_find(const MacResourceFork *f, int family, int size, unsigned style
                 }
             }
         }
+    }
+    if (family == 0 && style == 0) {      /* the system font: not carried by the program, so rendered from ChicagoFLF (mac_sysfont.h) */
+        const char *sys_why = NULL;
+        if (mac_sysfont_strike(size, out, &sys_why) == 0) return 0;
+        *why = sys_why;
+        return -1;
     }
     static char message[160];                                                  /* names what was asked for, so a halt says which face is missing */
     snprintf(message, sizeof message, "Font family %d size %d style %u is not in the guest application's resources (no scaling or system font is provided).", family, size, style);

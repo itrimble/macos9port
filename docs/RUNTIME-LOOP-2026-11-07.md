@@ -302,7 +302,18 @@ the probe, not a window I watched, and I have not listened to any audio.
   other arithmetic modes ($20-$27 except as above), ditherCopy and hilite still halt, naming the mode. Then **the game asks for the
   system font** (family 0, size 12, which is Chicago): the runtime only finds fonts in the guest's own resources, so it halts naming
   "Font family 0 size 12 style 0" (the message now says which face). Providing a system font means rendering the public-domain
-  ChicagoFLF in `fonts/` into a bitmap strike: not started.
+  ChicagoFLF in `fonts/` into a bitmap strike: done next (below).
+- **System font for guest family 0 (`src/mac_sysfont.c`, `include/mac_sysfont.h`).** A program that asks for the system font (family 0, plain)
+  and does not carry it now gets a strike rendered from the project's public-domain ChicagoFLF through FreeType (`FT_LOAD_TARGET_MONO`), for
+  characters 32-126 plus the font's missing glyph, packed in the NFNT layout `mac_strike_parse` reads, so StringWidth/DrawString/TextEdit
+  work unchanged. **This is not Apple's Chicago** and not an authored bitmap: shapes and advances are the outline's at that pixel size
+  (measured: at 12 px 'I' advances 6 with a 2x9 stem, 'W' advances 12; the ascent is FreeType's rounded ascender, leading 0). Sizes 8 to 36
+  are served, nothing else, and only family 0 style 0; other families still halt. The file is found from `mac_sysfont_set_path`, then
+  `$OSPI_SYSTEM_FONT`, then beside the executable (`../Resources/Fonts`, `../fonts`, `fonts`), then `fonts/` in the working directory;
+  without FreeType or the file it halts by name. Strikes are cached for the process. Link lines for the runtime tests now carry `$(FT_LIBS)`.
+  Mutation checks on the test: bit position, row offset, advance rounding and size bound were each killed (two survived an ink-count-only
+  test; I added a per-row check for the 'I' stem). Headless: Glider 4.10's **New Game?** now draws its first room (a table, a Mac, a clock);
+  the next halt is `$A02F` (PostEvent), not yet implemented.
 - **Parity:** Monkey Island and Monkey Island 2 are byte-identical to the previous baseline; `make test` exits 0; ASan on Castle (90 s with
   the menu script) and on the new and touched menu, window and utility tests reports nothing.
 
