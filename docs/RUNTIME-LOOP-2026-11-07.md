@@ -60,6 +60,8 @@ R04 and G02. Items stay unchecked.
 | `a588842` | `AnimatePalette` (`$AA9A`; the MPW listing puts each `INLINE` after its declaration, so `$AA99` is `AnimateEntry` and `$AA9B` `GetEntryColor`). It replaces the device colors of the window palette\'s animated entries from a color table, at once, with no redraw. The device index is the one activation chose (for the explicit-and-animated entries Castle uses, the entry\'s own index). A non-animated entry, an inactive palette, bad indices or lengths and a bad source table halt by name, all before the first device entry changes. The palette\'s own stored colors are not rewritten, so a later activation restores them: an interpretation I could not check against the Palette Manager chapter (only the interface listing is local), so it is unverified. 21 mutants: 3 survivors after the first pass were tightened (palette bound, stack message, source range); 2 equivalent survivors remain (a missing palette or a negative entry still halt at a later check). **Castle now runs its whole 20 s probe with no halt.** |
 | `0062f13` | **The cause of Castle's black window: the low-memory clock globals were never written.** `Ticks` (`$16A`) and `Time` (`$20C`) stayed zero for the whole run (RAM dumps at 6 to 45 s all show zero); only the `TickCount` trap followed `rt->ticks`. Sierra's SCI interpreter reads `Ticks` directly (`GetTime` mode 0 is `move.l $16a.w,D0`) and `Time` for its seconds, so every tick- or seconds-based wait in the first room never elapsed. Found by reading the interpreter by its embedded function names, then the `GetTime` code. They are now written from `rt->ticks` at the start of both run entry points (`Time` = a base in seconds since 1904, taken once from the host clock, plus whole elapsed seconds). 11 of 11 mutants on the new test killed after the epoch check was bracketed against the host clock; two survivors are equivalent (a NULL CPU is already tolerated by the write). Monkey Island and Monkey Island 2 stay byte-identical. |
 | `73f519c` | `AnimatePalette` with a NIL window, and with a window that has no palette. With a live clock Castle reaches the call early (0.57 s), while its palette-less splash window is frontmost, and passes NIL. The interface listing available here defines neither case, so both are narrow interpretations, recorded in the source and unverified: NIL selects the frontmost window, and a window without a palette has no animated entries so nothing changes. A NIL with no window, and every other bad argument, still halt by name. |
+| `a5d7837` | `Random` (`$A861`): QuickDraw's `randSeed` (126 bytes below the `thePort` pointer `InitGraf` was given) advances as a Lehmer generator, `seed * 16807 mod 2^31-1`; the result is the low 16 bits as a signed integer and -32768 is returned as 0. The generator and range come from the documented behaviour; the check values are the public Park-Miller sequence from seed 1. 14 mutants: 13 killed, 1 equivalent (without the low-bound check the end-of-RAM check still halts). |
+| `6a24c9b` | **Guest code now runs in supervisor mode** (`SR = $2000`; it was 0, user mode). Classic Mac OS runs applications in supervisor mode and ordinary code uses privileged instructions: Castle's heap code brackets critical sections with `move SR,-(A7)` / `ori #$0200,SR`. In user mode that is a privilege violation; the empty vector sent the game to address 0 with `A7 = $FFFFFFF8`, after about 52 s. Found with a temporary ring buffer of the last executed PCs. The new test runs the idiom through a real runtime init (3 of 4 mutants killed; the fourth, setting SR after A7, makes no difference with this CPU wrapper, and I corrected a source comment that wrongly claimed it would). |
 
 ## Compatibility profile decision
 
@@ -155,19 +157,20 @@ screen black and the real run cannot show the colour work. The unit tests carry 
 
 ## Castle of Dr. Brain, 8 Nov 2026 (headless only)
 
-Startup completes and the game runs without a halt. The black window was caused by the frozen low-memory clock (`0062f13`):
-with `Ticks` and `Time` published, the game waits about 20 s of guest time in its first room and then shows the **Sierra logo**
-(frame at 24 s, a headless frame dump of the runtime's own screen; not a window I watched). The 30 s capture is **no longer
-silent**: from about 20 s it carries a varying signal (peak 30,208, roughly 1,000 zero-crossings per second, level changing
-from second to second). That is signal-shaped output from our audio path; I have not listened to it, so whether it is the
-right music is unverified. The ~20 s wait before the logo is also unexplained: I do not know whether a real Mac shows the logo
-sooner. No input was sent in that run; the earlier scripted clicks and keys (before the fix) did nothing, which proved nothing.
-Earlier investigation that led here: the 2 s frame is the game's own splash picture (PICT 200); the binary is Sierra's SCI interpreter with
-embedded THINK C function names (a name follows the function it names; the map is kept outside Git); the interpreter ran its
-main loop (`KAnimate`, `KGetEvent`, `KWait`, `KGetTime`), `KDrawPic` once for picture 802 (a 1,312-byte picture in RESOURCE.000),
-and never called `KDoSound` until the clock ran. Ruled out on the way: a long delay under the frozen clock, a missing update event,
-a broken colour remap, missing data. Parity: Monkey Island and Monkey Island 2 are byte-identical to the previous baseline;
-ASan on Castle (30 s) and on the new tests reports nothing; `make test` exits 0.
+Castle now runs its introduction unattended: the 100 s probe finishes with **no halt** (296,136,666 instructions). With the clock
+globals published (`0062f13`) the game waits about 20 s in its first room and shows the Sierra logo (24 s); the opening castle
+scene with its "Novice Level" status bar is on screen by 48 s, and by 100 s it shows the castle's front door with two flamingos
+(all headless frame dumps of the runtime's own screen, not a window I watched). The earlier "black window" was the frozen
+low-memory clock. Two later stops were fixed on the way: `AnimatePalette` with a NIL window (`73f519c`), then a privilege
+violation at about 52 s (supervisor mode, `6a24c9b`), then `Random` at about 97 s (`a5d7837`). Audio: the capture is silent for
+the first ~20 s and then carries a varying signal (RMS about 2,000 to 10,000, changing from second to second) until about 85 s,
+after which it is silent again. That is signal-shaped output from our audio path; **I have not listened to it**, so whether it is
+the right music is unverified. Still unexplained: the ~20 s wait before the logo (I do not know whether a real Mac is faster),
+and the very dark first frames of the castle scene (probably a palette fade). **No input has been sent since the fix**, so input
+and play are unverified; the intro screen after the door is the next thing to look at. Parity: Monkey Island and Monkey Island 2
+are byte-identical to the previous baseline; ASan on Castle (100 s) and on the new tests reports nothing; `make test` exits 0.
+Reading the interpreter by its embedded function names (map kept outside Git) is what found the clock bug: `GetTime` mode 0 is
+`move.l $16a.w,D0`.
 
 ## Next reproducible steps
 
