@@ -211,7 +211,7 @@ int mac_system_volume_service(MacRuntime *rt,MacSystemVolume *v,uint16_t opcode)
         if(name && range(c,name,1) && range(c,name,1u+mac_cpu_ram(c)[name]) &&
            equal_name(mac_cpu_ram(c)+name,vol_name))ours=1;
     }
-    if(hfs&&(selector==1||selector==2||selector==7)&&mac_files_wd_ours(rt,selector,r32(pb+48),volume))ours=0;   /* a made folder's working directory is the files service's */
+    if(hfs&&(selector==1||selector==2||selector==7)&&mac_files_wd_ours(rt,selector,mac_cpu_read(c,p+48,4),volume))ours=0;   /* a made folder's working directory is the files service's */
     if(hfs&&selector==9&&index==0&&ours){   /* a named item other than the authored System file belongs to the flat save namespace (mac_files_dircreate.c) */
         uint32_t nm=r32(pb+18);
         if(nm && range(c,nm,1) && range(c,nm,1u+mac_cpu_ram(c)[nm]) && !equal_name(mac_cpu_ram(c)+nm,"System"))ours=0;
