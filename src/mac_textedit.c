@@ -14,7 +14,7 @@
  * hooks (wordBreak, clikLoop, highHook, caretHook) must be NIL; TEClick sets the selection at the click and does not track a drag
  * (it cannot block waiting for the mouse); selection and caret are drawn by inverting pixels; an edit redraws from the edited line to
  * the bottom of the view; text is limited to 32000 characters and 4000 lines; left, centre and right justification only. */
-enum { REC = 98, TE_TYPE = 0x54455243, MAX_TEXT = 32000, MAX_LINES = 4000, CARET_TICKS = 20 };
+enum { REC = 98, TE_TYPE = 0x54455243, TE_TEXT = 0x54455854, MAX_TEXT = 32000, MAX_LINES = 4000, CARET_TICKS = 20 };
 enum { DEST = 0, VIEW = 8, LINE_H = 24, ASC = 26, SEL_S = 32, SEL_E = 34, ACTIVE = 36, WB = 38, CLIK = 42, CTIME = 52, CSTATE = 56, JUST = 58,
        LEN = 60, HTEXT = 62, CRONLY = 72, FONT = 74, FACE = 76, MODE = 78, SIZE = 80, INPORT = 82, HIGH = 86, CARET = 90, NLINES = 94, LSTART = 96 };
 
@@ -40,12 +40,24 @@ static MacHandle *record_of(MacRuntime *rt, uint32_t h) {
     for (size_t i = 0; i < rt->handle_count; i++) if (rt->handles[i].handle == h && h) return &rt->handles[i];
     return NULL;
 }
-/* A TEHandle this module made: its master pointer and the record behind it. */
+/* The record lives in guest memory, so the guest can overwrite any field of it, including the selection, the lengths and the text
+ * handle. Everything the host later uses as a size, an index or a pointer is therefore checked here, once per call, against the
+ * runtime's own handle table (which the guest cannot reach): the TEHandle and its text handle must be ones this module made, the
+ * record's real size must hold the line table, and teLength, the line count and the selection must be consistent. Host pointers
+ * are taken from the table, never from the guest-writable master pointers. */
+static uint32_t rec_ptr(MacRuntime *rt, uint32_t h) { MacHandle *m = ok(rt, h, 4) ? record_of(rt, h) : NULL; return m ? m->pointer : 0; }
 static int te_of(MacRuntime *rt, uint32_t h, uint32_t *rec) {
     MacHandle *m = ok(rt, h, 4) ? record_of(rt, h) : NULL;
     if (!m || m->type != TE_TYPE) return fail(rt, "TextEdit call needs a TEHandle made by TENew.");
-    *rec = rd(rt, h, 4);
-    if (!ok(rt, *rec, REC)) return fail(rt, "TextEdit record is invalid.");
+    uint32_t p = m->pointer;
+    if (m->size < REC || !ok(rt, p, m->size)) return fail(rt, "TextEdit record is invalid.");
+    int lines = s16(rt, p + NLINES), n = s16(rt, p + LEN), a = s16(rt, p + SEL_S), b = s16(rt, p + SEL_E);
+    if (lines < 0 || lines > MAX_LINES || (size_t)(LSTART + 2 * (lines + 1)) > m->size) return fail(rt, "TextEdit record is inconsistent (line count).");
+    if (n < 0 || n > MAX_TEXT || a < 0 || a > b || b > n) return fail(rt, "TextEdit record is inconsistent (length or selection).");
+    uint32_t th = rd(rt, p + HTEXT, 4);
+    MacHandle *t = ok(rt, th, 4) ? record_of(rt, th) : NULL;
+    if (!t || t->type != TE_TEXT || t->size < (uint32_t)n || (t->size && !ok(rt, t->pointer, t->size))) return fail(rt, "TextEdit text handle is invalid.");
+    *rec = p;
     return 0;
 }
 static int face_of(MacRuntime *rt, uint32_t r, MacTextFace *f) {
@@ -53,12 +65,12 @@ static int face_of(MacRuntime *rt, uint32_t r, MacTextFace *f) {
     return mac_text_face(rt, s16(rt, r + FONT), s16(rt, r + SIZE), rd(rt, r + FACE, 1), 0, f);
 }
 static int text_at(MacRuntime *rt, uint32_t r, uint32_t *p) {
-    uint32_t h = rd(rt, r + HTEXT, 4); *p = ok(rt, h, 4) ? rd(rt, h, 4) : 0;
-    unsigned n = rd(rt, r + LEN, 2);
-    if (n && !ok(rt, *p, n)) return fail(rt, "TextEdit text handle is invalid.");
+    MacHandle *m = record_of(rt, rd(rt, r + HTEXT, 4));
+    if (!m || m->type != TE_TEXT) return fail(rt, "TextEdit text handle is invalid.");
+    *p = m->pointer;
+    if (rd(rt, r + LEN, 2) && !ok(rt, *p, rd(rt, r + LEN, 2))) return fail(rt, "TextEdit text handle is invalid.");
     return 0;
 }
-
 /* Greedy line breaking: a line ends after a CR, or before the (non-space) character that would overflow destRect, preferring the
  * position after the last space on the line; spaces never force a break, they hang past the margin. crOnly < 0 breaks at CRs only. Writes nLines and lineStarts (resizing the record's handle). */
 static int recalc(MacRuntime *rt, uint32_t h, uint32_t r) {
@@ -81,7 +93,8 @@ static int recalc(MacRuntime *rt, uint32_t h, uint32_t r) {
     }
     if (n > 0 && rd(rt, t + (uint32_t)(n - 1), 1) == 13) { if (lines >= MAX_LINES) return fail(rt, "TextEdit text has more than 4000 lines."); starts[lines++] = (uint16_t)n; }
     if (set_size(rt, h, (uint32_t)(LSTART + 2 * (lines + 1)))) return fail(rt, "TextEdit could not grow its record.");
-    r = rd(rt, h, 4);
+    r = rec_ptr(rt, h);
+    if (!r || !ok(rt, r, (size_t)(LSTART + 2 * (lines + 1)))) return fail(rt, "TextEdit record is invalid.");
     for (int k = 0; k < lines; k++) wr(rt, r + LSTART + 2 * (unsigned)k, 2, starts[k]);
     wr(rt, r + LSTART + 2 * (unsigned)lines, 2, (uint16_t)n); wr(rt, r + NLINES, 2, (uint16_t)lines);
     return 0;
@@ -155,10 +168,13 @@ static int draw_lines(MacRuntime *rt, uint32_t r, const int upd[4], int erase_fi
 }
 static int set_text(MacRuntime *rt, uint32_t h, uint32_t r, uint32_t src, uint32_t n) {
     uint32_t th = rd(rt, r + HTEXT, 4);
+    if (n > MAX_TEXT || (n && !ok(rt, src, n))) return fail(rt, "TextEdit text is too long or outside guest RAM.");
     if (set_size(rt, th, n)) return fail(rt, "TextEdit could not size its text handle.");
-    if (n) memmove(mac_cpu_ram(rt->cpu) + rd(rt, th, 4), mac_cpu_ram(rt->cpu) + src, n);
+    MacHandle *m = record_of(rt, th);
+    if (!m || m->type != TE_TEXT || m->size < n || (n && !ok(rt, m->pointer, n))) return fail(rt, "TextEdit text handle is invalid.");
+    if (n) memmove(mac_cpu_ram(rt->cpu) + m->pointer, mac_cpu_ram(rt->cpu) + src, n);
     wr(rt, r + LEN, 2, n);
-    return recalc(rt, h, rd(rt, h, 4));
+    return recalc(rt, h, rec_ptr(rt, h));
 }
 static void clamp_sel(MacRuntime *rt, uint32_t r) {
     int n = s16(rt, r + LEN), a = s16(rt, r + SEL_S), b = s16(rt, r + SEL_E);
@@ -182,8 +198,10 @@ static int do_new(MacRuntime *rt, uint32_t sp) {
     MacTextFace f;
     if (mac_text_face(rt, s16(rt, port + 68), s16(rt, port + 74), rd(rt, port + 70, 1), 0, &f)) return -1;
     if (new_handle(rt, REC, &hr) || new_handle(rt, 0, &ht) || !hr || !ht) return fail(rt, "TENew could not allocate its record.");
-    h = hr; record_of(rt, h)->type = TE_TYPE;
-    uint32_t r = rd(rt, h, 4); memset(mac_cpu_ram(rt->cpu) + r, 0, REC);
+    h = hr; record_of(rt, h)->type = TE_TYPE; record_of(rt, ht)->type = TE_TEXT;
+    uint32_t r = rec_ptr(rt, h);
+    if (!ok(rt, r, REC)) return fail(rt, "TENew record is invalid.");
+    memset(mac_cpu_ram(rt->cpu) + r, 0, REC);
     memcpy(mac_cpu_ram(rt->cpu) + r + DEST, mac_cpu_ram(rt->cpu) + rd(rt, sp + 4, 4), 8);
     memcpy(mac_cpu_ram(rt->cpu) + r + VIEW, mac_cpu_ram(rt->cpu) + rd(rt, sp, 4), 8);
     wr(rt, r + LINE_H, 2, (uint16_t)(f.s.ascent + f.s.descent + f.s.leading)); wr(rt, r + ASC, 2, (uint16_t)f.s.ascent);
@@ -244,7 +262,7 @@ int mac_textedit_service(MacRuntime *rt, uint16_t op) {
         if (n > MAX_TEXT || !ok(rt, src, n)) return fail(rt, "TESetText text is too long or outside guest RAM.");
         if (clear_marks(rt, r)) return -1;
         if (set_text(rt, h, r, src, n)) return -1;
-        r = rd(rt, h, 4); clamp_sel(rt, r);
+        r = rec_ptr(rt, h); clamp_sel(rt, r);
         break; }
     case 0xa9d1: {                                               /* TESetSelect(selStart, selEnd, hTE) */
         long a = (int32_t)rd(rt, sp + 8, 4), b = (int32_t)rd(rt, sp + 4, 4), n = s16(rt, r + LEN);
@@ -285,17 +303,22 @@ int mac_textedit_service(MacRuntime *rt, uint16_t op) {
             wr(rt, r + SEL_S, 2, (uint16_t)p); wr(rt, r + SEL_E, 2, (uint16_t)p);
             if (show_marks(rt, r)) return -1; break;
         }
-        uint32_t th = rd(rt, r + HTEXT, 4), t = rd(rt, th, 4);
+        uint32_t t;
+        if (text_at(rt, r, &t) || !(n == 0 || ok(rt, t, (size_t)n))) return fail(rt, "TextEdit text handle is invalid.");
         static uint8_t buf[MAX_TEXT + 1]; unsigned m = 0;
         if (key == 8) { if (a == b && a > 0) a--; if (a == b) break; }    /* backspace removes the selection, or the character before the caret */
         else if (key >= 32 || key == 13) { if (n - (b - a) + 1 > MAX_TEXT) break; }
         else return fail(rt, "TEKey control characters other than backspace, return and left/right arrows are unsupported.");
+        if (a < 0 || a > b || b > n || n > MAX_TEXT) return fail(rt, "TEKey record is inconsistent.");     /* te_of checked this; kept as a guard for the copies below */
         memcpy(buf, mac_cpu_ram(rt->cpu) + t, (size_t)a); m = (unsigned)a;
         if (key != 8) buf[m++] = (uint8_t)key;
         memcpy(buf + m, mac_cpu_ram(rt->cpu) + t + (unsigned)b, (size_t)(n - b)); m += (unsigned)(n - b);
-        { uint32_t tmp = 0; if (new_handle(rt, m ? m : 1, &tmp) || !tmp) return fail(rt, "TEKey could not allocate."); memcpy(mac_cpu_ram(rt->cpu) + rd(rt, tmp, 4), buf, m);
-          int rc = set_text(rt, h, r, rd(rt, tmp, 4), m); dispose(rt, tmp); if (rc) return -1; }
-        r = rd(rt, h, 4);
+        { uint32_t tmp = 0; if (new_handle(rt, m ? m : 1, &tmp) || !tmp) return fail(rt, "TEKey could not allocate.");
+          MacHandle *tm = record_of(rt, tmp);
+          if (!tm || !ok(rt, tm->pointer, m ? m : 1)) return fail(rt, "TEKey scratch handle is invalid.");
+          memcpy(mac_cpu_ram(rt->cpu) + tm->pointer, buf, m);
+          int rc = set_text(rt, h, r, tm->pointer, m); dispose(rt, tmp); if (rc) return -1; }
+        r = rec_ptr(rt, h);
         int p = a + (key == 8 ? 0 : 1);
         wr(rt, r + SEL_S, 2, (uint16_t)p); wr(rt, r + SEL_E, 2, (uint16_t)p); wr(rt, r + CTIME, 4, rt->ticks);
         { int view[4], k = line_of(rt, r, a > 0 ? a - 1 : 0), lh = s16(rt, r + LINE_H); rect4(rt, r + VIEW, view);   /* from the line of the previous character: a reflow can change it */

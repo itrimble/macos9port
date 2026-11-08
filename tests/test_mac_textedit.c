@@ -70,6 +70,7 @@ static int get_point(uint32_t h, int off, int *v, int *hh) {
     int rc = call(0xa83d); *v = (int16_t)rdw(SPT + 8, 2); *hh = (int16_t)rdw(SPT + 10, 2); return rc;
 }
 static uint32_t rec(uint32_t h) { return rdw(h, 4); }
+static uint32_t host_rec(uint32_t h) { for (size_t i = 0; i < rt.handle_count; i++) if (rt.handles[i].handle == h) return rt.handles[i].pointer; return 0; }
 static int fld(uint32_t h, unsigned off) { return (int16_t)rdw(rec(h) + off, 2); }
 static int starts(uint32_t h, int k) { return (int16_t)rdw(rec(h) + 96 + 2 * (unsigned)k, 2); }
 static void expect_lines(uint32_t h, int n, const int *s) {
@@ -297,14 +298,53 @@ static void edge_cases(void) {
     /* A handle that exists but is not a TEHandle, and records whose pointers are bad, are refused. */
     rig(); mac_cpu_set(rt.cpu, MAC_D0, 200); CHECK(mac_memory_service(&rt, 0xa122) == 1); uint32_t other = mac_cpu_get(rt.cpu, MAC_A0);
     CHECK(other && hcall(0xa9d8, other) == -1 && mac_cpu_halted(rt.cpu)); mac_cpu_destroy(rt.cpu);
-    rig(); h = te_new(); wrw(h, 4, 0xfffff0); CHECK(hcall(0xa9d8, h) == -1 && mac_cpu_halted(rt.cpu)); mac_cpu_destroy(rt.cpu);
-    rig(); h = te_new(); set_text(h, "AAA", 3); wrw(rdw(rec(h) + 62, 4), 4, 0x7ffffff0); CHECK(update(h, 0, 0, 24, 40) == -1 && mac_cpu_halted(rt.cpu)); mac_cpu_destroy(rt.cpu);
+    rig(); h = te_new(); wrw(h, 4, 0xfffff0); CHECK(hcall(0xa9d8, h) == 1 && !mac_cpu_halted(rt.cpu) && rdw(host_rec(h) + 36, 2) == 1); mac_cpu_destroy(rt.cpu);   /* the host uses its own table, not the guest's master pointer */
+    rig(); h = te_new(); set_text(h, "AAA", 3); wrw(rdw(rec(h) + 62, 4), 4, 0x7ffffff0); CHECK(update(h, 0, 0, 24, 40) == 1 && !mac_cpu_halted(rt.cpu) && px(2, 3) == 200); mac_cpu_destroy(rt.cpu);   /* text is read from the table's pointer, so it still draws */
+}
+
+/* The TERec is guest memory, so the guest can corrupt it. Every corruption must end in a named halt, never in a host overflow
+ * (these run under ASan). op 0: TEKey, 1: TESetText, 2: TEUpdate, 3: TEClick, 4: TEActivate. */
+static void corruption(void) {
+    for (unsigned k = 0; k < 12; k++) for (unsigned op = 0; op < 5; op++) {
+        rig(); uint32_t h = te_new(); set_text(h, "AAA BBB", 7); uint32_t r = rec(h), th = rdw(r + 62, 4);
+        if (k == 0) wrw(r + 32, 2, 0xffff);                                 /* selStart -1 */
+        if (k == 1) wrw(r + 34, 2, 30000);                                  /* selEnd far beyond the text */
+        if (k == 2) { wrw(r + 32, 2, 6); wrw(r + 34, 2, 2); }               /* selStart > selEnd */
+        if (k == 3) wrw(r + 60, 2, 32100);                                  /* teLength above the cap */
+        if (k == 4) wrw(r + 60, 2, 0xfff0);                                 /* teLength negative */
+        if (k == 5) wrw(r + 94, 2, 30000);                                  /* nLines far beyond the record */
+        if (k == 6) wrw(r + 94, 2, 0xffff);                                 /* nLines negative */
+        if (k == 7) wrw(r + 62, 4, 0);                                      /* no text handle */
+        if (k == 8) wrw(r + 62, 4, h);                                      /* the record's own handle as its text */
+        if (k == 9) { mac_cpu_set(rt.cpu, MAC_D0, 100); mac_memory_service(&rt, 0xa122); wrw(r + 62, 4, mac_cpu_get(rt.cpu, MAC_A0)); }   /* a plain handle that is not ours */
+        if (k == 10) wrw(r + 60, 2, 400);                                   /* teLength larger than the text handle */
+        if (k == 11) { wrw(r + 32, 2, 3); wrw(r + 34, 2, 4); wrw(th, 4, 0x7ffffff0); }   /* master pointer of the text moved out of RAM */
+        int rc = 0; (void)th;
+        if (op == 0) rc = key(h, 'X');
+        else if (op == 1) rc = set_text(h, "ZZ", 2);
+        else if (op == 2) rc = update(h, 0, 0, 24, 40);
+        else if (op == 3) rc = click(h, 4, 7, 0);
+        else { rc = hcall(0xa9d8, h); }
+        if (k == 11) CHECK(rc == 1 || (rc == -1 && mac_cpu_halted(rt.cpu)));   /* the host pointer is used: a moved master pointer is the guest's own problem */
+        else CHECK(rc == -1 && mac_cpu_halted(rt.cpu));
+        mac_cpu_destroy(rt.cpu);
+    }
+}
+/* A guest can call SetHandleSize on a TEHandle. A record shrunk below its header, or below what its line table needs, is refused. */
+static void shrunk_record(void) {
+    for (unsigned k = 0; k < 2; k++) for (unsigned op = 0; op < 3; op++) {
+        rig(); uint32_t h = te_new(); set_text(h, "AAA BBB CCC", 11);                 /* three lines: the table needs 96 + 8 bytes */
+        mac_cpu_set(rt.cpu, MAC_D0, k ? 98 : 10); mac_cpu_set(rt.cpu, MAC_A0, h); CHECK(mac_memory_service(&rt, 0xa024) == 1);
+        int rc = op == 0 ? update(h, 0, 0, 24, 40) : op == 1 ? key(h, 'X') : hcall(0xa9d8, h);
+        CHECK(rc == -1 && mac_cpu_halted(rt.cpu));
+        mac_cpu_destroy(rt.cpu);
+    }
 }
 int main(void) {
     size_t sn = make_strike(); Res list[] = {{FONT_T, 5 * 128 + 10, strike, sn}};
     char err[200]; size_t total = build_fork(img, list, 1);
     if (mac_resource_open(&fork, img, total, err, sizeof err)) { fprintf(stderr, "fork: %s\n", err); return 1; }
-    basics(); wrap(); edge_cases(); selection(); drawing(); marks(); clicks_and_keys(); dispatch(); disposal_and_refusals();
+    basics(); wrap(); edge_cases(); corruption(); shrunk_record(); selection(); drawing(); marks(); clicks_and_keys(); dispatch(); disposal_and_refusals();
     if (!fails) puts("TextEdit checks passed");
     return fails ? 1 : 0;
 }
