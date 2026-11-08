@@ -106,7 +106,8 @@ int gn_pan_conn_accept(GnBroker *b, int listener, int *id) {
 
 long gn_pan_conn_send(GnBroker *b, GnConn *c, const void *p, size_t n) {
     (void)b;
-    if (!c || !c->tcp) return GN_EINVAL;
+    if (!c) return GN_EINVAL;
+    if (!c->tcp) return GN_ECLOSED;
     gn_pan_conn_refresh(c);
     if (c->state == GN_S_FAILED || c->state == GN_S_CLOSED) return GN_ECLOSED;
     if (c->closing) return GN_ECLOSED;
@@ -115,14 +116,16 @@ long gn_pan_conn_send(GnBroker *b, GnConn *c, const void *p, size_t n) {
 
 long gn_pan_conn_recv(GnBroker *b, GnConn *c, void *p, size_t n) {
     (void)b;
-    if (!c || !c->tcp) return GN_EINVAL;
+    if (!c) return GN_EINVAL;
+    if (!c->tcp) return GN_ECLOSED;
     gn_pan_conn_refresh(c);
     return gn_pan_tcp_recv(c->tcp, p, n);
 }
 
 int gn_pan_conn_shutdown(GnBroker *b, GnConn *c) {
     (void)b;
-    if (!c || !c->tcp) return GN_EINVAL;
+    if (!c) return GN_EINVAL;
+    if (!c->tcp) return GN_ECLOSED;
     c->closing = 1;
     gn_pan_tcp_shutdown(c->tcp);
     gn_pan_conn_refresh(c);
@@ -131,7 +134,8 @@ int gn_pan_conn_shutdown(GnBroker *b, GnConn *c) {
 
 int gn_pan_conn_abort(GnBroker *b, GnConn *c) {
     (void)b;
-    if (!c || !c->tcp) return GN_EINVAL;
+    if (!c) return GN_EINVAL;
+    if (!c->tcp) return GN_ECLOSED;
     gn_pan_tcp_abort(c->tcp);
     c->state = GN_S_CLOSED;
     c->in.len = c->out.len = 0;
@@ -139,15 +143,15 @@ int gn_pan_conn_abort(GnBroker *b, GnConn *c) {
 }
 
 int gn_pan_conn_info(GnConn *c, GnInfo *out) {
-    if (!c || !c->tcp || !out) return GN_EINVAL;
+    if (!c || !out) return GN_EINVAL;
     memset(out, 0, sizeof *out);
     gn_pan_conn_refresh(c);
     out->kind = c->kind;
     out->state = c->state;
     out->error = c->error;
     out->plaintext = 1;
-    out->unread = c->tcp->rx.len;
-    out->unsent = c->tcp->tx.len;
+    out->unread = c->tcp ? c->tcp->rx.len : 0;
+    out->unsent = c->tcp ? c->tcp->tx.len : 0;
     out->local = c->local;
     out->remote = c->remote;
     return GN_OK;

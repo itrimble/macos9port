@@ -20,6 +20,12 @@ GnMacTcp *gn_mactcp_new(GnBroker *b, GnResolver *r, uint32_t our_ip) {
     return m;
 }
 
+void gn_mactcp_set_addr(GnMacTcp *m, uint32_t ip, uint32_t netmask) {
+    if (!m) return;
+    m->our_ip = ip;
+    m->netmask = netmask;
+}
+
 void gn_mactcp_free(GnMacTcp *m) {
     if (!m) return;
     for (int i = 0; i < GN_STREAMS; i++) {
