@@ -1,6 +1,7 @@
 #include "mac_runtime.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int fails;
@@ -250,9 +251,157 @@ static void legacy_untouched(void) {
     mac_runtime_destroy(&rt);
 }
 
+static void put16(uint8_t *p, uint16_t v) { p[0] = v >> 8; p[1] = v; }
+static void put32(uint8_t *p, uint32_t v) { put16(p, v >> 16); put16(p + 2, v); }
+
+enum { DATA = 256, MAP = 384, ZERO = DATA + 4, SEG = DATA + 32, TOTAL = MAP + 62 };
+
+/* A minimal one-segment CODE fork (CODE 0 jump table and CODE 1), built in place. */
+static void fill_fork(uint8_t *b) {
+    put32(b, DATA); put32(b + 4, MAP); put32(b + 8, 44); put32(b + 12, 62);
+    put32(b + DATA, 24);
+    put32(b + ZERO, 0x100); put32(b + ZERO + 4, 0x100);
+    put32(b + ZERO + 8, 8); put32(b + ZERO + 12, 32);
+    put16(b + ZERO + 16, 0); put16(b + ZERO + 18, 0x3f3c);
+    put16(b + ZERO + 20, 1); put16(b + ZERO + 22, 0xa9f0);
+    put32(b + DATA + 28, 12);
+    put16(b + SEG, 0); put16(b + SEG + 2, 1);
+    put16(b + SEG + 4, 0x7007); put16(b + SEG + 6, 0xa9f4);
+    put16(b + SEG + 8, 0x4e71); put16(b + SEG + 10, 0x4e71);
+    put16(b + MAP + 24, 28); put16(b + MAP + 26, 62);
+    put32(b + MAP + 30, MAC_CODE_TYPE);
+    put16(b + MAP + 34, 1); put16(b + MAP + 36, 10);
+    put16(b + MAP + 40, 0xffff);
+    put16(b + MAP + 50, 1); put16(b + MAP + 52, 0xffff);
+    b[MAP + 57] = 28;
+}
+
+/* Protected-heap bridge across every partition size, with guard redzones on and off. */
+static int16_t memerr(MacRuntime *rt) { return (int16_t)mac_cpu_read(rt->cpu, 0x220, 2); }
+static uint32_t get_a0(MacRuntime *rt) { return mac_cpu_get(rt->cpu, MAC_A0); }
+static uint32_t get_d0(MacRuntime *rt) { return mac_cpu_get(rt->cpu, MAC_D0); }
+
+static void bridge_matrix_one(const MacResourceFork *f, int mb, int guard, uint32_t a5, uint32_t top, uint32_t lo) {
+    char err[240], mbs[8];
+    snprintf(mbs, sizeof mbs, "%d", mb);
+    setenv("OS999_GUEST_HEAP_MB", mbs, 1);
+    setenv("OS999_GUEST_GUARD", guard ? "1" : "0", 1);
+    MacRuntime rt;
+    CHECK(mac_runtime_init(&rt, f, err, sizeof err) == 0);
+    CHECK(rt.a5 == a5 && rt.guard_allocs == guard);
+    CHECK(rt.heap_bridge != NULL);                                  /* attaches for every size and guard setting */
+    if (!rt.heap_bridge) { mac_runtime_destroy(&rt); return; }
+    CHECK(rt.heap_limit == lo && mac_cpu_read(rt.cpu, 0x130, 4) == top);
+    CHECK(!mac_heap_owns(&rt, lo - 4) && mac_heap_owns(&rt, lo) && !mac_heap_owns(&rt, top));
+    const uint32_t rz = guard ? 16u : 0u;
+    uint8_t *ram = mac_cpu_ram(rt.cpu);
+
+    /* Handle: allocate, fill, resize up and down, MoveHHi, redzone present and moves with compaction. */
+    CHECK(call(&rt, 0xa022, 0, 100) == 1 && memerr(&rt) == 0);
+    uint32_t h = get_a0(&rt), p = mac_cpu_read(rt.cpu, h, 4);
+    CHECK(mac_heap_owns(&rt, h) && p >= lo && p + 100 + rz <= top);
+    memset(ram + p, 0x5a, 100);
+    for (uint32_t i = 0; i < rz; i++) CHECK(ram[p + 100 + i] == 0xa5);
+    CHECK(call(&rt, 0xa025, h, 0) == 1 && get_d0(&rt) == 100);
+    CHECK(call(&rt, 0xa024, h, 300) == 1 && memerr(&rt) == 0);
+    p = mac_cpu_read(rt.cpu, h, 4);
+    CHECK(ram[p] == 0x5a && ram[p + 99] == 0x5a && ram[p + 100] == 0 && ram[p + 299] == 0);  /* grown space is zero, not stale redzone */
+    for (uint32_t i = 0; i < rz; i++) CHECK(ram[p + 300 + i] == 0xa5);
+    CHECK(call(&rt, 0xa025, h, 0) == 1 && get_d0(&rt) == 300);
+    CHECK(call(&rt, 0xa024, h, 50) == 1 && memerr(&rt) == 0);
+    p = mac_cpu_read(rt.cpu, h, 4);
+    for (uint32_t i = 0; i < rz; i++) CHECK(ram[p + 50 + i] == 0xa5);
+    CHECK(call(&rt, 0xa064, h, 0) == 1 && memerr(&rt) == 0 && !mac_cpu_halted(rt.cpu));
+
+    /* Compaction slides a block down; its redzone must go with it and still verify. */
+    CHECK(call(&rt, 0xa022, 0, 24) == 1); uint32_t h2 = get_a0(&rt);
+    CHECK(call(&rt, 0xa022, 0, 40) == 1); uint32_t h3 = get_a0(&rt);
+    CHECK(call(&rt, 0xa023, h2, 0) == 1 && memerr(&rt) == 0);
+    CHECK(call(&rt, 0xa04c, 0, 0) == 1);
+    uint32_t p3 = mac_cpu_read(rt.cpu, h3, 4);
+    for (uint32_t i = 0; i < rz; i++) CHECK(ram[p3 + 40 + i] == 0xa5);
+    CHECK(call(&rt, 0xa023, h3, 0) == 1 && memerr(&rt) == 0 && !mac_cpu_halted(rt.cpu));
+
+    /* Pointers: size reports exclude the redzone; huge requests fail cleanly (no 32-bit wrap with the redzone added). */
+    CHECK(call(&rt, 0xa01e, 0, 13) == 1 && memerr(&rt) == 0);
+    uint32_t q = get_a0(&rt);
+    CHECK(q >= lo && q + 13 + rz <= top);
+    CHECK(call(&rt, 0xa021, q, 0) == 1 && get_d0(&rt) == 13);
+    CHECK(call(&rt, 0xa01e, 0, UINT32_MAX - 8) == 1 && memerr(&rt) == -108 && get_a0(&rt) == 0);
+    CHECK(call(&rt, 0xa022, 0, UINT32_MAX - 8) == 1 && memerr(&rt) == -108 && get_a0(&rt) == 0);
+    CHECK(call(&rt, 0xa01f, q, 0) == 1 && memerr(&rt) == 0);
+
+    /* Bounds: fill the heap with 4 KB pointers; every block stays inside [lo, top) and the heap is mostly used. */
+    uint32_t n = 0, highest = 0, *blocks = malloc(sizeof *blocks * ((top - lo) / 4096 + 8));
+    CHECK(blocks != NULL);
+    for (;;) {
+        CHECK(call(&rt, 0xa01e, 0, 4096) == 1);
+        if (memerr(&rt) != 0) { CHECK(memerr(&rt) == -108 && get_a0(&rt) == 0); break; }
+        uint32_t a = get_a0(&rt);
+        CHECK(a >= lo && a + 4096 + rz <= top);
+        if (a + 4096 + rz > highest) highest = a + 4096 + rz;
+        blocks[n++] = a;
+        if (n > (top - lo) / 4096) { CHECK(0); break; }
+    }
+    CHECK(n > ((top - lo) / 4096) * 3 / 4);
+    CHECK(highest <= top);
+    if (guard && n) {                                   /* underflow: a write just below block k lands in block k-1's redzone */
+        uint32_t k = n / 2;
+        CHECK(blocks[k] > blocks[k - 1]);
+        ram[blocks[k] - 1] ^= 0xff;
+        CHECK(blocks[k] - blocks[k - 1] == 4096 + 16);  /* adjacent: the byte below is the last redzone byte of k-1 */
+        CHECK(call(&rt, 0xa01f, blocks[k - 1], 0) == -1 && mac_cpu_halted(rt.cpu));
+        CHECK(strstr(mac_cpu_error(rt.cpu), "redzone") != NULL);
+    } else if (n) {                                      /* guard off: no redzone, so no corruption check either */
+        ram[blocks[n / 2] + 4096] ^= 0xff;
+        CHECK(call(&rt, 0xa01f, blocks[n / 2], 0) == 1 && memerr(&rt) == 0);
+    }
+    free(blocks);
+    mac_runtime_destroy(&rt);
+
+    /* Overflow past the end of a pointer or handle is caught by Dispose, SetHandleSize and MoveHHi, before any bridge free. */
+    if (guard) {
+        for (unsigned which = 0; which < 4; which++) {
+            CHECK(mac_runtime_init(&rt, f, err, sizeof err) == 0 && rt.heap_bridge != NULL);
+            ram = mac_cpu_ram(rt.cpu);
+            uint32_t blk, a0v, size = which == 3 ? 13 : 20;
+            CHECK(call(&rt, which == 3 ? 0xa01e : 0xa022, 0, size) == 1 && memerr(&rt) == 0);
+            a0v = get_a0(&rt);
+            blk = which == 3 ? a0v : mac_cpu_read(rt.cpu, a0v, 4);
+            ram[blk + size] = 0x42;
+            uint8_t master[4] = {0}; if (which != 3) memcpy(master, ram + a0v, 4);
+            uint16_t op = which == 0 ? 0xa023 : which == 1 ? 0xa024 : which == 2 ? 0xa064 : 0xa01f;
+            CHECK(call(&rt, op, a0v, 64) == -1 && mac_cpu_halted(rt.cpu));
+            CHECK(strstr(mac_cpu_error(rt.cpu), "redzone") != NULL);
+            CHECK(ram[blk + size] == 0x42);                         /* not restamped */
+            if (which != 3) CHECK(!memcmp(master, ram + a0v, 4));   /* master pointer untouched: nothing was freed or moved */
+            mac_runtime_destroy(&rt);
+        }
+    }
+}
+
+static void bridge_partition_matrix(void) {
+    uint8_t b[TOTAL] = {0};
+    fill_fork(b);
+    MacResourceFork f;
+    char err[240];
+    CHECK(mac_resource_open(&f, b, TOTAL, err, sizeof err) == 0);
+    mac_runtime_set_memory_policy(0, 0);
+    /* Half of the heap span (rounded to 64 KiB) stays with the bump allocator; the other half is protected. */
+    static const struct { int mb; uint32_t a5, top, lo; } cfg[] = {
+        {2, 0x200000, 0x1c0000, 0x160000}, {4, 0x400000, 0x300000, 0x200000},
+        {8, 0x800000, 0x700000, 0x400000}, {12, 0xc00000, 0xb00000, 0x600000},
+    };
+    for (unsigned i = 0; i < 4; i++)
+        for (int guard = 0; guard < 2; guard++) bridge_matrix_one(&f, cfg[i].mb, guard, cfg[i].a5, cfg[i].top, cfg[i].lo);
+    unsetenv("OS999_GUEST_HEAP_MB");
+    unsetenv("OS999_GUEST_GUARD");
+}
+
 int main(void) {
     handle_lifecycle(); legacy_managers_can_see_handles(); pointers_and_protection(); dynamic_and_reclaiming();
     compaction_updates_masters(); resize_and_state(); memory_reports();
+    bridge_partition_matrix();
     guest_cannot_corrupt_bookkeeping(); runtime_owned_data(); legacy_untouched();
     if (fails) { fprintf(stderr, "%d failure(s)\n", fails); return 1; }
     puts("heap bridge: all checks passed");

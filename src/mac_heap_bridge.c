@@ -35,6 +35,7 @@ struct MacHeapBridge {
 };
 
 static Page *find_slot(const MacHeapBridge *b, uint32_t master, unsigned *slot);
+static uint32_t extra(const MacHeapBridge *b);
 
 /* Other managers (menus, resources, windows...) validate guest handles by looking
  * them up in rt->handles[]. Each heap handle is therefore shadowed by a record
@@ -57,7 +58,7 @@ static void shadow_sync(MacHeapBridge *b, const Page *p, unsigned slot) {
     MacHandle *m = shadow(b, p, slot);
     uint32_t addr, size;
     if (!m || os999_deref(b->heap, p->token[slot], &addr) || os999_handle_size(b->heap, p->token[slot], &size)) return;
-    m->pointer = addr; m->size = size; m->state = p->state[slot];
+    m->pointer = addr; m->size = size - extra(b); m->state = p->state[slot];
 }
 
 static void shadow_drop(MacHeapBridge *b, Page *p, unsigned slot) {
@@ -181,6 +182,25 @@ static int take_slot(MacHeapBridge *b, uint32_t *master) {
 
 static void result(MacRuntime *rt, int16_t err) { mac_memory_result(rt->cpu, err); }
 
+/* Guard redzones. With rt->guard_allocs every guest block is allocated 16 bytes
+ * larger inside the heap and the last 16 bytes are the redzone (0xA5). The guest
+ * sees the size minus 16. The redzone lives inside the block, so compaction moves
+ * it with the block; block sizes live in host memory, so corrupting the redzone
+ * cannot change what the check compares against. */
+#define REDZONE 16u
+static uint32_t extra(const MacHeapBridge *b) { return b->rt->guard_allocs ? REDZONE : 0u; }
+static void stamp(MacHeapBridge *b, uint32_t addr, uint32_t gsize, uint8_t v) {
+    if (extra(b)) memset(mac_cpu_ram(b->rt->cpu) + addr + gsize, v, REDZONE);
+}
+/* 0 = intact (or guard off), -1 = corrupted */
+static int redzone_ok(const MacHeapBridge *b, uint32_t addr, uint32_t gsize) {
+    if (!extra(b)) return 0;
+    const uint8_t *ram = mac_cpu_ram(b->rt->cpu);
+    for (uint32_t i = 0; i < REDZONE; i++) if (ram[addr + gsize + i] != 0xA5) return -1;
+    return 0;
+}
+static int halt_guard(MacRuntime *rt) { mac_cpu_halt(rt->cpu, "Guest heap guard redzone corrupted."); return -1; }
+
 static int fail_code(MacRuntime *rt, int rc) {
     if (rc == OS999_ERR_DEAD) { mac_cpu_halt(rt->cpu, "Guest heap was torn down."); return -1; }
     result(rt, rc == OS999_ERR_LOCKED ? -117 : rc == OS999_ERR_NILHANDLE ? -109 : -108);
@@ -204,15 +224,18 @@ int mac_heap_service(MacRuntime *rt, uint16_t opcode) {
 
     switch (call) {
     case 0x1e: /* NewPtr */
-        rc = os999_new_ptr(b->heap, d0, &addr);
+        if (d0 > UINT32_MAX - REDZONE) { mac_cpu_set(cpu, MAC_A0, 0); result(rt, -108); return 1; }
+        rc = os999_new_ptr(b->heap, d0 + extra(b), &addr);
         mac_cpu_set(cpu, MAC_A0, rc ? 0 : addr);
         if (rc) return fail_code(rt, rc);
+        stamp(b, addr, d0, 0xA5);
         ptr_shadow_create(b, addr, d0);
         result(rt, 0); return 1;
     case 0x22: { /* NewHandle */
         uint32_t master, token;
         if (!take_slot(b, &master)) { mac_cpu_set(cpu, MAC_A0, 0); result(rt, -108); return 1; }
-        rc = os999_new_handle(b->heap, d0, &token);
+        if (d0 > UINT32_MAX - REDZONE) { b->freestack[b->nfree++] = master; mac_cpu_set(cpu, MAC_A0, 0); result(rt, -108); return 1; }
+        rc = os999_new_handle(b->heap, d0 + extra(b), &token);
         if (rc) { b->freestack[b->nfree++] = master; mac_cpu_set(cpu, MAC_A0, 0); return fail_code(rt, rc); }
         Page *p = find_slot(b, master, &slot);
         size_t idx = (token & 0xfffffu) - 1;
@@ -222,6 +245,7 @@ int mac_heap_service(MacRuntime *rt, uint16_t opcode) {
         }
         p->token[slot] = token; p->state[slot] = 0; b->master_of[idx] = master;
         os999_deref(b->heap, token, &addr);
+        stamp(b, addr, d0, 0xA5);
         mac_cpu_write(cpu, master, 4, addr);
         shadow_create(b, p, slot, master);
         shadow_sync(b, p, slot);
@@ -230,9 +254,15 @@ int mac_heap_service(MacRuntime *rt, uint16_t opcode) {
     }
     case 0x1f: case 0x21: /* DisposePtr / GetPtrSize */
         if (!mac_heap_owns(rt, a0)) return 0;
-        rc = call == 0x1f ? os999_dispose_ptr(b->heap, a0) : os999_ptr_size(b->heap, a0, &v);
+        rc = os999_ptr_size(b->heap, a0, &v);
         if (rc) return fail_code(rt, rc);
-        if (call == 0x1f) ptr_shadow_drop(b, a0);
+        v -= extra(b);
+        if (call == 0x1f) {
+            if (redzone_ok(b, a0, v)) return halt_guard(rt);
+            rc = os999_dispose_ptr(b->heap, a0);
+            if (rc) return fail_code(rt, rc);
+            ptr_shadow_drop(b, a0);
+        }
         result(rt, 0);
         if (call == 0x21) mac_cpu_set(cpu, MAC_D0, v);
         return 1;
@@ -243,6 +273,11 @@ int mac_heap_service(MacRuntime *rt, uint16_t opcode) {
         uint32_t token = p ? p->token[slot] : 0;
         if (!token) { result(rt, -109); return 1; }
         uint8_t *st8 = &p->state[slot];
+        if (call == 0x23 || call == 0x64 || call == 0x24) { /* the guard check precedes any destructive handle call */
+            uint32_t gaddr, gsize;
+            if (!os999_deref(b->heap, token, &gaddr) && !os999_handle_size(b->heap, token, &gsize) &&
+                redzone_ok(b, gaddr, gsize - extra(b))) return halt_guard(rt);
+        }
         if (call == 0x23) {
             rc = os999_dispose_handle(b->heap, token);
             if (rc) return fail_code(rt, rc);
@@ -255,10 +290,17 @@ int mac_heap_service(MacRuntime *rt, uint16_t opcode) {
         } else if (call == 0x25) {
             rc = os999_handle_size(b->heap, token, &v);
             if (rc) return fail_code(rt, rc);
-            result(rt, 0); mac_cpu_set(cpu, MAC_D0, v);
+            result(rt, 0); mac_cpu_set(cpu, MAC_D0, v - extra(b));
         } else if (call == 0x24) {
-            rc = os999_set_handle_size(b->heap, token, d0); /* master is fixed up by move_cb */
-            if (rc) return fail_code(rt, rc);
+            uint32_t oaddr = 0, osize = 0;
+            if (d0 > UINT32_MAX - REDZONE) { result(rt, -108); return 1; }
+            os999_deref(b->heap, token, &oaddr); os999_handle_size(b->heap, token, &osize);
+            osize -= extra(b);
+            stamp(b, oaddr, osize, 0); /* the old redzone becomes data space (zero, like bump growth) */
+            rc = os999_set_handle_size(b->heap, token, d0 + extra(b)); /* master is fixed up by move_cb */
+            if (rc) { stamp(b, oaddr, osize, 0xA5); return fail_code(rt, rc); }
+            os999_deref(b->heap, token, &addr);
+            stamp(b, addr, d0, 0xA5);
             shadow_sync(b, p, slot);
             result(rt, 0);
         } else if (call == 0x64) {
