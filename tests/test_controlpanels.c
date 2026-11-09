@@ -231,19 +231,19 @@ static void test_plugin_container_and_modules(const char *plugin_so) {
     CHECK(s != NULL);
     if (!s) return;
 
-    /* 9 built-ins + 1 dynamically scanned .cdev shared library must be registered. */
-    CHECK(os999_cdev_count() == 10);
-    const char *const expected_ids[10] = {
+    /* 10 built-ins (incl. Bluetooth and Extensions Manager) + 1 dynamically scanned .cdev shared library. */
+    CHECK(os999_cdev_count() == 11);
+    const char *const expected_ids[11] = {
         "general", "sound", "appearance", "monitors", "keyboard_mouse",
-        "energy_saver", "memory", "network", "bluetooth", "date_time"
+        "energy_saver", "memory", "network", "bluetooth", "extensions", "date_time"
     };
-    for (int i = 0; i < 10; i++) CHECK(os999_cdev_find(expected_ids[i]) != NULL);
+    for (int i = 0; i < 11; i++) CHECK(os999_cdev_find(expected_ids[i]) != NULL);
     CHECK(os999_cdev_register(os999_cdev_general_module()) == -1); /* Duplicate rejected */
 
     menu_update(s);
     const int panel_cmds[] = {
         CMD_CONTROL_PANELS, CMD_CP_GENERAL, CMD_CP_SOUND, CMD_CP_MONITORS,
-        CMD_CP_KEYBOARD, CMD_CP_ENERGY, CMD_CP_MEMORY, CMD_CP_NETWORK, CMD_CP_BLUETOOTH
+        CMD_CP_KEYBOARD, CMD_CP_ENERGY, CMD_CP_MEMORY, CMD_CP_NETWORK, CMD_CP_BLUETOOTH, CMD_CP_EXTENSIONS
     };
     for (unsigned i = 0; i < sizeof panel_cmds / sizeof *panel_cmds; i++) {
         const MenuItem *mi = find_menu_cmd(MENU_PANELS, panel_cmds[i]);
@@ -282,7 +282,7 @@ static void test_plugin_container_and_modules(const char *plugin_so) {
     session_key(s, MENU_KEY_DOWN, 0);
     CHECK(control_panels_selected_index() == 4);
     session_key(s, FINDER_KEY_END, 0);
-    CHECK(control_panels_selected_index() == 9); /* Auto-scrolls row 3 into view */
+    CHECK(control_panels_selected_index() == 10); /* End selects the last of 11 panels; auto-scrolls it into view */
     session_key(s, FINDER_KEY_HOME, 0);
     CHECK(control_panels_selected_index() == 0);
 

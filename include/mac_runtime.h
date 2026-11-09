@@ -10,6 +10,7 @@
 #define MAC_RUNTIME_HANDLES 512
 /* Smallest poll budget the VBL/Time Manager/sound pollers accept. */
 #define MAC_RUNTIME_SERVICE_MIN 10000u
+#define MAC_GESTALT_MAX 32
 
 typedef struct {
     uint16_t what, modifiers;
@@ -80,6 +81,11 @@ typedef struct {
     int exited;
     int trace;
     int guard_allocs;
+    /* Extension-registered Gestalt selectors (NewGestalt). proc is recorded,
+     * never called; the response is value. See mac_init.h. */
+    uint32_t gestalt_sel[MAC_GESTALT_MAX], gestalt_val[MAC_GESTALT_MAX], gestalt_proc[MAC_GESTALT_MAX];
+    unsigned gestalt_count;
+    int init_guard, init_violation; /* INIT sandbox: protected traps refuse patches */
 } MacRuntime;
 
 /* Configure default guest RAM partition (2..12 MiB; 0 = 8 MiB baseline) and
@@ -112,6 +118,10 @@ int mac_menu_service(MacRuntime *rt, uint16_t opcode);
 int mac_toolbox_service(MacRuntime *rt, uint16_t opcode);
 int mac_raster_service(MacRuntime *rt, uint16_t opcode);
 int mac_system_service(MacRuntime *rt, uint16_t opcode);
+int mac_env_service(MacRuntime *rt, uint16_t opcode);
+int mac_env_implemented(unsigned key); /* trap_key() values */
+/* Host-side Gestalt registration. 0 ok, -1 duplicate/full. */
+int mac_gestalt_set(MacRuntime *rt, uint32_t selector, uint32_t value, uint32_t proc);
 int mac_geometry_service(MacRuntime *rt, uint16_t opcode);
 int mac_files_root(MacRuntime *rt, const char *directory);
 void mac_files_destroy(MacRuntime *rt);

@@ -80,7 +80,7 @@ static MenuItem k_panels[] = {
     ITEM("Energy Saver", CMD_CP_ENERGY),
     ITEM("Memory", CMD_CP_MEMORY),
     ITEM("TCP/IP & Network", CMD_CP_NETWORK),
-    ITEM("Bluetooth", CMD_CP_BLUETOOTH), SEP,
+    ITEM("Bluetooth", CMD_CP_BLUETOOTH), ITEM("Extensions Manager", CMD_CP_EXTENSIONS), SEP,
     ITEM("Finder Preferences", CMD_PREFERENCES),
 };
 static MenuItem k_recent[2][18];
@@ -129,7 +129,7 @@ static void update_items(Session *s, MenuItem *items, int count) {
         case CMD_NEW_FOLDER: yes = !w || !w->search_results; break;
         case CMD_ABOUT: case CMD_CONTROL_PANELS: case CMD_CP_GENERAL: case CMD_CP_SOUND:
         case CMD_CP_MONITORS: case CMD_CP_KEYBOARD: case CMD_CP_ENERGY:
-        case CMD_CP_MEMORY: case CMD_CP_NETWORK: case CMD_CP_BLUETOOTH:
+        case CMD_CP_MEMORY: case CMD_CP_NETWORK: case CMD_CP_BLUETOOTH: case CMD_CP_EXTENSIONS:
         case CMD_APPEARANCE_DESKTOP: case CMD_INSTALL:
         case CMD_QUIT: case CMD_SHUTDOWN: case CMD_STARTUP_PREVIEW:
         case CMD_HELP: case CMD_HELP_KEYS: case CMD_HELP_STATUS: yes = 1; break;

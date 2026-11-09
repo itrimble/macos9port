@@ -19,6 +19,7 @@ static unsigned requested_key(uint16_t instruction, uint16_t requested) {
 }
 
 static int implemented(unsigned key) {
+    if (mac_env_implemented(key)) return 1;
     if (key < 0x800) {
         switch (key) {
         case 0x58: case 0x59: case 0x5a: return 1;
@@ -88,12 +89,21 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (opcode < 0xa800 && (opcode & 0xff) == 0x47) { /* SetTrapAddress */
         unsigned key = requested_key(opcode, (uint16_t)mac_cpu_get(cpu, MAC_D0));
         uint32_t address = mac_cpu_get(cpu, MAC_A0);
+        if (rt->init_guard && (key == 0x46 || key == 0x47 || key == 0x9f0 || key == 0x9f4)) {
+            rt->init_violation = 1; /* protected: refuse, tell the INIT paramErr */
+            mac_cpu_set(cpu, MAC_D0, (uint32_t)(int32_t)-50);
+            return 0;
+        }
         if ((address & 1) || address >= mac_cpu_ram_size(cpu) - 1) {
             mac_cpu_halt(cpu, "Invalid guest trap-handler address.");
             return -1;
         }
         rt->trap_addresses[key] = address;
         return 0;
+    }
+    if (opcode == 0xa9f0 && rt->init_guard) { /* Segments belong to the host, not to an INIT. */
+        mac_cpu_halt(cpu, "An INIT called LoadSeg.");
+        return -1;
     }
     if (opcode == 0xa9f0) { /* LoadSeg, direct or chained through a guest patch. */
         uint32_t sp = mac_cpu_get(cpu, MAC_A7);
@@ -170,6 +180,8 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (pixmap) return pixmap > 0 ? 0 : -1;
     int vbl = mac_vbl_service(rt, opcode);
     if (vbl) return vbl > 0 ? 0 : -1;
+    int env = mac_env_service(rt, opcode);
+    if (env) return env > 0 ? 0 : -1;
     if (opcode == 0xa9f4) {
         rt->exited = 1;
         mac_cpu_halt(cpu, "Guest called ExitToShell.");

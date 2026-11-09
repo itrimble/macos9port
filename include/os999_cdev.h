@@ -99,5 +99,6 @@ const os999_cdev_t *os999_cdev_energy_module(void);
 const os999_cdev_t *os999_cdev_memory_module(void);
 const os999_cdev_t *os999_cdev_network_module(void);
 const os999_cdev_t *os999_cdev_bluetooth_module(void);
+const os999_cdev_t *os999_cdev_extensions_module(void);
 
 #endif
