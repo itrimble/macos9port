@@ -68,22 +68,23 @@ static void activate(MacRuntime *rt,int active) {
     }
 }
 static void restore_background(MacRuntime *rt) {
-    MacWindowState *w=&rt->window;int frame=w->proc_id==1?7:1;
-    int t=w->bounds[0]-(w->proc_id==12?20:frame),l=w->bounds[1]-frame,b=w->bounds[2]+frame,r=w->bounds[3]+frame;
+    MacWindowState *w=&rt->window;int frame=mac_window_frame(w->proc_id);
+    int t=w->bounds[0]-mac_window_top_extent(w->proc_id),l=w->bounds[1]-frame,b=w->bounds[2]+frame,r=w->bounds[3]+frame;
     if(t<0)t=0;if(l<0)l=0;if(b>480)b=480;if(r>640)r=640;
     uint8_t *ram=mac_cpu_ram(rt->cpu);
     for(int y=t;y<b;y++)memcpy(ram+rt->screen_base+y*640+l,ram+w->backdrop+y*640+l,(size_t)(r-l));
 }
-static void visibility(MacRuntime *rt,int show) {
+static void visibility(MacRuntime *rt,int show,int notify) {
     MacWindowState *w=&rt->window;
     if(w->visible==show)return;
-    if(!show)restore_background(rt);
+    if(!show){if(mac_window_front(rt)==w->address)restore_background(rt);}   /* a window under the front one changes no pixel (see mac_window_stack.c) */
     else memcpy(mac_cpu_ram(rt->cpu)+w->backdrop,mac_cpu_ram(rt->cpu)+rt->screen_base,307200);
     w->visible=show;wr(rt,w->address+110,1,(unsigned)show);
     int t=w->bounds[0],l=w->bounds[1],b=w->bounds[2],r=w->bounds[3];
     rect(rt,region(rt,w->handles[2])+2,0,0,show?b-t:0,show?r-l:0);
     rect(rt,region(rt,w->handles[10])+2,show?t:0,show?l:0,show?b:0,show?r:0);
-    activate(rt,show);if(show)mac_window_draw(rt,1);
+    if(notify)activate(rt,show);
+    if(show)mac_window_draw(rt,1);
 }
 static int create_window(MacRuntime *rt,uint32_t sp) {
     if(!valid(rt,sp,30,1))return fail(rt,"NewCWindow stack is invalid.");
@@ -92,14 +93,14 @@ static int create_window(MacRuntime *rt,uint32_t sp) {
     int proc=(int16_t)rd(rt,sp+10,2),visible=!!rd(rt,sp+12,1),close=!!rd(rt,sp+4,1);
     if(!mac_window_registry_valid(rt))return fail(rt,"Window list registry is invalid.");
     if(rt->window_count>=8)return fail(rt,"Owned window registry capacity is exhausted.");
-    if(visible && mac_window_front(rt))return fail(rt,"Multiple visible windows require unsupported clipping and compositing.");
+    if(visible && mac_window_front(rt) && behind!=UINT32_MAX)return fail(rt,"A visible window created behind another visible window needs compositing.");
     if(visible && rt->event_count>=64)return fail(rt,"NewCWindow cannot publish its activation event because the queue is full.");
-    if((proc!=12 && proc!=2 && proc!=1) || (behind!=0 && behind!=UINT32_MAX))return fail(rt,"Only standard zoomNoGrow, plainDBox and dBoxProc windows with native chrome are supported; custom WDEFs are unsupported.");
+    if((proc!=12 && proc!=4 && proc!=2 && proc!=1 && !mac_window_custom_wdef(&proc)) || (behind!=0 && behind!=UINT32_MAX && !mac_window_find(rt,behind)))return fail(rt,(behind!=0 && behind!=UINT32_MAX && !mac_window_find(rt,behind))?"NewCWindow behind a window that is not registered here is unsupported.":"Only standard zoomNoGrow, noGrowDocProc, plainDBox and dBoxProc windows (and custom WDEF ids 1-255, shown with titled chrome) are supported.");
     if(!valid(rt,bounds,8,1) || !valid(rt,text,1,0) || !valid(rt,text,(size_t)rd(rt,text,1)+1,0) ||
        (storage && !valid(rt,storage,156,1)))return fail(rt,"NewCWindow rectangle, title, or storage exceeds guest RAM.");
     memcpy(title,mac_cpu_ram(rt->cpu)+text,(size_t)rd(rt,text,1)+1);
     int t=(int16_t)rd(rt,bounds,2),l=(int16_t)rd(rt,bounds+2,2),b=(int16_t)rd(rt,bounds+4,2),r=(int16_t)rd(rt,bounds+6,2);
-    if(t<0 || l<0 || b>480 || r>640 || b-t<32 || r-l<64 || !display(rt) ||
+    if(t<0 || l<0 || b>480 || r>640 || b-t<1 || r-l<1 || !display(rt) ||
        !rt->main_device || !valid(rt,rt->qd_globals,4,1) || !(rt->manager_flags&2))
         return fail(rt,"NewCWindow requires initialized 640x480 indexed display and bounded content rectangle.");
     if(storage && ((storage<sp+30 && storage+156>sp) ||
@@ -163,18 +164,18 @@ static int create_window(MacRuntime *rt,uint32_t sp) {
     fresh.proc_id=(uint16_t)proc;memcpy(fresh.title,title,sizeof title);rt->window=fresh;
     rect(rt,pm+6,-t,-l,480-t,640-l);rect(rt,storage+16,0,0,b-t,r-l);
     rect(rt,region(rt,fresh.handles[2])+2,0,0,0,0);
-    int frame=proc==1?7:1;
-    rect(rt,region(rt,fresh.handles[8])+2,t-(proc==12?20:frame),l-frame,b+frame,r+frame);
+    int frame=mac_window_frame(proc);
+    rect(rt,region(rt,fresh.handles[8])+2,t-mac_window_top_extent(proc),l-frame,b+frame,r+frame);
     rect(rt,region(rt,fresh.handles[9])+2,t,l,b,r);
     uint32_t state=rd(rt,fresh.handles[12],4);rect(rt,state,t,l,b,r);rect(rt,state+8,20,0,480,640);
-    wr(rt,storage+108,2,8);wr(rt,storage+112,1,(unsigned)close);wr(rt,storage+113,1,1);
+    wr(rt,storage+108,2,8);wr(rt,storage+112,1,(unsigned)close);wr(rt,storage+113,1,(unsigned)(proc==12)); /* spareFlag: zoom box only on zoomNoGrow */
     for(unsigned i=0;i<3;i++)wr(rt,storage+114+i*4,4,fresh.handles[8+i]);
     /* windowDefProc remains NIL: native chrome is not a guest executable
      * WDEF handle. Direct WDEF invocation/custom WDEFs are unsupported.
      * dataHandle is a genuine 16-byte WStateData (user/standard rectangles). */
     wr(rt,storage+130,4,fresh.handles[12]);wr(rt,storage+134,4,fresh.handles[11]);wr(rt,storage+138,2,title[0]*8u);
     wr(rt,storage+152,4,refcon);wr(rt,storage+68,2,1); /* application font */
-    mac_window_publish(rt,behind==UINT32_MAX);visibility(rt,visible);
+    mac_window_publish_behind(rt,behind);visibility(rt,visible,1);
     wr(rt,sp+26,4,storage);wr(rt,0x220,2,0);mac_cpu_set(rt->cpu,MAC_A7,sp+26);return 1;
 }
 int mac_window_update_event(MacRuntime *rt,uint16_t mask,MacEvent *out) {
@@ -191,7 +192,8 @@ static int close_window(MacRuntime *rt,uint32_t sp,int dispose_storage) {
     if(dispose_storage && !w->owns_storage)return fail(rt,"DisposeWindow cannot release caller-owned window storage; use CloseWindow.");
     if(w->updating)return fail(rt,"CloseWindow cannot interrupt an unmatched BeginUpdate.");
     int was_current=rt->current_port==w->address;
-    if(w->visible)restore_background(rt);
+    if(w->visible && !mac_window_stack_ok(rt,w->address,0))return fail(rt,"Closing a visible window that is not frontmost needs compositing.");
+    if(w->visible && mac_window_front(rt)==w->address)restore_background(rt);
     if(mac_color_port_service(rt,0xaa02)!=1)return -1;
     for(unsigned i=8;i<13;i++) {
         MacHandle *m=record(rt,w->handles[i],1);wr(rt,m->handle,4,0);memset(m,0,sizeof(*m));
@@ -222,15 +224,26 @@ static int paint_behind(MacRuntime *rt,uint32_t sp) {
     if(w->updating)return fail(rt,"PaintBehind inside BeginUpdate is unsupported.");
     uint32_t h=rd(rt,sp,4);MacHandle *m=record(rt,h,10);
     int window_region=w->address && (h==w->handles[8] || h==w->handles[9] || h==w->handles[10]);
-    if(!m || m->resource || m->loaded_code || rd(rt,m->pointer,2)!=10 ||
+    int complex_region=m && !m->resource && !m->loaded_code && m->type==0x4f52474e && rd(rt,m->pointer,2)>10;
+    if(!m || m->resource || m->loaded_code || (rd(rt,m->pointer,2)!=10 && !complex_region) ||
        (m->type && m->type!=0x4f52474e &&
         !(m->type==0x43505254 && m->size==10) &&
         !(m->type==WINDOW_OWNED && m->size==10 && window_region)))
         return fail(rt,"PaintBehind requires an owned rectangular region.");
     int16_t clip[4],area[4],combined[4];
     uint32_t up=region(rt,w->handles[10]);
+    int exposed_outside=-1;                       /* set for a complex region: does it reach the screen outside this window */
+    if(complex_region) {
+        int structure[4]={w->bounds[0]-mac_window_top_extent(w->proc_id),w->bounds[1]-mac_window_frame(w->proc_id),
+                          w->bounds[2]+mac_window_frame(w->proc_id),w->bounds[3]+mac_window_frame(w->proc_id)},inside[4];
+        int rc=mac_region_window_view(rt,h,structure,inside,&exposed_outside);
+        if(rc<0)return -1;
+        if(rc==0)return fail(rt,"PaintBehind requires an owned rectangular region.");
+        /* The part inside the window is treated as its bounding box: the update area may be larger than the region strictly needs. */
+        for(unsigned i=0;i<4;i++)clip[i]=(int16_t)inside[i];
+    }
     for(unsigned i=0;i<4;i++) {
-        clip[i]=(int16_t)rd(rt,m->pointer+2+i*2,2);
+        if(!complex_region)clip[i]=(int16_t)rd(rt,m->pointer+2+i*2,2);
         int edge=w->bounds[i];
         area[i]=(int16_t)(i<2?(clip[i]>edge?clip[i]:edge):(clip[i]<edge?clip[i]:edge));
         combined[i]=(int16_t)rd(rt,up+2+i*2,2);
@@ -240,9 +253,10 @@ static int paint_behind(MacRuntime *rt,uint32_t sp) {
      * Refuse any on-screen damage outside this window before touching pixels. */
     int visible_clip[4]={clip[0]>0?clip[0]:0,clip[1]>0?clip[1]:0,
                          clip[2]<480?clip[2]:480,clip[3]<640?clip[3]:640};
-    int frame=w->proc_id==1?7:1;
-    int structure_top=w->bounds[0]-(w->proc_id==12?20:frame);
-    if(visible_clip[0]<visible_clip[2] && visible_clip[1]<visible_clip[3] &&
+    int frame=mac_window_frame(w->proc_id);
+    int structure_top=w->bounds[0]-mac_window_top_extent(w->proc_id);
+    if(complex_region ? exposed_outside!=0 || !w->visible :
+       visible_clip[0]<visible_clip[2] && visible_clip[1]<visible_clip[3] &&
        (!w->visible || visible_clip[0]<structure_top || visible_clip[1]<w->bounds[1]-frame ||
         visible_clip[2]>w->bounds[2]+frame || visible_clip[3]>w->bounds[3]+frame))
         return fail(rt,"PaintBehind exposed desktop repaint is not implemented.");
@@ -279,7 +293,11 @@ static int size_window(MacRuntime *rt,uint32_t sp) {
     if(!width && !height){mac_cpu_set(rt->cpu,MAC_A7,sp+10);return 1;}
     if(w->updating || !mac_window_registry_valid(rt))return fail(rt,"SizeWindow requires stable owned window geometry.");
     int t=w->bounds[0],l=w->bounds[1],old_b=w->bounds[2],old_r=w->bounds[3],b=t+height,r=l+width;
-    if(width<64 || height<32 || b>480 || r>640)return fail(rt,"SizeWindow exceeds supported content dimensions.");
+    if(width<1 || height<1 || width>640 || height>480)return fail(rt,"SizeWindow exceeds supported content dimensions.");
+    /* A window may be sized so that part of it lies below or right of the screen (a game can size first and move after); every pixel
+     * loop below and in MoveWindow clips to the screen. The update region cannot name the off-screen part, so growing an off-screen
+     * window with updating = TRUE is refused rather than losing it. */
+    if((b>480 || r>640) && updating && w->visible)return fail(rt,"SizeWindow with updating on a window that extends off-screen is unsupported.");
     int local_t=(int16_t)rd(rt,w->address+16,2),local_l=(int16_t)rd(rt,w->address+18,2);
     if(local_t+height>INT16_MAX || local_l+width>INT16_MAX)return fail(rt,"SizeWindow local dimensions overflow signed words.");
     if(w->visible && mac_window_front(rt)!=w->address)return fail(rt,"SizeWindow requires the single visible window.");
@@ -304,19 +322,19 @@ static int size_window(MacRuntime *rt,uint32_t sp) {
         if(area)memcpy(update,bounds,sizeof update);else memset(update,0,sizeof update);
     }
     if(w->visible) {
-        int frame=w->proc_id==1?7:1,top=t-(w->proc_id==12?20:frame);
+        int frame=mac_window_frame(w->proc_id),top=t-mac_window_top_extent(w->proc_id);
         uint8_t *ram=mac_cpu_ram(rt->cpu);unsigned light=0,max=0;
         for(unsigned i=0;i<256;i++) {uint32_t c=rt->palette[i];unsigned v=((c>>16)&255)+((c>>8)&255)+(c&255);if(v>=max){max=v;light=i;}}
         /* Restore only old pixels no longer in the new content. Retain the
          * overlapping guest image; redraw authored chrome after geometry. */
         for(int y=top<0?0:top;y<old_b+frame && y<480;y++)for(int x=l-frame<0?0:l-frame;x<old_r+frame && x<640;x++)
             if(y<t || y>=b || x<l || x>=r)ram[rt->screen_base+y*640+x]=ram[w->backdrop+y*640+x];
-        for(int y=t;y<b;y++)for(int x=l;x<r;x++)if(y>=old_b || x>=old_r)ram[rt->screen_base+y*640+x]=(uint8_t)light;
+        for(int y=t;y<b && y<480;y++)for(int x=l;x<r && x<640;x++)if(y>=old_b || x>=old_r)ram[rt->screen_base+y*640+x]=(uint8_t)light;
     }
     w->bounds[2]=(int16_t)b;w->bounds[3]=(int16_t)r;
     rect(rt,w->address+16,local_t,local_l,local_t+height,local_l+width);
-    int frame=w->proc_id==1?7:1;
-    rect(rt,region(rt,w->handles[8])+2,t-(w->proc_id==12?20:frame),l-frame,b+frame,r+frame);
+    int frame=mac_window_frame(w->proc_id);
+    rect(rt,region(rt,w->handles[8])+2,t-mac_window_top_extent(w->proc_id),l-frame,b+frame,r+frame);
     rect(rt,region(rt,w->handles[9])+2,t,l,b,r);
     rect(rt,rd(rt,w->handles[12],4),t,l,b,r);
     if(w->visible)rect(rt,vis+2,local_t,local_l,local_t+height,local_l+width);
@@ -332,7 +350,7 @@ static int move_window(MacRuntime *rt,uint32_t sp) {
     if(w->updating || !mac_window_registry_valid(rt) || top<0 || left<0 || top+height>480 || left+width>640)
         return fail(rt,"MoveWindow requires stable geometry within the owned display.");
     if(w->visible && mac_window_front(rt)!=w->address)return fail(rt,"MoveWindow requires a single visible window.");
-    if(front && !w->visible)return fail(rt,"MoveWindow activation of a hidden window is unsupported.");
+    if(!w->visible)front=0;   /* front=TRUE means SelectWindow (Toolbox-246); on a hidden window this runtime's SelectWindow does nothing, so neither does this */
     if(front && !w->active && rt->event_count>=64)return fail(rt,"MoveWindow activation queue is full.");
     uint32_t pm=rd(rt,w->handles[0],4),regions[3];int edges[3][4],bitmap[4];
     for(unsigned i=0;i<4;i++) {
@@ -345,10 +363,12 @@ static int move_window(MacRuntime *rt,uint32_t sp) {
         if(edges[j][0]>=edges[j][2] || edges[j][1]>=edges[j][3]){memset(edges[j],0,sizeof edges[j]);continue;}
         for(unsigned i=0;i<4;i++){edges[j][i]+=i&1?dx:dy;if(edges[j][i]<INT16_MIN || edges[j][i]>INT16_MAX)return fail(rt,"MoveWindow region coordinates overflow signed words.");}
     }
-    uint8_t *pixels=NULL,*ram=mac_cpu_ram(rt->cpu);
+    uint8_t *pixels=NULL,*ram=mac_cpu_ram(rt->cpu);int copy_h=height,copy_w=width;
     if(w->visible) {
-        pixels=malloc((size_t)width*height);if(!pixels)return fail(rt,"MoveWindow cannot allocate pixel snapshot.");
-        for(int y=0;y<height;y++)memcpy(pixels+y*width,ram+rt->screen_base+(w->bounds[0]+y)*640+w->bounds[1],(size_t)width);
+        pixels=calloc((size_t)width*height,1);if(!pixels)return fail(rt,"MoveWindow cannot allocate pixel snapshot.");
+        /* Only the part of the window that is on the screen has pixels to carry along. */
+        if(w->bounds[0]+height>480)copy_h=480-w->bounds[0];if(w->bounds[1]+width>640)copy_w=640-w->bounds[1];
+        for(int y=0;y<copy_h;y++)memcpy(pixels+y*width,ram+rt->screen_base+(w->bounds[0]+y)*640+w->bounds[1],(size_t)copy_w);
         restore_background(rt);memcpy(ram+w->backdrop,ram+rt->screen_base,307200);
     }
     w->bounds[0]=(int16_t)top;w->bounds[1]=(int16_t)left;w->bounds[2]=(int16_t)(top+height);w->bounds[3]=(int16_t)(left+width);
@@ -357,7 +377,14 @@ static int move_window(MacRuntime *rt,uint32_t sp) {
     rect(rt,rd(rt,w->handles[12],4),top,left,top+height,left+width);
     if(front){mac_window_to_front(rt,w->address);activate(rt,1);}
     mac_window_draw(rt,0);
-    if(pixels){for(int y=0;y<height;y++)memcpy(ram+rt->screen_base+(top+y)*640+left,pixels+y*width,(size_t)width);free(pixels);}
+    if(pixels){
+        if(copy_h<height || copy_w<width) {      /* part of the window was off-screen: its pixels never existed, so the content starts out paper */
+            unsigned light=0,max=0;for(unsigned i=0;i<256;i++){uint32_t c=rt->palette[i];unsigned v=((c>>16)&255)+((c>>8)&255)+(c&255);if(v>=max){max=v;light=i;}}
+            for(int y=0;y<height;y++)memset(ram+rt->screen_base+(top+y)*640+left,(int)light,(size_t)width);
+        }
+        for(int y=0;y<copy_h;y++)memcpy(ram+rt->screen_base+(top+y)*640+left,pixels+y*width,(size_t)copy_w);free(pixels);
+        if(copy_h<height || copy_w<width)mac_window_draw(rt,0);   /* the chrome over the paper fill */
+    }
     mac_cpu_set(rt->cpu,MAC_A7,sp+10);return 1;
 }
 int mac_window_service(MacRuntime *rt,uint16_t opcode) {
@@ -368,9 +395,10 @@ int mac_window_service(MacRuntime *rt,uint16_t opcode) {
     case 0xa924:args=0;result=4;break;
     case 0xa922:case 0xa923:case 0xa915:case 0xa916:case 0xa91f:case 0xa920:
     case 0xa909:case 0xa92d:case 0xa914:args=4;break;
+    case 0xa908:case 0xa91c:args=6;break;
     case 0xa917:args=4;result=4;break;
     case 0xa80a:args=4;result=2;break;
-    case 0xa918:case 0xa919:case 0xa90d:args=8;break;
+    case 0xa918:case 0xa919:case 0xa91a:case 0xa90d:case 0xa90a:args=8;break;
     case 0xa92c:args=8;result=2;break;
     default:return 0;
     }
@@ -379,6 +407,7 @@ int mac_window_service(MacRuntime *rt,uint16_t opcode) {
     if(!valid(rt,sp,args+result,1))return fail(rt,"Window call stack is invalid.");
     if(opcode==0xaa45)return create_window(rt,sp);
     if(opcode==0xa90d) {
+        if(!rd(rt,sp+4,4)){mac_cpu_set(rt->cpu,MAC_A7,sp+8);return 1;}   /* PaintBehind(NIL, rgn): no window to start from, nothing to paint (as CalcVisBehind(NIL)) */
         if(!mac_window_select(rt,rd(rt,sp+4,4)))return fail(rt,"PaintBehind start window is not registered.");
         return paint_behind(rt,sp);
     }
@@ -389,16 +418,20 @@ int mac_window_service(MacRuntime *rt,uint16_t opcode) {
         uint32_t front=mac_window_front(rt);
         if(front)mac_window_select(rt,front);
         if(front && !window_valid(rt))return fail(rt,"FindWindow has invalid owned window records.");
-        int hit=front?mac_window_hit(rt,(int16_t)rd(rt,sp+6,2),(int16_t)rd(rt,sp+4,2)):0;
+        int mbar=(int)rd(rt,0xbaa,2),vv=(int16_t)rd(rt,sp+4,2);                    /* a point in the menu bar is inMenuBar (1), with no window, before any window is asked */
+        if(mbar>0 && vv>=0 && vv<mbar){wr(rt,out,4,0);wr(rt,sp+8,2,1);mac_cpu_set(rt->cpu,MAC_A7,sp+8);return 1;}
+        int hit=front?mac_window_hit_test(rt,(int16_t)rd(rt,sp+6,2),(int16_t)rd(rt,sp+4,2)):0;
         wr(rt,out,4,hit?rt->window.address:0);wr(rt,sp+8,2,(unsigned)hit);mac_cpu_set(rt->cpu,MAC_A7,sp+8);return 1;
     }
-    uint32_t address=rd(rt,sp+((opcode==0xa91d || opcode==0xa91b)?6:opcode==0xa918 || opcode==0xa919?4:0),4);
+    uint32_t address=rd(rt,sp+((opcode==0xa91d || opcode==0xa91b)?6:opcode==0xa918 || opcode==0xa919 || opcode==0xa91a || opcode==0xa90a?4:(opcode==0xa908||opcode==0xa91c)?2:0),4);
+    if(opcode==0xa90a && !address){mac_cpu_set(rt->cpu,MAC_A7,sp+8);return 1;}   /* CalcVisBehind(NIL, rgn): no window to recalculate */
     if(!mac_window_select(rt,address) || !window_valid(rt))return fail(rt,"Window call requires the live registered window and valid owned records.");
     if(opcode==0xa91d)return size_window(rt,sp);
     if(opcode==0xa91b)return move_window(rt,sp);
     MacWindowState *w=&rt->window;
     uint32_t vis=region(rt,w->handles[2]),update=region(rt,w->handles[10]);
-    if(opcode==0xa909) { /* CalcVis; public Toolbox-287, global content to local vis. */
+    if(opcode==0xa909 || opcode==0xa90a) { /* CalcVis; public Toolbox-287, global content to local vis. CalcVisBehind(start, clobbered) recomputes the one window
+        * there is the same way: the clobbered region is not used to narrow it. */
         if(w->updating || !mac_window_registry_valid(rt))return fail(rt,"CalcVis requires stable owned window geometry.");
         for(unsigned i=0;i<rt->window_count;i++) {
             MacWindowState *other=mac_window_find(rt,rt->window_order[i]);
@@ -435,11 +468,16 @@ int mac_window_service(MacRuntime *rt,uint16_t opcode) {
     } else if(opcode==0xa915 || opcode==0xa916) {
         if(w->updating)return fail(rt,"Window visibility cannot change inside BeginUpdate.");
         int show=opcode==0xa915;
-        if(show && w->palette_handle)return fail(rt,"Showing an associated palette requires unimplemented Palette Manager activation.");
-        uint32_t front=mac_window_front(rt);
-        if(show && front && front!=w->address)return fail(rt,"Showing a second visible window requires unsupported compositing.");
+        if(show && mac_palette_check(rt,w))return -1; /* a palette we cannot realize refuses before the window shows */
+        if(w->visible!=show && !mac_window_stack_ok(rt,w->address,show))return fail(rt,"Windows can only be shown or hidden in stacking order (frontmost first); anything else needs compositing.");
         if(w->active!=show && rt->event_count>=64)return fail(rt,"Window activation event queue is full.");
-        visibility(rt,show);
+        visibility(rt,show,1);if(show && w->palette_handle && mac_palette_activate(rt,w))return -1;
+    } else if(opcode==0xa908) { /* ShowHide(window, showFlag): visibility only; the window is neither activated nor reordered */
+        if(w->updating)return fail(rt,"Window visibility cannot change inside BeginUpdate.");
+        int show=rd(rt,sp,1)!=0;
+        if(show && mac_palette_check(rt,w))return -1;
+        if(w->visible!=show && !mac_window_stack_ok(rt,w->address,show))return fail(rt,"Windows can only be shown or hidden in stacking order (frontmost first); anything else needs compositing.");
+        visibility(rt,show,0);
     } else if(opcode==0xa91f || opcode==0xa920) {
         if(opcode==0xa920 && !w->visible)mac_window_to_front(rt,w->address);
         if(w->visible){
@@ -450,6 +488,8 @@ int mac_window_service(MacRuntime *rt,uint16_t opcode) {
     else if(opcode==0xa80a)wr(rt,sp+4,2,w->proc_id&15);
     else if(opcode==0xa917)wr(rt,sp+4,4,rd(rt,address+152,4));
     else if(opcode==0xa918)wr(rt,address+152,4,rd(rt,sp,4));
+    else if(opcode==0xa91c)mac_window_hilite(rt,w,rd(rt,sp,1)!=0);
+    else if(opcode==0xa91a){if(mac_window_set_title(rt,w,rd(rt,sp,4))<0)return -1;}
     else if(opcode==0xa919) {
         uint32_t out=rd(rt,sp,4);unsigned size=w->title[0]+1;
         if(!valid(rt,out,size,0))return fail(rt,"GetWTitle output range exceeds guest RAM.");

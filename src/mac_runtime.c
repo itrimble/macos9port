@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 static int g_policy_heap_mb = 8, g_policy_guard = 0;
 
@@ -48,6 +49,14 @@ uint32_t mac_runtime_alloc(MacRuntime *rt, uint32_t size) {
     return result;
 }
 
+uint32_t mac_runtime_alloc_data(MacRuntime *rt, uint32_t size) {
+    return rt->heap_bridge ? mac_heap_alloc(rt, size) : mac_runtime_alloc(rt, size);
+}
+
+void mac_runtime_free_data(MacRuntime *rt, uint32_t address) {
+    if (mac_heap_owns(rt, address)) mac_heap_free(rt, address); /* bump storage is never reclaimed */
+}
+
 uint32_t mac_runtime_resource(MacRuntime *rt, uint32_t type, int16_t id) {
     return mac_runtime_resource_owned(rt, type, id, 0);
 }
@@ -60,13 +69,15 @@ uint32_t mac_runtime_resource_owned(MacRuntime *rt, uint32_t type, int16_t id, i
         if (h->resource && h->resource_owner == owner && h->type == type && h->id == id) return h->handle;
     }
     MacResource r;
-    if (mac_resource_find(fork, type, id, &r) != 0 || r.size > UINT32_MAX) return 0;
+    if (mac_resource_find(fork, type, id, &r) != 0) return 0;
+    mac_resedit_apply(rt, owner, &r); /* SetResInfo / WriteResource edits win over the fork's bytes */
+    if (r.size > UINT32_MAX) return 0;
     size_t slot = 0;
     while (slot < rt->handle_count && (rt->handles[slot].handle || rt->handles[slot].pointer)) slot++;
     if (slot == MAC_RUNTIME_HANDLES) return 0;
     uint32_t old_heap = rt->heap_next;
-    uint32_t h = mac_runtime_alloc(rt, 4), p = mac_runtime_alloc(rt, (uint32_t)r.size);
-    if (!h || !p) { rt->heap_next = old_heap; return 0; }
+    uint32_t h = mac_runtime_alloc(rt, 4), p = mac_runtime_alloc_data(rt, (uint32_t)r.size);
+    if (!h || !p) { rt->heap_next = old_heap; mac_runtime_free_data(rt, p); return 0; }
     memcpy(mac_cpu_ram(rt->cpu) + p, r.data, r.size);
     mac_cpu_write(rt->cpu, h, 4, p);
     if (slot == rt->handle_count) rt->handle_count++;
@@ -104,6 +115,15 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
     rt->jump_table = rt->a5 + offset;
     rt->jump_size = length;
     rt->heap_next = 0x100000;
+    /* Upper half of the old fixed heap becomes the auto-growing protected heap;
+     * the bump allocator keeps [0x100000, 0x400000) for runtime-internal records.
+     * Only for the default 8 MiB partition without guard redzones; other memory
+     * policies keep the plain bump allocator. */
+    rt->stack_base = rt->a5 - below;
+    if (!rt->guard_allocs && rt->a5 == 0x800000 && rt->heap_limit == 0x700000) {
+        if (mac_heap_attach(rt, 0x400000, mac_partition_heap_hi(fork, 0x400000, 0x700000, rt->stack_base > 0x30000 ? rt->stack_base - 0x30000 : 0x700000))) return fail(rt, err, n, "Could not create the protected guest heap.");
+        rt->heap_limit = 0x400000;
+    }
     rt->stack_base = rt->a5 - below;
     rt->screen_base = 0xe00000;
     rt->screen_width = 640;
@@ -131,18 +151,23 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
     }
     if (mac_runtime_load_segment(rt, (int16_t)be16(zero.data + 20)))
         return fail(rt, err, n, "Could not load startup CODE segment.");
+    /* Classic Mac OS runs application code in supervisor mode, and ordinary programs use privileged instructions: heap code
+     * brackets critical sections with MOVE SR,-(A7) and ORI #$0200,SR. In user mode those raise a privilege violation (an empty
+     * vector sent Castle of Dr. Brain to address 0 with A7 = $FFFFFFF8). The test checks that A7 is intact after this, in either order
+     * of the two stores (I expected the stack pointer to be swapped by the mode change; it is not, with this CPU wrapper). */
+    mac_cpu_set(rt->cpu, MAC_SR, 0x2000);
     mac_cpu_set(rt->cpu, MAC_A5, rt->a5);
     mac_cpu_set(rt->cpu, MAC_A7, rt->a5 - below);
     mac_cpu_set(rt->cpu, MAC_PC, rt->jump_table + 2);
-    mac_cpu_set(rt->cpu, MAC_SR, 0);
     /* Process-owned low-memory globals needed before the first Toolbox call. */
     mac_cpu_write(rt->cpu, 0x904, 4, rt->a5); /* CurrentA5 */
     mac_cpu_write(rt->cpu, 0x908, 4, rt->a5 - below); /* CurStackBase: below A5 globals */
+    mac_appfork_publish(rt); /* CurApRefNum, CurMap and TopMapHndl for code that reads its own resource file directly */
     mac_cpu_write(rt->cpu, 0x934, 2, offset); /* CurJTOffset */
-    mac_cpu_write(rt->cpu, 0x15a, 2, 0x0607); /* Guest compatibility profile, not host OS. */
+    mac_cpu_write(rt->cpu, 0x15a, 2, MAC_PROFILE_SYSTEM_VERSION); /* Guest compatibility profile, not host OS. */
     mac_cpu_write(rt->cpu, 0x12f, 1, 2); /* 68020 */
     mac_cpu_write(rt->cpu, 0x108, 4, rt->a5); /* Guest MemTop */
-    mac_cpu_write(rt->cpu, 0x130, 4, rt->heap_limit); /* ApplLimit */
+    mac_cpu_write(rt->cpu, 0x130, 4, rt->heap_bridge ? 0x700000 : rt->heap_limit); /* ApplLimit */
     rt->system_volume = mac_system_volume_create(rt);
     if (!rt->system_volume) return fail(rt, err, n, "Could not create authored System volume.");
     if (mac_drive_mount(rt, 2, 1)) return fail(rt, err, n, "Could not mount authored System drive.");
@@ -176,9 +201,19 @@ int mac_runtime_load_segment(MacRuntime *rt, int16_t id) {
 
 void mac_runtime_destroy(MacRuntime *rt) {
     if (!rt) return;
+    mac_heap_detach(rt);
+    mac_resedit_destroy(rt);
     mac_time_destroy(rt);
     mac_sound_destroy(rt);
     mac_resource_chain_destroy(rt);
+    mac_stdfile_destroy(rt);
+    mac_stdput_destroy(rt);
+    mac_dlgmgr_destroy(rt);
+    mac_alert_destroy(rt);
+    mac_cdef_destroy(rt);
+    mac_scrap_destroy(rt);
+    mac_rgn_record_destroy(rt);
+    mac_menuselect_destroy(rt);
     mac_files_destroy(rt);
     mac_drive_destroy(rt);
     mac_system_volume_destroy(rt->system_volume);
@@ -187,8 +222,20 @@ void mac_runtime_destroy(MacRuntime *rt) {
     rt->cpu = NULL;
 }
 
+/* Many classic programs read the low-memory clock globals directly instead of calling TickCount or GetDateTime: Ticks ($16A,
+ * a long, 60 per second since startup) and Time ($20C, a long, seconds since 1 Jan 1904). Sierra's SCI interpreter reads Ticks
+ * for every tick-based wait and Time for its seconds, and sat forever in a room while both stayed zero. They follow rt->ticks,
+ * which the host advances once per 1/60 s; Time is a base plus whole elapsed seconds. */
+void mac_clock_publish(MacRuntime *rt) {
+    if (!rt || !rt->cpu) return;
+    if (!rt->clock_base) rt->clock_base = (uint32_t)((uint64_t)time(NULL) + 2082844800ull);
+    mac_cpu_write(rt->cpu, 0x16a, 4, rt->ticks);
+    mac_cpu_write(rt->cpu, 0x20c, 4, rt->clock_base + rt->ticks / 60);
+}
+
 size_t mac_runtime_run(MacRuntime *rt, size_t instructions) {
     if (!rt || !rt->cpu) return 0;
+    mac_clock_publish(rt);
     size_t ran = mac_time_poll(rt, instructions);
     if (ran < instructions && !mac_cpu_halted(rt->cpu))
         ran += mac_vbl_poll(rt, instructions - ran);
@@ -200,6 +247,7 @@ size_t mac_runtime_run(MacRuntime *rt, size_t instructions) {
 
 size_t mac_runtime_run_cycles(MacRuntime *rt, uint64_t cycles) {
     if (!rt || !rt->cpu || !cycles || mac_cpu_halted(rt->cpu)) return 0;
+    mac_clock_publish(rt);
     uint64_t cycle_start = mac_cpu_cycles(rt->cpu);
     /* VBL and Time Manager polls refuse budgets under 10,000 instructions so a
      * callback can always complete. Real-time slices are often 1-2 ms (16-32k

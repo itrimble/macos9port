@@ -98,5 +98,14 @@ int main(void){
     CHECK(mac_system_volume_service(&r,v,0xa260)==-1);CHECK(mac_cpu_halted(r.cpu));
     for(unsigned i=8180;i<8192;i++)CHECK(mac_cpu_ram(r.cpu)[i]==0x5a);
     mac_system_volume_destroy(v);mac_cpu_destroy(r.cpu);
+    /* A parameter block that ends 30 bytes in (the most the dispatcher validates before it reads the fields it needs): HFS working-directory selectors read ioDirID at +48 through the
+     * bounds-checked reader, so a block at the very end of RAM is refused (halt), never read past the end of host memory (run under ASan). */
+    for(unsigned sel=1;sel<=9;sel+=(sel==2?5:sel==7?1:1)){
+        MacRuntime e={0};e.cpu=mac_cpu_create_model(8192,MAC_CPU_68020);CHECK(e.cpu!=NULL);if(!e.cpu)break;
+        MacSystemVolume*ev=mac_system_volume_create(&e);CHECK(ev!=NULL);
+        if(ev){uint32_t at=8192-30;mac_cpu_write(e.cpu,at+22,2,0xfffe);mac_cpu_set(e.cpu,MAC_A0,at);mac_cpu_set(e.cpu,MAC_D0,sel);mac_cpu_set(e.cpu,MAC_A7,0x1000);
+            int rc=mac_system_volume_service(&e,ev,0xa260);CHECK(rc==0||rc==-1);mac_system_volume_destroy(ev);}
+        mac_cpu_destroy(e.cpu);
+    }
     printf("Authored system volume: %s\n",failed?"FAILED":"ok");return failed!=0;
 }

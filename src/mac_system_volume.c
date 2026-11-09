@@ -1,5 +1,6 @@
 #include "mac_system_volume.h"
 #include "mac_drive_queue.h"
+#include "mac_files_int.h"
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -209,6 +210,11 @@ int mac_system_volume_service(MacRuntime *rt,MacSystemVolume *v,uint16_t opcode)
         uint32_t name=r32(pb+18);
         if(name && range(c,name,1) && range(c,name,1u+mac_cpu_ram(c)[name]) &&
            equal_name(mac_cpu_ram(c)+name,vol_name))ours=1;
+    }
+    if(hfs&&(selector==1||selector==2||selector==7)&&mac_files_wd_ours(rt,selector,mac_cpu_read(c,p+48,4),volume))ours=0;   /* a made folder's working directory is the files service's */
+    if(hfs&&selector==9&&index==0&&ours){   /* a named item other than the authored System file belongs to the flat save namespace (mac_files_dircreate.c) */
+        uint32_t nm=r32(pb+18);
+        if(nm && range(c,nm,1) && range(c,nm,1u+mac_cpu_ram(c)[nm]) && !equal_name(mac_cpu_ram(c)+nm,"System"))ours=0;
     }
     if(!ours)return 0;
     size_t size=vol_call?122:hfs?(selector==8?62:selector==9?(index<0?104:108):52):(open_call&&(opcode&0x200)?52:call==0x11?32:50);

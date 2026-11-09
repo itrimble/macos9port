@@ -48,19 +48,16 @@ static void bad_pointer(uint32_t p) {
         CHECK(((unsigned char *)rt.dialog_params)[i] == 0x35);
     mac_cpu_destroy(rt.cpu);
 }
-static void alert_diagnostic(void) {
-    MacRuntime rt = fresh();
-    const char text[] = "Synthetic compatibility requirement";
-    rt.dialog_params[0][0] = sizeof text - 1;
-    memcpy(rt.dialog_params[0] + 1, text, sizeof text - 1);
-    mac_cpu_write(rt.cpu, SP, 4, 0); mac_cpu_write(rt.cpu, SP + 4, 2, 503);
-    mac_cpu_write(rt.cpu, SP + 6, 2, 0xbeef);
-    CHECK(mac_dialog_service(&rt, 0xa985) == -1 && mac_cpu_halted(rt.cpu));
-    CHECK(strstr(mac_cpu_error(rt.cpu), "Alert 503 unsupported"));
-    CHECK(strstr(mac_cpu_error(rt.cpu), text));
-    CHECK(mac_cpu_get(rt.cpu, MAC_A7) == SP);
-    CHECK(mac_cpu_ram(rt.cpu)[SP + 6] == 0xbe && mac_cpu_ram(rt.cpu)[SP + 7] == 0xef);
-    mac_cpu_destroy(rt.cpu);
+/* Alert and its kin moved to mac_alert.c (tested in test_mac_alert): this service no longer claims them and touches nothing. */
+static void alerts_are_not_ours(void) {
+    for (unsigned op = 0xa985; op <= 0xa988; op++) {
+        MacRuntime rt = fresh();
+        mac_cpu_write(rt.cpu, SP, 4, 0); mac_cpu_write(rt.cpu, SP + 4, 2, 503); mac_cpu_write(rt.cpu, SP + 6, 2, 0xbeef);
+        CHECK(mac_dialog_service(&rt, (uint16_t)op) == 0 && !mac_cpu_halted(rt.cpu));
+        CHECK(mac_cpu_get(rt.cpu, MAC_A7) == SP);
+        CHECK(mac_cpu_ram(rt.cpu)[SP + 6] == 0xbe && mac_cpu_ram(rt.cpu)[SP + 7] == 0xef);
+        mac_cpu_destroy(rt.cpu);
+    }
 }
 int main(void) {
     snapshots(); bad_pointer(0); bad_pointer(RAM - 1); bad_pointer(0xffffffff);
@@ -70,5 +67,5 @@ int main(void) {
         CHECK(mac_dialog_service(&rt, 0xa98b) == -1 && mac_cpu_halted(rt.cpu));
         CHECK(mac_cpu_get(rt.cpu, MAC_A7) == bad_sp[i]); mac_cpu_destroy(rt.cpu);
     }
-    alert_diagnostic(); puts("mac dialog ABI tests passed"); return 0;
+    alerts_are_not_ours(); puts("mac dialog ABI tests passed"); return 0;
 }

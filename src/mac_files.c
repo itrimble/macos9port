@@ -72,7 +72,7 @@ static int result(MacCpu *cpu, uint32_t pb, int error) {
 
 /* This virtual volume is precisely the explicitly mounted app-data directory,
  * not a host disk. Its stable reference never grants access to other paths. */
-static int get_volume(MacRuntime *rt, uint32_t pb) {
+int mac_files_get_volume(MacRuntime *rt, uint32_t pb) {
     static const char name[] = "OS Pi Data";
     if (!rt->file_state) return -35;
     uint32_t p = mac_cpu_read(rt->cpu, pb + 18, 4);
@@ -98,7 +98,7 @@ static int working_directory(MacRuntime *rt, uint32_t pb) {
         return volume <= -16384 ? -51 : -35;
     if (index != 0) return -51; /* No non-root working directories are open. */
     /* get_volume validates the optional name output before any mutation. */
-    int error = get_volume(rt, pb);
+    int error = mac_files_get_volume(rt, pb);
     if (error) return error;
     mac_cpu_write(cpu, pb + 28, 4, 0); /* Root has no working-directory process owner. */
     mac_cpu_write(cpu, pb + 32, 2, 0xffff);
@@ -151,8 +151,13 @@ static int root_info(MacRuntime *rt, uint32_t pb) {
     FileState *s = rt->file_state;
     if (!s) return -35;
     int volume = (int16_t)mac_cpu_read(cpu,pb+22,2);
-    if (volume != 0 && volume != -1) return -35;
-    if ((int16_t)mac_cpu_read(cpu,pb+28,2) >= 0) return -50;
+    if (volume != 0 && volume != -1 && !(volume == -2 && rt->system_volume && (int16_t)mac_cpu_read(cpu,pb+28,2) >= 0)) return -35;   /* -2: the System volume's folders are this flat namespace too */
+    if ((int16_t)mac_cpu_read(cpu,pb+28,2) == 0 && mac_files_folder_info(rt,pb)) return 0;   /* a folder made by DirCreate */
+    if ((int16_t)mac_cpu_read(cpu,pb+28,2) >= 0) {   /* PBGetCatInfo by index (1..n) or by name: the files of the single directory, as PBHGetFInfo lists them */
+        int found = mac_files_hget_info(rt,pb);
+        if (!found) mac_cpu_write(cpu,pb+100,4,2);   /* ioFlParID: every file's parent is the volume root (directory ID 2); Glider hands it to FSMakeFSSpec */
+        return found;
+    }
     if (mac_cpu_read(cpu,pb+48,4) != 2) return -120;
     uint32_t name = mac_cpu_read(cpu,pb+18,4);
     if (name && !valid(cpu,name,11)) return -50;
@@ -186,25 +191,20 @@ static int root_info(MacRuntime *rt, uint32_t pb) {
     return 0;
 }
 
-static int open_file(MacRuntime *rt, uint32_t pb) {
-    MacCpu *cpu = rt->cpu;
+/* Shared by PBOpen and FSpOpenDF: opens the named regular file into a free slot and returns its reference. */
+int mac_files_open_name(MacRuntime *rt, const char *name, unsigned permission, int *ref) {
     FileState *s = rt->file_state;
-    int volume = (int16_t)mac_cpu_read(cpu, pb + 22, 2);
-    unsigned permission = mac_cpu_read(cpu, pb + 27, 1);
-    char name[256];
-    int error = mac_files_read_name(cpu, mac_cpu_read(cpu, pb + 18, 4), name, sizeof name);
-    if (error) return error;
+    if (!s) return -35; /* nsvErr */
     if (rt->trace) fprintf(stderr, "file-open name=%s permission=%u\n", name, permission);
-    if (!s || (volume != 0 && volume != -1)) return -35; /* nsvErr */
     int index;
     for (index = 0; index < FILE_LIMIT; index++) if (s->files[index].fd < 0) break;
     if (index == FILE_LIMIT) return -42; /* tmfoErr */
     /* Save files shadow data files of the same name and may be writable. */
-    error = mac_files_open_save(rt, name, permission, &s->files[index]);
+    int error = mac_files_open_save(rt, name, permission, &s->files[index]);
     if (error < 0) return error;
     if (error == 0) {
-        mac_cpu_write(cpu, pb + 24, 2, REF_BASE + index);
-        if (rt->trace) fprintf(stderr, "file-open-result name=%s ref=%d writable=%d\n", name, REF_BASE + index, s->files[index].writable);
+        *ref = REF_BASE + index;
+        if (rt->trace) fprintf(stderr, "file-open-result name=%s ref=%d writable=%d\n", name, *ref, s->files[index].writable);
         return 0;
     }
     if (permission > 1) return -54; /* permErr: application data is read-only */
@@ -220,10 +220,24 @@ static int open_file(MacRuntime *rt, uint32_t pb) {
     if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_size < 0 || st.st_size > INT32_MAX) {
         close(fd); return -50;
     }
-    s->files[index] = (GuestFile){fd, 0, 0, {0}};
+    s->files[index] = (GuestFile){fd, 0, 0, {0}, 0};
     memcpy(s->files[index].name, name, strlen(name) < FILE_NAME_MAX ? strlen(name) + 1 : 0);
-    mac_cpu_write(cpu, pb + 24, 2, REF_BASE + index);
-    if (rt->trace) fprintf(stderr, "file-open-result name=%s ref=%d bytes=%lld\n", name, REF_BASE + index, (long long)st.st_size);
+    *ref = REF_BASE + index;
+    if (rt->trace) fprintf(stderr, "file-open-result name=%s ref=%d bytes=%lld\n", name, *ref, (long long)st.st_size);
+    return 0;
+}
+
+static int open_file(MacRuntime *rt, uint32_t pb) {
+    MacCpu *cpu = rt->cpu;
+    int volume = (int16_t)mac_cpu_read(cpu, pb + 22, 2);
+    unsigned permission = mac_cpu_read(cpu, pb + 27, 1);
+    char name[256];
+    int error = mac_files_pb_name(rt, pb, mac_cpu_read(cpu, pb + 18, 4), name, sizeof name);
+    if (error) return error;
+    if (!rt->file_state || (volume != 0 && volume != -1 && mac_files_volume_ok_rt(rt, pb))) return -35; /* nsvErr */
+    int ref;
+    if ((error = mac_files_open_name(rt, name, permission, &ref))) return error;
+    mac_cpu_write(cpu, pb + 24, 2, (uint16_t)ref);
     return 0;
 }
 
@@ -331,28 +345,36 @@ static unsigned block_size(unsigned base, int wd, unsigned selector) {
     switch (base) {
     case 0xa011: case 0xa012: return 32;
     case 0xa013: case 0xa014: case 0xa015: return 24;
-    case 0xa00c: case 0xa00d: return 80;
-    case 0xa209: return 52;
+    case 0xa00c: case 0xa00d: case 0xa20c: return 80;
+    case 0xa007: return 64;
+    case 0xa209: case 0xa214: case 0xa215: case 0xa00a: case 0xa20a: return 52;
     case 0xa207: return 122;
     case 0xa260: return wd && selector == 9 ? 104 : 52;
     default: return PB_BYTES;
     }
 }
 
-int mac_file_service(MacRuntime *rt, uint16_t opcode) {
+static int file_service(MacRuntime *rt, uint16_t opcode) {
+    if (opcode == 0xaa52) return mac_fsspec_service(rt, opcode); /* HighLevelFSDispatch */
     unsigned base = opcode & ~0x400u;
     switch (base) {
-    case 0xa000: case 0xa001: case 0xa002: case 0xa003: case 0xa008: case 0xa009:
+    case 0xa000: case 0xa001: case 0xa002: case 0xa003: case 0xa007: case 0xa008: case 0xa009:
     case 0xa00b: case 0xa00c: case 0xa00d: case 0xa011: case 0xa012: case 0xa013:
     case 0xa014: case 0xa015: case 0xa018: case 0xa044: case 0xa207: case 0xa209:
-    case 0xa260: break;
+    case 0xa060: case 0xa20c: case 0xa260: case 0xa00a: case 0xa20a: case 0xa214: case 0xa215: break;
     default: return 0;
     }
     if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1;
     MacCpu *cpu = rt->cpu;
     int wd = base == 0xa260;
     unsigned selector = mac_cpu_get(cpu, MAC_D0) & 0xffff;
-    if (wd && selector != 7 && selector != 9) return 0;
+    if (wd && selector == 6) {   /* DirCreate: the approximated folder model (mac_files_dircreate.c) */
+        uint32_t q = mac_cpu_get(cpu, MAC_A0);
+        if (!(q & 1) && valid(cpu, q, 52)) return result(cpu, q, mac_files_dir_create(rt, q));
+    }
+    if (wd && selector != 1 && selector != 2 && selector != 7 && selector != 9 && selector != 0x30) return 0;
+    if (wd && (selector == 1 || selector == 2) && !mac_files_wd_ours(rt, selector, mac_cpu_read(cpu, mac_cpu_get(cpu, MAC_A0) + 48, 4), (int16_t)mac_cpu_read(cpu, mac_cpu_get(cpu, MAC_A0) + 22, 2))) return 0;   /* not one of ours: another service's */
+    if (base == 0xa060 && selector != 0x1a) return 0; /* _FSDispatch: only PBOpenDF so far */
     uint32_t pb = mac_cpu_get(cpu, MAC_A0);
     if ((pb & 1) || !valid(cpu, pb, block_size(base, wd, selector))) {
         mac_cpu_halt(cpu, "Invalid File Manager parameter block."); return -1;
@@ -360,23 +382,27 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode) {
     if (opcode & 0x400) return result(cpu, pb, -50); /* async unsupported */
     FileState *state = rt->file_state;
     switch (base) {
-    case 0xa013: return result(cpu, pb, flush_volume(rt, pb));
+    case 0xa013: mac_files_flush_staged(state); return result(cpu, pb, flush_volume(rt, pb));   /* FlushVol publishes staged writes */
+    case 0xa007: return result(cpu, pb, mac_volume_info_basic(rt, pb, state ? state->directory : -1));
     case 0xa207: return result(cpu, pb, mac_volume_info(rt, pb, state ? state->directory : -1));
     case 0xa260: {
-        int error = selector == 9 ? root_info(rt,pb) : working_directory(rt,pb);
+        int error = selector == 0x30 ? mac_files_get_volparms(rt,pb) : selector == 9 ? root_info(rt,pb) : selector == 1 || selector == 2 || (selector == 7 && mac_files_wd_folder((int16_t)mac_cpu_read(cpu,pb+22,2))) ? mac_files_wd(rt,pb,selector) : working_directory(rt,pb);
         if (rt->trace) fprintf(stderr, "hfs-dispatch selector=%u volume=%d index=%d dirid=%u name-ptr=%08x error=%d\n",
                                selector, (int16_t)mac_cpu_read(cpu,pb+22,2), (int16_t)mac_cpu_read(cpu,pb+28,2),
                                mac_cpu_read(cpu,pb+48,4), mac_cpu_read(cpu,pb+18,4), error);
         return result(cpu, pb, error);
     }
-    case 0xa014: return result(cpu, pb, get_volume(rt, pb));
+    case 0xa014: return result(cpu, pb, mac_files_get_volume(rt, pb));
+    case 0xa214: case 0xa215: return result(cpu, pb, mac_files_hvol(rt, pb, base == 0xa214)); /* PBHGetVol, PBHSetVol */
     case 0xa015: return result(cpu, pb, mac_files_set_vol(rt, pb));
-    case 0xa000: return result(cpu, pb, open_file(rt, pb));
+    case 0xa000: case 0xa060: return result(cpu, pb, open_file(rt, pb)); /* PBOpen, and PBOpenDF (data fork) */
+    case 0xa00a: case 0xa20a: return result(cpu, pb, mac_files_open_rf(rt, pb)); /* PBOpenRF, PBHOpenRF: the .rsrc sidecar */
     case 0xa008: return result(cpu, pb, mac_files_create(rt, pb));
     case 0xa009: return result(cpu, pb, mac_files_delete(rt, pb, 0));
     case 0xa209: return result(cpu, pb, mac_files_delete(rt, pb, 1));
     case 0xa00b: return result(cpu, pb, mac_files_rename(rt, pb));
     case 0xa00c: return result(cpu, pb, mac_files_get_info(rt, pb));
+    case 0xa20c: return result(cpu, pb, mac_files_hget_info(rt, pb));
     case 0xa00d: return result(cpu, pb, mac_files_set_info(rt, pb));
     default: break;
     }
@@ -392,4 +418,11 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode) {
     case 0xa044: return result(cpu, pb, mac_files_set_fpos(rt, pb, f, 0));
     default: return result(cpu, pb, mac_files_close(state, f));
     }
+}
+
+/* The File Manager entry point; with tracing on, every handled call reports its trap and result. */
+int mac_file_service(MacRuntime *rt, uint16_t opcode) {
+    int handled = file_service(rt, opcode);
+    if (handled > 0 && rt && rt->trace) fprintf(stderr, "file-call op=%04x result=%d\n", opcode, (int32_t)mac_cpu_get(rt->cpu, MAC_D0));
+    return handled;
 }

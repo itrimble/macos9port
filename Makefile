@@ -47,7 +47,7 @@ PRINT_HOST := src/desktop_print_macos.m
 SHORTCUT_HOST := src/desktop_shortcuts_macos.m
 endif
 
-.PHONY: all test app run clean runtime
+.PHONY: all test app run clean runtime test-memory
 
 all: build/ospi build/ospi-runtime build/os999-tailnet
 
@@ -97,17 +97,18 @@ build/test_archive_install: tests/install_network_stub.c $(CORE) $(STORAGE_A) $(
 MUSASHI := build/deps/Musashi-313ebf1bd9f4d0d93341eb5ce21fd8a119e9dbdd
 CPUFLAGS := -DM68K_ILLG_HAS_CALLBACK=1 -DM68K_INSTRUCTION_HOOK=1 -I$(MUSASHI)
 CPUOBJ := build/m68kcpu.o build/m68kops.o build/softfloat.o
-RUNTIME := src/mac_resource.c src/mac_cpu.c src/mac_runtime.c src/mac_services.c src/mac_memory.c src/mac_resource_services.c src/mac_events.c src/mac_quickdraw.c src/mac_toolbox.c src/mac_raster.c src/mac_system.c src/mac_geometry.c src/mac_files.c src/mac_cursor.c src/mac_color.c src/mac_dialog.c src/mac_color_port.c src/mac_copybits.c src/mac_palette.c src/mac_color_raster.c
+RUNTIME := src/mac_resource.c src/mac_cpu.c src/mac_runtime.c src/mac_services.c src/mac_memory.c src/os999_heap.c src/mac_heap_bridge.c src/mac_resource_services.c src/mac_resource_edits.c src/mac_events.c src/mac_quickdraw.c src/mac_toolbox.c src/mac_raster.c src/mac_system.c src/mac_geometry.c src/mac_files.c src/mac_cursor.c src/mac_ccursor.c src/mac_color.c src/mac_dialog.c src/mac_color_port.c src/mac_copybits.c src/mac_palette.c src/mac_color_raster.c
 RUNTIME += src/mac_video_config.c src/mac_vbl.c src/mac_pixmap.c src/mac_pixels.c src/mac_volume.c src/mac_window.c src/mac_window_draw.c src/mac_regions.c src/mac_system_volume.c src/mac_color_pen.c src/mac_drive_queue.c src/mac_menu.c src/mac_menu_records.c src/mac_palette_manager.c src/mac_window_resource.c src/mac_window_registry.c src/font.c
 RUNTIME_HDRS := include/folder_navigation.h src/runtime_video_pixels.h src/runtime_frame.h src/runtime_pacing.h include/mac_resource.h include/mac_cpu.h include/mac_runtime.h include/mac_window_int.h include/mac_system_volume.h include/mac_drive_queue.h include/mac_menu_int.h include/runtime_bridge.h
 RUNTIME += src/mac_resource_catalog.c src/mac_resource_files.c
 RUNTIME += src/mac_pict_decode.c src/mac_picture.c
-RUNTIME += src/mac_sane.c
+RUNTIME += src/mac_sane.c src/mac_sane_arith.c
+RUNTIME += src/mac_numconv.c src/mac_help.c src/mac_appleevents.c
 RUNTIME += src/mac_sound.c src/mac_sound_render.c
 RUNTIME += src/mac_sound_double.c
 RUNTIME += src/mac_sound_resample.c
-RUNTIME += src/mac_time.c
-RUNTIME += src/mac_files_write.c src/mac_files_info.c
+RUNTIME += src/mac_time.c src/mac_delay.c src/mac_guestcall.c src/mac_ditl.c src/mac_dlgdraw.c src/mac_dlgwindow.c src/mac_stdfile_list.c src/mac_window_inval.c src/mac_random.c src/mac_text_state.c src/mac_font.c src/mac_text.c src/mac_textedit.c src/mac_sysfont.c src/mac_dlgswallow.c src/mac_sound_volume.c src/mac_scrap.c src/mac_resload.c src/mac_handcopy.c src/mac_colorindex.c src/mac_window_title.c src/mac_files_rf.c src/mac_files_hvol.c src/mac_files_crf.c src/mac_cmpstring.c src/mac_alias.c src/mac_controls.c src/mac_cdef.c src/mac_cicn.c src/mac_control_draw.c src/mac_qdcolor.c src/mac_window_stack.c src/mac_menuselect.c src/mac_toolutil.c src/mac_stdprocs.c src/mac_rgn.c src/mac_appfork.c src/mac_dialog_draw.c src/mac_alert.c src/mac_stdput.c src/mac_dlgmgr.c src/mac_devmgr.c src/mac_shape.c src/mac_shapes.c src/mac_stdfile.c src/mac_stdfile_draw.c
+RUNTIME += src/mac_files_write.c src/mac_files_hidden.c src/mac_files_flush.c src/mac_files_volparms.c src/mac_sysbeep.c src/mac_textbox.c src/mac_dlgedit.c src/mac_partition.c src/mac_files_dircreate.c src/mac_dlgpict.c src/mac_files_info.c src/mac_fsspec.c
 RUNTIME_HDRS += include/mac_files_int.h
 RUNTIME_HDRS += include/mac_time.h
 RUNTIME_HDRS += include/mac_sound_double.h
@@ -126,42 +127,79 @@ build/runtime/%.o: src/%.c $(RUNTIME_HDRS) Makefile $(MUSASHI)/m68kops.c
 	$(CC) $(CFLAGS) $(CPUFLAGS) -MMD -MP -c $< -o $@
 
 build/test_mac_resource_chain: $(RUNTIME_OBJ) tests/test_mac_resource_chain.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_resource_chain.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_resource_chain.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 test: build/test_mac_resource_chain
 
 build/test_mac_picture: $(RUNTIME_OBJ) tests/test_mac_picture.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_picture.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_picture.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_pict_v1: $(RUNTIME_OBJ) tests/test_mac_pict_v1.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_pict_v1.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 test: build/test_mac_picture
+test: build/test_mac_pict_v1
 
 build/test_mac_sane: $(RUNTIME_OBJ) tests/test_mac_sane.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sane.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sane.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_sane_arith: $(RUNTIME_OBJ) tests/test_mac_sane_arith.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sane_arith.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
-test: build/test_mac_sane
+test: build/test_mac_sane build/test_mac_sane_arith
+
+build/test_mac_help: $(RUNTIME_OBJ) tests/test_mac_help.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_help.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_appleevents: $(RUNTIME_OBJ) tests/test_mac_appleevents.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_appleevents.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_window_colors: $(RUNTIME_OBJ) tests/test_mac_window_colors.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_window_colors.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_setorigin: $(RUNTIME_OBJ) tests/test_mac_setorigin.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_setorigin.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_getnewpalette: $(RUNTIME_OBJ) tests/test_mac_getnewpalette.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_getnewpalette.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_palette_activation: $(RUNTIME_OBJ) tests/test_mac_palette_activation.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_palette_activation.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_setportbits: $(RUNTIME_OBJ) tests/test_mac_setportbits.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_setportbits.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_pict_depths: $(RUNTIME_OBJ) tests/test_mac_pict_depths.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_pict_depths.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_delay: $(RUNTIME_OBJ) tests/test_mac_delay.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_delay.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_numconv: $(RUNTIME_OBJ) tests/test_mac_numconv.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_numconv.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+test: build/test_mac_numconv build/test_mac_help build/test_mac_appleevents build/test_mac_window_colors build/test_mac_setorigin build/test_mac_getnewpalette build/test_mac_palette_activation build/test_mac_pict_depths build/test_mac_setportbits build/test_mac_delay
 
 build/test_mac_sound: $(RUNTIME_OBJ) tests/test_mac_sound.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sound.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sound.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 test: build/test_mac_sound
 
 build/test_mac_sound_double: $(RUNTIME_OBJ) tests/test_mac_sound_double.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sound_double.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sound_double.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 test: build/test_mac_sound_double
 
 build/test_mac_sound_resample: $(RUNTIME_OBJ) tests/test_mac_sound_resample.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sound_resample.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sound_resample.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 test: build/test_mac_sound_resample
 
 build/test_mac_sound_dispose: $(RUNTIME_OBJ) tests/test_mac_sound_dispose.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sound_dispose.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sound_dispose.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 test: build/test_mac_sound_dispose
 
 build/test_mac_time: $(RUNTIME_OBJ) tests/test_mac_time.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_time.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_time.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 test: build/test_mac_time
 
@@ -178,12 +216,17 @@ build/softfloat.o: $(MUSASHI)/m68kops.c Makefile
 	$(CC) -O2 $(CPUFLAGS) -c $(MUSASHI)/softfloat/softfloat.c -o $@
 
 build/ospi-runtime: $(RUNTIME_OBJ) src/runtime_main.c src/runtime_video.c src/runtime_audio.c src/runtime_perf.c src/runtime_keys.c src/runtime_bridge.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(SDL_CFLAGS) $(RUNTIME_OBJ) src/runtime_main.c src/runtime_video.c src/runtime_audio.c src/runtime_perf.c src/runtime_keys.c src/runtime_bridge.c $(CPUOBJ) $(SDL_LIBS) -pthread -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(SDL_CFLAGS) $(RUNTIME_OBJ) src/runtime_main.c src/runtime_video.c src/runtime_audio.c src/runtime_perf.c src/runtime_keys.c src/runtime_bridge.c $(CPUOBJ) $(SDL_LIBS) -pthread -lm $(FT_LIBS) -o $@
+
+# Headless probe with the protected heap and its bridge built under ASan/UBSan, for running real guest apps.
+# (SDL is not linked: the SDL runtime deadlocks during Cocoa start-up under ASan on this host.)
+build/ospi-runtime-probe-asan: $(RUNTIME_OBJ) src/os999_heap.c src/mac_heap_bridge.c src/runtime_probe.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) -Isrc -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined $(filter-out build/runtime/os999_heap.o build/runtime/mac_heap_bridge.o,$(RUNTIME_OBJ)) src/os999_heap.c src/mac_heap_bridge.c src/runtime_probe.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 # Headless deterministic probe: scripted input, fixed 60 Hz clock, production
 # sound poll/render chain to WAV, periodic PPM frames. No SDL.
 build/ospi-runtime-probe: $(RUNTIME_OBJ) src/runtime_probe.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) -Isrc $(RUNTIME_OBJ) src/runtime_probe.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) -Isrc $(RUNTIME_OBJ) src/runtime_probe.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 # Real-time bridge probe: drives build/ospi-runtime --bridge like the desktop.
 build/ospi-bridge-probe: src/bridge_probe.c src/runtime_bridge.c include/runtime_bridge.h
@@ -199,7 +242,7 @@ probe: build/ospi-runtime-probe build/ospi-bridge-probe build/ospi-dasm
 # Diagnostic runtime with the same code path; OSPI_AUDIO_WAV opts into a
 # bounded producer-PCM capture without replacing the app's live executable.
 build/ospi-runtime-capture: $(RUNTIME_OBJ) src/runtime_main.c src/runtime_video.c src/runtime_audio.c src/runtime_perf.c src/runtime_keys.c src/runtime_bridge.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(SDL_CFLAGS) $(RUNTIME_OBJ) src/runtime_main.c src/runtime_video.c src/runtime_audio.c src/runtime_perf.c src/runtime_keys.c src/runtime_bridge.c $(CPUOBJ) $(SDL_LIBS) -pthread -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(SDL_CFLAGS) $(RUNTIME_OBJ) src/runtime_main.c src/runtime_video.c src/runtime_audio.c src/runtime_perf.c src/runtime_keys.c src/runtime_bridge.c $(CPUOBJ) $(SDL_LIBS) -pthread -lm $(FT_LIBS) -o $@
 
 build/test_mac_resource: src/mac_resource.c tests/test_mac_resource.c include/mac_resource.h
 	mkdir -p build
@@ -209,25 +252,72 @@ build/test_mac_cpu: src/mac_cpu.c tests/test_mac_cpu.c include/mac_cpu.h $(CPUOB
 	$(CC) $(CFLAGS) $(CPUFLAGS) src/mac_cpu.c tests/test_mac_cpu.c $(CPUOBJ) -lm -o $@
 
 build/test_mac_runtime: $(RUNTIME_OBJ) tests/test_mac_runtime.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_runtime.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_runtime.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_resource_services: $(RUNTIME_OBJ) tests/test_mac_resource_services.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_resource_services.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_resource_services.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_resource_edits: $(RUNTIME_OBJ) tests/test_mac_resource_edits.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_resource_edits.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_menubar: $(RUNTIME_OBJ) tests/test_mac_menubar.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_menubar.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_memory: $(RUNTIME_OBJ) tests/test_mac_memory.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_memory.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_memory.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_os999_heap: src/os999_heap.c tests/test_os999_heap.c include/os999_heap.h
+	mkdir -p build
+	$(CC) $(CFLAGS) src/os999_heap.c tests/test_os999_heap.c -o $@
+
+build/test_mac_heap_bridge: $(RUNTIME_OBJ) tests/test_mac_heap_bridge.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_heap_bridge.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+# Bridge under ASan/UBSan: only the heap, bridge and test are instrumented; the rest of the runtime is the normal build.
+build/test_mac_heap_bridge_asan: $(RUNTIME_OBJ) src/os999_heap.c src/mac_heap_bridge.c tests/test_mac_heap_bridge.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined $(filter-out build/runtime/os999_heap.o build/runtime/mac_heap_bridge.o,$(RUNTIME_OBJ)) src/os999_heap.c src/mac_heap_bridge.c tests/test_mac_heap_bridge.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_os999_heap_asan: src/os999_heap.c tests/test_os999_heap.c include/os999_heap.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined src/os999_heap.c tests/test_os999_heap.c -o $@
+
+# Memory manager gate: plain and ASan/UBSan runs of the protected heap, plus the
+# guest Memory Manager trap tests.
+test-memory: build/test_os999_heap build/test_os999_heap_asan build/test_mac_memory build/test_mac_heap_bridge build/test_mac_heap_bridge_asan build/test_mac_resource_edits
+	./build/test_os999_heap
+	ASAN_OPTIONS=handle_segv=0:handle_sigbus=0 ./build/test_os999_heap_asan
+	./build/test_mac_memory
+	./build/test_mac_heap_bridge
+	./build/test_mac_heap_bridge_asan
+	./build/test_mac_resource_edits
 
 build/test_mac_traps: $(RUNTIME_OBJ) tests/test_mac_traps.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_traps.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_traps.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_guestcall: $(RUNTIME_OBJ) tests/test_mac_guestcall.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_guestcall.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_ditl: $(RUNTIME_OBJ) tests/test_mac_ditl.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_ditl.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_files_entries: $(RUNTIME_OBJ) tests/test_mac_files_entries.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_files_entries.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_stdfile_list: $(RUNTIME_OBJ) tests/test_mac_stdfile_list.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_stdfile_list.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_stdfile: $(RUNTIME_OBJ) tests/test_mac_stdfile.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_stdfile.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_alert: $(RUNTIME_OBJ) tests/test_mac_alert.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_alert.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_appfork: $(RUNTIME_OBJ) tests/test_mac_appfork.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_appfork.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_unloadseg: $(RUNTIME_OBJ) tests/test_mac_unloadseg.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_unloadseg.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_native_launch: src/control_panel_store.c include/native_settings.h include/control_panel_store.h $(STORAGE_A) src/application_probe.c include/application_probe.h src/native_launch.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c include/native_launch.h include/mac_resource.h include/runtime_bridge.h
 	$(CC) $(CFLAGS) -pthread src/control_panel_store.c src/native_launch.c src/application_probe.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c $(STORAGE_LINK) -o $@
 
 build/test_mac_events: $(RUNTIME_OBJ) tests/test_mac_events.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_events.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_events.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_quickdraw: $(RUNTIME_OBJ) tests/test_mac_quickdraw.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_quickdraw.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_quickdraw.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_runtime_video: tests/test_runtime_video.c src/runtime_video.c src/runtime_keys.c $(RUNTIME_HDRS)
 	$(CC) $(CFLAGS) $(SDL_CFLAGS) tests/test_runtime_video.c src/runtime_keys.c -o $@
@@ -248,94 +338,192 @@ build/test_runtime_bridge: tests/test_runtime_bridge.c src/runtime_bridge.c incl
 runtime: build/ospi-runtime
 
 build/test_mac_vbl: $(RUNTIME_OBJ) tests/test_mac_vbl.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_vbl.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_vbl.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_pixmap: $(RUNTIME_OBJ) tests/test_mac_pixmap.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_pixmap.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_pixmap.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_pixels: $(RUNTIME_OBJ) tests/test_mac_pixels.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_pixels.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_pixels.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_volume: $(RUNTIME_OBJ) tests/test_mac_volume.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_volume.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_volume.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_window: $(RUNTIME_OBJ) tests/test_mac_window.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_window.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_window.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_window_nogrow: $(RUNTIME_OBJ) tests/test_mac_window_nogrow.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_window_nogrow.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_clock_globals: $(RUNTIME_OBJ) tests/test_mac_clock_globals.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_clock_globals.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_random: $(RUNTIME_OBJ) tests/test_mac_random.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_random.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_supervisor: $(RUNTIME_OBJ) tests/test_mac_supervisor.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_supervisor.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_text_state: $(RUNTIME_OBJ) tests/test_mac_text_state.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_text_state.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_sysfont: $(RUNTIME_OBJ) tests/test_mac_sysfont.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) -Isrc $(RUNTIME_OBJ) tests/test_mac_sysfont.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_sound_volume: $(RUNTIME_OBJ) tests/test_mac_sound_volume.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) -Isrc $(RUNTIME_OBJ) tests/test_mac_sound_volume.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_scrap: $(RUNTIME_OBJ) tests/test_mac_scrap.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) -Isrc $(RUNTIME_OBJ) tests/test_mac_scrap.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_handcopy: $(RUNTIME_OBJ) tests/test_mac_handcopy.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) -Isrc $(RUNTIME_OBJ) tests/test_mac_handcopy.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_colorindex: $(RUNTIME_OBJ) tests/test_mac_colorindex.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) -Isrc $(RUNTIME_OBJ) tests/test_mac_colorindex.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_files_rf: $(RUNTIME_OBJ) tests/test_mac_files_rf.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) -Isrc $(RUNTIME_OBJ) tests/test_mac_files_rf.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_text: $(RUNTIME_OBJ) tests/test_mac_text.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_text.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_textedit: $(RUNTIME_OBJ) tests/test_mac_textedit.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_textedit.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_rgn: $(RUNTIME_OBJ) tests/test_mac_rgn.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_rgn.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_stdprocs: $(RUNTIME_OBJ) tests/test_mac_stdprocs.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_stdprocs.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_shape: $(RUNTIME_OBJ) tests/test_mac_shape.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_shape.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_menu_color: $(RUNTIME_OBJ) tests/test_mac_menu_color.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_menu_color.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_devmgr: $(RUNTIME_OBJ) tests/test_mac_devmgr.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_devmgr.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_dlgmgr: $(RUNTIME_OBJ) tests/test_mac_dlgmgr.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_dlgmgr.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_stdput: $(RUNTIME_OBJ) tests/test_mac_stdput.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_stdput.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_toolutil: $(RUNTIME_OBJ) tests/test_mac_toolutil.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_toolutil.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_menuselect: $(RUNTIME_OBJ) tests/test_mac_menuselect.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_menuselect.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_controls: $(RUNTIME_OBJ) tests/test_mac_controls.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_controls.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_cdef: $(RUNTIME_OBJ) tests/test_mac_cdef.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_cdef.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_cicn: $(RUNTIME_OBJ) tests/test_mac_cicn.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_cicn.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_dlgwindow: $(RUNTIME_OBJ) tests/test_mac_dlgwindow.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_dlgwindow.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_files_flush: $(RUNTIME_OBJ) tests/test_mac_files_flush.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_files_flush.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_sysbeep: $(RUNTIME_OBJ) tests/test_mac_sysbeep.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_sysbeep.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_partition: $(RUNTIME_OBJ) tests/test_mac_partition.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_partition.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_dlgedit: $(RUNTIME_OBJ) tests/test_mac_dlgedit.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_dlgedit.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_window_inval: $(RUNTIME_OBJ) tests/test_mac_window_inval.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_window_inval.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_menu_setitem: $(RUNTIME_OBJ) tests/test_mac_menu_setitem.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_menu_setitem.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_multi_window: $(RUNTIME_OBJ) tests/test_mac_multi_window.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_multi_window.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_multi_window.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_window_resource: $(RUNTIME_OBJ) tests/test_mac_window_resource.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_window_resource.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_window_resource.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_paintbehind: $(RUNTIME_OBJ) tests/test_mac_paintbehind.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_paintbehind.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_paintbehind.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_menu: $(RUNTIME_OBJ) tests/test_mac_menu.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_menu.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_menu.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_drive_queue: $(RUNTIME_OBJ) tests/test_mac_drive_queue.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_drive_queue.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_drive_queue.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_reservation: $(RUNTIME_OBJ) tests/test_mac_reservation.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_reservation.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_reservation.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_color_pen: $(RUNTIME_OBJ) tests/test_mac_color_pen.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_color_pen.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_color_pen.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_system_volume: $(RUNTIME_OBJ) tests/test_mac_system_volume.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_system_volume.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_system_volume.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_regions: $(RUNTIME_OBJ) tests/test_mac_regions.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_regions.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_regions.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
-test: build/test_mac_menu_records build/test_mac_multi_window build/test_mac_window_resource build/test_mac_paintbehind build/test_mac_menu build/test_mac_drive_queue build/test_mac_reservation build/test_mac_color_pen build/test_mac_system_volume build/test_mac_regions build/test_mac_window build/test_mac_volume build/test_mac_pixels build/test_mac_pixmap build/test_mac_vbl
+test: build/test_mac_dlgedit build/test_mac_partition build/test_mac_sysbeep build/test_mac_files_flush build/test_mac_dlgwindow build/test_mac_cicn build/test_mac_cdef build/test_mac_controls build/test_mac_menu_records build/test_mac_multi_window build/test_mac_window_resource build/test_mac_paintbehind build/test_mac_menu build/test_mac_drive_queue build/test_mac_reservation build/test_mac_color_pen build/test_mac_system_volume build/test_mac_regions build/test_mac_window build/test_mac_window_nogrow build/test_mac_clock_globals build/test_mac_random build/test_mac_supervisor build/test_mac_text_state build/test_mac_text build/test_mac_sound_volume build/test_mac_scrap build/test_mac_handcopy build/test_mac_colorindex build/test_mac_files_rf build/test_mac_sysfont build/test_mac_textedit build/test_mac_rgn build/test_mac_stdprocs build/test_mac_shape build/test_mac_menu_color build/test_mac_devmgr build/test_mac_dlgmgr build/test_mac_stdput build/test_mac_menuselect build/test_mac_toolutil build/test_mac_window_inval build/test_mac_menu_setitem build/test_mac_volume build/test_mac_pixels build/test_mac_pixmap build/test_mac_vbl
 
 build/test_mac_video_config: $(RUNTIME_OBJ) tests/test_mac_video_config.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_video_config.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_video_config.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 test: build/test_mac_video_config
 
 build/test_mac_palette: $(RUNTIME_OBJ) tests/test_mac_palette.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_palette.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_palette.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_color_raster: $(RUNTIME_OBJ) tests/test_mac_color_raster.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_color_raster.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_color_raster.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_copybits: $(RUNTIME_OBJ) tests/test_mac_copybits.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_copybits.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_copybits.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_color_port: $(RUNTIME_OBJ) tests/test_mac_color_port.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_color_port.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_color_port.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_dialog: $(RUNTIME_OBJ) tests/test_mac_dialog.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_dialog.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_dialog.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_runtime_cursor: tests/test_runtime_cursor.c src/runtime_video.c $(RUNTIME_HDRS)
 	$(CC) $(CFLAGS) -Wno-unused-function $(SDL_CFLAGS) tests/test_runtime_cursor.c -o $@
 
 build/test_mac_cursor: $(RUNTIME_OBJ) tests/test_mac_cursor.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_cursor.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_cursor.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_ccursor: $(RUNTIME_OBJ) tests/test_mac_ccursor.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_ccursor.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_color: $(RUNTIME_OBJ) tests/test_mac_color.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_color.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_color.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_files: $(RUNTIME_OBJ) tests/test_mac_files.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_files.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_files.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_files_write: $(RUNTIME_OBJ) tests/test_mac_files_write.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_files_write.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_files_write.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+# FSSpec calls (HighLevelFSDispatch) and Gestalt 'fs  '; `test` depends on this aggregate.
+.PHONY: test-fsspec
+test-fsspec: build/test_mac_fsspec build/test_mac_fsspec_write build/test_mac_fsspec_folders
+	./build/test_mac_fsspec
+	./build/test_mac_fsspec_write
+	./build/test_mac_fsspec_folders
+test: test-fsspec
+
+build/test_mac_fsspec: $(RUNTIME_OBJ) tests/test_mac_fsspec.c tests/fsspec_test.h $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_fsspec.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_fsspec_folders: $(RUNTIME_OBJ) tests/test_mac_fsspec_folders.c tests/fsspec_test.h $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_fsspec_folders.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_fsspec_write: $(RUNTIME_OBJ) tests/test_mac_fsspec_write.c tests/fsspec_test.h $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_fsspec_write.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_geometry: $(RUNTIME_OBJ) tests/test_mac_geometry.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_geometry.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_geometry.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_system: $(RUNTIME_OBJ) tests/test_mac_system.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_system.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_system.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_raster: $(RUNTIME_OBJ) tests/test_mac_raster.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_raster.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_raster.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
-test: build/test_os999_startup build/test_os999_startup_bar build/test_ospi build/test_archive_install build/test_mac_icon build/test_runtime_bridge build/test_mac_resource build/test_mac_cpu build/test_mac_runtime build/test_mac_resource_services build/test_mac_memory build/test_mac_traps build/test_native_launch build/test_mac_events build/test_mac_quickdraw build/test_runtime_video build/test_runtime_perf build/test_runtime_keys build/test_mac_raster build/test_mac_system build/test_mac_geometry build/test_mac_files build/test_mac_cursor build/test_mac_color build/test_mac_dialog build/test_runtime_cursor build/test_mac_color_port build/test_mac_copybits build/test_mac_palette build/test_mac_color_raster build/test_mac_movie build/test_movie_window build/test_mac_files_write
+test: build/test_os999_startup build/test_os999_startup_bar build/test_ospi build/test_archive_install build/test_mac_icon build/test_runtime_bridge build/test_mac_resource build/test_mac_cpu build/test_mac_runtime build/test_mac_resource_services build/test_mac_memory build/test_os999_heap build/test_mac_heap_bridge build/test_mac_resource_edits build/test_mac_menubar build/test_mac_traps build/test_mac_unloadseg build/test_mac_guestcall build/test_mac_ditl build/test_mac_files_entries build/test_mac_stdfile_list build/test_mac_stdfile build/test_mac_alert build/test_mac_appfork build/test_native_launch build/test_mac_events build/test_mac_quickdraw build/test_runtime_video build/test_runtime_perf build/test_runtime_keys build/test_mac_raster build/test_mac_system build/test_mac_geometry build/test_mac_files build/test_mac_cursor build/test_mac_ccursor build/test_mac_color build/test_mac_dialog build/test_runtime_cursor build/test_mac_color_port build/test_mac_copybits build/test_mac_palette build/test_mac_color_raster build/test_mac_movie build/test_movie_window build/test_mac_files_write
 	./build/test_desktop_assets assets/icons/ospi-icons.icl8
 	./build/test_appearance
 	./build/test_appearance_panel
@@ -370,14 +558,38 @@ test: build/test_os999_startup build/test_os999_startup_bar build/test_ospi buil
 	./build/test_mac_resource_services
 	./build/test_mac_resource_chain
 	./build/test_mac_picture
+	./build/test_mac_pict_v1
 	./build/test_mac_sane
+	./build/test_mac_sane_arith
+	./build/test_mac_numconv
+	./build/test_mac_help
+	./build/test_mac_delay
+	./build/test_mac_appleevents
+	./build/test_mac_window_colors
+	./build/test_mac_setorigin
+	./build/test_mac_getnewpalette
+	./build/test_mac_palette_activation
+	./build/test_mac_pict_depths
+	./build/test_mac_setportbits
 	./build/test_mac_sound
 	./build/test_mac_sound_double
 	./build/test_mac_sound_resample
 	./build/test_mac_sound_dispose
 	./build/test_mac_time
 	./build/test_mac_memory
+	./build/test_os999_heap
+	./build/test_mac_heap_bridge
+	./build/test_mac_resource_edits
+	./build/test_mac_menubar
 	./build/test_mac_traps
+	./build/test_mac_unloadseg
+	./build/test_mac_guestcall
+	./build/test_mac_ditl
+	./build/test_mac_files_entries
+	./build/test_mac_stdfile_list
+	./build/test_mac_stdfile
+	./build/test_mac_alert
+	./build/test_mac_appfork
 	./build/test_native_launch
 	./build/test_mac_events
 	./build/test_mac_quickdraw
@@ -390,6 +602,7 @@ test: build/test_os999_startup build/test_os999_startup_bar build/test_ospi buil
 	./build/test_mac_files
 	./build/test_mac_files_write
 	./build/test_mac_cursor
+	./build/test_mac_ccursor
 	./build/test_mac_color
 	./build/test_mac_dialog
 	./build/test_runtime_cursor
@@ -403,6 +616,37 @@ test: build/test_os999_startup build/test_os999_startup_bar build/test_ospi buil
 	./build/test_mac_pixels
 	./build/test_mac_volume
 	./build/test_mac_window
+	./build/test_mac_window_nogrow
+	./build/test_mac_clock_globals
+	./build/test_mac_random
+	./build/test_mac_supervisor
+	./build/test_mac_text_state
+	./build/test_mac_text
+	./build/test_mac_sysfont
+	./build/test_mac_sound_volume
+	./build/test_mac_scrap
+	./build/test_mac_handcopy
+	./build/test_mac_colorindex
+	./build/test_mac_files_rf
+	./build/test_mac_textedit
+	./build/test_mac_rgn
+	./build/test_mac_stdprocs
+	./build/test_mac_shape
+	./build/test_mac_menu_color
+	./build/test_mac_devmgr
+	./build/test_mac_dlgmgr
+	./build/test_mac_stdput
+	./build/test_mac_menuselect
+	./build/test_mac_toolutil
+	./build/test_mac_window_inval
+	./build/test_mac_controls
+	./build/test_mac_cdef
+	./build/test_mac_cicn
+	./build/test_mac_dlgwindow
+	./build/test_mac_files_flush
+	./build/test_mac_sysbeep
+	./build/test_mac_partition
+	./build/test_mac_dlgedit
 	./build/test_mac_regions
 	./build/test_mac_system_volume
 	./build/test_mac_color_pen
@@ -415,6 +659,7 @@ test: build/test_os999_startup build/test_os999_startup_bar build/test_ospi buil
 	./build/test_mac_dialog_frame
 	./build/test_mac_palette_manager
 	./build/test_mac_menu_records
+	./build/test_mac_menu_setitem
 	./build/test_desktop_sound assets/sounds/classic9
 	./build/test_desktop_guest
 	./build/test_archive_fs

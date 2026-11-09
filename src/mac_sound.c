@@ -80,7 +80,10 @@ static int new_channel(MacRuntime*r,uint32_t sp){
    if(other->address && supplied<other->address+36+other->capacity*8 && other->address<supplied+36+capacity*8)return mac_sound_fail(r,"Supplied sound channel overlaps an active channel.");
   }
  }
- if(synth!=5 || (init&~0x8cu) || ((init&0xc0)!=0 && (init&0xc0)!=0x80))return mac_sound_fail(r,"Only sampled mono channels with explicit mono and optional noInterp/noDrop are implemented.");
+ /* init bits: 0x80 mono, 0x08 noDrop, 0x04 noInterp, and the sample-rate field (initSRateMask, 0x30). The rate field is a hint
+  * about the channel's intended rate (the interface defines only the mask); playback uses each sound's own header rate, so
+  * it is accepted and not acted on. Stereo, pan, and compression fields are not implemented. */
+ if(synth!=5 || (init&~0xbcu) || ((init&0xc0)!=0 && (init&0xc0)!=0x80))return mac_sound_fail(r,"Only sampled mono channels with explicit mono, an optional sample-rate hint, and optional noInterp/noDrop are implemented.");
  if(!r->sound){r->sound=calloc(1,sizeof *r->sound);if(!r->sound)return finish(r,sp,14,-108);}
  unsigned slot=0,handle=0;while(slot<MAC_SOUND_CHANNELS && r->sound->channels[slot].address)slot++;
  while(handle<MAC_RUNTIME_HANDLES && (r->handles[handle].handle || r->handles[handle].pointer))handle++;

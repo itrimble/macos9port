@@ -29,6 +29,34 @@ static int palette(MacRuntime*r,uint32_t pm,uint32_t base,MacPictPalette*out){
         out->allowed[index]=1;for(unsigned c=0;c<3;c++)out->rgb[index][c]=(uint16_t)rd(r,p+10+i*8+c*2,2);
     }return 1;
 }
+/* A basic (1-bit) GrafPort whose bitmap is not the screen: an offscreen bitmap. Bit 1 is black. Colors are never
+ * approximated: the decoder is given an exact black/white palette and refuses anything else. */
+static int draw_basic(MacRuntime*r,uint32_t sp,uint32_t port,uint32_t dst,MacHandle*record){
+    uint32_t base=rd(r,port+2,4);unsigned row=rd(r,port+6,2);Box bounds=box(r,port+8),dr=box(r,dst),clip,rg;
+    int w=bounds.r-bounds.l,h=bounds.b-bounds.t;
+    if(base==r->screen_base)return fail(r,"DrawPicture into a basic port on the screen bitmap is unsupported.");
+    if(!row || (row&1) || w<=0 || h<=0 || (unsigned)(w+7)/8>row || (uint64_t)row*(unsigned)h>8u*1024*1024 ||
+       !valid(r,base,(size_t)row*(unsigned)h,0))
+        return fail(r,"DrawPicture 1-bit destination extent is invalid.");
+    clip=intersect(bounds,box(r,port+16));
+    for(unsigned off=24;off<=28;off+=4){if(!region(r,rd(r,port+off,4),&rg))return fail(r,"DrawPicture requires rectangular clipping regions.");clip=intersect(clip,rg);}
+    clip=intersect(clip,dr);
+    MacPictPalette colors={0};colors.exact=1;colors.allowed[0]=colors.allowed[1]=1;
+    for(unsigned c=0;c<3;c++)colors.rgb[0][c]=65535;
+    int dw=dr.r-dr.l,dh=dr.b-dr.t;MacPictImage image;char error[160];
+    if(mac_pict_decode(mac_cpu_ram(r->cpu)+record->pointer,record->size,dw>0?(unsigned)dw:1,dh>0?(unsigned)dh:1,&colors,&image,error,sizeof error))
+        return fail(r,error);
+    size_t painted=0;uint8_t *ram=mac_cpu_ram(r->cpu);
+    if(dw>0 && dh>0)for(int y=clip.t;y<clip.b;y++)for(int x=clip.l;x<clip.r;x++){
+        size_t i=(size_t)(y-dr.t)*(unsigned)dw+(unsigned)(x-dr.l);
+        if(!image.covered[i])continue;
+        size_t at=base+(size_t)(y-bounds.t)*row+(unsigned)(x-bounds.l)/8;unsigned bit=0x80u>>((unsigned)(x-bounds.l)%8);
+        if(image.pixels[i])ram[at]|=(uint8_t)bit;else ram[at]&=(uint8_t)~bit;
+        painted++;
+    }
+    if(r->trace)fprintf(stderr,"DrawPicture 1-bit bytes=%u output=%dx%d painted=%zu\n",record->size,dw,dh,painted);
+    mac_pict_destroy(&image);mac_cpu_set(r->cpu,MAC_A7,sp+8);return 1;
+}
 int mac_picture_service(MacRuntime*r,uint16_t opcode){
     if(opcode!=0xa8f6)return 0;
     if(!r || !r->cpu || mac_cpu_halted(r->cpu))return -1;
@@ -43,8 +71,11 @@ int mac_picture_service(MacRuntime*r,uint16_t opcode){
         return fail(r,"DrawPicture requires a live owned picture handle.");
     uint32_t port=r->current_port;
     if(r->qd_globals){if(!valid(r,r->qd_globals,4,1))return fail(r,"DrawPicture QuickDraw globals are invalid.");port=rd(r,r->qd_globals,4);}
-    if(!valid(r,port,108,1)||(rd(r,port+6,2)&0xc000)!=0xc000 || rd(r,port+104,4))
-        return fail(r,"DrawPicture requires a color port with native drawing procedures.");
+    if(!valid(r,port,108,1)||rd(r,port+104,4))
+        return fail(r,"DrawPicture requires a color port or a 1-bit basic port with native drawing procedures.");
+    unsigned kind=rd(r,port+6,2)&0xc000;
+    if(kind==0)return draw_basic(r,sp,port,dst,record);
+    if(kind!=0xc000)return fail(r,"DrawPicture requires a color port or a 1-bit basic port with native drawing procedures.");
     if(rd(r,port+36,4)||rd(r,port+40,2)||rd(r,port+42,4)!=UINT32_MAX||rd(r,port+46,2)!=65535)
         return fail(r,"DrawPicture nondefault foreground/background mapping is unsupported.");
     uint32_t pm;if(!handle(r,rd(r,port+2,4),50,&pm))return fail(r,"DrawPicture destination PixMap is invalid.");

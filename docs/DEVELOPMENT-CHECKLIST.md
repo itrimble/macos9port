@@ -178,9 +178,9 @@ See [the preserved baseline](DEVELOPMENT-BASELINE.md). Newer acceptance evidence
   6 Nov: real-time runs starved VBL/Time Manager tasks (service budget below
   the pollers' minimum); fixed in `mac_runtime_run_cycles`, regression in
   `test_mac_vbl`. MI1 cutscene pace now matches the deterministic probe. See
-  [the 6 November loop record](RUNTIME-LOOP-2026-11-06.md).
+  [the 6 November loop record](RUNTIME-LOOP-2026-11-06.md). 7 Nov: heap, resource edits, menus, Help/Pack7/FSSpec traps: [record](RUNTIME-LOOP-2026-11-07.md).
 - [ ] R04 Implement color QuickDraw, palettes, clipping, regions, CopyBits,
-  offscreen buffers, fonts, and direct framebuffer writes used by target games.
+  offscreen buffers, fonts, and direct framebuffer writes used by target games. 7 Nov: colour cursors (1-bit fallback), gray mode, window colour tables; see [record](RUNTIME-LOOP-2026-11-07.md).
 - [ ] R05 Implement Sound Manager behavior, mixing, timing, callbacks, and
   independent media decoding. Test synchronization and resource cleanup.
   For the MI1 SCUMM Bar opening, record a fresh note trace and correlate it

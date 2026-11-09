@@ -170,7 +170,32 @@ static void current_keys(void) {
     mac_cpu_destroy(r.cpu);
 }
 
+static void post_tests(void) {
+    MacRuntime rt = fresh(); rt.ticks = 77; rt.mouse_x = 5; rt.mouse_y = 6;
+    mac_cpu_set(rt.cpu, MAC_A0, 15); mac_cpu_set(rt.cpu, MAC_D0, 0x1234);   /* app4Evt */
+    CHECK(mac_event_service(&rt, 0xa02f) == 1 && mac_cpu_get(rt.cpu, MAC_D0) == 0 && rt.event_count == 1);
+    mac_cpu_set(rt.cpu, MAC_A0, 3); mac_cpu_set(rt.cpu, MAC_D0, 0x41);       /* keyDown, queued after the first */
+    CHECK(mac_event_service(&rt, 0xa02f) == 1 && rt.event_count == 2);
+    MacEvent a = rt.events[rt.event_head], b = rt.events[(rt.event_head + 1) % 64];
+    CHECK(a.what == 15 && a.message == 0x1234 && a.when == 77 && a.x == 5 && a.y == 6 && a.modifiers == 0x80 && b.what == 3 && b.message == 0x41);
+    frame(&rt, 0xa970, 1u << 3, RECORD);                                      /* GetNextEvent for keys only takes the second */
+    CHECK(mac_event_service(&rt, 0xa970) == 1);
+    CHECK(peek(&rt, RECORD, 2) == 3 && rt.event_count == 1 && rt.events[rt.event_head].what == 15);
+    for (int i = 0; i < 3; i++) { mac_cpu_set(rt.cpu, MAC_A0, 2); mac_cpu_set(rt.cpu, MAC_D0, (uint32_t)i); CHECK(mac_event_service(&rt, 0xa02f) == 1); }
+    rt.event_head = 63; /* wrap-around: head near the end of the ring */
+    rt.event_count = 0;
+    for (int i = 0; i < 64; i++) { mac_cpu_set(rt.cpu, MAC_A0, 1); mac_cpu_set(rt.cpu, MAC_D0, (uint32_t)i); CHECK(mac_event_service(&rt, 0xa02f) == 1 && mac_cpu_get(rt.cpu, MAC_D0) == 0); }
+    CHECK(rt.event_count == 64);
+    mac_cpu_set(rt.cpu, MAC_A0, 1); CHECK(mac_event_service(&rt, 0xa02f) == 1 && (int32_t)mac_cpu_get(rt.cpu, MAC_D0) == -1 && rt.event_count == 64); /* full: evQErr */
+    CHECK(rt.events[63].message == 0 && rt.events[62].message == 63);          /* order kept across the wrap */
+    rt.event_count = 0;
+    mac_cpu_set(rt.cpu, MAC_A0, 0); CHECK(mac_event_service(&rt, 0xa02f) == 1 && (int32_t)mac_cpu_get(rt.cpu, MAC_D0) == -1 && rt.event_count == 0); /* null */
+    mac_cpu_set(rt.cpu, MAC_A0, 16); CHECK(mac_event_service(&rt, 0xa02f) == 1 && (int32_t)mac_cpu_get(rt.cpu, MAC_D0) == -1 && rt.event_count == 0);
+    mac_cpu_set(rt.cpu, MAC_A0, 0x10003); CHECK(mac_event_service(&rt, 0xa02f) == 1 && (int32_t)mac_cpu_get(rt.cpu, MAC_D0) == -1);   /* only the low word is a code; 0x10003 is not 3 */
+    mac_cpu_destroy(rt.cpu);
+}
 int main(void) {
+    post_tests();
     current_keys();
     record_layout_and_queue();
     point_ticks_button();

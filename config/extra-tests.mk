@@ -1,14 +1,14 @@
 # Additional runtime, desktop and asset test targets.
 build/test_mac_menu_records: $(RUNTIME_OBJ) tests/test_mac_menu_records.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_menu_records.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_menu_records.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_palette_manager: $(RUNTIME_OBJ) tests/test_mac_palette_manager.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_palette_manager.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_palette_manager.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 test: build/test_mac_palette_manager
 
 build/test_mac_dialog_frame: $(RUNTIME_OBJ) tests/test_mac_dialog_frame.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_dialog_frame.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_dialog_frame.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 test: build/test_mac_dialog_frame
 
@@ -37,7 +37,7 @@ build/test_desktop_session_ui: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_de
 	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_desktop_session_ui.c $(FT_LIBS) -lm $(NET_LIBS)
 
 build/test_runtime_audio: $(RUNTIME_OBJ) src/runtime_audio.c tests/test_runtime_audio.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(SDL_CFLAGS) $(RUNTIME_OBJ) src/runtime_audio.c tests/test_runtime_audio.c $(CPUOBJ) $(SDL_LIBS) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(SDL_CFLAGS) $(RUNTIME_OBJ) src/runtime_audio.c tests/test_runtime_audio.c $(CPUOBJ) $(SDL_LIBS) -lm $(FT_LIBS) -o $@
 
 test: build/test_desktop_sound build/test_desktop_guest build/test_archive_fs build/test_desktop_session_ui build/test_runtime_audio
 

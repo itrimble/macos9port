@@ -36,6 +36,13 @@ static void links(MacRuntime *rt) {
     for(unsigned i=0;i<rt->window_count;i++)
         mac_cpu_write(rt->cpu,rt->window_order[i]+144,4,i+1<rt->window_count?rt->window_order[i+1]:0);
 }
+/* Inserts the selected (new) window into the WindowList: in front (behind = -1), at the back (0), or directly behind the registered window `behind`. */
+void mac_window_publish_behind(MacRuntime *rt,uint32_t behind) {
+    unsigned at=behind==UINT32_MAX?0:rt->window_count;
+    if(behind && behind!=UINT32_MAX){unsigned k=0;while(k<rt->window_count && rt->window_order[k]!=behind)k++;if(k<rt->window_count)at=k+1;}
+    for(unsigned i=rt->window_count;i>at;i--)rt->window_order[i]=rt->window_order[i-1];
+    rt->window_order[at]=rt->window.address;rt->window_count++;links(rt);
+}
 void mac_window_publish(MacRuntime *rt,int front) {
     unsigned at=front?0:rt->window_count;
     for(unsigned i=rt->window_count;i>at;i--)rt->window_order[i]=rt->window_order[i-1];
@@ -62,4 +69,19 @@ int mac_window_registry_valid(MacRuntime *rt) {
         for(unsigned j=0;j<i;j++)if(rt->window_order[j]==p)return 0;
     }
     return 1;
+}
+/* FindWindow's search: the visible windows from front to back, the first whose structure holds the point (the part code from mac_window_hit). That window is left
+ * selected, so rt->window is the window FindWindow reports; with no hit the front window is selected again and 0 is returned. */
+int mac_window_hit_test(MacRuntime *rt,int h,int v) {
+    uint32_t front=mac_window_front(rt);
+    for(unsigned i=0;i<rt->window_count;i++) {
+        MacWindowState *w=mac_window_find(rt,rt->window_order[i]);
+        if(!w || !w->visible)continue;
+        uint32_t address=w->address;
+        if(!mac_window_select(rt,address))continue;
+        int hit=mac_window_hit(rt,h,v);
+        if(hit)return hit;
+    }
+    if(front)mac_window_select(rt,front);
+    return 0;
 }

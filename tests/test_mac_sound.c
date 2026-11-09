@@ -54,6 +54,21 @@ static void supplied(void){
  wr(&r,SP,4,0);wr(&r,SP+4,4,0x8c);wr(&r,SP+8,2,5);wr(&r,SP+10,4,0x7000);mac_cpu_set(r.cpu,MAC_A7,SP);
  CHECK(mac_sound_service(&r,0xa807)==-1 && !r.sound);destroy(&r);
 }
+/* SndNewChannel init options: sampled synth only, mono (or unspecified), noInterp/noDrop and the sample-rate field accepted. */
+static void init_options(void){
+ static const struct{unsigned synth;uint32_t init;int ok;}cases[]={
+  {5,0x8c,1},{5,0x80,1},{5,0x00,1},{5,0x84,1},{5,0x88,1},
+  {5,0xac,1},{5,0x9c,1},{5,0xbc,1},{5,0xa0,1},{5,0x90,1},{5,0x30,1},{5,0x20,1},   /* sample-rate field values */
+  {5,0xc0,0},{5,0x40,0},{5,0xcc,0},{5,0x02,0},{5,0x03,0},{5,0x01,0},{5,0x100,0},{5,0x300,0},{5,0x8000,0},{5,0xff00,0},{5,0x1ac,0},
+  {1,0x8c,0},{3,0x8c,0},{4,0x8c,0},{0,0x8c,0},{6,0x8c,0},
+ };
+ for(unsigned i=0;i<sizeof cases/sizeof *cases;i++){
+  MacRuntime r=fresh();wr(&r,SP,4,0);wr(&r,SP+4,4,cases[i].init);wr(&r,SP+8,2,cases[i].synth);wr(&r,SP+10,4,0x7000);mac_cpu_set(r.cpu,MAC_A7,SP);
+  int rc=mac_sound_service(&r,0xa807);
+  if(cases[i].ok)CHECK(rc==1 && r.sound && !mac_cpu_halted(r.cpu));else CHECK(rc==-1 && mac_cpu_halted(r.cpu) && !r.sound);
+  destroy(&r);
+ }
+}
 static void notes(void){
  MacRuntime r=fresh();uint32_t chan=create(&r,0);sample(&r);wr(&r,0x410c,4,1);wr(&r,0x4110,4,3);wr(&r,0x4115,1,60);
  CHECK(command(&r,chan,80,0,0x4100,1)==1 && !r.sound->channels[0].playing);
@@ -89,4 +104,4 @@ static void loop_boundaries(void){
  CHECK(command(&r,chan,3,0,0,1)==1);wr(&r,0x410c,4,2);wr(&r,0x4110,4,2);
  CHECK(command(&r,chan,80,0,0x4100,1)==-1 && r.sound->channels[0].voice_loop_end==1);destroy(&r);
 }
-int main(void){audio_callback();failures();supplied();notes();loop_boundaries();puts("mac sound PCM, queue, callback, and bounds tests passed");return 0;}
+int main(void){audio_callback();failures();supplied();init_options();notes();loop_boundaries();puts("mac sound PCM, queue, callback, and bounds tests passed");return 0;}

@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 int mac_color_raster_service(MacRuntime *,uint16_t);
+int mac_shapes_service(MacRuntime *,uint16_t);
 static int failures;
 #define CHECK(c) do{if(!(c)){fprintf(stderr,"FAIL %d: %s\n",__LINE__,#c);failures++;}}while(0)
 enum { PORT=0x100, PMH=0x200, PM=0x210, RH=0x250, R=0x260, PH=0x280, P=0x290, RECT=0x300, SP=0x400, PIX=0x800 };
@@ -38,6 +39,36 @@ int main(void){
     r.palette[19]=0xff0000;w(&r,RECT,2,65535);w(&r,RECT+2,2,0);w(&r,RECT+4,2,0);
     CHECK(call(&r,0xaa14)==1);CHECK(mac_cpu_read(r.cpu,PORT+80,4)==19);CHECK(mac_cpu_read(r.cpu,PORT+36,2)==65535);
     CHECK(call(&r,0xaa15)==1);CHECK(mac_cpu_read(r.cpu,PORT+84,4)==19);
+    /* ForeColor / BackColor(color: LONGINT) on a colour port: the eight constants, as pure colours, matched to the nearest palette entry */
+    for(unsigned i=0;i<256;i++)r.palette[i]=0xff808080u;
+    r.palette[100]=0xffff0000u;r.palette[101]=0xff0000ffu;r.palette[102]=0xff00ff00u;r.palette[103]=0xff000000u;r.palette[104]=0xffffffffu;
+    {mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,205);CHECK(mac_color_raster_service(&r,0xa862)==1 && mac_cpu_read(r.cpu,PORT+80,4)==100 && mac_cpu_read(r.cpu,PORT+36,2)==65535 && mac_cpu_read(r.cpu,PORT+38,2)==0 && mac_cpu_get(r.cpu,MAC_A7)==SP+4);
+     mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,409);CHECK(mac_color_raster_service(&r,0xa863)==1 && mac_cpu_read(r.cpu,PORT+84,4)==101 && mac_cpu_read(r.cpu,PORT+42,2)==0 && mac_cpu_read(r.cpu,PORT+46,2)==65535 && mac_cpu_get(r.cpu,MAC_A7)==SP+4);
+     mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,33);CHECK(mac_color_raster_service(&r,0xa862)==1 && mac_cpu_read(r.cpu,PORT+80,4)==103);
+     mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,30);CHECK(mac_color_raster_service(&r,0xa863)==1 && mac_cpu_read(r.cpu,PORT+84,4)==104);
+     mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,341);CHECK(mac_color_raster_service(&r,0xa862)==1 && mac_cpu_read(r.cpu,PORT+80,4)==102);
+     mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,4242);CHECK(mac_color_raster_service(&r,0xa862)==-1 && mac_cpu_halted(r.cpu) && strstr(mac_cpu_error(r.cpu),"color constants")!=NULL);}
+    mac_cpu_destroy(r.cpu);
+    /* GetForeColor / GetBackColor(VAR color: RGBColor): the colour port's own RGB; a basic port's constant as a pure colour; bad pointers and unknown constants halt */
+    r=setup();
+    w(&r,PORT+36,2,1111);w(&r,PORT+38,2,2222);w(&r,PORT+40,2,3333);w(&r,PORT+42,2,4444);w(&r,PORT+44,2,5555);w(&r,PORT+46,2,6666);
+    mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,0x500);memset(mac_cpu_ram(r.cpu)+0x500,0xee,8);
+    CHECK(mac_color_raster_service(&r,0xaa19)==1 && mac_cpu_read(r.cpu,0x500,2)==1111 && mac_cpu_read(r.cpu,0x502,2)==2222 && mac_cpu_read(r.cpu,0x504,2)==3333 && mac_cpu_read(r.cpu,0x506,1)==0xee && mac_cpu_get(r.cpu,MAC_A7)==SP+4);
+    mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,0x500);
+    CHECK(mac_color_raster_service(&r,0xaa1a)==1 && mac_cpu_read(r.cpu,0x500,2)==4444 && mac_cpu_read(r.cpu,0x502,2)==5555 && mac_cpu_read(r.cpu,0x504,2)==6666 && mac_cpu_get(r.cpu,MAC_A7)==SP+4);
+    mac_cpu_destroy(r.cpu);
+    r=setup();w(&r,PORT+6,2,8);w(&r,PORT+80,4,205);w(&r,PORT+84,4,409);                                       /* a basic port: red on blue */
+    mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,0x500);CHECK(mac_color_raster_service(&r,0xaa19)==1 && mac_cpu_read(r.cpu,0x500,2)==65535 && mac_cpu_read(r.cpu,0x502,2)==0 && mac_cpu_read(r.cpu,0x504,2)==0);
+    mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,0x500);CHECK(mac_color_raster_service(&r,0xaa1a)==1 && mac_cpu_read(r.cpu,0x500,2)==0 && mac_cpu_read(r.cpu,0x504,2)==65535);
+    w(&r,PORT+80,4,7);mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,0x500);
+    CHECK(mac_color_raster_service(&r,0xaa19)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);               /* a basic port with an unknown constant */
+    {static const uint32_t bad[]={0,1,0x1ffc,0xfffffffeu};
+     for(unsigned i=0;i<sizeof bad/sizeof*bad;i++){r=setup();mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,bad[i]);
+      CHECK(mac_color_raster_service(&r,0xaa19)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);}}
+    r=setup();w(&r,0x80,4,0);mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,0x500);CHECK(mac_color_raster_service(&r,0xaa1a)==-1);mac_cpu_destroy(r.cpu);   /* no current port */
+    r=setup();w(&r,PORT+6,2,8);mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,205);CHECK(mac_color_raster_service(&r,0xa862)==0 && mac_cpu_get(r.cpu,MAC_A7)==SP && mac_cpu_read(r.cpu,PORT+80,4)==3);   /* a basic port is not ours */
+    mac_cpu_destroy(r.cpu);
+    r=setup();w(&r,PORT+6,2,0xc000);
     w(&r,PORT+6,2,8);CHECK(call(&r,0xa8a2)==0);CHECK(mac_cpu_get(r.cpu,MAC_A7)==SP);
     mac_cpu_destroy(r.cpu);
     for(int error=0;error<4;error++){
@@ -50,5 +81,63 @@ int main(void){
         for(int i=0;i<32;i++)CHECK(mem[PIX+i]==99);
         CHECK(mac_cpu_get(r.cpu,MAC_A7)==SP);mac_cpu_destroy(r.cpu);
     }
+    /* a source mode as the pen mode does what the pattern mode of the same operation does (srcCopy 0 = patCopy 8, ... notSrcBic 7 = notPatBic 15) */
+    for(int mode=0;mode<8;mode++){
+        r=setup();mem=mac_cpu_ram(r.cpu);memset(mem+PIX,9,32);w(&r,PORT+56,2,mode);CHECK(call(&r,0xa8a2)==1);
+        uint8_t a0=mem[PIX],a1=mem[PIX+1];memset(mem+PIX,9,32);w(&r,PORT+56,2,mode+8);CHECK(call(&r,0xa8a2)==1);CHECK(mem[PIX]==a0&&mem[PIX+1]==a1);mac_cpu_destroy(r.cpu);
+    }
+    /* PenMode(44) = transparent + patCopy: set pattern bits paint the foreground, clear bits leave the destination; fg == bg paints nothing */
+    r=setup();mem=mac_cpu_ram(r.cpu);memset(mem+PIX,9,32);w(&r,PORT+56,2,44);rect(&r,RECT,0,0,4,8);rect(&r,R+2,0,0,4,8);
+    CHECK(call(&r,0xa8a2)==1);for(int y=0;y<4;y++)for(int x=0;x<8;x++)CHECK(mem[PIX+y*8+x]==((x&1)?9:3));                 /* $AA: even columns are set */
+    memset(mem+PIX,9,32);CHECK(call(&r,0xa8a1)==1);CHECK(mem[PIX]==3&&mem[PIX+1]==9&&mem[PIX+8+1]==9&&mem[PIX+8+2]==9);   /* a frame in transparent mode: only the edge's set bits */
+    memset(mem+PIX,9,32);w(&r,PORT+84,4,3);CHECK(call(&r,0xa8a2)==1);for(int i=0;i<32;i++)CHECK(mem[PIX+i]==9);          /* background equals foreground (3): transparent */
+    w(&r,PORT+84,4,7);memset(mem+PIX,9,32);w(&r,PORT+56,2,8);CHECK(call(&r,0xa8a2)==1);CHECK(mem[PIX]==3&&mem[PIX+1]==7);   /* patCopy still paints both */
+    w(&r,PORT+56,2,44);memset(mem+PIX,9,32);mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,RECT);CHECK(mac_shapes_service(&r,0xa8b8)==1);CHECK(mem[PIX+2]==3&&mem[PIX+3]==9&&mem[PIX]==9);        /* an oval in transparent mode too */
+    mac_cpu_destroy(r.cpu);
+    /* Ovals and round rectangles on the 8 x 4 indexed port: pen pattern $AA (even columns foreground 3), background 7, field filled with 9. */
+    r=setup();mem=mac_cpu_ram(r.cpu);
+    #define SH(op,args) (mac_cpu_set(r.cpu,MAC_A7,SP),(args),mac_shapes_service(&r,(op)))
+    #define ROW(y,lo,hi,even,odd) do{for(int x=0;x<8;x++){unsigned want=(x>=(lo)&&x<(hi))?((x&1)?(odd):(even)):9;if(mem[PIX+(y)*8+x]!=want){fprintf(stderr,"row %d col %d: %u want %u (line %d)\n",(y),x,mem[PIX+(y)*8+x],want,__LINE__);failures++;}}}while(0)
+    memset(mem+PIX,9,32);CHECK(SH(0xa8b8,w(&r,SP,4,RECT))==1&&mac_cpu_get(r.cpu,MAC_A7)==SP+4);                      /* PaintOval */
+    ROW(0,2,6,3,7);ROW(1,0,8,3,7);ROW(2,0,8,3,7);ROW(3,2,6,3,7);
+    memset(mem+PIX,9,32);CHECK(SH(0xa8b7,w(&r,SP,4,RECT))==1);                                                         /* FrameOval, pen 1 x 1 */
+    ROW(0,2,6,3,7);ROW(3,2,6,3,7);
+    for(int y=1;y<3;y++)for(int x=0;x<8;x++){unsigned want=(x<2||x>=6)?((x&1)?7:3):9;CHECK(mem[PIX+y*8+x]==want);}
+    memset(mem+PIX,9,32);CHECK(SH(0xa8b9,w(&r,SP,4,RECT))==1);ROW(0,2,6,3,7);ROW(1,0,8,3,7);                           /* EraseOval: background pattern (here the same $AA) */
+    memset(mem+PIX,9,32);CHECK(SH(0xa8ba,w(&r,SP,4,RECT))==1);                                                         /* InvertOval */
+    for(int y=0;y<4;y++)for(int x=0;x<8;x++){int in=(y==0||y==3)?(x>=2&&x<6):1;CHECK(mem[PIX+y*8+x]==(in?(9^255):9));}
+    memset(mem+PIX,9,32);CHECK(SH(0xa8bb,(w(&r,SP,4,P+20),w(&r,SP+4,4,RECT)))==1&&mac_cpu_get(r.cpu,MAC_A7)==SP+8);ROW(0,2,6,3,7);   /* FillOval with a pattern pointer */
+    w(&r,PORT+52,2,2);w(&r,PORT+54,2,2);memset(mem+PIX,9,32);CHECK(SH(0xa8b7,w(&r,SP,4,RECT))==1);                      /* a 2 x 2 pen: inner is 4 x 0, so the whole oval is the frame */
+    ROW(0,2,6,3,7);ROW(1,0,8,3,7);ROW(2,0,8,3,7);w(&r,PORT+52,2,1);w(&r,PORT+54,2,1);
+    /* round rectangle 8 x 4 with 4 x 2 corners (ovalH 2 at SP, ovalW 4, then the rectangle): rows 0 and 3 inset by 1 */
+    memset(mem+PIX,9,32);CHECK(SH(0xa8b1,(w(&r,SP,2,2),w(&r,SP+2,2,4),w(&r,SP+4,4,RECT)))==1&&mac_cpu_get(r.cpu,MAC_A7)==SP+8);
+    ROW(0,1,7,3,7);ROW(1,0,8,3,7);ROW(2,0,8,3,7);ROW(3,1,7,3,7);
+    memset(mem+PIX,9,32);CHECK(SH(0xa8b0,(w(&r,SP,2,2),w(&r,SP+2,2,4),w(&r,SP+4,4,RECT)))==1);                         /* FrameRoundRect */
+    ROW(0,1,7,3,7);
+    memset(mem+PIX,9,32);CHECK(SH(0xa8b2,(w(&r,SP,2,2),w(&r,SP+2,2,4),w(&r,SP+4,4,RECT)))==1);ROW(0,1,7,3,7);        /* EraseRoundRect */
+    memset(mem+PIX,9,32);CHECK(SH(0xa8b3,(w(&r,SP,2,2),w(&r,SP+2,2,4),w(&r,SP+4,4,RECT)))==1);CHECK(mem[PIX]==9&&mem[PIX+1]==(9^255));   /* InvertRoundRect */
+    memset(mem+PIX,9,32);CHECK(SH(0xa8b4,(w(&r,SP,4,P+20),w(&r,SP+4,2,2),w(&r,SP+6,2,4),w(&r,SP+8,4,RECT)))==1&&mac_cpu_get(r.cpu,MAC_A7)==SP+12);ROW(0,1,7,3,7); /* FillRoundRect */
+    /* a clipped shape: only what is inside the clip rectangle is drawn */
+    memset(mem+PIX,9,32);rect(&r,R+2,1,0,3,4);CHECK(SH(0xa8b8,w(&r,SP,4,RECT))==1);CHECK(mem[PIX+3]==9&&mem[PIX+8+0]==3&&mem[PIX+8+4]==9&&mem[PIX+3*8+3]==9);rect(&r,R+2,0,0,4,8);
+    /* a hidden pen draws no frame (but paints still draw); a negative pen size halts, as for rectangles */
+    w(&r,PORT+66,2,0xffff);memset(mem+PIX,9,32);CHECK(SH(0xa8b7,w(&r,SP,4,RECT))==1&&mem[PIX+2]==9);w(&r,PORT+66,2,0);
+    CHECK(SH(0xa8b8,w(&r,SP,4,RECT))==1&&mem[PIX+2]==3);
+    mac_cpu_destroy(r.cpu);
+    /* neighbours are not ours; bad pointers and stacks halt without drawing */
+    r=setup();CHECK(mac_shapes_service(&r,0xa8b5)==0&&mac_shapes_service(&r,0xa8b6)==0&&mac_shapes_service(&r,0xa8af)==0&&mac_shapes_service(&r,0xa8bc)==0&&mac_shapes_service(&r,0xa8a1)==0);mac_cpu_destroy(r.cpu);
+    for(int error=0;error<7;error++){
+        r=setup();mem=mac_cpu_ram(r.cpu);memset(mem+PIX,99,32);mac_cpu_set(r.cpu,MAC_A7,SP);w(&r,SP,4,RECT);
+        if(error==0)w(&r,SP,4,0);
+        if(error==1)w(&r,SP,4,8190+4);
+        if(error==2)w(&r,SP,4,RECT+1);
+        if(error==3)mac_cpu_set(r.cpu,MAC_A7,SP+1);
+        if(error==4)w(&r,PORT+52,2,0xffff);
+        if(error==5)w(&r,0x80,4,0);
+        if(error==6)rect(&r,RECT,0,0,2049,8);
+        CHECK(mac_shapes_service(&r,error==4?0xa8b7:0xa8b8)==-1&&mac_cpu_halted(r.cpu));                              /* error 4: a negative pen size, which only a frame reads */
+        for(int i=0;i<32;i++)CHECK(mem[PIX+i]==99);
+        mac_cpu_destroy(r.cpu);
+    }
+    r=setup();mac_cpu_halt(r.cpu,"x");CHECK(mac_shapes_service(&r,0xa8b8)==-1);mac_cpu_destroy(r.cpu);
     printf("Color raster checks: %s\n",failures?"FAILED":"ok");return failures!=0;
 }

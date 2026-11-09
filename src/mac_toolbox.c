@@ -19,6 +19,10 @@ int mac_toolbox_service(MacRuntime *rt, uint16_t opcode) {
         if (rc != 1) return -1;
         mac_cpu_write(cpu, 0x9d6, 4, 0); /* WindowList */
         mac_cpu_write(cpu, 0x9de, 4, rt->wm_port);
+        if (!mac_cpu_read(cpu, 0x9ee, 4)) {   /* GrayRgn: the desktop, the screen below the menu bar (a plain rectangle: no rounded screen corners) */
+            uint32_t gray = mac_region_new_rect(rt, 20, 0, rt->screen_height ? rt->screen_height : 480, rt->screen_width ? rt->screen_width : 640);
+            mac_cpu_write(cpu, 0x9ee, 4, gray);
+        }
         mac_cpu_write(cpu, 0x9da, 2, 1); /* SaveUpdate */
         mac_cpu_write(cpu, 0x9dc, 2, 1); /* PaintWhite */
         rt->manager_flags |= 2;

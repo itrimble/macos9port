@@ -53,11 +53,17 @@ static void plain_box(void) {
     CHECK(rd(&r,structure+6,2)==281 && rd(&r,structure+8,2)==391);
     mac_cpu_destroy(r.cpu);
 }
+static void stray_bytes(void) {   /* bytes after the title beyond the positioning word are ignored (Room Editor's WIND 128 carries 250) */
+    uint8_t b[2048];fixture(b,60);memset(b+260+23,0x6f,37);
+    MacRuntime r=fresh(b);CHECK(mac_window_resource_service(&r,0xaa46)==1);
+    CHECK(r.window.address && !mac_cpu_halted(r.cpu) && r.window.title[0]==4 && r.window.title[1]=='T');
+    mac_cpu_destroy(r.cpu);
+}
 static void failures(void) {
     for(unsigned kind=0;kind<7;kind++) {
         uint8_t b[2048];fixture(b,kind==1?20:kind==2?26:23);
         if(kind==2)w16(b+260+24,0x280a);
-        if(kind==3)w16(b+260+8,99);
+        if(kind==3)w16(b+260+8,7);   /* not a standard or custom window definition id */
         MacRuntime r=fresh(b);uint32_t before=r.heap_next;
         if(kind==0)w16(mac_cpu_ram(r.cpu)+SP+8,130);
         if(kind==4)w32(mac_cpu_ram(r.cpu)+SP+4,SP-100);
@@ -74,4 +80,4 @@ static void failures(void) {
         mac_cpu_destroy(r.cpu);
     }
 }
-int main(void){successful(0);successful(1);plain_box();failures();puts("Resource-backed color windows: ok");return 0;}
+int main(void){successful(0);successful(1);plain_box();stray_bytes();failures();puts("Resource-backed color windows: ok");return 0;}

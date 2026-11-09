@@ -13,7 +13,7 @@ static int valid(MacCpu *cpu, uint32_t address, size_t size) {
  * passed by value (vertical, horizontal); rectangles are passed by address.
  * Bounds enclose pixels: top/left inclusive, bottom/right exclusive. */
 int mac_geometry_service(MacRuntime *rt, uint16_t opcode) {
-    if (opcode != 0xa8aa && opcode != 0xa8ad && opcode != 0xa8a8 && opcode != 0xa880) return 0;
+    if (opcode != 0xa8aa && opcode != 0xa8ab && opcode != 0xa8ad && opcode != 0xa8a8 && opcode != 0xa880 && opcode != 0xa8a6 && opcode != 0xa87e && opcode != 0xa87f) return 0;
     MacCpu *cpu = rt->cpu;
     if (mac_cpu_halted(cpu)) return -1;
     uint32_t sp = mac_cpu_get(cpu, MAC_A7);
@@ -33,6 +33,33 @@ int mac_geometry_service(MacRuntime *rt, uint16_t opcode) {
         for(unsigned i=0;i<4;i++)mac_cpu_write(cpu,dst+2*i,2,intersects?(uint16_t)edges[i]:0);
         mac_cpu_write(cpu,sp+12,1,intersects);mac_cpu_set(cpu,MAC_A7,sp+12);return 1;
     }
+    if (opcode == 0xa8ab) { /* UnionRect(src1,src2,VAR dst): the smallest rectangle enclosing both, empty ones included (my reading of the
+        * public contract: no special case for an empty source). dst may be a source. Pascal reverse order, no result. */
+        if (!valid(cpu,sp,12)) return -1;
+        uint32_t dst=mac_cpu_read(cpu,sp,4), b=mac_cpu_read(cpu,sp+4,4), a=mac_cpu_read(cpu,sp+8,4);
+        if (!a || !b || !dst) {mac_cpu_halt(cpu,"UnionRect requires non-NIL rectangles.");return -1;}
+        if (!valid(cpu,a,8) || !valid(cpu,b,8) || !valid(cpu,dst,8)) return -1;
+        int16_t edges[4];
+        for(unsigned i=0;i<4;i++) {
+            int16_t av=(int16_t)mac_cpu_read(cpu,a+2*i,2),bv=(int16_t)mac_cpu_read(cpu,b+2*i,2);
+            edges[i]=i<2?(av<bv?av:bv):(av>bv?av:bv);
+        }
+        for(unsigned i=0;i<4;i++)mac_cpu_write(cpu,dst+2*i,2,(uint16_t)edges[i]);
+        mac_cpu_set(cpu,MAC_A7,sp+12);return 1;
+    }
+    if (opcode == 0xa87e || opcode == 0xa87f) { /* AddPt(src: Point; VAR dst: Point) / SubPt(src; VAR dst): dst := dst +/- src, each coordinate modulo 2^16.
+        * Stack: dst pointer, then src (v, h words). */
+        if (!valid(cpu, sp, 8)) return -1;
+        uint32_t dst = mac_cpu_read(cpu, sp, 4), src = mac_cpu_read(cpu, sp + 4, 4);
+        if (!dst) { mac_cpu_halt(cpu, "AddPt/SubPt requires a non-NIL destination point."); return -1; }
+        if (!valid(cpu, dst, 4)) return -1;
+        uint32_t d = mac_cpu_read(cpu, dst, 4);
+        int sign = opcode == 0xa87e ? 1 : -1;
+        uint16_t v = (uint16_t)((d >> 16) + (uint32_t)sign * (src >> 16)), h = (uint16_t)((d & 0xffff) + (uint32_t)sign * (src & 0xffff));
+        mac_cpu_write(cpu, dst, 4, (uint32_t)v << 16 | h);
+        mac_cpu_set(cpu, MAC_A7, sp + 8);
+        return 1;
+    }
     if (opcode == 0xa880) { /* SetPt(VAR pt; h,v), Pascal reverse order.
         * https://dev.os9.ca/techpubs/mac/QuickDraw/QuickDraw-57.html */
         if (!valid(cpu, sp, 8)) return -1;
@@ -42,6 +69,19 @@ int mac_geometry_service(MacRuntime *rt, uint16_t opcode) {
         if (!valid(cpu, point, 4)) return -1;
         /* Snapshot before writing: the destination may overlap arguments. */
         mac_cpu_write(cpu, point, 4, coordinates);
+        mac_cpu_set(cpu, MAC_A7, sp + 8);
+        return 1;
+    }
+    if (opcode == 0xa8a6) { /* EqualRect(rect1, rect2): BOOLEAN. True when all four edges are equal, so two empty rectangles
+        * with different edges are not equal. Stack: rect2, rect1, result slot (Pascal reverse order). */
+        if (!valid(cpu, sp, 10)) return -1;
+        uint32_t b = mac_cpu_read(cpu, sp, 4), a = mac_cpu_read(cpu, sp + 4, 4);
+        if (!a || !b) { mac_cpu_halt(cpu, "EqualRect requires non-NIL rectangles."); return -1; }
+        if (!valid(cpu, a, 8) || !valid(cpu, b, 8)) return -1;
+        unsigned same = 1;
+        for (unsigned i = 0; i < 4; i++)
+            if (mac_cpu_read(cpu, a + i * 2, 2) != mac_cpu_read(cpu, b + i * 2, 2)) same = 0;
+        mac_cpu_write(cpu, sp + 8, 1, same);
         mac_cpu_set(cpu, MAC_A7, sp + 8);
         return 1;
     }

@@ -1,4 +1,5 @@
 #include "mac_runtime.h"
+#include "mac_sane_arith.h"
 #include <string.h>
 
 /* Independent bounded FP68K/Pack4 conversions. Public Apple Numerics Manual,
@@ -7,7 +8,6 @@
  * All calculation is integer bit manipulation, never host extended/double.
  * NaNs, invalid integer conversions, general arithmetic and exception callbacks
  * fail before mutation. No full SANE/IEEE arithmetic claim is made. */
-typedef struct { uint16_t sign_exp; uint64_t significand; } Extended;
 static int fail(MacRuntime *rt,const char *why){mac_cpu_halt(rt->cpu,why);return -1;}
 static int range(MacRuntime *rt,uint32_t p,unsigned n) {
     size_t size=mac_cpu_ram_size(rt->cpu);
@@ -79,7 +79,11 @@ int mac_sane_service(MacRuntime *rt,uint16_t opcode) {
     case 0x200e:src_size=2;break;
     case 0x280e:src_size=4;break;
     case 0x000e:case 0x0010:break;
+    case 0x0000:case 0x0002:case 0x0004:case 0x0006:break;   /* FADDX, FSUBX, FMULX, FDIVX: dst := dst op src, both extended */
     case 0x2010:dst_size=2;break;
+    case 0x1010:dst_size=4;break;   /* FX2S: extended to single */
+    case 0x0810:dst_size=8;break;   /* FX2D: extended to double */
+    case 0x080e:src_size=8;break;   /* FD2X: double to extended */
     case 0x2810:dst_size=4;break;
     case 0x0016:args=6;src_size=0;break;
     case 0x0001:case 0x0003:args=6;src_size=0;dst_size=2;break;
@@ -96,7 +100,10 @@ int mac_sane_service(MacRuntime *rt,uint16_t opcode) {
         if(environment&0x0060)return fail(rt,"SANE nonextended rounding precision is unsupported.");
         Extended x={0};
         if(op==0x100e){if(single_extended(r32(ram+src),&x))return fail(rt,"SANE single NaN conversion is unsupported.");}
-        else if(op==0x200e||op==0x280e) {
+        else if(op==0x080e) {
+            const char *why="SANE double conversion failed.";
+            if(mac_sane_from_double((uint64_t)r32(ram+src)<<32|r32(ram+src+4),&x,&why))return fail(rt,why);
+        } else if(op==0x200e||op==0x280e) {
             int64_t value=op==0x200e?(int16_t)r16(ram+src):(int32_t)r32(ram+src);
             x=unsigned_extended((uint64_t)(value<0?-value:value),value<0);
         } else x=load(ram+src);
@@ -105,9 +112,17 @@ int mac_sane_service(MacRuntime *rt,uint16_t opcode) {
            (!exponent && (x.significand>>63)))
             return fail(rt,"SANE unnormalized extended operand is unsupported.");
         if(exponent==0x7fff && x.significand!=(UINT64_C(1)<<63))return fail(rt,"SANE extended NaN conversion is unsupported.");
-        if(op==0x0016) {
+        if(op==0x0000||op==0x0002||op==0x0004||op==0x0006) {
+            const char *why="SANE arithmetic failed.";Extended y=load(ram+dst),z;
+            if(mac_sane_arith(op,y,x,(environment>>13)&3,&z,&inexact,&why))return fail(rt,why);
+            store(output,z);
+        } else if(op==0x0016) {
             if(exponent!=0x7fff)inexact=truncate(&x);
             store(output,x);
+        } else if(op==0x1010||op==0x0810) {
+            const char *why="SANE float conversion failed.";uint64_t fbits;
+            if(mac_sane_to_float(x,op==0x1010?23:52,op==0x1010?8:11,(environment>>13)&3,&fbits,&inexact,&why))return fail(rt,why);
+            if(dst_size==4)w32(output,(uint32_t)fbits);else{w32(output,(uint32_t)(fbits>>32));w32(output+4,(uint32_t)fbits);}
         } else if(op==0x2010||op==0x2810) {
             uint32_t integer;
             if(exponent==0x7fff||integer_result(x,dst_size*8,(environment>>13)&3,&integer,&inexact))
