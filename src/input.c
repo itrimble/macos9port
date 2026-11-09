@@ -18,6 +18,7 @@
 #include "control_panels.h"
 #include "desktop_context.h"
 #include "movie_window.h"
+#include "font_book_window.h"
 #include "finder_edit.h"
 #include "ospi.h"
 #include "session_int.h"
@@ -30,16 +31,14 @@ void session_wheel(Session *s, int dy) {
     if (control_panels_wheel(s, eff)) return;
     if (session_overlay_active(s) || s->desktop_focus || s->nwin <= 0) return;
     Window *w = &s->win[s->nwin - 1];
+    if (w->kind == WIN_FONT_BOOK && font_book_window_wheel(w, eff)) return;
     if (w->collapsed) return;
     int step = s->wheel_speed == 1 ? 9 : s->wheel_speed == 3 ? 30 : 18;
     w->scroll -= eff * step;
     session_clamp(s);
 }
 
-static void note_mouse(Session *s, int x, int y) {
-    s->mx = x;
-    s->my = y;
-}
+static void note_mouse(Session *s, int x, int y) { s->mx = x; s->my = y; }
 
 /* Some event sources report every press as clicks=1. Promote only a completed
  * click on this exact icon, with elapsed time supplied by session_tick. */
@@ -48,14 +47,10 @@ static int icon_double(Session *s, int valid, int kind, const char *dir,
     uint32_t elapsed = s->input_now_ms - s->click_ms;
     uint32_t win_ms = s->double_click_ms > 0 ? (uint32_t)s->double_click_ms : 500u;
     int dx = x - s->click_x, dy = y - s->click_y;
-    int repeat = valid && (elapsed > 0 || clicks >= 2) && elapsed <= win_ms &&
-                 dx >= -4 && dx <= 4 && dy >= -4 && dy <= 4 &&
-                 kind == s->click_kind && strcmp(dir, s->click_dir) == 0 &&
+    int repeat = valid && (elapsed > 0 || clicks >= 2) && elapsed <= win_ms && dx >= -4 && dx <= 4 &&
+                 dy >= -4 && dy <= 4 && kind == s->click_kind && strcmp(dir, s->click_dir) == 0 &&
                  strcmp(name, s->click_name) == 0;
-    s->click_ms = s->input_now_ms;
-    s->click_kind = kind;
-    s->click_x = x;
-    s->click_y = y;
+    s->click_ms = s->input_now_ms; s->click_kind = kind; s->click_x = x; s->click_y = y;
     snprintf(s->click_dir, sizeof s->click_dir, "%s", dir);
     snprintf(s->click_name, sizeof s->click_name, "%s", name);
     return (valid && s->input_now_ms > 0) ? repeat : (clicks >= 2 || repeat);
@@ -209,6 +204,9 @@ void session_down(Session *s, int x, int y, int clicks) {
                 return;
             }
             finder_selection_press(s, w, -1);
+        }
+        if (!w->collapsed && w->kind == WIN_FONT_BOOK && rect_has(lay.content, x, y)) {
+            font_book_window_down(s, w, &lay, x, y); s->press_zone = Z_CONTENT; return;
         }
         if (!w->collapsed && w->kind == WIN_TERMINAL) {
             terminal_down(s, w, &lay, x, y, clicks);
@@ -430,6 +428,7 @@ void session_key(Session *s, int key, int mods) {
     }
     if (notes_key(s, key, mods)) return;
     if (finder_edit_key(s, key, mods)) return;
+    if (s->menu < 0 && s->nwin && font_book_window_key(s, &s->win[s->nwin - 1], key, mods)) return;
     if (key >= 'A' && key <= 'Z') key += 'a' - 'A';
     if (context_key(s, key, mods)) return;
     if (menu_navigation_key(s, key, mods)) return;

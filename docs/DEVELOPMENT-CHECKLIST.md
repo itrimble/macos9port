@@ -240,6 +240,40 @@ See [the preserved baseline](DEVELOPMENT-BASELINE.md). Newer acceptance evidence
 
 ## 2.5 Delivered appearance assets and integration loop
 
+### Font Book 999 and international text
+
+- [x] F01 Inventory every repository font candidate before implementation and
+  separate canonical licensed assets from generated, dependency, and sibling-
+  worktree copies. The 7 November audit found ChicagoFLF, two Meslo terminal
+  faces, and four IBM Plex dashboard weights; no canonical suitcase or OTF.
+- [x] F02 Add a bounded catalog and integrity parser for TTF, OTF, TTC, Type 1,
+  raw resource forks, and AppleSingle/AppleDouble font resources. Invalid named
+  fonts remain visible as Problems and cannot install or activate.
+- [x] F03 Add atomic simulated-volume installation and a persistent activation
+  registry with symlink rejection, collision refusal, last-face protection,
+  and transactional desktop typeface reload.
+- [x] F04 Add the Font Book 999 utility under Applications/Utilities and the
+  OS999 Control Panels submenu, with Collections, family list, and live preview
+  panes in a standard classic window. Focused off-screen tests pass; live visual
+  and hands-on interaction acceptance remain open.
+- [x] F05 Add a hash-pinned, OFL-licensed Noto coverage pack for Latin/Greek/
+  Cyrillic, Arabic, Hebrew, major Indic scripts, Thai, symbols, monochrome
+  emoji, and ten CJK faces. Metadata scans pass. Bundle cost is 24.29 MiB.
+- [x] F06 Shape complex scripts with HarfBuzz, apply Unicode bidirectional
+  ordering, use script-aware line-break opportunities, and resolve missing
+  glyphs through ordered per-glyph fallback. Test mixed scripts, combining
+  marks, Arabic joining, Indic clusters, Thai, Hebrew, CJK face indices, emoji
+  variation/ZWJ behavior, malformed UTF-8, and bounded allocation. The first
+  integrated pass uses HarfBuzz 15.1.0, FriBidi 1.0.18 and libunibreak 8.0,
+  with explicit degraded builds when a library is absent. Full-library tests
+  cover shaping, fallback, bidi, line breaks, and framebuffer drawing. FriBidi
+  uses Unicode 14 data; a future permissive Unicode-17 bidi replacement remains
+  a release/packaging decision. Human-language visual review remains F07.
+- [ ] F07 Capture real one-window screenshots of Font Book and multilingual
+  sample documents, with italic captions and capture dates. Obtain human review
+  from readers of represented languages; metadata and pixels alone are not
+  language-quality acceptance.
+
 - [x] V01 Inventory the local delivery without overwriting existing work.
   On 5 November, all 1,499 local asset files matched bundle tip `1c1b1b9`
   byte-for-byte: 59 wallpapers in five sizes, 82 icons, seven cursors,

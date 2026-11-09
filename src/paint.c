@@ -14,6 +14,7 @@
 #include "desktop_assets.h"
 #include "mac_icon.h"
 #include "movie_window.h"
+#include "font_book_window.h"
 #include "os999_startup.h"
 #include "ospi.h"
 #include "term.h"
@@ -380,6 +381,7 @@ static void paint_window(Fb *fb, const Session *s, int index) {
                 notes_paint(fb, s, w, &lay);
             } else if (w->kind == WIN_MOVIE) {
                 movie_window_paint(fb, w);
+            } else if (w->kind == WIN_FONT_BOOK) { font_book_window_paint(fb, s, w, &lay);
             } else {
                 paint_items(fb, s, w, &lay);
             }

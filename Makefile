@@ -22,6 +22,24 @@ FT_LIBS := $(shell pkg-config --libs freetype2 2>/dev/null)
 ifneq ($(FT_LIBS),)
 CFLAGS += $(FT_CFLAGS) -DOSPI_FREETYPE
 endif
+HB_CFLAGS := $(shell pkg-config --cflags harfbuzz 2>/dev/null)
+HB_LIBS := $(shell pkg-config --libs harfbuzz 2>/dev/null)
+FRIBIDI_CFLAGS := $(shell pkg-config --cflags fribidi 2>/dev/null)
+FRIBIDI_LIBS := $(shell pkg-config --libs fribidi 2>/dev/null)
+UNIBREAK_CFLAGS := $(shell pkg-config --cflags libunibreak 2>/dev/null)
+UNIBREAK_LIBS := $(shell pkg-config --libs libunibreak 2>/dev/null)
+ifneq ($(and $(FT_LIBS),$(HB_LIBS)),)
+CFLAGS += $(HB_CFLAGS) -DOS999_TEXT_HARFBUZZ
+FT_LIBS += $(HB_LIBS)
+endif
+ifneq ($(FRIBIDI_LIBS),)
+CFLAGS += $(FRIBIDI_CFLAGS) -DOS999_TEXT_FRIBIDI
+FT_LIBS += $(FRIBIDI_LIBS)
+endif
+ifneq ($(UNIBREAK_LIBS),)
+CFLAGS += $(UNIBREAK_CFLAGS) -DOS999_TEXT_UNIBREAK
+FT_LIBS += $(UNIBREAK_LIBS)
+endif
 # Storage stack (storage/storage.mk, L02-L06): archive installs link it.
 STORAGE_OUT ?= build/storage
 STORAGE_A := $(STORAGE_OUT)/libos999storage.a
@@ -36,8 +54,11 @@ AUDIO_HDRS := include/sound_preferences.h include/native_apps.h include/movie_ho
 STARTUP_SRC := src/os999_startup.c src/os999_startup_sprite.c
 STARTUP_HDR := include/os999_startup.h include/os999_startup_sprite.h
 
+TEXT_RENDER_SRC := src/text.c src/typeface.c src/typeface_discovery.c src/typeface_metrics.c \
+	src/text_system.c src/text_layout.c src/text_layout_break.c
+
 include config/core-sources.mk
-HDRS := include/desktop_info.h include/notes.h src/volume_documents.h include/sound_preferences.h include/native_apps.h include/native_settings.h include/control_panel_store.h include/os999_cdev.h include/control_panels.h src/cdev_ui.h src/control_panels_int.h include/movie_host.h src/install_int.h include/application_probe.h include/quake_launch.h include/term_font.h include/tailnet.h include/finder_edit.h include/app_switcher.h include/desktop_gesture.h include/finder_apps.h include/finder_print.h include/finder_recent.h include/finder_batch.h include/finder_drag.h include/finder_selection.h include/finder_popup.h include/finder_state.h include/finder_settings.h include/finder_search.h include/finder_files.h include/desktop_finder.h include/modern_network.h include/folder_navigation.h include/desktop_commands.h include/desktop_help.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h include/term.h include/mac_movie.h include/movie_window.h
+HDRS := include/desktop_info.h include/notes.h src/volume_documents.h include/sound_preferences.h include/native_apps.h include/native_settings.h include/control_panel_store.h include/os999_cdev.h include/control_panels.h src/cdev_ui.h src/control_panels_int.h include/movie_host.h src/install_int.h include/application_probe.h include/quake_launch.h include/term_font.h include/tailnet.h include/finder_edit.h include/app_switcher.h include/desktop_gesture.h include/finder_apps.h include/finder_print.h include/finder_recent.h include/finder_batch.h include/finder_drag.h include/finder_selection.h include/finder_popup.h include/finder_state.h include/finder_settings.h include/finder_search.h include/finder_files.h include/desktop_finder.h include/modern_network.h include/folder_navigation.h include/desktop_commands.h include/desktop_help.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/font_book.h include/font_book_window.h include/text_layout.h include/text_system.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h include/term.h include/mac_movie.h include/movie_window.h
 
 PRINT_HOST := src/desktop_print_stub.c
 SHORTCUT_HOST := src/desktop_shortcuts_stub.c
@@ -79,6 +100,24 @@ build/test_os999_startup_bar: $(STARTUP_SRC) src/font.c tests/test_os999_startup
 build/test_ospi: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_ospi.c $(HDRS) $(STARTUP_HDR)
 	mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_ospi.c $(FT_LIBS) -lm $(NET_LIBS)
+
+build/test_fontbook: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_fontbook.c $(HDRS) include/os999_startup.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_fontbook.c $(FT_LIBS) -lm $(NET_LIBS)
+
+.PHONY: test-fontbook
+test-fontbook: build/test_fontbook build/test_text_layout
+	./build/test_fontbook
+	./build/test_text_layout
+test: test-fontbook
+
+build/test_text_layout: src/text_layout.c src/text_layout_break.c tests/test_text_layout.c include/text_layout.h include/draw.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -o $@ src/text_layout.c src/text_layout_break.c src/draw.c src/font.c src/typeface.c src/typeface_discovery.c src/typeface_metrics.c tests/test_text_layout.c $(FT_LIBS) -lm
+
+.PHONY: test-text-layout
+test-text-layout: build/test_text_layout
+	./build/test_text_layout
 
 build/test_mac_movie: src/mac_movie.c src/mac_movie_play.c tests/test_mac_movie.c tests/movie_fixture.h include/mac_movie.h
 	mkdir -p build
@@ -449,6 +488,8 @@ app: build/ospi build/ospi-runtime build/os999-tailnet macos/Info.plist wallpape
 	sed -n '1,32p' $(MUSASHI)/softfloat/softfloat.c > "$(APP_BUNDLE)/Contents/Resources/SoftFloat-notice.txt"
 	cp fonts/ChicagoFLF.ttf fonts/LICENSE.txt "$(APP_BUNDLE)/Contents/Resources/Fonts/"
 	cp -R fonts/terminal "$(APP_BUNDLE)/Contents/Resources/Fonts/Terminal"
+	@if [ -d fonts/system ]; then cp -R fonts/system "$(APP_BUNDLE)/Contents/Resources/Fonts/System"; fi
+	@mkdir -p "$(APP_BUNDLE)/Contents/Resources/Fonts/Dashboard" && cp assets/dashboard/plex-*.ttf assets/dashboard/FONT-LICENSE.txt "$(APP_BUNDLE)/Contents/Resources/Fonts/Dashboard/"
 	mkdir -p "$(APP_BUNDLE)/Contents/Resources/sounds/classic9"
 	cp assets/sounds/classic9/*.wav "$(APP_BUNDLE)/Contents/Resources/sounds/classic9/"
 	mkdir -p "$(APP_BUNDLE)/Contents/Resources/wallpapers"

@@ -17,6 +17,8 @@
 #include "desktop_theme.h"
 #include "appearance_panel.h"
 #include "control_panels.h"
+#include "font_book.h"
+#include "font_book_window.h"
 #include "desktop_context.h"
 #include "desktop_wallpaper.h"
 #include "ospi.h"
@@ -49,6 +51,7 @@ void close_index(Session *s, int idx) {
     if (s->win[idx].kind == WIN_TERMINAL) {
         terminal_window_close(s, &s->win[idx]);
     }
+    font_book_window_release(&s->win[idx]);
     movie_window_release(&s->win[idx]);
     finder_state_remember(s, &s->win[idx], 0);
     free(s->win[idx].expanded_items);
@@ -203,20 +206,11 @@ void toggle_zoom(Session *s, Window *w) {
         toggle_shade(w);
     }
     if (!w->zoomed) {
-        w->zoom_x = w->x;
-        w->zoom_y = w->y;
-        w->zoom_w = w->w;
-        w->zoom_h = w->h;
-        w->x = 8;
-        w->y = 26;
-        w->w = s->sw - 16;
-        w->h = s->sh - 34;
+        w->zoom_x = w->x; w->zoom_y = w->y; w->zoom_w = w->w; w->zoom_h = w->h;
+        w->x = 8; w->y = 26; w->w = s->sw - 16; w->h = s->sh - 34;
         w->zoomed = 1;
     } else {
-        w->x = w->zoom_x;
-        w->y = w->zoom_y;
-        w->w = w->zoom_w;
-        w->h = w->zoom_h;
+        w->x = w->zoom_x; w->y = w->zoom_y; w->w = w->zoom_w; w->h = w->zoom_h;
         w->zoomed = 0;
     }
     snprintf(s->sound_event, sizeof s->sound_event, "window.zoom");
@@ -300,6 +294,10 @@ void session_command(Session *s, int cmd) {
         context_close();
         finder_apps_command(s, CMD_APP_FINDER);
         appearance_panel_open(s, cmd == CMD_APPEARANCE_THEMES); break;
+    case CMD_FONT_BOOK:
+        context_close(); finder_apps_command(s, CMD_APP_FINDER);
+        if (font_book_window_open(s) != 0) dialog_info(s, "Font Book 999", "Close a window first.");
+        break;
     case CMD_MEDIA_PLAYER:
     case CMD_SUPPORTED_FORMATS:
         context_close();

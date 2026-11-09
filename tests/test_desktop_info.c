@@ -14,13 +14,18 @@ int main(void) {
     Session *s=session_create(root); CHECK(s); if(!s)return 1;
     uint32_t *pixels=malloc(OSPI_W*OSPI_H*sizeof *pixels);CHECK(pixels);if(!pixels)return 1;
     Fb fb;fb_init(&fb,pixels,OSPI_W,OSPI_H);
-    const char *names[]={"ChicagoFLF","Meslo Nerd Font Regular","Meslo Nerd Font Bold"};
-    unsigned long hashes[3]={0};
-    for(int i=0;i<3;i++) {
-        char rel[OSPI_PATH];snprintf(rel,sizeof rel,"System Folder/Fonts/%s",names[i]);
+    enum{MAXF=64};
+    int nfonts=desktop_info_font_count();
+    CHECK(nfonts>=22 && nfonts<=MAXF); if(nfonts>MAXF)nfonts=MAXF;
+    unsigned long hashes[MAXF]={0};
+    for(int i=0;i<nfonts;i++) {
+        const char *name=desktop_info_font_name(i);CHECK(name);
+        char marker[OSPI_PATH];snprintf(marker,sizeof marker,"%s/System Folder/Fonts/%s",root,name);
+        CHECK(access(marker,F_OK)==0);
+        char rel[OSPI_PATH];snprintf(rel,sizeof rel,"System Folder/Fonts/%s",name);
         CHECK(desktop_info_open(s,rel)==1);
         Window *w=&s->win[s->nwin-1];Layout lay;window_layout(w,&lay);
-        CHECK(!strcmp(w->title,names[i]));
+        CHECK(!strcmp(w->title,name));
 #ifdef OSPI_FREETYPE
         CHECK(desktop_info_font_ready(i));
 #else
@@ -38,7 +43,7 @@ int main(void) {
     }
 
 #ifdef OSPI_FREETYPE
-    CHECK(hashes[0]!=hashes[1] && hashes[1]!=hashes[2]);
+    for(int i=0;i<nfonts;i++) for(int j=i+1;j<nfonts;j++) CHECK(hashes[i]!=hashes[j]);
 #endif
     CHECK(!desktop_info_open(s,"Documents/ChicagoFLF"));
     char path[OSPI_PATH];snprintf(path,sizeof path,"%s/System Folder/Fonts/ChicagoFLF",root);
@@ -48,6 +53,15 @@ int main(void) {
     CHECK(!desktop_info_open(s,"System Folder/Fonts/ChicagoFLF"));CHECK(!unlink(path));
     CHECK(!symlink("../About This Folder",path));
     CHECK(!desktop_info_open(s,"System Folder/Fonts/ChicagoFLF"));
+    {   /* a real font the user installs opens Font Book; a lookalike document does not */
+        char fp[OSPI_PATH];snprintf(fp,sizeof fp,"%s/System Folder/Fonts/User Face.ttf",root);
+        FILE *u=fopen(fp,"w");CHECK(u);if(u){fputs("x",u);fclose(u);}
+        int before=s->nwin;
+        CHECK(desktop_info_open(s,"System Folder/Fonts/User Face.ttf")==1);
+        CHECK(s->nwin==before+1 && s->win[s->nwin-1].kind==WIN_FONT_BOOK);
+        CHECK(!desktop_info_open(s,"Documents/User Face.ttf"));
+        CHECK(!unlink(fp));
+    }
     session_command(s,CMD_ABOUT);Window *w=&s->win[s->nwin-1];Layout lay;window_layout(w,&lay);
     CHECK(!strcmp(w->rel,":about"));
     CHECK(!desktop_info_click(s,w,lay.content.x+10,lay.content.y+10));CHECK(!s->browser_request);

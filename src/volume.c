@@ -1,5 +1,6 @@
 #include "volume_documents.h"
 #include "ospi.h"
+#include "desktop_font_table.h"
 #include "native_apps.h"
 #include "mac_icon.h"
 #include "volume_directory.h"
@@ -28,6 +29,7 @@ static const struct {
      "Storage and Installers\n\nYour OS999 volume is a real directory on the host. Copy, move and rename operations affect those files. Empty Trash permanently removes its contents. Back up important documents and saves.\n\nSupported archives retain classic resource forks and Finder metadata using the storage subsystem. Keep .rsrc sidecars with their matching data files. Some StuffIt methods need an external extractor; unsupported formats are rejected rather than guessed.\n\nDisk-image support depends on the format and available parser. Disposable virtual volumes do not mean every .img, .dmg or .iso is supported. Do not assume that an extracted installer can run: its architecture and resources must also be supported.\n\nThe Memory panel scratch disk is a quota-limited host directory, not physical RAM. It refuses to adopt an existing unmanaged RAM Disk folder. Clear on quit removes data only from a verified managed scratch disk.\n\nReinstalling or reseeding OS999 does not intentionally replace existing starter documents. Classic-app saves are kept separately from application folders.\n"},
     {"Documents/Help and Limitations",
      "Help and Limitations\n\nIf double-clicking does not open an item, select it and choose File > Open. Check the resulting message: an unsupported application or malformed resource fork is different from a mouse event problem.\n\nIf a note cannot save, the file may have changed outside OS999 or become unwritable. The failed edit does not replace your saved file. Reopen it to read the current contents. New notes are in Documents.\n\nThis is a userspace desktop and clean-room compatibility runtime, not a complete Mac OS 9 emulator or operating system. Not all classic applications, installers, extensions, printers or network services work.\n\nHeadless tests and successful builds do not establish visual, gameplay, audio, performance or physical-device compatibility. Report the build, file name, action and visible error when something fails.\n\nUse Command-W to close a window and Command-Q to quit. Avoid deleting the host volume or save directories to troubleshoot an application.\n"},
+    {"Applications/Utilities/Font Book 999", "OS999-BUILTIN:font-book:1\n"},
     {"Documents/Notes",
      "Notes live here as plain text.\n\n"
      "Double-click a document to read it.\n"},
@@ -39,9 +41,6 @@ static const struct {
      "that screenshot. Nothing in it is an\n"
      "Apple system file.\n"},
     {"Trash/.keep", ""},
-    {"System Folder/Fonts/ChicagoFLF", "OS999-FONT:chicagoflf:1\n"},
-    {"System Folder/Fonts/Meslo Nerd Font Regular", "OS999-FONT:meslo-regular:1\n"},
-    {"System Folder/Fonts/Meslo Nerd Font Bold", "OS999-FONT:meslo-bold:1\n"},
     {"System Folder/Fonts/About Fonts",
      "Drop TrueType, OpenType, or PostScript\n"
      "Type 1 fonts in this folder.\n"
@@ -149,40 +148,49 @@ static int seed_directory(const char *root, const char *relative) {
     close(dir); return 0;
 }
 
+int volume_builtin_font_book(const char *root, const char *rel) {
+    if (!rel || strcmp(rel, "Applications/Utilities/Font Book 999")) return 0;
+    char body[64];
+    return volume_read(root, rel, body, sizeof body) == 0 &&
+           !strcmp(body, "OS999-BUILTIN:font-book:1\n");
+}
+
+static int seed_file(const char *root, const char *rel, const char *body) {
+    char parent_rel[OSPI_PATH];
+    const char *sl = strrchr(rel, '/');
+    if (sl) {
+        size_t len = (size_t)(sl - rel);
+        if (len >= sizeof parent_rel) return -1;
+        memcpy(parent_rel, rel, len);
+        parent_rel[len] = 0;
+        if (seed_directory(root, parent_rel) != 0) return -1;
+    }
+    char full[OSPI_PATH];
+    if (volume_join(full, sizeof full, root, rel) != 0) return -1;
+    if (exists_file(full)) return 0;
+    int dir = volume_directory_open(root, sl ? parent_rel : "");
+    if (dir < 0) return -1;
+    int fd = openat(dir, sl ? sl + 1 : rel, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
+    close(dir);
+    if (fd < 0) return errno == EEXIST ? 0 : -1;
+    FILE *f = fdopen(fd, "w");
+    if (!f) { close(fd); return -1; }
+    int ok = !body || fputs(body, f) >= 0;
+    return fclose(f) != 0 || !ok ? -1 : 0;
+}
+
 int volume_seed(const char *root) {
     if (!root || volume_mkdir_p(root) != 0) {
         return -1;
     }
-    for (size_t i = 0; i < sizeof k_seed / sizeof k_seed[0]; i++) {
-        char parent_rel[OSPI_PATH];
-        const char *sl = strrchr(k_seed[i].rel, '/');
-        if (sl) {
-            size_t len = (size_t)(sl - k_seed[i].rel);
-            if (len >= sizeof parent_rel) {
-                return -1;
-            }
-            memcpy(parent_rel, k_seed[i].rel, len);
-            parent_rel[len] = 0;
-            if (seed_directory(root, parent_rel) != 0) return -1;
-        }
-        char full[OSPI_PATH];
-        if (volume_join(full, sizeof full, root, k_seed[i].rel) != 0) {
-            return -1;
-        }
-        if (exists_file(full)) {
-            continue;
-        }
-        const char *leaf = strrchr(k_seed[i].rel, '/');
-        int dir = volume_directory_open(root, leaf ? parent_rel : "");
-        if (dir < 0) return -1;
-        int fd = openat(dir, leaf ? leaf + 1 : k_seed[i].rel,
-                        O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
-        close(dir);
-        if (fd < 0) { if (errno == EEXIST) continue; return -1; }
-        FILE *f = fdopen(fd, "w");
-        if (!f) { close(fd); return -1; }
-        int ok = !k_seed[i].body || fputs(k_seed[i].body, f) >= 0;
-        if (fclose(f) != 0 || !ok) return -1;
+    for (size_t i = 0; i < sizeof k_seed / sizeof k_seed[0]; i++)
+        if (seed_file(root, k_seed[i].rel, k_seed[i].body) != 0) return -1;
+    /* One marker per bundled open-licensed font so the Fonts folder lists them all. */
+    for (int i = 0; i < DESKTOP_FONT_COUNT; i++) {
+        char rel[OSPI_PATH], body[64];
+        snprintf(rel, sizeof rel, "System Folder/Fonts/%s", k_desktop_fonts[i].name);
+        snprintf(body, sizeof body, "OS999-FONT:%s:1\n", k_desktop_fonts[i].id);
+        if (seed_file(root, rel, body) != 0) return -1;
     }
     return native_catalog_seed(root);
 }
@@ -270,7 +278,8 @@ static int list_items(const char *root, const char *rel, Item **buffer, int max,
                                    : snprintf(file_rel, sizeof file_rel, "%s", de->d_name);
             if (fn > 0 && (size_t)fn < sizeof file_rel && native_catalog_placeholder(root, file_rel)) continue;
             int builtin = fn > 0 && (size_t)fn < sizeof file_rel && S_ISREG(st.st_mode) &&
-                          native_catalog_id(root, file_rel) != NATIVE_NONE;
+                          (native_catalog_id(root, file_rel) != NATIVE_NONE ||
+                           volume_builtin_font_book(root, file_rel));
             items[n].kind = builtin || (S_ISREG(st.st_mode) && mac_icon_application_at(fd, de->d_name, &items[n])) ?
                             ITEM_APPLICATION : ITEM_FILE;
         }
