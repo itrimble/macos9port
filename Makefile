@@ -583,6 +583,7 @@ test: build/test_os999_startup build/test_os999_startup_bar build/test_ospi buil
 	./build/test_folder_view
 	./build/test_menu_integration
 	./build/test_terminal
+	./build/test_terminal_history
 	./build/test_audio_engine assets/sounds/classic9
 	./build/test_os999_startup
 	./build/test_os999_startup_bar

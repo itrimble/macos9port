@@ -113,7 +113,11 @@ build/test_terminal: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_terminal.c $
 	mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_terminal.c $(FT_LIBS) -lm $(NET_LIBS)
 
-test: build/test_terminal
+build/test_terminal_history: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_terminal_history.c $(HDRS)
+	mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_terminal_history.c $(FT_LIBS) -lm $(NET_LIBS)
+
+test: build/test_terminal build/test_terminal_history
 
 .PHONY: test-network
 build/test_modern_network: src/modern_network.c tests/test_modern_network.c include/modern_network.h
