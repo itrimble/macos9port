@@ -250,6 +250,12 @@
   },
   "quake3": {
    "category": "app"
+  },
+  "movie_player": {
+   "category": "app"
+  },
+  "amp_player": {
+   "category": "app"
   }
  },
  "cursors": {

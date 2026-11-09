@@ -25,7 +25,8 @@ int main(void) {
     check(ITEM_APPLICATION, "MacSurf", "Applications", "web_browser");
     /* Built-in applications get their own artwork, not the generic application icon. */
     check(ITEM_APPLICATION, "Web Browser", "Applications", "web_browser");
-    check(ITEM_APPLICATION, "OS999 Amp", "Applications", "music_player");
+    check(ITEM_APPLICATION, "OS999 Amp", "Applications", "amp_player");
+    check(ITEM_APPLICATION, "Movie Player", "Applications", "movie_player");
     check(ITEM_APPLICATION, "OS999 Console", "Applications", "terminal");
     check(ITEM_APPLICATION, "Tailscale", "Applications", "network");
     check(ITEM_APPLICATION, "Tailscale", "Utilities", "network");

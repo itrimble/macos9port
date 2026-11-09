@@ -70,7 +70,7 @@ static const IconName applications[] = {
     {"OS999 Runtime", "runtime_68k"}, {"OS Pi Runtime", "runtime_68k"},
     {"OS Pi", "ospi_desktop"}, {"OS999 Stylized", "ospi_desktop"},
     /* Built-in applications in the Applications folder. */
-    {"Web Browser", "web_browser"}, {"OS999 Amp", "music_player"},
+    {"Web Browser", "web_browser"}, {"OS999 Amp", "amp_player"}, {"Movie Player", "movie_player"},
     {"OS999 Console", "terminal"}, {"Tailscale", "network"},
     {"Quake III Arena", "quake3"}, {"Quake III Arena Demo", "quake3"}, {"Quake III", "quake3"}
 };

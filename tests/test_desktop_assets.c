@@ -42,6 +42,14 @@ int main(int argc, char **argv) {
         drawn++; if (((c >> 16) & 255) > ((c >> 8) & 255) + 40) red++;
     }
     CHECK(drawn > 60 && red > drawn / 3);
+    /* The built-in media applications have their own icons. */
+    memset(pixels, 0, sizeof pixels);
+    CHECK(desktop_asset_draw(&fb, 0, 0, "movie_player"));
+    int film = 0; for (int i = 0; i < 64 * 64; i++) film += pixels[i] != 0;
+    memset(pixels, 0, sizeof pixels);
+    CHECK(desktop_asset_draw(&fb, 0, 0, "amp_player"));
+    int amp = 0; for (int i = 0; i < 64 * 64; i++) amp += pixels[i] != 0;
+    CHECK(film > 400 && amp > 400);
     CHECK(!desktop_asset_draw(NULL, 0, 0, "folder"));
     desktop_assets_reset();
     printf("desktop assets: %s\n", failures ? "FAILED" : "ok");
