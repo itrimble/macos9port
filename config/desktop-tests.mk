@@ -308,6 +308,18 @@ build/test_desktop_bt_host: tests/test_desktop_bt_host.c src/desktop_bt_host.c i
 test-desktop-bt-host: build/test_desktop_bt_host
 	./build/test_desktop_bt_host
 test: test-desktop-bt-host
+
+# Bluetooth panel and its manager-backed source; fake source and fake driver only.
+build/test_cdev_bluetooth: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_cdev_bluetooth.c include/cdev_bluetooth.h $(HDRS) $(STARTUP_HDR)
+	mkdir -p build
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_cdev_bluetooth.c $(FT_LIBS) -lm $(NET_LIBS)
+build/test_desktop_bt_view: tests/test_desktop_bt_view.c src/desktop_bt_view.c src/desktop_bluetooth.c src/desktop_guestnet.c src/desktop_bt_none.c include/desktop_bt_view.h include/cdev_bluetooth.h $(DESKTOP_BT_HDR) $(NET_OUT)/libos999net.a $(BT_OUT)/libos999bt.a
+	$(CC) $(CFLAGS) $(BT_INC) -DOS999_DESKTOP_BLUETOOTH -o $@ tests/test_desktop_bt_view.c src/desktop_bt_view.c src/desktop_bluetooth.c src/desktop_guestnet.c src/desktop_bt_none.c $(BT_OUT)/libos999bt.a $(NET_OUT)/libos999net.a $(GUEST_NET_LIBS)
+.PHONY: test-cdev-bluetooth
+test-cdev-bluetooth: build/test_cdev_bluetooth build/test_desktop_bt_view
+	./build/test_cdev_bluetooth assets/icons/ospi-icons.icl8
+	./build/test_desktop_bt_view
+test: test-cdev-bluetooth
 build/test_quicktime: src/quicktime_decode.c src/quicktime_decode.h src/quicktime_movie.c include/quicktime_movie.h $(AUDIO_SRC) $(AUDIO_HDRS) tests/test_quicktime.c
 	mkdir -p build
 	$(CC) $(CFLAGS) $(SDL_CFLAGS) $(FFMPEG_CFLAGS) -o $@ src/quicktime_decode.c src/quicktime_movie.c $(AUDIO_SRC) tests/test_quicktime.c $(SDL_LIBS) $(FFMPEG_LIBS) -pthread -lm
