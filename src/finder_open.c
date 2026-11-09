@@ -8,6 +8,7 @@
 #include "term.h"
 #include "finder_files.h"
 #include "native_launch.h"
+#include "font_book_window.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -63,6 +64,7 @@ void open_item(Session *s, Window *w, int index) {
     if (desktop_info_open(s, rel)) return;
     int native = native_catalog_id(s->root, rel);
     if (native) { (void)native_app_open(s, native); return; }
+    if (volume_builtin_font_book(s->root, rel)) { font_book_window_open(s); return; }
     if (session_is_sit(window_items(w)[index].name)) {
         session_open_sit(s, rel);
         return;

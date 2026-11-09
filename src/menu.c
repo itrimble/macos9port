@@ -74,6 +74,7 @@ static MenuItem k_panels[] = {
     ITEM("Open Control Panels", CMD_CONTROL_PANELS), SEP,
     ITEM("General Controls", CMD_CP_GENERAL),
     ITEM("Appearance", CMD_APPEARANCE_DESKTOP),
+    ITEM("Font Book 999", CMD_FONT_BOOK),
     ITEM("Sound & Startup", CMD_CP_SOUND),
     ITEM("Monitors & Display", CMD_CP_MONITORS),
     ITEM("Keyboard & Mouse", CMD_CP_KEYBOARD),
@@ -130,7 +131,7 @@ static void update_items(Session *s, MenuItem *items, int count) {
         case CMD_ABOUT: case CMD_CONTROL_PANELS: case CMD_CP_GENERAL: case CMD_CP_SOUND:
         case CMD_CP_MONITORS: case CMD_CP_KEYBOARD: case CMD_CP_ENERGY:
         case CMD_CP_MEMORY: case CMD_CP_NETWORK: case CMD_CP_BLUETOOTH: case CMD_CP_EXTENSIONS:
-        case CMD_APPEARANCE_DESKTOP: case CMD_INSTALL:
+        case CMD_APPEARANCE_DESKTOP: case CMD_FONT_BOOK: case CMD_INSTALL:
         case CMD_QUIT: case CMD_SHUTDOWN: case CMD_STARTUP_PREVIEW:
         case CMD_HELP: case CMD_HELP_KEYS: case CMD_HELP_STATUS: yes = 1; break;
         case CMD_STARTUP_TOGGLE: yes = 1; checked = s->host_startup_enabled; break;

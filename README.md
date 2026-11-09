@@ -222,6 +222,24 @@ Live settings changes and authenticated remote SSH are separate manual checks.
 
 ## Fonts
 
+OS999 includes Font Book 999 under Applications → Utilities and in the OS999
+Control Panels submenu. It scans bundled fonts and the simulated
+`System Folder/Fonts`, validates files before installation, indexes TrueType,
+OpenType, collections, Type 1, and exported suitcase/resource containers, and
+persists activation without installing anything into the host Mac. Font Book
+uses a classic OS999 window with Collections, Font Family, and Preview panes;
+it is an OS999 utility, not a claim that Mac OS 9 shipped Apple's later Font
+Book application.
+
+The optional base coverage pack in `fonts/system/` contains licensed Noto
+faces and exact upstream notices. OS999 body text now uses HarfBuzz shaping,
+FriBidi ordering, libunibreak opportunities, and ordered per-cluster fallback
+when those libraries are available; builds without them retain an explicit
+degraded path. Automated shaping and pixel tests are not language-quality
+acceptance. Color emoji, complete ZWJ/variation behavior, locale-sensitive CJK,
+and language-by-language human review remain open. See
+`fonts/system/SOURCE-MANIFEST.md` for hashes, sources, and current limitations.
+
 Menus use [ChicagoFLF](fonts/ChicagoFLF.ttf). Robin Casady drew it and
 put it in the public domain. The notice is in the font and in
 `fonts/LICENSE.txt`. It is a revival. It is not Apple's Chicago, and

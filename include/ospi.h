@@ -19,7 +19,7 @@ enum {
 };
 /* Modifier bits retain the terminal input contract. */
 enum { MOD_CMD = 1, MOD_SHIFT = 2, MOD_OPTION = 8, MOD_OTHER = 16 };
-enum { WIN_FOLDER = 1, WIN_TEXT = 2, WIN_TERMINAL = 3, WIN_MOVIE = 4 };
+enum { WIN_FOLDER = 1, WIN_TEXT = 2, WIN_TERMINAL = 3, WIN_MOVIE = 4, WIN_FONT_BOOK = 5 };
 enum { ITEM_FILE = 1, ITEM_FOLDER = 2, ITEM_SYSTEM = 3, ITEM_APPLICATION = 4, ITEM_ALIAS = 5 };
 enum {
     CMD_NONE = 0,
@@ -78,7 +78,7 @@ enum { MENU_ARRANGE = 8, MENU_LABELS = 9, MENU_PANELS = 10, MENU_RECENT_APPS = 1
 enum { CMD_APP_MEDIA = 685, CMD_APP_BROWSER = 686, CMD_APP_SWITCHER = 687 };
 enum { BROWSER_ACTIVATE = 1, BROWSER_CLOSE, BROWSER_CLOSE_ALL, BROWSER_QUIT, BROWSER_NEW_WINDOW,
        BROWSER_COPY, BROWSER_PASTE, BROWSER_SELECT_ALL, BROWSER_UNDO };
-enum { CMD_MEDIA_PLAYER = 700, CMD_SUPPORTED_FORMATS = 701 };
+enum { CMD_MEDIA_PLAYER = 700, CMD_SUPPORTED_FORMATS = 701, CMD_FONT_BOOK = 703 };
 enum { BROWSER_CAN_COPY = 1, BROWSER_CAN_PASTE = 2, BROWSER_CAN_SELECT = 4, BROWSER_CAN_UNDO = 8 };
 
 typedef struct {
@@ -137,6 +137,7 @@ typedef struct {
     struct TermSession *term;
     void *movie;
     int movie_modern;
+    void *font_book;
 } Window;
 
 /* Small fixtures/windows retain inline storage; large folders own their buffer. */
@@ -274,6 +275,7 @@ struct Session {
     uint32_t last_activity_ms;
     int disk_cache_kb, guest_ram_mb, guest_guard_pages, ram_disk_mb, ram_disk_clear_on_quit;
     int net_connect_via, net_https_only, net_allow_redirects, net_guest_isolated, net_timeout_sec;
+    void *font_book_catalog;
 };
 
 typedef struct {
@@ -358,6 +360,7 @@ void text_draw(void *fb, int x, int y, int max_w, uint32_t color, const char *te
 
 int volume_builtin_tailnet(const char *root, const char *rel);
 int volume_builtin_terminal(const char *root, const char *rel);
+int volume_builtin_font_book(const char *root, const char *rel);
 int volume_seed(const char *root);
 int volume_mkdir_p(const char *path);
 int volume_free_bytes(const char *root, uint64_t *out);
