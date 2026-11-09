@@ -442,7 +442,7 @@ int main(int argc, char **argv) {
         s->host_startup_enabled = boot_enabled;
         desktop_host_tick(s, native_surface_active());
         osa_ipc_poll(s);
-        session_tick(s, SDL_GetTicks()); telemetry_frame(s);
+        telemetry_enable(); session_tick(s, SDL_GetTicks()); telemetry_frame(s);
         s->print_available = desktop_print_supported();
         session_paint(s, frame, OSPI_W, OSPI_H);
         desktop_print_service(s, frame);

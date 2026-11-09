@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include "ospi.h"
 #include "draw.h"
+#include "about_panel.h"
 int desktop_info_open(Session *s, const char *rel);
 int desktop_info_paint(Fb *fb, const Window *w, const Layout *lay);
 int desktop_info_click(Session *s, Window *w, int x, int y);

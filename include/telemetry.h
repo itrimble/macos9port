@@ -14,4 +14,5 @@ void telemetry_close(void);
 /* Test hooks. */
 void telemetry_set_path(const char *path);   /* NULL = default location */
 int telemetry_enabled(void);
+void telemetry_enable(void);   /* called once by the desktop app; tests never enable it */
 #endif

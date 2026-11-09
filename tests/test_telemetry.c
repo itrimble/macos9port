@@ -13,6 +13,13 @@ static char *slurp(const char *p) {
 }
 
 int main(void) {
+    char home[] = "/tmp/os999-telemetry-home-XXXXXX";
+    CHECK(mkdtemp(home));
+    setenv("HOME", home, 1);
+    static Session off; memset(&off, 0, sizeof off); off.menu = -1;
+    telemetry_command(&off, 1); telemetry_click(&off, 1, 1, 1, 1);     /* not enabled: no file, no directory */
+    char lib[600]; snprintf(lib, sizeof lib, "%s/Library", home);
+    CHECK(access(lib, F_OK) != 0);
     char path[] = "/tmp/os999-telemetry-XXXXXX";
     int fd = mkstemp(path); close(fd); unlink(path);
     telemetry_set_path(path);

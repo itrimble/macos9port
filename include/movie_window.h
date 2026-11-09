@@ -3,6 +3,7 @@
 
 #include "draw.h"
 #include "ospi.h"
+#include "movie_picker.h"
 
 int movie_is_name(const char *name);
 int movie_window_launcher(Session *s);

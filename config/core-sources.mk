@@ -11,4 +11,4 @@ CORE += src/sound_preferences.c src/control_panel_store.c src/cdev_registry.c sr
 
 CORE += src/native_catalog.c src/native_apps.c
 
-CORE += src/desktop_info.c src/telemetry.c
+CORE += src/desktop_info.c src/telemetry.c src/movie_picker.c src/about_panel.c

@@ -154,7 +154,7 @@ int session_open_text(Session *s, const char *title, const char *rel, const char
     place_new(s, w, 1);
     if (strcmp(title, "About This Mac") == 0) {
         w->w = 460;
-        w->h = 350;
+        w->h = 440;
         w->x = (s->sw - w->w) / 2;
         w->y = (s->sh - w->h) / 2;
         w->shade_h = w->h;
@@ -214,14 +214,6 @@ void toggle_zoom(Session *s, Window *w) {
         w->zoomed = 0;
     }
     snprintf(s->sound_event, sizeof s->sound_event, "window.zoom");
-}
-static void format_ram(char *out, size_t n, uint64_t b) {
-    uint64_t g = 1024ull * 1024ull * 1024ull;
-    if (g != 0 && b >= g && b % g == 0) {
-        snprintf(out, n, "%llu GB", (unsigned long long)(b / g));
-    } else {
-        snprintf(out, n, "%.1f GB", (double)b / (double)g);
-    }
 }
 void session_command(Session *s, int cmd) {
     telemetry_command(s, cmd);
@@ -433,20 +425,15 @@ void session_command(Session *s, int cmd) {
         reload_folders(s);
         break;
     case CMD_ABOUT: {
-        char ram[32];
         char body[OSPI_TEXT];
-        format_ram(ram, sizeof ram, s->ram);
         snprintf(body, sizeof body,
-                 "OS999 Stylized 0.1\n%s, %s memory\n"
-                 "Letters: %s\n\n"
                  "Created by Ian Trimble\n"
                  "Independent software creator\n"
                  "Games, tools, and classic computing\n\n"
                  "Explore Ian's apps using the link below.\n\n"
                  "OS999 is a clean-room desktop inspired\n"
                  "by classic Macintosh computing.\n"
-                 "Compatibility is a work in progress.\n",
-                 s->arch, ram, typeface_label());
+                 "Compatibility is a work in progress.\n");
         if (session_open_text(s, "About This Mac", ":about", body) != 0) {
             dialog_info(s, "About This Mac", "Close a window first.");
         }

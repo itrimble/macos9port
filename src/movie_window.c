@@ -3,6 +3,7 @@
 
 #include "mac_movie.h"
 #include "movie_host.h"
+#include "movie_picker.h"
 #include "finder_edit.h"
 #include "session_int.h"
 
@@ -128,8 +129,7 @@ void movie_window_paint(Fb *fb, const Window *w) {
     window_layout(w, &lay);
     fb_fill(fb, lay.content.x, lay.content.y, lay.content.w, lay.content.h, C_BLACK);
     if (!movie) {
-        fb_text(fb, lay.content.x + 12, lay.content.y + 24, C_WHITE, "Drop a movie here from Finder.");
-        fb_text(fb, lay.content.x + 12, lay.content.y + 44, C_WHITE, "MOV, QT, MP4 and M4V files");
+        movie_picker_paint(fb, &lay);
         return;
     }
     int fw = 0, fh = 0;
@@ -299,6 +299,7 @@ int movie_window_launcher(Session *s) {
         bring_front(s, i); native_app_note(s, NATIVE_MOVIE); return 0;
     }
     if (s->nwin >= OSPI_MAX_WIN) { dialog_info(s, "Movie Player", "Close a window first."); return -1; }
+    movie_picker_scan(s);
     Window *w = &s->win[s->nwin++]; memset(w, 0, sizeof *w);
     w->kind = WIN_MOVIE; w->x = 84; w->y = 64; w->w = 360; w->h = w->shade_h = 240;
     snprintf(w->title, sizeof w->title, "Movie Player");

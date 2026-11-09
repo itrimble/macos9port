@@ -590,6 +590,7 @@ test: build/test_os999_startup build/test_os999_startup_bar build/test_ospi buil
 	./build/test_terminal
 	./build/test_terminal_history
 	./build/test_telemetry
+	./build/test_movie_picker
 	./build/test_audio_engine assets/sounds/classic9
 	./build/test_os999_startup
 	./build/test_os999_startup_bar

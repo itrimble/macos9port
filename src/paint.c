@@ -376,7 +376,7 @@ static void paint_window(Fb *fb, const Session *s, int index) {
             fb_clip(fb, lay.content.x, lay.content.y, lay.content.w, lay.content.h);
             if (w->kind == WIN_TEXT) {
                 if (w->note_select_all) fb_fill(fb,lay.content.x,lay.content.y,lay.content.w,lay.content.h,0xffc8dcf5);
-                if (!desktop_info_paint(fb, w, &lay)) text_draw(fb, lay.content.x + 8, lay.content.y + 6 - w->scroll, lay.content.w - 12, desktop_theme_color(THEME_FOREGROUND),
+                if (!about_panel_paint(fb, s, w, &lay) && !desktop_info_paint(fb, w, &lay)) text_draw(fb, lay.content.x + 8, lay.content.y + 6 - w->scroll, lay.content.w - 12, desktop_theme_color(THEME_FOREGROUND),
                           window_text(w));
                 notes_paint(fb, s, w, &lay);
             } else if (w->kind == WIN_MOVIE) { movie_window_paint(fb, w);

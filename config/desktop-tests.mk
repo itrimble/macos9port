@@ -401,3 +401,9 @@ build/test_telemetry: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_telemetry.c
 	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_telemetry.c $(FT_LIBS) -lm $(NET_LIBS)
 
 test: build/test_telemetry
+
+build/test_movie_picker: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_movie_picker.c $(HDRS)
+	mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_movie_picker.c $(FT_LIBS) -lm $(NET_LIBS)
+
+test: build/test_movie_picker

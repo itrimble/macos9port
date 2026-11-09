@@ -372,7 +372,7 @@ void session_up(Session *s, int x, int y) {
         }
         if (zone == Z_CONTENT && !drag && desktop_info_click(s, &s->win[win], x, y)) return;
         if (zone == Z_CONTENT && !drag && s->win[win].kind == WIN_MOVIE && rect_has(lay.content, x, y)) {
-            movie_window_click(&s->win[win], x, y);
+            if (!movie_picker_click(s, &s->win[win], x, y)) movie_window_click(&s->win[win], x, y);
             return;
         }
     }

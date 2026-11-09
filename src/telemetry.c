@@ -21,15 +21,17 @@ static int g_off = -1, g_tried;
 static long g_seq;
 static Snap g_last;
 
+static int g_on;   /* opt-in: only the desktop app (or a test naming a path) turns it on */
+void telemetry_enable(void) { g_on = 1; }
 int telemetry_enabled(void) {
     if (g_off < 0) { const char *e = getenv("OS999_TELEMETRY"); g_off = e && !strcmp(e, "0"); }
-    return !g_off;
+    return g_on && !g_off;
 }
 
 void telemetry_set_path(const char *path) {
     telemetry_close();
     g_override[0] = 0;
-    if (path) snprintf(g_override, sizeof g_override, "%s", path);
+    if (path) { snprintf(g_override, sizeof g_override, "%s", path); g_on = 1; }
     g_tried = 0; g_seq = 0; g_last.valid = 0;
 }
 
