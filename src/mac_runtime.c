@@ -159,6 +159,9 @@ int mac_runtime_load_segment(MacRuntime *rt, int16_t id) {
     MacResource zero, segment;
     if (mac_resource_find(&rt->fork, MAC_CODE_TYPE, 0, &zero) ||
         mac_resource_find(&rt->fork, MAC_CODE_TYPE, id, &segment)) return -1;
+    /* The jump table was validated against the application's CODE 0; never trust
+     * whichever fork is current to still be that one. */
+    if (zero.size < 16 || rt->jump_size > zero.size - 16) return -1;
     for (uint32_t i = 0; i < rt->jump_size; i += 8) {
         const uint8_t *entry = zero.data + 16 + i;
         if ((int16_t)be16(entry + 4) != id) continue;

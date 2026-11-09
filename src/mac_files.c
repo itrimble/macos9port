@@ -341,7 +341,19 @@ static unsigned block_size(unsigned base, int wd, unsigned selector) {
 
 int mac_file_service(MacRuntime *rt, uint16_t opcode) {
     unsigned base = opcode & ~0x400u;
+    /* HFS flavours (HParamBlockRec) share the leading layout of the classic
+     * calls we implement; ioDirID is not consulted, so they act on the mounted
+     * data directory. HOpenRF has no resource-fork handle support here. */
     switch (base) {
+    case 0xa200: base = 0xa000; break;
+    case 0xa208: base = 0xa008; break;
+    case 0xa20c: base = 0xa00c; break;
+    case 0xa20d: base = 0xa00d; break;
+    case 0xa214: base = 0xa014; break;
+    default: break;
+    }
+    switch (base) {
+    case 0xa20a:
     case 0xa000: case 0xa001: case 0xa002: case 0xa003: case 0xa008: case 0xa009:
     case 0xa00b: case 0xa00c: case 0xa00d: case 0xa011: case 0xa012: case 0xa013:
     case 0xa014: case 0xa015: case 0xa018: case 0xa044: case 0xa207: case 0xa209:
@@ -360,6 +372,7 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode) {
     if (opcode & 0x400) return result(cpu, pb, -50); /* async unsupported */
     FileState *state = rt->file_state;
     switch (base) {
+    case 0xa20a: return result(cpu, pb, -43); /* HOpenRF: not found */
     case 0xa013: return result(cpu, pb, flush_volume(rt, pb));
     case 0xa207: return result(cpu, pb, mac_volume_info(rt, pb, state ? state->directory : -1));
     case 0xa260: {

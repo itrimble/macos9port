@@ -184,6 +184,14 @@ int volume_seed(const char *root) {
         int ok = !k_seed[i].body || fputs(k_seed[i].body, f) >= 0;
         if (fclose(f) != 0 || !ok) return -1;
     }
+    /* Startup-extension folder scanned by the Extensions Manager (ext_scan). */
+    static const char *const k_folders[] = {"System Folder/Extensions", "System Folder/Control Panels"};
+    for (size_t i = 0; i < sizeof k_folders / sizeof k_folders[0]; i++) {
+        char dir[OSPI_PATH];
+        if (volume_join(dir, sizeof dir, root, k_folders[i]) != 0 || volume_mkdir_p(dir) != 0) {
+            return -1;
+        }
+    }
     return native_catalog_seed(root);
 }
 

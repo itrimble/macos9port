@@ -106,7 +106,8 @@ static void ensure_builtin_modules(void) {
         os999_cdev_keyboard_module(),
         os999_cdev_energy_module(),
         os999_cdev_memory_module(),
-        os999_cdev_network_module()
+        os999_cdev_network_module(),
+        os999_cdev_extensions_module()
     };
     for (unsigned i = 0; i < sizeof mods / sizeof *mods; i++) {
         if (mods[i] && !os999_cdev_find(mods[i]->id))

@@ -1,4 +1,5 @@
 #include "mac_runtime.h"
+#include "ext_runtime.h"
 #include "mac_time.h"
 
 #include <errno.h>
@@ -97,6 +98,7 @@ int main(int argc, char **argv) {
     }
     rt.trace = trace;
     rt.indexed_requested = indexed;
+    if (ext_runtime_boot(&rt) < 0) { mac_runtime_destroy(&rt); free(bytes); return 2; }
     char data_root[PATH_MAX];
     if (!realpath(path, data_root)) {
         /* namedfork paths are virtual; canonicalize their base file. */
