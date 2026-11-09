@@ -115,14 +115,22 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
     rt->jump_table = rt->a5 + offset;
     rt->jump_size = length;
     rt->heap_next = 0x100000;
-    /* Upper half of the old fixed heap becomes the auto-growing protected heap;
-     * the bump allocator keeps [0x100000, 0x400000) for runtime-internal records.
-     * Only for the default 8 MiB partition without guard redzones; other memory
-     * policies keep the plain bump allocator. */
+    /* The upper half of the partition's heap span becomes the auto-growing protected
+     * heap; the bump allocator keeps the lower half for runtime-internal records.
+     * This holds for every supported partition (2/4/8/12 MiB), with or without
+     * guard redzones (the bridge stamps and checks its own 16-byte redzones).
+     * The split is half of the span rounded down to 64 KiB, which is 0x400000
+     * for the default 8 MiB partition. */
     rt->stack_base = rt->a5 - below;
-    if (!rt->guard_allocs && rt->a5 == 0x800000 && rt->heap_limit == 0x700000) {
-        if (mac_heap_attach(rt, 0x400000, mac_partition_heap_hi(fork, 0x400000, 0x700000, rt->stack_base > 0x30000 ? rt->stack_base - 0x30000 : 0x700000))) return fail(rt, err, n, "Could not create the protected guest heap.");
-        rt->heap_limit = 0x400000;
+    uint32_t appl_limit = rt->heap_limit;
+    if (rt->heap_limit > rt->heap_next) {
+        uint32_t span = rt->heap_limit - rt->heap_next;
+        uint32_t lo = rt->heap_next + ((span / 2) & ~UINT32_C(0xffff));
+        uint32_t ceil = rt->stack_base > 0x30000 ? rt->stack_base - 0x30000 : rt->heap_limit;
+        if (rt->heap_limit > lo && rt->heap_limit - lo >= 0x10000) {
+            if (mac_heap_attach(rt, lo, mac_partition_heap_hi(fork, lo, rt->heap_limit, ceil))) return fail(rt, err, n, "Could not create the protected guest heap.");
+            rt->heap_limit = lo;
+        }
     }
     rt->stack_base = rt->a5 - below;
     rt->screen_base = 0xe00000;
@@ -167,7 +175,7 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
     mac_cpu_write(rt->cpu, 0x15a, 2, MAC_PROFILE_SYSTEM_VERSION); /* Guest compatibility profile, not host OS. */
     mac_cpu_write(rt->cpu, 0x12f, 1, 2); /* 68020 */
     mac_cpu_write(rt->cpu, 0x108, 4, rt->a5); /* Guest MemTop */
-    mac_cpu_write(rt->cpu, 0x130, 4, rt->heap_bridge ? 0x700000 : rt->heap_limit); /* ApplLimit */
+    mac_cpu_write(rt->cpu, 0x130, 4, appl_limit); /* ApplLimit: the partition's heap top, before the bump/protected split */
     rt->system_volume = mac_system_volume_create(rt);
     if (!rt->system_volume) return fail(rt, err, n, "Could not create authored System volume.");
     if (mac_drive_mount(rt, 2, 1)) return fail(rt, err, n, "Could not mount authored System drive.");

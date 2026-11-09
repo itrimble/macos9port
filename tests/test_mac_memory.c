@@ -149,9 +149,10 @@ static void high_heap(void) {
 static void put16(uint8_t *p, uint16_t v) { p[0] = v >> 8; p[1] = v; }
 static void put32(uint8_t *p, uint32_t v) { put16(p, v >> 16); put16(p + 2, v); }
 
-static void runtime_policy_and_guard_checks(void) {
-    enum { DATA = 256, MAP = 384, ZERO = DATA + 4, SEG = DATA + 32, TOTAL = MAP + 62 };
-    uint8_t b[TOTAL] = {0};
+enum { DATA = 256, MAP = 384, ZERO = DATA + 4, SEG = DATA + 32, TOTAL = MAP + 62 };
+
+/* A minimal one-segment CODE fork (CODE 0 jump table and CODE 1), built in place. */
+static void fill_fork(uint8_t *b) {
     put32(b, DATA); put32(b + 4, MAP); put32(b + 8, 44); put32(b + 12, 62);
     put32(b + DATA, 24);
     put32(b + ZERO, 0x100); put32(b + ZERO + 4, 0x100);
@@ -168,7 +169,11 @@ static void runtime_policy_and_guard_checks(void) {
     put16(b + MAP + 40, 0xffff);
     put16(b + MAP + 50, 1); put16(b + MAP + 52, 0xffff);
     b[MAP + 57] = 28;
+}
 
+static void runtime_policy_and_guard_checks(void) {
+    uint8_t b[TOTAL] = {0};
+    fill_fork(b);
     MacResourceFork f;
     char err[240];
     CHECK(mac_resource_open(&f, b, TOTAL, err, sizeof err) == 0);
@@ -201,7 +206,8 @@ static void runtime_policy_and_guard_checks(void) {
     mac_cpu_set(rt.cpu, MAC_D0, 0x72616d20);
     CHECK(mac_system_service(&rt, 0xa1ad) == 1);
     CHECK(mac_cpu_get(rt.cpu, MAC_A0) == 0xc00000);
-    CHECK(call(&rt, 0xa01c, 0, 0) == 1 && mac_cpu_get(rt.cpu, MAC_D0) > 0x900000);
+    CHECK(call(&rt, 0xa01c, 0, 0) == 1 && mac_cpu_get(rt.cpu, MAC_D0) > 0x400000); /* the protected heap spans [0x600000, 0xb00000) */
+    CHECK(rt.heap_bridge != NULL && rt.heap_limit == 0x600000 && mac_cpu_read(rt.cpu, 0x130, 4) == 0xb00000);
 
     CHECK(call(&rt, 0xa01e, 0, 13) == 1); error_is(&rt, 0);
     uint32_t p_ok = mac_cpu_get(rt.cpu, MAC_A0);
