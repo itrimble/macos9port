@@ -12,4 +12,7 @@ int font_book_validate_face(const char *path, int face_index, FontBookEntry *ent
 int font_book_copy_validated(const char *source, const char *destination,
                              char *error, size_t error_size);
 
+int font_book_scan_directory(FontBookCatalog *catalog, const char *base, const char *path,
+                             FontBookSource source, int depth);
+
 #endif

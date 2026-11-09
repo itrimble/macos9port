@@ -30,7 +30,7 @@ static int compare_entries(const void *a, const void *b) {
 
 static int add_file(FontBookCatalog *catalog, const char *base, const char *path,
                     FontBookSource source, int include_unknown) {
-    if (catalog->count >= FONT_BOOK_MAX_FONTS) return -1;
+    if (catalog->count >= catalog->scan_limit) return -1;
     const char *leaf = strrchr(path, '/');
     if (!known_extension(leaf ? leaf + 1 : path) && !include_unknown) return 0;
     FontBookEntry entry;
@@ -49,7 +49,7 @@ static int add_file(FontBookCatalog *catalog, const char *base, const char *path
     int added = 0;
     int faces = entry.valid && entry.format != FONT_BOOK_FORMAT_RESOURCE ? entry.face_count : 1;
     if (faces < 1) faces = 1;
-    for (int face = 0; face < faces && catalog->count < FONT_BOOK_MAX_FONTS; face++) {
+    for (int face = 0; face < faces && catalog->count < catalog->scan_limit; face++) {
         FontBookEntry item = entry;
         if (face && font_book_validate_face(path, face, &item) != 0) continue;
         item.source = source;
@@ -61,7 +61,7 @@ static int add_file(FontBookCatalog *catalog, const char *base, const char *path
     return added;
 }
 
-static int scan_directory(FontBookCatalog *catalog, const char *base, const char *path,
+int font_book_scan_directory(FontBookCatalog *catalog, const char *base, const char *path,
                           FontBookSource source, int depth) {
     if (!path || !path[0] || depth > 4) return 0;
     DIR *dir = opendir(path);
@@ -76,7 +76,7 @@ static int scan_directory(FontBookCatalog *catalog, const char *base, const char
         struct stat st;
         if (lstat(child, &st) != 0 || S_ISLNK(st.st_mode)) continue;
         if (S_ISDIR(st.st_mode)) {
-            if (scan_directory(catalog, base, child, source, depth + 1) < 0) scanned = -1;
+            if (font_book_scan_directory(catalog, base, child, source, depth + 1) < 0) scanned = -1;
         } else if (S_ISREG(st.st_mode)) {
             int result = add_file(catalog, base, child, source, depth == 0);
             if (result > 0) scanned += result;
@@ -96,21 +96,24 @@ int font_book_catalog_init(FontBookCatalog *catalog, const char *volume_root,
     if (bundled_fonts) snprintf(catalog->bundled, sizeof catalog->bundled, "%s", bundled_fonts);
     if (extra_fonts) snprintf(catalog->extra, sizeof catalog->extra, "%s", extra_fonts);
     if (font_book_registry_load(catalog) != 0) catalog->disabled_count = 0;
+    font_book_host_load(catalog);
     return font_book_catalog_scan(catalog);
 }
 
 int font_book_catalog_scan(FontBookCatalog *catalog) {
     if (!catalog) return -1;
     catalog->count = 0;
+    catalog->scan_limit = FONT_BOOK_LOCAL_LIMIT;
     char system_fonts[OSPI_PATH];
     int n = snprintf(system_fonts, sizeof system_fonts, "%s/System Folder/Fonts", catalog->root);
     if (n < 0 || (size_t)n >= sizeof system_fonts) return -1;
-    int result = scan_directory(catalog, system_fonts, system_fonts, FONT_BOOK_SOURCE_SYSTEM, 0);
+    int result = font_book_scan_directory(catalog, system_fonts, system_fonts, FONT_BOOK_SOURCE_SYSTEM, 0);
     if (result < 0) return -1;
-    if (catalog->bundled[0] && scan_directory(catalog, catalog->bundled, catalog->bundled,
+    if (catalog->bundled[0] && font_book_scan_directory(catalog, catalog->bundled, catalog->bundled,
                                               FONT_BOOK_SOURCE_BUNDLED, 0) < 0) return -1;
-    if (catalog->extra[0] && scan_directory(catalog, catalog->extra, catalog->extra,
+    if (catalog->extra[0] && font_book_scan_directory(catalog, catalog->extra, catalog->extra,
                                             FONT_BOOK_SOURCE_BUNDLED, 0) < 0) return -1;
+    if (catalog->host_enabled) font_book_host_scan(catalog);
     qsort(catalog->fonts, (size_t)catalog->count, sizeof catalog->fonts[0], compare_entries);
     catalog->generation++;
     return catalog->count;
@@ -127,6 +130,10 @@ int font_book_set_active(FontBookCatalog *catalog, int index, int active,
                          char *error, size_t error_size) {
     if (!catalog || index < 0 || index >= catalog->count || !catalog->fonts[index].valid) return -1;
     FontBookEntry *entry = &catalog->fonts[index];
+    if (entry->source == FONT_BOOK_SOURCE_HOST) {
+        if (error && error_size) snprintf(error, error_size, "Host fonts are read-only here.");
+        return -1;
+    }
     active = !!active;
     if (entry->active == active) return 0;
     if (!active && entry->previewable) {

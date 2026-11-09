@@ -106,8 +106,13 @@ build/test_fontbook: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_fontbook.c $
 	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_fontbook.c $(FT_LIBS) -lm $(NET_LIBS)
 
 .PHONY: test-fontbook
-test-fontbook: build/test_fontbook build/test_text_layout
+build/test_fontbook_host: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_fontbook_host.c $(HDRS) include/os999_startup.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_fontbook_host.c $(FT_LIBS) -lm $(NET_LIBS)
+
+test-fontbook: build/test_fontbook build/test_fontbook_host build/test_text_layout
 	./build/test_fontbook
+	./build/test_fontbook_host
 	./build/test_text_layout
 test: test-fontbook
 

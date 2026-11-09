@@ -28,6 +28,8 @@ int font_book_session_init(Session *session, const char *bundled_fonts,
         free(catalog);
         return -1;
     }
+    if (font_book_host_default_roots(catalog) > 0 && catalog->host_enabled)
+        font_book_catalog_scan(catalog);   /* persisted setting is on: list host fonts now */
     session->font_book_catalog = catalog;
     typeface_set_path_filter(active_filter, catalog);
     (void)text_system_init(catalog);
