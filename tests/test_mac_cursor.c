@@ -37,7 +37,19 @@ static void cursor_state(void) {
     for (int i = 0; i < 3; i++) CHECK(mac_cursor_service(&rt, 0xa853) == 1);
     CHECK(mac_cpu_read(rt.cpu, 0x8d0, 2) == 0);
     CHECK(rt.cursor_obscured); /* Independent of the nesting level. */
-    CHECK(mac_cursor_service(&rt, 0xa855) == 0); /* ShieldCursor unsupported. */
+    /* ShieldCursor(rect pointer, offset point): pops 8, changes no cursor state; a bad rectangle pointer halts. */
+    {int16_t lvl = (int16_t)mac_cpu_read(rt.cpu, 0x8d0, 2); int ob = rt.cursor_obscured; uint8_t keep[68]; memcpy(keep, rt.cursor, 68);
+     mac_cpu_set(rt.cpu, MAC_A7, 0x8000); mac_cpu_write(rt.cpu, 0x8000, 4, 0x00050003); mac_cpu_write(rt.cpu, 0x8004, 4, 0x4000);
+     CHECK(mac_cursor_service(&rt, 0xa855) == 1 && mac_cpu_get(rt.cpu, MAC_A7) == 0x8008);
+     CHECK((int16_t)mac_cpu_read(rt.cpu, 0x8d0, 2) == lvl && rt.cursor_obscured == ob && !memcmp(keep, rt.cursor, 68));
+     for (unsigned k = 0; k < 3; k++) {
+         MacRuntime bad; setup(&bad); mac_cpu_set(bad.cpu, MAC_A7, 0x8000);
+         mac_cpu_write(bad.cpu, 0x8004, 4, k == 0 ? 0 : k == 1 ? 0xfffffffc : 0x3);
+         if (k == 2) mac_cpu_write(bad.cpu, 0x8004, 4, (uint32_t)mac_cpu_ram_size(bad.cpu) - 4);
+         CHECK(mac_cursor_service(&bad, 0xa855) == -1 && mac_cpu_halted(bad.cpu));
+     }
+     MacRuntime bs; setup(&bs); mac_cpu_set(bs.cpu, MAC_A7, (uint32_t)mac_cpu_ram_size(bs.cpu) - 4);
+     CHECK(mac_cursor_service(&bs, 0xa855) == -1 && mac_cpu_halted(bs.cpu));}
     mac_cpu_destroy(rt.cpu);
 }
 static void resources(void) {
@@ -59,6 +71,23 @@ static void resources(void) {
     /* A loaded guest CURS takes precedence; no replacement or mutation. */
     rt.handles[0].id = -9;
     CHECK(get(&rt, -9) == h && rt.heap_next == saved);
+    mac_cpu_destroy(rt.cpu);
+    /* the other standard cursors (1 I-beam, 2 crosshair, 3 plus): authored shapes, mask = data, centre hot spot, one handle each, cached */
+    setup(&rt);
+    for (int16_t id = 1; id <= 3; id++) {
+        uint32_t c = get(&rt, id), at = rt.heap_next; CHECK(c != 0 && get(&rt, id) == c && rt.heap_next == at);
+        uint32_t cp = mac_cpu_read(rt.cpu, c, 4);
+        CHECK(!memcmp(mac_cpu_ram(rt.cpu) + cp, mac_cpu_ram(rt.cpu) + cp + 32, 32) && mac_cpu_read(rt.cpu, cp + 64, 4) == 0x00070007);
+        CHECK(mac_cpu_read(rt.cpu, 0xa60, 2) == 0);
+    }
+    {   uint32_t a = get(&rt, 1), b = get(&rt, 2), c = get(&rt, 3), w = get(&rt, 4);
+        CHECK(a != b && b != c && c != a && w != a && rt.handle_count == 4);
+        uint32_t pa = mac_cpu_read(rt.cpu, a, 4), pb = mac_cpu_read(rt.cpu, b, 4), pc = mac_cpu_read(rt.cpu, c, 4);
+        CHECK(mac_cpu_read(rt.cpu, pa, 2) == 0x07e0 && mac_cpu_read(rt.cpu, pa + 2, 2) == 0x0180 && mac_cpu_read(rt.cpu, pa + 30, 2) == 0x07e0);   /* I-beam */
+        CHECK(mac_cpu_read(rt.cpu, pb + 14, 2) == 0x7ffe && mac_cpu_read(rt.cpu, pb + 2, 2) == 0x0100 && mac_cpu_read(rt.cpu, pb, 2) == 0);         /* crosshair */
+        CHECK(mac_cpu_read(rt.cpu, pc + 12, 2) == 0x3ffc && mac_cpu_read(rt.cpu, pc + 4, 2) == 0x0180 && mac_cpu_read(rt.cpu, pc, 2) == 0 && mac_cpu_read(rt.cpu, pc + 18, 2) == 0x3ffc && mac_cpu_read(rt.cpu, pc + 20, 2) == 0x0180 && mac_cpu_read(rt.cpu, pc + 26, 2) == 0x0180 && mac_cpu_read(rt.cpu, pc + 28, 2) == 0);}       /* plus */
+    CHECK(get(&rt, 0) == 0 && (int16_t)mac_cpu_read(rt.cpu, 0xa60, 2) == -192);                    /* 0 and 5 are not standard cursors */
+    CHECK(get(&rt, 5) == 0 && (int16_t)mac_cpu_read(rt.cpu, 0xa60, 2) == -192);
     mac_cpu_destroy(rt.cpu);
     setup(&rt); saved = rt.heap_next; rt.heap_limit = saved + 4;
     CHECK(get(&rt, 4) == 0);

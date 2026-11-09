@@ -23,6 +23,78 @@ static void new_args(MacRuntime *rt,uint32_t storage,int visible) {
     wr(rt,0x4100,2,40);wr(rt,0x4102,2,50);wr(rt,0x4104,2,300);wr(rt,0x4106,2,450);
 }
 static int call(MacRuntime *rt,uint16_t op,uint32_t w){mac_cpu_set(rt->cpu,MAC_A7,SP);wr(rt,SP,4,w);return mac_window_service(rt,op);}
+static int show_hide(MacRuntime *rt,uint32_t w,int show){
+    mac_cpu_set(rt->cpu,MAC_A7,SP);wr(rt,SP,2,show?0x0100:0);wr(rt,SP+2,4,w);return mac_window_service(rt,0xa908);
+}
+/* ShowHide ($A908): changes visibility like ShowWindow/HideWindow, but never activates the window or queues an event. */
+static void show_hide_checks(void) {
+    MacRuntime rt=fresh();new_args(&rt,STORAGE,0);CHECK(mac_window_service(&rt,0xaa45)==1);
+    CHECK(rd(&rt,STORAGE+110,1)==0 && mac_cpu_ram(rt.cpu)[rt.screen_base+20*640+49]==77 && rt.event_count==0);
+    CHECK(show_hide(&rt,STORAGE,1)==1 && mac_cpu_get(rt.cpu,MAC_A7)==SP+6);
+    CHECK(rd(&rt,STORAGE+110,1)==1 && rd(&rt,STORAGE+111,1)==0);                       /* visible, not active */
+    CHECK(mac_cpu_ram(rt.cpu)[rt.screen_base+20*640+49]==255 && rt.event_count==0);    /* frame drawn, no activate event */
+    CHECK(show_hide(&rt,STORAGE,1)==1 && rd(&rt,STORAGE+110,1)==1 && rt.event_count==0); /* showing a shown window changes nothing */
+    CHECK(show_hide(&rt,STORAGE,0)==1 && rd(&rt,STORAGE+110,1)==0);
+    CHECK(mac_cpu_ram(rt.cpu)[rt.screen_base+20*640+49]==77 && rt.event_count==0);     /* backdrop restored, still no event */
+    CHECK(show_hide(&rt,STORAGE,0)==1 && rd(&rt,STORAGE+110,1)==0);
+    /* The flag is a Boolean byte: any nonzero high byte shows. ShowWindow, by contrast, activates and queues an event. */
+    mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,2,0x0200);wr(&rt,SP+2,4,STORAGE);CHECK(mac_window_service(&rt,0xa908)==1 && rd(&rt,STORAGE+110,1)==1);
+    CHECK(show_hide(&rt,STORAGE,0)==1);
+    CHECK(call(&rt,0xa915,STORAGE)==1 && rd(&rt,STORAGE+111,1)==1 && rt.event_count==1);
+    /* The Boolean is the high byte of its word: garbage in the low byte does not make a hide into a show. */
+    CHECK(show_hide(&rt,STORAGE,1)==1 && rd(&rt,STORAGE+110,1)==1);
+    mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,2,0x0001);wr(&rt,SP+2,4,STORAGE);CHECK(mac_window_service(&rt,0xa908)==1 && rd(&rt,STORAGE+110,1)==0);
+    /* Not inside BeginUpdate. */
+    CHECK(show_hide(&rt,STORAGE,1)==1 && call(&rt,0xa922,STORAGE)==1);
+    CHECK(show_hide(&rt,STORAGE,0)==-1 && mac_cpu_halted(rt.cpu));
+    mac_cpu_destroy(rt.cpu);
+    /* A second window may be shown over a visible one when it is frontmost in the WindowList; the screen is restored in stacking order. */
+    rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);
+    {const uint8_t *scr=mac_cpu_ram(rt.cpu)+rt.screen_base;static uint8_t before[307200];memcpy(before,scr,307200);
+     new_args(&rt,STORAGE+0x400,0);CHECK(mac_window_service(&rt,0xaa45)==1);
+     CHECK(show_hide(&rt,STORAGE+0x400,1)==1 && mac_window_front(&rt)==STORAGE+0x400 && rd(&rt,STORAGE+110,1)==1 && rd(&rt,STORAGE+0x400+110,1)==1);   /* both visible */
+     static uint8_t covered[307200];memcpy(covered,scr,307200);
+     CHECK(memcmp(covered,before,307200)!=0);                                                                                                            /* the new window drew over the screen */
+     /* hiding the covered window (same frame as the front one: nothing on screen changes) is allowed, and hiding the front one afterwards shows what was behind both */
+     CHECK(show_hide(&rt,STORAGE,0)==1 && memcmp(scr,covered,307200)==0 && mac_window_front(&rt)==STORAGE+0x400 && rd(&rt,STORAGE+110,1)==0);
+     {static uint8_t blank[307200];memset(blank,77,sizeof blank);CHECK(show_hide(&rt,STORAGE+0x400,0)==1 && memcmp(scr,blank,307200)==0 && mac_window_front(&rt)==0);}}
+    mac_cpu_destroy(rt.cpu);
+    /* a covered window that sticks out from under the front one cannot be hidden without compositing */
+    rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);
+    new_args(&rt,STORAGE+0x400,1);wr(&rt,0x4100,2,100);wr(&rt,0x4102,2,100);wr(&rt,0x4104,2,200);wr(&rt,0x4106,2,300);CHECK(mac_window_service(&rt,0xaa45)==1);
+    CHECK(show_hide(&rt,STORAGE,0)==-1 && mac_cpu_halted(rt.cpu));mac_cpu_destroy(rt.cpu);
+    /* the same rule for closing: a window wholly under the front one may be closed, leaving the screen alone */
+    rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);
+    {const uint8_t *scr=mac_cpu_ram(rt.cpu)+rt.screen_base;static uint8_t before[307200];memcpy(before,scr,307200);
+     new_args(&rt,STORAGE+0x400,1);CHECK(mac_window_service(&rt,0xaa45)==1);static uint8_t covered[307200];memcpy(covered,scr,307200);
+     mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,4,STORAGE);CHECK(mac_window_service(&rt,0xa92d)==1 && memcmp(scr,covered,307200)==0 && mac_window_front(&rt)==STORAGE+0x400);
+     {static uint8_t blank[307200];memset(blank,77,sizeof blank);CHECK(show_hide(&rt,STORAGE+0x400,0)==1 && memcmp(scr,blank,307200)==0);}}
+    mac_cpu_destroy(rt.cpu);
+    rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);
+    {const uint8_t *scr=mac_cpu_ram(rt.cpu)+rt.screen_base;static uint8_t before[307200];memcpy(before,scr,307200);
+     new_args(&rt,STORAGE+0x400,1);CHECK(mac_window_service(&rt,0xaa45)==1 && mac_window_front(&rt)==STORAGE+0x400);                                      /* created visible in front */
+     CHECK(show_hide(&rt,STORAGE+0x400,0)==1 && mac_window_front(&rt)==STORAGE && memcmp(scr,before,307200)==0);}                                       /* hiding the front one restores the screen exactly */
+    mac_cpu_destroy(rt.cpu);
+    /* A window that is not first in the WindowList cannot be shown over a visible one; neither can one created behind it; nor can a covered one be closed. */
+    rt=fresh();new_args(&rt,STORAGE,0);CHECK(mac_window_service(&rt,0xaa45)==1);new_args(&rt,STORAGE+0x400,1);CHECK(mac_window_service(&rt,0xaa45)==1);
+    CHECK(show_hide(&rt,STORAGE,1)==-1 && mac_cpu_halted(rt.cpu));mac_cpu_destroy(rt.cpu);
+    rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);new_args(&rt,STORAGE+0x400,1);wr(&rt,SP+6,4,0);
+    CHECK(mac_window_service(&rt,0xaa45)==-1 && mac_cpu_halted(rt.cpu));mac_cpu_destroy(rt.cpu);
+    rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);new_args(&rt,STORAGE+0x400,1);wr(&rt,0x4100,2,100);wr(&rt,0x4102,2,100);wr(&rt,0x4104,2,200);wr(&rt,0x4106,2,300);CHECK(mac_window_service(&rt,0xaa45)==1);
+    {mac_cpu_set(rt.cpu,MAC_A7,SP);wr(&rt,SP,4,STORAGE);CHECK(mac_window_service(&rt,0xa92d)==-1 && mac_cpu_halted(rt.cpu));}mac_cpu_destroy(rt.cpu);
+    /* Content rectangles: a short strip (20 high, full width, as Glider PRO's WIND 130) is fine; an empty or inverted one, or one off the screen, halts */
+    {static const struct{int t,l,b,r,ok;}k[]={{0,0,20,640,1},{100,100,101,101,1},{0,0,480,640,1},{10,10,10,200,0},{10,10,50,10,0},{50,10,40,200,0},{10,50,40,40,0},{-1,0,20,640,0},{0,-1,20,640,0},{0,0,481,640,0},{0,0,20,641,0}};
+     for(unsigned i=0;i<sizeof k/sizeof*k;i++){
+        rt=fresh();new_args(&rt,STORAGE,0);wr(&rt,SP+10,2,2);wr(&rt,0x4100,2,(uint16_t)k[i].t);wr(&rt,0x4102,2,(uint16_t)k[i].l);wr(&rt,0x4104,2,(uint16_t)k[i].b);wr(&rt,0x4106,2,(uint16_t)k[i].r);
+        int rc=mac_window_service(&rt,0xaa45);
+        CHECK(k[i].ok?(rc==1 && rt.window.address==STORAGE && rt.window.bounds[2]-rt.window.bounds[0]==k[i].b-k[i].t):(rc==-1 && mac_cpu_halted(rt.cpu)));
+        mac_cpu_destroy(rt.cpu);
+     }}
+    /* An unknown window halts before anything changes. */
+    rt=fresh();new_args(&rt,STORAGE,0);CHECK(mac_window_service(&rt,0xaa45)==1);
+    CHECK(show_hide(&rt,STORAGE+0x400,0)==-1 && mac_cpu_halted(rt.cpu));
+    mac_cpu_destroy(rt.cpu);
+}
 static void lifecycle(void) {
     MacRuntime rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);
     CHECK(rt.window.address==STORAGE && rd(&rt,SP+26,4)==STORAGE && mac_cpu_get(rt.cpu,MAC_A7)==SP+26);
@@ -68,10 +140,41 @@ static void lifecycle(void) {
     CHECK(mac_cpu_ram(rt.cpu)[rt.screen_base+40*640+50]==77);
     mac_cpu_destroy(rt.cpu);
 }
+static int hilite(MacRuntime *r,uint32_t w,int on,int junk){mac_cpu_set(r->cpu,MAC_A7,SP);wr(r,SP,2,(on?0x0100:0)|junk);wr(r,SP+2,4,w);return mac_window_service(r,0xa91c);}
+static void hiliting(void){
+ /* HiliteWindow: record byte +111 and our chrome follow the flag (the Boolean is the high byte), no event, a hidden window draws nothing */
+ MacRuntime r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
+ const uint8_t *scr=mac_cpu_ram(r.cpu)+r.screen_base;static uint8_t a[307200],b[307200];unsigned events=r.event_count;
+ CHECK(hilite(&r,STORAGE,0,0)==1 && mac_cpu_get(r.cpu,MAC_A7)==SP+6 && rd(&r,STORAGE+111,1)==0 && !r.window.active);memcpy(a,scr,sizeof a);
+ CHECK(hilite(&r,STORAGE,1,0x55)==1 && rd(&r,STORAGE+111,1)==1 && r.window.active);memcpy(b,scr,sizeof b);                       /* a nonzero low byte is not the flag */
+ CHECK(memcmp(a,b,sizeof a)!=0);                                                                                              /* the close box appears */
+ CHECK(hilite(&r,STORAGE,0,0xff)==1 && rd(&r,STORAGE+111,1)==0 && !memcmp(a,scr,sizeof a) && r.event_count==events);          /* and goes away again, with no event */
+ CHECK(hilite(&r,0x7770,1,0)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
+ r=fresh();new_args(&r,STORAGE,0);CHECK(mac_window_service(&r,0xaa45)==1);memcpy(a,mac_cpu_ram(r.cpu)+r.screen_base,sizeof a);
+ CHECK(hilite(&r,STORAGE,1,0)==1 && rd(&r,STORAGE+111,1)==1 && !memcmp(a,mac_cpu_ram(r.cpu)+r.screen_base,sizeof a));mac_cpu_destroy(r.cpu);
+}
+static void custom_wdef_and_behind(void){
+ /* a procID naming the program's own WDEF (id*16+variant) is shown with titled chrome, not run */
+ MacRuntime r=fresh();new_args(&r,STORAGE,0);wr(&r,SP+10,2,160);CHECK(mac_window_service(&r,0xaa45)==1 && r.window.proc_id==4);mac_cpu_destroy(r.cpu);
+ r=fresh();new_args(&r,STORAGE,0);wr(&r,SP+10,2,16);CHECK(mac_window_service(&r,0xaa45)==1 && r.window.proc_id==4);mac_cpu_destroy(r.cpu);
+ r=fresh();new_args(&r,STORAGE,0);wr(&r,SP+10,2,4095);CHECK(mac_window_service(&r,0xaa45)==1 && r.window.proc_id==4);mac_cpu_destroy(r.cpu);
+ r=fresh();new_args(&r,STORAGE,0);wr(&r,SP+10,2,2064);CHECK(mac_window_service(&r,0xaa45)==1 && r.window.proc_id==4);mac_cpu_destroy(r.cpu);   /* WDEF 129, as Glider PRO's editor asks for */
+ r=fresh();new_args(&r,STORAGE,0);wr(&r,SP+10,2,4096);CHECK(mac_window_service(&r,0xaa45)==-1);mac_cpu_destroy(r.cpu);
+ r=fresh();new_args(&r,STORAGE,0);wr(&r,SP+10,2,15);CHECK(mac_window_service(&r,0xaa45)==-1);mac_cpu_destroy(r.cpu);
+ /* behind a particular registered window: inserted directly behind it in the WindowList; behind an unknown pointer halts */
+ r=fresh();new_args(&r,STORAGE,0);CHECK(mac_window_service(&r,0xaa45)==1);new_args(&r,STORAGE+0x400,0);CHECK(mac_window_service(&r,0xaa45)==1);   /* order: second, first */
+ new_args(&r,STORAGE+0x800,0);wr(&r,SP+6,4,STORAGE+0x400);CHECK(mac_window_service(&r,0xaa45)==1);                                                  /* behind the front one */
+ CHECK(r.window_count==3 && r.window_order[0]==STORAGE+0x400 && r.window_order[1]==STORAGE+0x800 && r.window_order[2]==STORAGE);
+ CHECK(rd(&r,0x9d6,4)==STORAGE+0x400 && rd(&r,STORAGE+0x400+144,4)==STORAGE+0x800 && rd(&r,STORAGE+0x800+144,4)==STORAGE && rd(&r,STORAGE+144,4)==0);
+ new_args(&r,STORAGE+0xc00,0);wr(&r,SP+6,4,STORAGE);CHECK(mac_window_service(&r,0xaa45)==1 && r.window_order[3]==STORAGE+0xc00);                           /* behind the last: at the back */
+ new_args(&r,STORAGE+0x1000,0);wr(&r,SP+6,4,0x7770);CHECK(mac_window_service(&r,0xaa45)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
+ r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);new_args(&r,STORAGE+0x400,1);wr(&r,SP+6,4,STORAGE);                          /* visible behind a visible window: still needs compositing */
+ CHECK(mac_window_service(&r,0xaa45)==-1);mac_cpu_destroy(r.cpu);
+}
 static void failures(void) {
     for(int kind=0;kind<12;kind++) {
         MacRuntime rt=fresh();new_args(&rt,STORAGE,1);
-        if(kind==0)wr(&rt,SP+10,2,99);
+        if(kind==0)wr(&rt,SP+10,2,7);                               /* not a window definition id/variant we know */
         if(kind==1)wr(&rt,SP+18,4,MAC_RUNTIME_RAM-6);
         if(kind==2)wr(&rt,SP+14,4,MAC_RUNTIME_RAM-2),wr(&rt,MAC_RUNTIME_RAM-2,1,13);
         if(kind==3)wr(&rt,SP+22,4,SP);
@@ -97,9 +200,23 @@ static void failures(void) {
     rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);
     CHECK(call(&rt,0xa914,STORAGE)==-1 && rt.window.address==STORAGE);mac_cpu_destroy(rt.cpu);
     rt=fresh();new_args(&rt,STORAGE,1);CHECK(mac_window_service(&rt,0xaa45)==1);
-    uint32_t heap=rt.heap_next;new_args(&rt,STORAGE+512,1);
-    CHECK(mac_window_service(&rt,0xaa45)==-1 && rt.heap_next==heap && rt.window.address==STORAGE);
+    new_args(&rt,STORAGE+512,1);                                                  /* a second visible window in front is now allowed (stacking order) */
+    CHECK(mac_window_service(&rt,0xaa45)==1 && mac_window_front(&rt)==STORAGE+512);
     mac_cpu_destroy(rt.cpu);
+}
+/* CalcVisBehind(startWindow, clobberedRgn) recomputes the one window's visRgn like CalcVis; a NIL start does nothing; the region is only popped. */
+static void calc_vis_behind(void) {
+ MacRuntime r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
+ uint32_t vis=rd(&r,r.window.handles[2],4);wr(&r,vis+2,4,0);wr(&r,vis+6,4,0);
+ mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,0x1234);wr(&r,SP+4,4,STORAGE);
+ CHECK(mac_window_service(&r,0xa90a)==1 && mac_cpu_get(r.cpu,MAC_A7)==SP+8 && rd(&r,vis+6,2)==260 && rd(&r,vis+8,2)==400);
+ wr(&r,vis+2,4,0);wr(&r,vis+6,4,0);mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,0x1234);wr(&r,SP+4,4,0);
+ CHECK(mac_window_service(&r,0xa90a)==1 && mac_cpu_get(r.cpu,MAC_A7)==SP+8 && rd(&r,vis+6,2)==0);
+ mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,0x1234);wr(&r,SP+4,4,0x5555);
+ CHECK(mac_window_service(&r,0xa90a)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
+ r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,0);wr(&r,SP+4,4,STORAGE);
+ CHECK(call(&r,0xa916,STORAGE)==1);mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,0);wr(&r,SP+4,4,STORAGE);
+ vis=rd(&r,r.window.handles[2],4);CHECK(mac_window_service(&r,0xa90a)==1 && rd(&r,vis+2,4)==0 && rd(&r,vis+6,4)==0);mac_cpu_destroy(r.cpu);   /* hidden: an empty vis, as CalcVis */
 }
 static void calc_vis(void) {
  MacRuntime r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
@@ -121,6 +238,32 @@ static int resize(MacRuntime *r,int width,int height,int update) {
  mac_cpu_set(r->cpu,MAC_A7,SP);wr(r,SP,2,update?0x0100:0);wr(r,SP+2,2,height);wr(r,SP+4,2,width);wr(r,SP+6,4,STORAGE);
  return mac_window_service(r,0xa91d);
 }
+static int set_title(MacRuntime *r,uint32_t w,uint32_t src){mac_cpu_set(r->cpu,MAC_A7,SP);wr(r,SP,4,src);wr(r,SP+4,4,w);return mac_window_service(r,0xa91a);}
+static void titling(void){
+ /* SetWTitle copies the Pascal string, GetWTitle returns it, a visible titled window redraws its title bar; bad strings halt and change nothing */
+ MacRuntime r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
+ const uint8_t *scr=mac_cpu_ram(r.cpu)+r.screen_base;static uint8_t before[307200];memcpy(before,scr,sizeof before);
+ memcpy(mac_cpu_ram(r.cpu)+0x5000,"\006Houses",7);
+ CHECK(set_title(&r,STORAGE,0x5000)==1 && mac_cpu_get(r.cpu,MAC_A7)==SP+8 && r.window.title[0]==6 && !memcmp(r.window.title+1,"Houses",6));
+ CHECK(memcmp(before,scr,sizeof before)!=0);                                                                  /* the title bar was redrawn */
+ mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,0x6000);wr(&r,SP+4,4,STORAGE);memset(mac_cpu_ram(r.cpu)+0x6000,0xee,16);
+ CHECK(mac_window_service(&r,0xa919)==1 && rd(&r,0x6000,1)==6 && !memcmp(mac_cpu_ram(r.cpu)+0x6001,"Houses",6) && rd(&r,0x6007,1)==0xee);
+ mac_cpu_ram(r.cpu)[0x5000]=0;CHECK(set_title(&r,STORAGE,0x5000)==1 && r.window.title[0]==0);                  /* an empty title is fine */
+ memset(mac_cpu_ram(r.cpu)+0x5100,'x',256);mac_cpu_ram(r.cpu)[0x5100]=255;CHECK(set_title(&r,STORAGE,0x5100)==1 && r.window.title[0]==255 && r.window.title[255]=='x');   /* the longest Str255 */
+ mac_cpu_destroy(r.cpu);
+ r=fresh();new_args(&r,STORAGE,0);CHECK(mac_window_service(&r,0xaa45)==1);memcpy(before,mac_cpu_ram(r.cpu)+r.screen_base,sizeof before);       /* hidden: stored, nothing drawn */
+ memcpy(mac_cpu_ram(r.cpu)+0x5000,"\003abc",4);CHECK(set_title(&r,STORAGE,0x5000)==1 && r.window.title[0]==3 && !memcmp(before,mac_cpu_ram(r.cpu)+r.screen_base,sizeof before));
+ mac_cpu_destroy(r.cpu);
+ static const struct{uint32_t src;unsigned len;}bad[]={{0,0},{0x100,3},{MAC_RUNTIME_RAM,0},{0xfffffff0u,0},{MAC_RUNTIME_RAM-4,200},{MAC_RUNTIME_RAM-1,1}};
+ for(unsigned k=0;k<sizeof bad/sizeof*bad;k++){
+  r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);uint8_t old[256];memcpy(old,r.window.title,256);
+  if(bad[k].src<MAC_RUNTIME_RAM && bad[k].src>=0x400)mac_cpu_ram(r.cpu)[bad[k].src]=(uint8_t)bad[k].len;
+  CHECK(set_title(&r,STORAGE,bad[k].src)==-1 && mac_cpu_halted(r.cpu) && !memcmp(old,r.window.title,256));mac_cpu_destroy(r.cpu);
+ }
+ r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);memcpy(mac_cpu_ram(r.cpu)+0x5000,"\001z",2);CHECK(set_title(&r,0x7770,0x5000)==-1);mac_cpu_destroy(r.cpu);   /* not a window */
+ r=fresh();new_args(&r,STORAGE,1);wr(&r,SP+10,2,2);CHECK(mac_window_service(&r,0xaa45)==1);memcpy(mac_cpu_ram(r.cpu)+0x5000,"\001z",2);          /* plainDBox: no bar, text kept */
+ CHECK(set_title(&r,STORAGE,0x5000)==1 && r.window.title[1]=='z');mac_cpu_destroy(r.cpu);
+}
 static void sizing(void) {
  MacRuntime r=fresh();new_args(&r,STORAGE,0);CHECK(mac_window_service(&r,0xaa45)==1);
  uint32_t vis=rd(&r,r.window.handles[2],4),up=rd(&r,r.window.handles[10],4),content=rd(&r,r.window.handles[9],4);
@@ -130,7 +273,14 @@ static void sizing(void) {
  CHECK(rd(&r,content+6,2)==238 && rd(&r,content+8,2)==434 && rd(&r,vis+6,4)==0 && rd(&r,up+6,4)==0);
  CHECK(r.current_port==port && r.heap_next==heap && r.event_count==events && mac_cpu_ram(r.cpu)[r.screen_base+100*640+100]==77);
  CHECK(resize(&r,0,0,1)==1 && r.window.bounds[2]==238);
- CHECK(resize(&r,600,470,0)==-1 && r.window.bounds[2]==238);mac_cpu_destroy(r.cpu);
+ CHECK(resize(&r,640,20,0)==1 && r.window.bounds[2]==40+20 && r.window.bounds[3]==50+640 && rd(&r,STORAGE+20,2)==20);   /* a short full-width strip is fine (Glider PRO's WIND 130) */
+ CHECK(resize(&r,1,1,0)==1 && r.window.bounds[2]==41 && r.window.bounds[3]==51);
+ mac_cpu_destroy(r.cpu);
+ for(unsigned k=0;k<8;k++) {                                  /* larger than the screen, empty or negative: refused atomically */
+  r=fresh();new_args(&r,STORAGE,0);CHECK(mac_window_service(&r,0xaa45)==1);
+  CHECK(resize(&r,k==0?700:k==1?600:k==2?0:k==3?100:k==4?641:k==6?-5:k==7?100:640,k==0?470:k==1?490:k==2?100:k==3?0:k==4?100:k==6?100:k==7?-5:481,0)==-1 && mac_cpu_halted(r.cpu) && r.window.bounds[2]==300 && r.window.bounds[3]==450);
+  mac_cpu_destroy(r.cpu);
+ }
  r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
  mac_cpu_ram(r.cpu)[r.screen_base+100*640+100]=42;
  CHECK(resize(&r,450,300,1)==1);up=rd(&r,r.window.handles[10],4);
@@ -162,7 +312,35 @@ static void moving(void) {
   CHECK(r.current_port==port && r.event_count==events);
   if(visible){CHECK(mac_cpu_ram(r.cpu)[r.screen_base+201*640+178]==42);CHECK(mac_cpu_ram(r.cpu)[r.screen_base+100*640+100]==77);CHECK(rd(&r,up+2,2)==141 && rd(&r,up+4,2)==128);}
   else CHECK(rd(&r,up+2,4)==0 && rd(&r,up+6,4)==0);
-  CHECK(move_to(&r,-1,141,0)==-1 && r.window.bounds[1]==128);mac_cpu_destroy(r.cpu);
+  if(!visible){uint32_t order0=r.window_order[0];unsigned count=r.window_count;                       /* front=TRUE on a hidden window: moved, not activated, not reordered, no event */
+   CHECK(move_to(&r,130,142,1)==1 && r.window.bounds[0]==142 && r.window.bounds[1]==130 && r.event_count==events && !r.window.active && r.window_order[0]==order0 && r.window_count==count);}
+  else{CHECK(move_to(&r,130,142,1)==1 && r.window.bounds[0]==142 && r.window.active);}                     /* a visible window with front=TRUE is activated as before */
+  CHECK(move_to(&r,-1,141,0)==-1 && r.window.bounds[1]==130);mac_cpu_destroy(r.cpu);
  }
 }
-int main(void){moving();sizing();calc_vis();lifecycle();failures();puts("one-window lifecycle, drawing, and update checks passed");}
+/* A window may extend past the bottom or right edge of the screen while it is sized (a game can size first and move after). Nothing may
+ * be written outside the screen buffer; moving it back on-screen keeps the on-screen pixels and starts the rest as paper. */
+static void offscreen(void) {
+ MacRuntime r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
+ uint8_t *ram=mac_cpu_ram(r.cpu);uint32_t after=r.screen_base+640*480;
+ unsigned light=0,max=0;for(unsigned i=0;i<256;i++){uint32_t c=r.palette[i];unsigned v=((c>>16)&255)+((c>>8)&255)+(c&255);if(v>=max){max=v;light=i;}}
+ CHECK(light!=77 && light!=42);
+ memset(ram+after,0x6b,0x40000);ram[r.screen_base+100*640+100]=42;
+ CHECK(resize(&r,590,440,0)==1 && r.window.bounds[2]==480 && r.window.bounds[3]==640);                 /* exactly on-screen */
+ CHECK(resize(&r,600,470,0)==1 && r.window.bounds[2]==510 && r.window.bounds[3]==650);                 /* past the bottom and right edges */
+ for(unsigned i=0;i<0x40000;i++)if(ram[after+i]!=0x6b){CHECK(0);break;}
+ CHECK(ram[r.screen_base+100*640+100]==42);
+ CHECK(move_to(&r,0,10,0)==1 && r.window.bounds[0]==10 && r.window.bounds[1]==0 && r.window.bounds[2]==480 && r.window.bounds[3]==600);
+ for(unsigned i=0;i<0x40000;i++)if(ram[after+i]!=0x6b){CHECK(0);break;}
+ CHECK(ram[r.screen_base+70*640+50]==42);                                                              /* the on-screen pixel moved with the window */
+ CHECK(ram[r.screen_base+460*640+100]==light && ram[r.screen_base+200*640+595]==light);               /* what was off-screen starts as paper */
+ mac_cpu_destroy(r.cpu);
+ /* moving a window that is off-screen to another off-screen place is still refused, atomically */
+ r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);CHECK(resize(&r,600,470,0)==1);
+ CHECK(move_to(&r,0,30,0)==-1 && r.window.bounds[0]==40 && r.window.bounds[2]==510);mac_cpu_destroy(r.cpu);
+ /* growing a visible off-screen window with updating on is refused, atomically; with updating off, or hidden, it works */
+ r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
+ CHECK(resize(&r,600,470,1)==-1 && r.window.bounds[2]==300 && r.window.bounds[3]==450);mac_cpu_destroy(r.cpu);
+ r=fresh();new_args(&r,STORAGE,0);CHECK(mac_window_service(&r,0xaa45)==1);CHECK(resize(&r,600,470,1)==1 && r.window.bounds[2]==510);mac_cpu_destroy(r.cpu);
+}
+int main(void){calc_vis_behind();show_hide_checks();moving();titling();sizing();offscreen();calc_vis();lifecycle();failures();custom_wdef_and_behind();hiliting();puts("one-window lifecycle, drawing, and update checks passed");}

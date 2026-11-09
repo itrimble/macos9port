@@ -62,6 +62,13 @@ static int info(MacRuntime *rt, const char *name, int index) {
     put(rt, 18, 4, NAME); put(rt, 22, 2, 0); put(rt, 28, 2, (uint16_t)index);
     return call(rt, 0xa00c);
 }
+/* PBHGetFInfo: like info() but through $A20C with a directory ID and the root volume as -1. */
+static int hinfo(MacRuntime *rt, const char *name, int index, uint32_t dir, uint16_t op) {
+    clear_pb(rt);
+    if (name) pstring(rt, NAME, name); else mac_cpu_ram(rt->cpu)[NAME] = 0;
+    put(rt, 18, 4, NAME); put(rt, 22, 2, 0xffff); put(rt, 28, 2, (uint16_t)index); put(rt, 48, 4, dir);
+    return call(rt, op);
+}
 static long host_size(const char *dir, const char *name) {
     char path[1024]; struct stat st;
     snprintf(path, sizeof path, "%s/%s", dir, name);
@@ -246,6 +253,16 @@ int main(void) {
     CHECK(info(&rt, NULL, 4) == 0);
     CHECK(!memcmp(mac_cpu_ram(rt.cpu) + NAME, "\x07Pilot A", 8));
     CHECK(info(&rt, NULL, 5) == -43);
+    /* PBHGetFInfo: the same answers, the root as directory 2 or 0, and ioDirID left as the caller set it. */
+    CHECK(hinfo(&rt, "Game Data", 0, 2, 0xa20c) == 0 && mac_cpu_read(rt.cpu, PB + 48, 4) == 2);
+    CHECK(mac_cpu_read(rt.cpu, PB + 30, 1) == 0x01 && mac_cpu_read(rt.cpu, PB + 54, 4) == 6);
+    CHECK(hinfo(&rt, NULL, 1, 2, 0xa20c) == 0 && !memcmp(mac_cpu_ram(rt.cpu) + NAME, "\x09Game Data", 10) && mac_cpu_read(rt.cpu, PB + 48, 4) == 2);
+    CHECK(hinfo(&rt, NULL, 4, 0, 0xa20c) == 0 && !memcmp(mac_cpu_ram(rt.cpu) + NAME, "\x07Pilot A", 8) && mac_cpu_read(rt.cpu, PB + 48, 4) == 0);
+    CHECK(hinfo(&rt, "Pilot A", 0, 2, 0xa20c) == 0 && !memcmp(mac_cpu_ram(rt.cpu) + PB + 32, "SAVEMKY1", 8));
+    CHECK(hinfo(&rt, NULL, 5, 2, 0xa20c) == -43 && hinfo(&rt, "Missing", 0, 2, 0xa20c) == -43);
+    CHECK(hinfo(&rt, "Game Data", 0, 99, 0xa20c) == -120 && mac_cpu_read(rt.cpu, PB + 54, 4) == 0);   /* no other directory exists; nothing written */
+    CHECK(hinfo(&rt, "Game Data", 0, 2, 0xa60c) == -50);                                               /* asynchronous */
+    put(&rt, 22, 2, 5); CHECK(call(&rt, 0xa20c) == -35);                                              /* another volume */
 
     /* Delete: open files are busy, data files locked, missing not found. */
     CHECK(named(&rt, 0xa009, "Game Data") == -45);

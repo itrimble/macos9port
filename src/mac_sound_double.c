@@ -35,6 +35,7 @@ int mac_sound_double_service(MacRuntime*r,uint16_t op){
     }
     if(!c || !mac_sound_range(r,p,36,1)){wr(r,sp+8,2,(uint16_t)-205);mac_cpu_set(r->cpu,MAC_A7,sp+8);return 1;}
     if(r->sound->callback_active)return mac_sound_fail(r,"Double buffer start at interrupt time is prohibited.");
+    if(mac_sound_pump(r,c)<0)return -1; /* instantaneous queued commands (ampCmd, quietCmd, ...) are consumed first */
     if(c->playing || c->paused || c->count || c->wait_frames || c->callback_pending || c->double_buffer.active || c->double_buffer.pending)
         return mac_sound_fail(r,"Double buffer start requires an idle sound channel.");
     if(!mac_sound_range(r,h,24,1))return mac_sound_fail(r,"Double buffer header exceeds RAM.");
@@ -88,7 +89,8 @@ size_t mac_sound_double_poll(MacRuntime*r,size_t budget){
         if(ran>=budget || ran>=MAX_DOUBLEBACK_INSTRUCTIONS)return ran;
         if(!mac_sound_range(r,d->callback,2,1)){mac_sound_fail(r,"Doubleback code exceeds RAM.");return ran;}
         uint32_t saved[18];for(unsigned j=0;j<18;j++)saved[j]=mac_cpu_get(r->cpu,(MacCpuReg)j);
-        uint32_t sp=saved[MAC_A7];if(sp<12 || !mac_sound_range(r,sp-12,12,1)){mac_sound_fail(r,"Doubleback stack exceeds RAM.");return ran;}
+        uint32_t sp=saved[MAC_A7]&~1u; /* odd A7 of the interrupted code (a THINK C frame of odd size): run the callback just below it, word aligned; the registers come back from `saved` */
+        if(sp<12 || !mac_sound_range(r,sp-12,12,1)){mac_sound_fail(r,"Doubleback stack exceeds RAM.");return ran;}
         uint8_t stack[12];memcpy(stack,mac_cpu_ram(r->cpu)+sp-12,12);
         wr(r,sp-12,4,DOUBLE_RETURN);wr(r,sp-8,4,d->buffers[b]);wr(r,sp-4,4,c->address);
         mac_cpu_set(r->cpu,MAC_A7,sp-12);mac_cpu_set(r->cpu,MAC_PC,d->callback);d->pending&=~(1u<<b);r->sound->callback_active=1;
@@ -99,7 +101,8 @@ size_t mac_sound_double_poll(MacRuntime*r,size_t budget){
         while(ran-callback_start<callback_budget && !mac_cpu_halted(r->cpu) && mac_cpu_get(r->cpu,MAC_PC)!=DOUBLE_RETURN){size_t n=mac_cpu_run(r->cpu,1);ran+=n;if(!n)break;}
         r->sound->callback_active=0;
         if(mac_cpu_halted(r->cpu))return ran;
-        if(mac_cpu_get(r->cpu,MAC_PC)!=DOUBLE_RETURN || mac_cpu_get(r->cpu,MAC_A7)!=sp){
+        /* Pascal callees pop their two arguments (A7 == sp); C callees leave them for the caller (A7 == sp-8). Both are restored below. */
+        if(mac_cpu_get(r->cpu,MAC_PC)!=DOUBLE_RETURN || (mac_cpu_get(r->cpu,MAC_A7)!=sp && mac_cpu_get(r->cpu,MAC_A7)!=sp-8)){
             char error[160];
             snprintf(error,sizeof error,"Doubleback return mismatch: PC=%08x A7=%08x expected=%08x after %zu instructions.",
                      mac_cpu_get(r->cpu,MAC_PC),mac_cpu_get(r->cpu,MAC_A7),sp,ran-callback_start);

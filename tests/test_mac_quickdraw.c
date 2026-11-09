@@ -100,22 +100,28 @@ int main(void) {
     CHECK(call(&rt, 0xa874, 0x600000) == 1);
     CHECK(mac_cpu_read(rt.cpu, 0x600000, 4) == port);
 
-    /* GlobalToLocal subtracts the bitmap bounds origin of the current port. */
-    mac_cpu_write(rt.cpu, port + 12, 2, (uint16_t)-20);
-    mac_cpu_write(rt.cpu, port + 14, 2, 30);
+    /* portBits.bounds sits at port+8 (device 2 + baseAddr 4 + rowBytes 2): top, left, bottom, right. A point's pixel
+     * position is local - bounds.topLeft, so GlobalToLocal ADDS the origin and LocalToGlobal subtracts it. (An
+     * earlier version of this test used port+12/+14, which are bounds.bottom/right, and the opposite signs.) */
+    mac_cpu_write(rt.cpu, port + 8, 2, (uint16_t)-20);
+    mac_cpu_write(rt.cpu, port + 10, 2, 30);
+    mac_cpu_write(rt.cpu, port + 12, 2, 400);   /* bottom and right must play no part */
+    mac_cpu_write(rt.cpu, port + 14, 2, 500);
     mac_cpu_set(rt.cpu, MAC_A7, 0xf00000);
     mac_cpu_write(rt.cpu, 0xf00000, 4, 0x600020);
     mac_cpu_write(rt.cpu, 0x600020, 2, 5);
     mac_cpu_write(rt.cpu, 0x600022, 2, 7);
     CHECK(mac_quickdraw_service(&rt, 0xa871) == 1);
-    CHECK(mac_cpu_read(rt.cpu, 0x600020, 2) == 25);
-    CHECK(mac_cpu_read(rt.cpu, 0x600022, 2) == (uint16_t)-23);
+    CHECK(mac_cpu_read(rt.cpu, 0x600020, 2) == (uint16_t)-15);   /* 5 + (-20) */
+    CHECK(mac_cpu_read(rt.cpu, 0x600022, 2) == 37);              /* 7 + 30 */
     CHECK(mac_cpu_get(rt.cpu, MAC_A7) == 0xf00004);
     mac_cpu_set(rt.cpu, MAC_A7, 0xf00000);
     mac_cpu_write(rt.cpu, 0xf00000, 4, 0x600020);
     CHECK(mac_quickdraw_service(&rt, 0xa870) == 1);
-    CHECK(mac_cpu_read(rt.cpu, 0x600020, 2) == 5);
+    CHECK(mac_cpu_read(rt.cpu, 0x600020, 2) == 5);               /* the round trip returns the original point */
     CHECK(mac_cpu_read(rt.cpu, 0x600022, 2) == 7);
+    mac_cpu_write(rt.cpu, port + 8, 2, 0);                        /* restore the unshifted origin for what follows */
+    mac_cpu_write(rt.cpu, port + 10, 2, 0);
 
     mac_cpu_set(rt.cpu, MAC_A7, 0xf00000);
     mac_cpu_write(rt.cpu, 0xf00000, 2, 50); /* bottom */

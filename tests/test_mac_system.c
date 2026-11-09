@@ -38,7 +38,7 @@ static int environment_checks(void) {
            (int32_t)mac_cpu_get(rt.cpu,MAC_D0)!=(version>2?-5502:0) ||
            mac_cpu_get(rt.cpu,MAC_A0)!=0x100 || mac_cpu_get(rt.cpu,MAC_A7)!=0x800 ||
            mac_cpu_read(rt.cpu,0x100,2)!=(version>2?2:version) ||
-           mac_cpu_read(rt.cpu,0x104,2)!=0x0607 || mac_cpu_read(rt.cpu,0x106,2)!=3 ||
+           mac_cpu_read(rt.cpu,0x102,2)!=MAC_PROFILE_SYSENV_MACHINE || mac_cpu_read(rt.cpu,0x104,2)!=MAC_PROFILE_SYSTEM_VERSION || mac_cpu_read(rt.cpu,0x106,2)!=3 ||
            mac_cpu_read(rt.cpu,0x108,1)!=0 || mac_cpu_read(rt.cpu,0x109,1)!=1 ||
            mac_cpu_read(rt.cpu,0x10a,4)!=0 || mac_cpu_read(rt.cpu,0x10e,2)!=0xfffe)failed=1;
     }
@@ -52,7 +52,7 @@ static int environment_checks(void) {
     mac_system_volume_destroy(rt.system_volume);rt.system_volume=NULL;
     mac_cpu_set(rt.cpu,MAC_A0,0x100);mac_cpu_set(rt.cpu,MAC_D0,1);
     if(mac_system_service(&rt,0xa090)!=1 || (int32_t)mac_cpu_get(rt.cpu,MAC_D0)!=-5500 ||
-       mac_cpu_read(rt.cpu,0x10e,2)!=0)failed=1;
+       mac_cpu_read(rt.cpu,0x10e,2)!=0 || mac_cpu_read(rt.cpu,0x102,2)!=0 || mac_cpu_read(rt.cpu,0x104,2)!=0)failed=1;   /* no System, no identity */
     mac_cpu_destroy(rt.cpu);
     const uint32_t bad[]={0,0x101,4090,0xffffffff};
     for(unsigned i=0;i<4;i++) {
@@ -69,15 +69,15 @@ int main(void) {
     MacRuntime rt = {0};
     rt.cpu = mac_cpu_create_model(MAC_RUNTIME_RAM, MAC_CPU_68020);
     if (!rt.cpu) return 1;
-    const uint32_t selectors[] = {0x73797376,0x70726f63,0x72616d20,0x66707520,0x71642020,0x62616421};
-    const uint32_t responses[] = {0x0607,3,0x800000,0,0,0};
+    const uint32_t selectors[] = {0x73797376,0x70726f63,0x72616d20,0x66707520,0x71642020,0x6d616368,0x71647277,0x62616421};
+    const uint32_t responses[] = {MAC_PROFILE_SYSTEM_VERSION,3,0x800000,0,0,MAC_PROFILE_GESTALT_MACHINE,0,0};
     int failed = environment_checks();
-    for (unsigned i=0;i<6;i++) {
+    for (unsigned i=0;i<8;i++) {
         mac_cpu_set(rt.cpu,MAC_D0,selectors[i]);
         mac_cpu_set(rt.cpu,MAC_A7,0x50000);
         if (mac_system_service(&rt,0xa1ad)!=1 ||
             mac_cpu_get(rt.cpu,MAC_A0)!=responses[i] ||
-            mac_cpu_get(rt.cpu,MAC_D0)!=(i==5?(uint32_t)-5551:0) ||
+            mac_cpu_get(rt.cpu,MAC_D0)!=(i==7?(uint32_t)-5551:0) ||
             mac_cpu_get(rt.cpu,MAC_A7)!=0x50000) failed=1;
     }
     /* NewGestalt records a selector; Gestalt then reports it present (response 0). */
@@ -89,6 +89,15 @@ int main(void) {
     if (mac_system_service(&rt,0xa3ad)!=1 || mac_cpu_get(rt.cpu,MAC_D0)!=(uint32_t)-5550) failed=1; /* duplicate */
     mac_cpu_set(rt.cpu,MAC_D0,0x73797376);
     if (mac_system_service(&rt,0xa3ad)!=1 || mac_cpu_get(rt.cpu,MAC_D0)!=(uint32_t)-5550) failed=1; /* built in */
+    mac_cpu_set(rt.cpu,MAC_D0,0x73746466);mac_cpu_set(rt.cpu,MAC_A7,0x50000);                  /* 'stdf': exactly bit 0, StandardFile58 */
+    if (mac_system_service(&rt,0xa1ad)!=1 || mac_cpu_get(rt.cpu,MAC_A0)!=1 || mac_cpu_get(rt.cpu,MAC_D0)!=0) failed=1;
+    rt.main_device=1;rt.screen_depth=8;                         /* the indexed color profile is up */
+    mac_cpu_set(rt.cpu,MAC_D0,0x71647277);mac_cpu_set(rt.cpu,MAC_A7,0x50000);
+    if (mac_system_service(&rt,0xa1ad)!=1 || mac_cpu_get(rt.cpu,MAC_A0)!=1 || mac_cpu_get(rt.cpu,MAC_D0)!=0) failed=1;
+    rt.screen_depth=1;                                          /* any other depth: no color claim */
+    mac_cpu_set(rt.cpu,MAC_D0,0x71647277);
+    if (mac_system_service(&rt,0xa1ad)!=1 || mac_cpu_get(rt.cpu,MAC_A0)!=0) failed=1;
+    rt.main_device=0;rt.screen_depth=0;
     mac_cpu_write(rt.cpu,0x100,2,0x7001); /* MOVEQ #1,D0 */
     mac_cpu_set(rt.cpu,MAC_PC,0x100);
     mac_cpu_run(rt.cpu,1);

@@ -18,6 +18,7 @@ static uint32_t rd(MacRuntime*r,uint32_t p,unsigned n){return mac_cpu_read(r->cp
 int mac_menu_service(MacRuntime *r,uint16_t opcode){
     if(opcode!=0xa937)return mac_menu_records_service(r,opcode);
     if(mac_cpu_halted(r->cpu))return -1;
+    r->menu_hilite=0;                                   /* repainting the bar clears any highlighted title */
     if(!(r->manager_flags&4) || !valid(r,0xa1c,4,1) || !valid(r,0xbaa,2,1))
         return fail(r,"DrawMenuBar requires initialized Menu Manager state.");
     unsigned count=0;MacHandle *list=mac_menu_list(r,&count);

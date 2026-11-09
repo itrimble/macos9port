@@ -2,9 +2,10 @@
 #define MAC_PICT_H
 #include <stddef.h>
 #include <stdint.h>
-typedef struct { uint16_t rgb[256][3]; uint8_t allowed[256]; } MacPictPalette;
+/* exact: a source color must equal an allowed entry (used for 1-bit ports, where nothing is approximated). */
+typedef struct { uint16_t rgb[256][3]; uint8_t allowed[256]; uint8_t exact; } MacPictPalette;
 typedef struct { unsigned width,height; uint8_t *pixels,*covered; } MacPictImage;
-/* Independent bounded PICTv2 indexed playback. Output is owned host memory;
+/* Independent bounded PICT version 1 (1-bit BitsRect) and version 2 indexed playback. Output is owned host memory;
  * no guest destination is modified until complete successful validation. */
 int mac_pict_decode(const uint8_t *data,size_t size,unsigned width,unsigned height,
                     const MacPictPalette *palette,MacPictImage *out,char *error,size_t n);

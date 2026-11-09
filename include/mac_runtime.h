@@ -4,10 +4,20 @@
 #include "mac_cpu.h"
 #include "mac_resource.h"
 #include "runtime_bridge.h"
+/* Completion of a guest call started by mac_guest_call: `rt` is the MacRuntime, `result` the routine's return value
+ * (0 if none). Return < 0 to halt. It may start another guest call; otherwise execution resumes after the trap. */
+typedef int (*MacGuestDone)(void *rt, void *ctx, uint32_t result);
 
 #define MAC_CODE_TYPE UINT32_C(0x434f4445)
 #define MAC_RUNTIME_RAM (16u * 1024u * 1024u)
-#define MAC_RUNTIME_HANDLES 512
+#define MAC_RUNTIME_HANDLES 4096
+/* Guest compatibility profile (Ian, 2026-11-07): the virtual machine presents itself as a Mac II-class
+ * computer (68020, indexed Color QuickDraw, no FPU) running System 7.0. It is an identity for applications
+ * that gate on SysEnvirons/Gestalt, not a claim that every System 7 service exists: unsupported traps and
+ * Gestalt selectors still halt or return gestaltUndefSelectorErr. */
+#define MAC_PROFILE_SYSTEM_VERSION 0x0700 /* Gestalt 'sysv', SysEnvirons systemVersion, low-memory SysVersion */
+#define MAC_PROFILE_SYSENV_MACHINE 4      /* SysEnvirons envMacII */
+#define MAC_PROFILE_GESTALT_MACHINE 6     /* Gestalt 'mach' gestaltMacII */
 /* Smallest poll budget the VBL/Time Manager/sound pollers accept. */
 #define MAC_RUNTIME_SERVICE_MIN 10000u
 #define MAC_GESTALT_MAX 32
@@ -35,7 +45,26 @@ typedef struct {
     uint16_t palette_updates;
     uint8_t title[256];
     int visible, active, updating, owns_storage;
+    int port_only; /* a hidden window kept only as a dialog's colour port: 1 = its dialog is not shown (controls are not drawn), 2 = shown (they are, although the window is not visible) */
+    /* 'wctb' overrides applied at creation. Bit n of color_set: part n is overridden (0 content-region background,
+     * 1 window frame, 2 title text); color_rgb[n] holds its 16-bit RGB, matched to the nearest palette entry at draw
+     * time so palette changes (e.g. the gray mode) stay correct. Zero = the native default colors. */
+    uint8_t color_set;
+    uint16_t color_rgb[3][3];
 } MacWindowState;
+
+typedef struct MacHeapBridge MacHeapBridge;
+
+/* Apple Event Manager state ($A816). Handlers are only RECORDED; nothing in this runtime sends an Apple Event, so
+ * none is ever called. Two separate tables (application and system) of bounded size, then the interaction level. */
+#define MAC_AE_HANDLERS 64
+typedef struct { uint32_t event_class, event_id, handler, refcon; } MacAeHandler;
+typedef struct {
+    MacAeHandler app[MAC_AE_HANDLERS], sys[MAC_AE_HANDLERS];
+    unsigned app_count, sys_count;
+    uint8_t level, level_set; /* AEInteractAllowed 0..2; level_set == 0 means never set (reported as the default) */
+} MacAppleEvents;
+struct MacResEdits;
 
 typedef struct {
     MacCpu *cpu;
@@ -50,6 +79,7 @@ typedef struct {
     uint32_t palette[256];
     int16_t qd_error;
     uint32_t ticks;
+    uint32_t clock_base; /* seconds since 1 Jan 1904 at tick 0; 0 = take the host clock on first use */
     uint64_t clock_us;
     struct MacTimeState *time_manager;
     uint8_t keys[16]; /* Current supported host virtual-key state, independent of queue. */
@@ -72,6 +102,12 @@ typedef struct {
     uint32_t vbl_tasks[32], vbl_last_tick, vbl_due[32];
     unsigned vbl_count, vbl_due_count, vbl_due_cursor;
     int vbl_active;
+    uint32_t hier_menus[32]; /* submenus registered with InsertMenu(menu, -1); never drawn in the bar */
+    unsigned hier_count;
+    struct MacResEdits *res_edits; /* resource edits layered over the fork (host memory) */
+    uint8_t palette_map[256];  /* device index chosen for each entry of the activated palette */
+    uint32_t palette_active;   /* handle of the palette last activated, 0 = none */
+    MacHeapBridge *heap_bridge; /* protected heap over [lo,hi) of guest RAM; NULL = legacy bump only */
     MacHandle handles[MAC_RUNTIME_HANDLES];
     size_t handle_count;
     MacWindowState window;
@@ -86,6 +122,16 @@ typedef struct {
     uint32_t gestalt_sel[MAC_GESTALT_MAX], gestalt_val[MAC_GESTALT_MAX], gestalt_proc[MAC_GESTALT_MAX];
     unsigned gestalt_count;
     int init_guard, init_violation; /* INIT sandbox: protected traps refuse patches */
+    uint32_t appfork_mark; /* file mark of the application resource fork opened for direct reads (mac_appfork.c) */
+    struct MacAlertState *alert; /* native alert dialog (mac_alert.c) */
+    struct MacCdefJob *cdef;     /* control definition calls in flight (mac_cdef.c) */
+    struct MacRgnRec *rgn_rec;   /* OpenRgn..CloseRgn recording in progress (mac_regions.c) */
+    struct MacMenuSel *menusel;  /* MenuSelect tracking in progress (mac_menuselect.c) */
+    int16_t menu_hilite;         /* ID of the menu whose title is highlighted, 0 for none */
+    struct MacPutState *stdput; struct MacDlgMgr *dlgmgr; struct MacScrap *scrap; /* bounded Dialog Manager (mac_dlgmgr.c) */ struct MacSfState *stdfile; uint32_t stdfile_pb; /* native Standard File dialog (mac_stdfile.c) */
+    struct { int active; MacGuestDone done; void *ctx; uint32_t sp, resume_pc, result_bytes; } guest; /* mac_guestcall.c */
+    struct { int active; uint32_t deadline, pc, sp; } delay; /* _Delay in progress (mac_delay.c); host memory only */
+    MacAppleEvents appleevents; /* Apple Event Manager handler tables, host memory only (mac_appleevents.c) */
 } MacRuntime;
 
 /* Configure default guest RAM partition (2..12 MiB; 0 = 8 MiB baseline) and
@@ -96,12 +142,44 @@ void mac_runtime_set_memory_policy(int heap_mb, int guard_allocs);
  * runtime, not a sandbox or a claim of complete Macintosh compatibility. */
 int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, size_t n);
 void mac_runtime_destroy(MacRuntime *rt);
+void mac_clock_publish(MacRuntime *rt); /* low-memory Ticks ($16A) and Time ($20C) from rt->ticks */
 size_t mac_runtime_run(MacRuntime *rt, size_t instructions);
 size_t mac_runtime_run_cycles(MacRuntime *rt, uint64_t cycles);
 uint32_t mac_runtime_alloc(MacRuntime *rt, uint32_t size);
 uint32_t mac_runtime_resource(MacRuntime *rt, uint32_t type, int16_t id);
 int mac_runtime_trap(MacCpu *cpu, uint16_t opcode, uint32_t pc, void *user);
 int mac_memory_service(MacRuntime *rt, uint16_t opcode);
+void mac_memory_result(MacCpu *cpu, int16_t err);
+/* Protected heap (os999_heap) over guest RAM [lo,hi); hi must lie within guest RAM.
+ * The legacy bump allocator must not use that window. Detach is idempotent. */
+/* Session edits to resources (SetResInfo names, WriteResource data) layered over the immutable fork.
+ * Keyed by (owner, type, id); host memory only. Owner 0 is the application fork. */
+int mac_resedit_set_name(MacRuntime *rt, int16_t owner, uint32_t type, int16_t id, const uint8_t *pascal);
+int mac_resedit_set_data(MacRuntime *rt, int16_t owner, uint32_t type, int16_t id, const uint8_t *data, uint32_t size);
+void mac_resedit_apply(const MacRuntime *rt, int16_t owner, MacResource *r);
+/* Persist application-fork edits into the writable save overlay (hidden file bound to this exact fork).
+ * 0 saved, 1 nothing to save or no overlay mounted (edits stay in this session), <0 File Manager error. */
+int mac_resedit_save(MacRuntime *rt);
+/* Load previously saved edits once the overlay is mounted; returns the number applied (a bad file applies none). */
+int mac_resedit_load(MacRuntime *rt);
+void mac_resedit_destroy(MacRuntime *rt);
+/* Hidden (dot-named) overlay files: invisible to the guest, written via a staged copy and rename.
+ * put: 0 ok, 1 no overlay, <0 error. get: 0 ok (caller frees *data), nonzero if absent or unreadable. */
+int mac_files_overlay_put_hidden(MacRuntime *rt, const char *name, const uint8_t *data, size_t size);
+int mac_files_overlay_get_hidden(MacRuntime *rt, const char *name, size_t limit, uint8_t **data, size_t *size);
+int mac_heap_attach(MacRuntime *rt, uint32_t lo, uint32_t hi);
+void mac_heap_detach(MacRuntime *rt);
+int mac_heap_owns(const MacRuntime *rt, uint32_t address);
+/* Runtime-owned, zeroed, non-relocatable storage in the protected heap (0 on failure);
+ * guests cannot dispose or size it. mac_heap_free ignores addresses it does not own. */
+uint32_t mac_heap_alloc(MacRuntime *rt, uint32_t size);
+void mac_heap_free(MacRuntime *rt, uint32_t address);
+/* Bulk data (resource bodies): protected heap when attached, else the bump allocator. */
+uint32_t mac_runtime_alloc_data(MacRuntime *rt, uint32_t size);
+void mac_runtime_free_data(MacRuntime *rt, uint32_t address);
+int mac_heap_service(MacRuntime *rt, uint16_t opcode);
+/* One-line usage summary for diagnostics (bump area and protected heap). */
+void mac_heap_report(const MacRuntime *rt, char *out, size_t n);
 int mac_resource_service(MacRuntime *rt, uint16_t opcode);
 int mac_runtime_load_segment(MacRuntime *rt, int16_t id);
 void mac_traps_init(MacRuntime *rt);
@@ -114,6 +192,54 @@ int mac_runtime_bridge_window(MacRuntime *rt, size_t budget, RuntimeBridge *brid
 int mac_palette_manager_service(MacRuntime *rt, uint16_t opcode);
 int mac_picture_service(MacRuntime *rt, uint16_t opcode);
 int mac_sane_service(MacRuntime *rt, uint16_t opcode);
+int mac_numconv_service(MacRuntime *rt, uint16_t opcode);
+int mac_help_service(MacRuntime *rt, uint16_t opcode); /* Help Manager dispatch, $A830 */
+int mac_appleevents_service(MacRuntime *rt, uint16_t opcode); /* Apple Event Manager handler tables, $A816 */
+/* Host-side lookup for a future dispatcher (application table, then system table; exact, class+'****', '****'+id,
+ * '****'+'****'). Returns 1 and fills the outputs on a hit, 0 otherwise. Nothing in the runtime calls it yet. */
+int mac_ae_find_handler(const MacRuntime *rt, uint32_t event_class, uint32_t event_id, uint32_t *handler, uint32_t *refcon);
+/* Call guest code from inside a trap service (see mac_guestcall.c). Returns 0 once the call is set up (the service must
+ * then return handled without touching PC or A7), -1 after halting. */
+int mac_guest_call(MacRuntime *rt, uint32_t routine, const uint8_t *args, unsigned arg_bytes,
+                   unsigned result_bytes, MacGuestDone done, void *ctx);
+int mac_guest_return(MacRuntime *rt); /* trap handler hook: the routine returned to the call stub */
+int mac_delay_service(MacRuntime *rt, uint16_t opcode); /* Time Manager _Delay, $A03B */
+void mac_appfork_publish(MacRuntime *rt); /* CurApRefNum, CurMap, TopMapHndl */
+int mac_appfork_service(MacRuntime *rt, uint16_t opcode); /* PBRead/PBGetEOF on the application resource file */
+int mac_dialog_next_event(MacRuntime *rt, MacEvent *out); /* next mouse/key event for a modal dialog */
+int mac_alert_service(MacRuntime *rt, uint16_t opcode); /* Alert, StopAlert, NoteAlert, CautionAlert: $A985..$A988 */
+void mac_alert_destroy(MacRuntime *rt);
+void mac_cdef_destroy(MacRuntime *rt);
+int mac_sysbeep_service(MacRuntime *rt, uint16_t opcode); /* SysBeep (mac_sysbeep.c) */
+int mac_textbox_service(MacRuntime *rt, uint16_t opcode); /* TextBox (mac_textbox.c) */
+uint32_t mac_partition_heap_hi(const MacResourceFork *fork, uint32_t lo, uint32_t floor_hi, uint32_t ceiling);   /* heap end from the SIZE resource (mac_partition.c) */
+int mac_cicn_service(MacRuntime *rt, uint16_t opcode); /* GetCIcon/PlotCIcon/DisposeCIcon (mac_cicn.c) */
+int mac_controls_service(MacRuntime *rt, uint16_t opcode); /* Control Manager subset (mac_controls.c) */
+int mac_alias_service(MacRuntime *rt, uint16_t opcode); /* AliasDispatch $A823 (mac_alias.c) */
+int mac_cmpstring_service(MacRuntime *rt, uint16_t opcode); /* CmpString $A03C (mac_cmpstring.c) */
+int mac_files_crf_service(MacRuntime *rt, uint16_t opcode); /* CreateResFile $A9B1 (mac_files_crf.c) */
+int mac_colorindex_service(MacRuntime *rt, uint16_t opcode); /* Index2Color $AA34, Color2Index $AA33 (mac_colorindex.c) */
+int mac_handcopy_service(MacRuntime *rt, uint16_t opcode); /* HandToHand $A9E1, PtrToHand $A9E3 (mac_handcopy.c) */
+int mac_resload_service(MacRuntime *rt, uint16_t opcode); /* SetResLoad $A99B (mac_resload.c) */
+void mac_scrap_destroy(MacRuntime *rt); /* mac_scrap.c */
+void mac_rgn_record_observe(MacRuntime *rt, uint16_t opcode); /* called before every trap: records outline calls while a region is open */
+void mac_rgn_record_destroy(MacRuntime *rt);
+int mac_menuselect_service(MacRuntime *rt, uint16_t opcode);
+void mac_menuselect_destroy(MacRuntime *rt);
+int mac_region_box_algebra(unsigned op, const int a[4], const int b[4], int out[4]); /* rectangle algebra, mac_regions.c */
+int mac_window_inval_service(MacRuntime *rt, uint16_t opcode); /* InvalRect/InvalRgn/ValidRect/ValidRgn, $A927..$A92A */
+int mac_stdfile_service(MacRuntime *rt, uint16_t opcode); /* Pack3 Standard File, $A9EA */
+void mac_stdfile_destroy(MacRuntime *rt);
+int mac_stdput_service(MacRuntime *rt, uint32_t sp, uint32_t pc, int spec); /* Pack3 selectors 1 (SFPutFile) and 5 (StandardPutFile), mac_stdput.c */
+void mac_stdput_destroy(MacRuntime *rt);
+int mac_region_load_copy(MacRuntime *rt, uint32_t h, void *out); /* copy a region handle into a MacRgn (mac_rgn.h), mac_regions.c */
+int mac_region_window_view(MacRuntime *rt, uint32_t h, const int structure[4], int inside[4], int *outside); /* PaintBehind's view of a region, mac_regions.c */
+uint32_t mac_region_new_rect(MacRuntime *rt, int t, int l, int b, int r); /* a rectangular region handle of our own, mac_regions.c */
+int mac_shapes_service(MacRuntime *rt, uint16_t opcode); /* ovals and round rectangles, mac_shapes.c */
+int mac_devmgr_service(MacRuntime *rt, uint16_t opcode); /* Device Manager Control, mac_devmgr.c */
+int mac_dlgmgr_service(MacRuntime *rt, uint16_t opcode); /* GetNewDialog, ModalDialog and friends (mac_dlgmgr.c) */
+void mac_dlgmgr_destroy(MacRuntime *rt);
+uint32_t mac_dlgmgr_redirect_bits(MacRuntime *rt, uint32_t bits);   /* &theDialog->portBits (dialog + 2) -> the dialog's port window's portBits; any other address unchanged */
 int mac_menu_service(MacRuntime *rt, uint16_t opcode);
 int mac_toolbox_service(MacRuntime *rt, uint16_t opcode);
 int mac_raster_service(MacRuntime *rt, uint16_t opcode);
@@ -124,16 +250,42 @@ int mac_env_implemented(unsigned key); /* trap_key() values */
 int mac_gestalt_set(MacRuntime *rt, uint32_t selector, uint32_t value, uint32_t proc);
 int mac_geometry_service(MacRuntime *rt, uint16_t opcode);
 int mac_files_root(MacRuntime *rt, const char *directory);
+/* One entry of the merged guest volume listing (data files plus committed saves): host regular files only, sorted by
+ * name (byte order), the Finder info the guest has set (zero when none; nothing is invented from the name). */
+typedef struct { char name[256]; uint32_t type, creator; uint16_t flags; } MacFileEntry;
+/* Fill up to `max` entries and set *count. Returns 0, or a File Manager error (-35 no volume, -36 I/O, -50 too many). */
+int mac_files_entries(MacRuntime *rt, MacFileEntry *out, unsigned max, unsigned *count);
 void mac_files_destroy(MacRuntime *rt);
 /* Mount a distinct writable save directory as an overlay on the data volume,
  * bounded by file-count and byte quotas. Without it the volume is read-only. */
 int mac_files_writable(MacRuntime *rt, const char *directory, unsigned max_files, uint64_t max_bytes);
 int mac_volume_blocks(int directory_fd, uint32_t *blocks);
+int mac_random_service(MacRuntime *rt, uint16_t opcode);
+int mac_text_state_service(MacRuntime *rt, uint16_t opcode);
+int mac_text_service(MacRuntime *rt, uint16_t opcode);
+int mac_stdprocs_service(MacRuntime *rt, uint16_t opcode);
+int mac_toolutil_service(MacRuntime *rt, uint16_t opcode);
+uint32_t mac_native_stub(unsigned key);
+int mac_textedit_service(MacRuntime *rt, uint16_t opcode);
 int mac_volume_info(MacRuntime *rt, uint32_t pb, int directory_fd);
+int mac_volume_info_basic(MacRuntime *rt, uint32_t pb, int directory_fd); /* PBGetVInfo: only the 64-byte volumeParam */
 int mac_file_service(MacRuntime *rt, uint16_t opcode);
+int mac_fsspec_service(MacRuntime *rt, uint16_t opcode); /* HighLevelFSDispatch ($AA52): FSMakeFSSpec, FSpOpenDF, ... */
 int mac_color_init(MacRuntime *rt);
+/* Main device color/gray table switch at the current 8-bit depth (SetDepth's device-type bit). 0 ok. */
+int mac_color_set_gray(MacRuntime *rt, int gray);
+/* Palette activation: the main device's table back to its default for the current type, and single-entry writes. */
+int mac_color_reset_table(MacRuntime *rt);
+int mac_color_paint_box(MacRuntime *rt, uint32_t port, int t, int l, int b, int r); /* a pen stroke: the box in pnPat and pnMode */
+int mac_color_set_entry(MacRuntime *rt, unsigned index, uint16_t r, uint16_t g, uint16_t b);
+/* Realize the palette associated with the frontmost visible window on the main device. 0 ok (or nothing to do),
+ * -1 with the CPU halted when the palette needs something unsupported. */
+int mac_palette_activate(MacRuntime *rt, MacWindowState *window);
+/* The refusals activation would make, checked without changing anything (0 ok, -1 halted). */
+int mac_palette_check(MacRuntime *rt, const MacWindowState *window);
 int mac_color_service(MacRuntime *rt, uint16_t opcode);
 int mac_cursor_service(MacRuntime *rt, uint16_t opcode);
+int mac_ccursor_service(MacRuntime *rt, uint16_t opcode);
 int mac_dialog_service(MacRuntime *rt, uint16_t opcode);
 int mac_color_port_service(MacRuntime *rt, uint16_t opcode);
 int mac_copybits_service(MacRuntime *rt, uint16_t opcode);
@@ -151,6 +303,9 @@ int mac_regions_service(MacRuntime *rt, uint16_t opcode);
 int mac_window_resource_service(MacRuntime *rt, uint16_t opcode);
 MacWindowState *mac_window_find(MacRuntime *rt, uint32_t address);
 uint32_t mac_window_front(MacRuntime *rt);
+/* Visible windows stack like saved backdrops: a window may be shown only when it is first in the WindowList (it covers what is visible and its
+ * backdrop restores it), and hidden or closed only while it is the frontmost visible window. 1 if the change keeps that order. */
+int mac_window_stack_ok(MacRuntime *rt, uint32_t address, int show);
 int mac_window_service(MacRuntime *rt, uint16_t opcode);
 int mac_window_update_event(MacRuntime *rt, uint16_t mask, MacEvent *out);
 

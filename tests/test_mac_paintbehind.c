@@ -45,6 +45,38 @@ static void repaint(void){
  CHECK(paint(&r,h)==1 && rd(&r,up+2,4)==0 && rd(&r,up+6,4)==0);
  CHECK(!mac_window_update_event(&r,1<<6,&event));mac_cpu_destroy(r.cpu);
 }
+/* A complex clobbered region: the part inside the window is treated as its bounding box; reaching the screen outside the window is refused; the part off the screen is ignored. */
+static uint32_t union2(MacRuntime *r,uint32_t a,uint32_t b){
+ mac_cpu_set(r->cpu,MAC_A7,SP);CHECK(mac_regions_service(r,0xa8d8)==1);uint32_t c=rd(r,SP,4);
+ mac_cpu_set(r->cpu,MAC_A7,SP);wr(r,SP,4,c);wr(r,SP+4,4,b);wr(r,SP+8,4,a);CHECK(mac_regions_service(r,0xa8e5)==1);return c;
+}
+static void complex_region(void){
+ for(unsigned k=0;k<5;k++){
+  MacRuntime r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
+  CHECK(call(&r,0xa922,STORAGE)==1 && call(&r,0xa923,STORAGE)==1);
+  uint32_t up=rd(&r,r.window.handles[10],4);
+  uint32_t a=k==4?region_args(&r,100,639,110,640):k==2?region_args(&r,-50,-50,-10,-10):k==3?region_args(&r,60,60,80,100):region_args(&r,50,60,60,100);
+  uint32_t b=k==4?region_args(&r,200,639,210,640):k==2?region_args(&r,-5,-60,-1,-20):k==3?region_args(&r,400,0,420,10):region_args(&r,60,60,80,70);
+  uint32_t c=union2(&r,a,b);CHECK(rd(&r,rd(&r,c,4),2)>10);                                       /* really complex */
+  wr(&r,0x9da,2,1);uint8_t before[307200];memcpy(before,mac_cpu_ram(r.cpu)+r.screen_base,sizeof before);
+  int rc=paint(&r,c);
+  if(k==3||k==4){CHECK(rc==-1&&mac_cpu_halted(r.cpu)&&!memcmp(before,mac_cpu_ram(r.cpu)+r.screen_base,sizeof before));}   /* it reaches the desktop at (400, 0): not repainted */
+  else{
+   CHECK(rc==1 && mac_cpu_get(r.cpu,MAC_A7)==SP+8);
+   if(k==2)CHECK(rd(&r,up+2,4)==0 && rd(&r,up+6,4)==0);                                         /* entirely off the screen: nothing to update */
+   else CHECK(rd(&r,up+2,2)==50 && rd(&r,up+4,2)==60 && rd(&r,up+6,2)==80 && rd(&r,up+8,2)==100);   /* the L's bounding box, which is the update area */
+  }
+  mac_cpu_destroy(r.cpu);
+ }
+ /* a complex region of the wrong kind of handle (not one of ours) is refused as before */
+ MacRuntime r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);wr(&r,0x9da,2,1);
+ uint32_t h=region_args(&r,50,60,60,100),p=rd(&r,h,4);wr(&r,p,2,22);CHECK(paint(&r,h)==-1&&mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
+ /* the desktop region InitWindows publishes (GrayRgn, $9EE): the screen below the menu bar, a region of ours */
+ r=fresh();uint32_t g=rd(&r,0x9ee,4);CHECK(g && rd(&r,g,4));{uint32_t gp=rd(&r,g,4);CHECK(rd(&r,gp,2)==10&&rd(&r,gp+2,2)==20&&rd(&r,gp+4,2)==0&&rd(&r,gp+6,2)==480&&rd(&r,gp+8,2)==640);}
+ {uint32_t x=region_args(&r,0,0,100,100);mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,x);wr(&r,SP+4,4,x);wr(&r,SP+8,4,g);CHECK(mac_regions_service(&r,0xa8e4)==1);      /* SectRgn(GrayRgn, x, x) works */
+  uint32_t xp=rd(&r,x,4);CHECK(rd(&r,xp+2,2)==20&&rd(&r,xp+6,2)==100&&rd(&r,xp+8,2)==100);}
+ mac_cpu_destroy(r.cpu);
+}
 static void failures(void){for(unsigned kind=0;kind<5;kind++){
  MacRuntime r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
  CHECK(call(&r,0xa922,STORAGE)==1 && call(&r,0xa923,STORAGE)==1);
@@ -58,6 +90,16 @@ static void failures(void){for(unsigned kind=0;kind<5;kind++){
  CHECK(paint(&r,h)==-1 && mac_cpu_get(r.cpu,MAC_A7)==SP);
  CHECK(!memcmp(before,mac_cpu_ram(r.cpu)+r.screen_base,sizeof before) && !memcmp(update,mac_cpu_ram(r.cpu)+up,10));mac_cpu_destroy(r.cpu);
 }}
+static void nil_start(void){   /* PaintBehind(NIL, rgn): no window to start from; pops its 8 bytes, draws nothing, changes nothing; an unregistered non-nil window still halts */
+ MacRuntime r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
+ uint32_t up=rd(&r,r.window.handles[10],4),h=region_args(&r,50,60,70,80);
+ uint8_t before[307200],update[10];memcpy(before,mac_cpu_ram(r.cpu)+r.screen_base,sizeof before);memcpy(update,mac_cpu_ram(r.cpu)+up,10);
+ mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,h);wr(&r,SP+4,4,0);
+ CHECK(mac_window_service(&r,0xa90d)==1 && mac_cpu_get(r.cpu,MAC_A7)==SP+8 && !mac_cpu_halted(r.cpu));
+ CHECK(!memcmp(before,mac_cpu_ram(r.cpu)+r.screen_base,sizeof before) && !memcmp(update,mac_cpu_ram(r.cpu)+up,10) && r.window.address==STORAGE);
+ mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,h);wr(&r,SP+4,4,0x7770);
+ CHECK(mac_window_service(&r,0xa90d)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
+}
 static void plain_dialog(void){
  MacRuntime r=fresh();new_args(&r,STORAGE,0);wr(&r,SP+10,2,2);
  CHECK(mac_window_service(&r,0xaa45)==1 && r.window.proc_id==2 && !r.window.visible);
@@ -76,4 +118,4 @@ static void plain_dialog(void){
  CHECK(mac_cpu_ram(r.cpu)[r.screen_base+39*640+49]==77);
  CHECK(mac_cpu_ram(r.cpu)[r.screen_base+30*640+100]==42);mac_cpu_destroy(r.cpu);
 }
-int main(void){repaint();failures();plain_dialog();puts("mac PaintBehind and plainDBox tests passed");return 0;}
+int main(void){complex_region();repaint();failures();plain_dialog();nil_start();puts("mac PaintBehind and plainDBox tests passed");return 0;}

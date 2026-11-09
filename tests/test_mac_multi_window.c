@@ -48,12 +48,35 @@ static void registry(void) {
 static void overlap(void){
  MacRuntime r=fresh();new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);
  new_args(&r,STORAGE+0x100,0);CHECK(mac_window_service(&r,0xaa45)==1);
- uint32_t heap=r.heap_next;CHECK(call(&r,0xa915,STORAGE+0x100)==-1);
- CHECK(r.window_count==2 && r.heap_next==heap && !r.window.visible);mac_cpu_destroy(r.cpu);
+ CHECK(call(&r,0xa915,STORAGE+0x100)==1 && mac_window_front(&r)==STORAGE+0x100);   /* frontmost in the list: allowed, covering the first */
+ CHECK(r.window_count==2 && r.window.visible && mac_window_find(&r,STORAGE)->visible);mac_cpu_destroy(r.cpu);
 }
 static void hidden_capacity(void){
  MacRuntime r=fresh();for(unsigned i=0;i<8;i++){new_args(&r,STORAGE+i*256,0);wr(&r,SP+10,2,2);CHECK(mac_window_service(&r,0xaa45)==1);}
  CHECK(r.window_count==8 && mac_window_front(&r)==0);
  uint32_t heap=r.heap_next;new_args(&r,STORAGE+8*256,0);CHECK(mac_window_service(&r,0xaa45)==-1 && r.heap_next==heap && r.window_count==8);mac_cpu_destroy(r.cpu);
 }
-int main(void){registry();overlap();hidden_capacity();puts("mac multi-window tests passed");return 0;}
+/* FindWindow looks at every visible window, front to back, and reports (and selects) the one that is hit. */
+static int find(MacRuntime *r,int h,int v,uint32_t *which){
+ mac_cpu_set(r->cpu,MAC_A7,SP);wr(r,SP,4,0x4300);wr(r,SP+4,2,(uint16_t)v);wr(r,SP+6,2,(uint16_t)h);wr(r,0x4300,4,0xdead);wr(r,SP+8,2,0x5555);
+ CHECK(mac_window_service(r,0xa92c)==1&&mac_cpu_get(r->cpu,MAC_A7)==SP+8);*which=rd(r,0x4300,4);return (int)rd(r,SP+8,2);
+}
+static void find_window(void) {
+ MacRuntime r=fresh();uint32_t which;
+ new_args(&r,STORAGE,1);CHECK(mac_window_service(&r,0xaa45)==1);                                   /* A: content (40,50)-(300,450) */
+ new_args(&r,STORAGE+0x100,1);wr(&r,0x4100,2,100);wr(&r,0x4102,2,200);wr(&r,0x4104,2,200);wr(&r,0x4106,2,350);CHECK(mac_window_service(&r,0xaa45)==1);   /* B in front: (100,200)-(200,350) */
+ CHECK(mac_window_front(&r)==STORAGE+0x100);
+ CHECK(find(&r,250,150,&which)==3 && which==STORAGE+0x100);                                      /* inside B (and A): the front one */
+ CHECK(find(&r,100,250,&which)==3 && which==STORAGE && r.window.address==STORAGE);               /* inside A only: the back window, selected */
+ CHECK(find(&r,100,30,&which)==4 && which==STORAGE);                                             /* A's title bar */
+ CHECK(find(&r,250,80,&which)==4 && which==STORAGE+0x100);                                       /* B's title bar (above its content) */
+ CHECK(find(&r,500,400,&which)==0 && which==0 && r.window.address==STORAGE+0x100);               /* nothing: the front window is selected again */
+ CHECK(find(&r,10,10,&which)==0 && which==0);
+ wr(&r,0xbaa,2,20);CHECK(find(&r,250,10,&which)==1 && which==0);                                  /* the menu bar still wins */
+ mac_cpu_destroy(r.cpu);
+ /* A hidden window is never hit. */
+ r=fresh();new_args(&r,STORAGE,0);CHECK(mac_window_service(&r,0xaa45)==1);
+ new_args(&r,STORAGE+0x100,1);CHECK(mac_window_service(&r,0xaa45)==1);
+ CHECK(find(&r,100,100,&which)==3 && which==STORAGE+0x100);mac_cpu_destroy(r.cpu);
+}
+int main(void){find_window();registry();overlap();hidden_capacity();puts("mac multi-window tests passed");return 0;}

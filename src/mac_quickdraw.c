@@ -49,6 +49,22 @@ static int set_port(MacRuntime *rt, uint32_t port) {
     return 1;
 }
 
+/* SetPortBits (bm): the current port's portBits (baseAddr, rowBytes, bounds: the 14 bytes at port+2) become bm. The
+ * portRect, visRgn and clipRgn are left alone, so a program that moves drawing to an offscreen bitmap sets those itself.
+ * A color port keeps a PixMap handle where portBits would be, so it is refused rather than overwritten. */
+static int set_port_bits(MacRuntime *rt, uint32_t bits) {
+    uint32_t port = rt->qd_globals && range(rt, rt->qd_globals, 4) ? rd(rt, rt->qd_globals, 4) : 0;
+    if (!port) { mac_cpu_halt(rt->cpu, "SetPortBits needs a current port."); return -1; }
+    if (!bits) { mac_cpu_halt(rt->cpu, "SetPortBits was given a nil BitMap pointer."); return -1; }
+    if (!range(rt, bits, 14) || !range(rt, port, 108)) return -1;
+    if ((rd(rt, port + 6, 2) & 0xc000) == 0xc000) {
+        mac_cpu_halt(rt->cpu, "SetPortBits on a color port is not supported."); return -1;
+    }
+    wr(rt, port + 2, 4, rd(rt, bits, 4));
+    for (unsigned offset = 4; offset < 14; offset += 2) wr(rt, port + 2 + offset, 2, rd(rt, bits + offset, 2));
+    return 1;
+}
+
 static int init_port(MacRuntime *rt, uint32_t port, int open) {
     if (!rt->qd_globals || !port || !range(rt, port, 108)) return -1;
     uint32_t visible = open ? region(rt, 0, 0, rt->screen_height, rt->screen_width) : rd(rt, port + 24, 4);
@@ -103,34 +119,75 @@ static int init_graf(MacRuntime *rt, uint32_t globals) {
     return 1;
 }
 
+/* Address of the rectangle that maps a port's local coordinates to its pixels. A classic GrafPort keeps it in
+ * portBits.bounds (port+8); a color port (CGrafPort, version bits 0xC000 at port+6) keeps it in the PixMap that
+ * portPixMap (port+2) points to, at pmBounds (+6). 0 with the CPU halted if the structure is unusable. */
+static uint32_t port_bounds(MacRuntime *rt, uint32_t port) {
+    if (!port) { mac_cpu_halt(rt->cpu, "QuickDraw has no current port."); return 0; }
+    if (!range(rt, port, 108)) return 0;
+    if ((rd(rt, port + 6, 2) & 0xc000) != 0xc000) return port + 8;
+    uint32_t handle = rd(rt, port + 2, 4);
+    if (!handle || !range(rt, handle, 4)) { mac_cpu_halt(rt->cpu, "QuickDraw color port has no valid PixMap handle."); return 0; }
+    uint32_t pixmap = rd(rt, handle, 4);
+    if (!pixmap || !range(rt, pixmap, 50)) { mac_cpu_halt(rt->cpu, "QuickDraw color port PixMap is invalid."); return 0; }
+    return pixmap + 6;
+}
+
+static void shift_rect(MacRuntime *rt, uint32_t r, int dv, int dh) { /* 16-bit wraparound, as QuickDraw's arithmetic */
+    wr(rt, r, 2, (uint16_t)(rd(rt, r, 2) + dv)); wr(rt, r + 2, 2, (uint16_t)(rd(rt, r + 2, 2) + dh));
+    wr(rt, r + 4, 2, (uint16_t)(rd(rt, r + 4, 2) + dv)); wr(rt, r + 6, 2, (uint16_t)(rd(rt, r + 6, 2) + dh));
+}
+
+/* SetOrigin(h, v): make (h, v) the top-left of the current port's portRect. As the public description says, the
+ * local coordinate system moves: portBits.bounds (or pmBounds), portRect and visRgn are translated by the same
+ * amount and the clipRgn is NOT, so a program keeps its clip in step by calling ClipRect itself. Everything is
+ * validated before anything is written. Only rectangular regions exist in this runtime. */
+static int set_origin(MacRuntime *rt, uint32_t sp) {
+    int v = (int16_t)rd(rt, sp, 2), h = (int16_t)rd(rt, sp + 2, 2);
+    if (!rt->qd_globals || !range(rt, rt->qd_globals, 4)) return -1;
+    uint32_t port = rd(rt, rt->qd_globals, 4), bounds = port_bounds(rt, port);
+    if (!bounds || !range(rt, bounds, 8)) return -1;
+    int dv = v - (int16_t)rd(rt, port + 16, 2), dh = h - (int16_t)rd(rt, port + 18, 2);
+    uint32_t vis = rd(rt, port + 24, 4), visrect = 0;
+    if (!vis || !range(rt, vis, 4) || !rd(rt, vis, 4) || !range(rt, rd(rt, vis, 4), 10)) {
+        mac_cpu_halt(rt->cpu, "SetOrigin needs a valid visible region."); return -1;
+    }
+    if (rd(rt, rd(rt, vis, 4), 2) != 10) { mac_cpu_halt(rt->cpu, "SetOrigin on a complex visible region is unsupported."); return -1; }
+    visrect = rd(rt, vis, 4) + 2;
+    if (dv || dh) { shift_rect(rt, bounds, dv, dh); shift_rect(rt, port + 16, dv, dh); shift_rect(rt, visrect, dv, dh); }
+    return 1;
+}
+
 int mac_quickdraw_service(MacRuntime *rt, uint16_t opcode) {
     MacCpu *cpu = rt->cpu;
     uint32_t sp = mac_cpu_get(cpu, MAC_A7);
     unsigned args = 0;
     switch (opcode) {
-        case 0xa870: case 0xa871: args = 4; break;
+        case 0xa870: case 0xa871: case 0xa878: args = 4; break;
         case 0xa8a9: args = 8; break;
-        case 0xa86e: case 0xa86d: case 0xa86f: case 0xa873: case 0xa874: case 0xa87d: args = 4; break;
+        case 0xa86e: case 0xa86d: case 0xa86f: case 0xa873: case 0xa874: case 0xa875: case 0xa87d: args = 4; break;
         case 0xa8a7: args = 12; break;
         case 0xa850: args = 0; break;
         default: return 0;
     }
     if (!range(rt, sp, args)) return -1;
-    uint32_t p = args == 4 ? rd(rt, sp, 4) : 0;
+    uint32_t p = args == 4 && opcode != 0xa878 ? rd(rt, sp, 4) : 0;
     int rc = 1;
     switch (opcode) {
+        case 0xa878: rc = set_origin(rt, sp); break;
         case 0xa870: case 0xa871: {
-            uint32_t port = rt->qd_globals ? rd(rt, rt->qd_globals, 4) : 0;
-            if (!port || !range(rt, port, 108)) return -1;
-            uint32_t bits = port + 2;
-            int16_t bounds_top = (int16_t)rd(rt, bits + 10, 2);
-            int16_t bounds_left = (int16_t)rd(rt, bits + 12, 2);
+            /* The bounds rectangle is in local coordinates and its top-left is the bitmap's first pixel, so a point's
+             * pixel position is local - bounds.topLeft: LocalToGlobal subtracts it and GlobalToLocal adds it. */
+            uint32_t port = rt->qd_globals ? rd(rt, rt->qd_globals, 4) : 0, bounds = port_bounds(rt, port);
+            if (!bounds || !range(rt, bounds, 8)) return -1;
+            int16_t bounds_top = (int16_t)rd(rt, bounds, 2);
+            int16_t bounds_left = (int16_t)rd(rt, bounds + 2, 2);
             uint32_t point = p;
             if (!point || !range(rt, point, 4)) return -1;
             int16_t v = (int16_t)rd(rt, point, 2);
             int16_t h = (int16_t)rd(rt, point + 2, 2);
-            int delta_v = opcode == 0xa870 ? bounds_top : -bounds_top;
-            int delta_h = opcode == 0xa870 ? bounds_left : -bounds_left;
+            int delta_v = opcode == 0xa870 ? -bounds_top : bounds_top;
+            int delta_h = opcode == 0xa870 ? -bounds_left : bounds_left;
             wr(rt, point, 2, (uint16_t)(int16_t)(v + delta_v));
             wr(rt, point + 2, 2, (uint16_t)(int16_t)(h + delta_h));
             break;
@@ -138,6 +195,7 @@ int mac_quickdraw_service(MacRuntime *rt, uint16_t opcode) {
         case 0xa86e: rc = init_graf(rt, p); break;
         case 0xa86f: case 0xa86d: rc = init_port(rt, p, opcode == 0xa86f); break;
         case 0xa873: rc = set_port(rt, p); break;
+        case 0xa875: rc = set_port_bits(rt, p); break;
         case 0xa874:
             if (!rt->qd_globals || !p || !range(rt, p, 4)) return -1;
             rt->current_port = rd(rt, rt->qd_globals, 4);

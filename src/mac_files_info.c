@@ -43,7 +43,7 @@ static int listing(const FileState *s, char (**out)[256], unsigned *count) {
             if (++scanned > ENTRY_LIMIT || *count >= LIST_LIMIT) { error = -50; break; }
             size_t length = strlen(e->d_name);
             if (!length || length > 255 || !strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
-            if (pass && !mac_files_save_name_ok(e->d_name)) continue;
+            if (pass && (!mac_files_save_name_ok(e->d_name) || mac_files_in_folder(e->d_name))) continue;
             int supported = 1;
             for (size_t i = 0; i < length; i++)
                 if ((unsigned char)e->d_name[i] < 32 || (unsigned char)e->d_name[i] >= 127 ||
@@ -61,11 +61,52 @@ static int listing(const FileState *s, char (**out)[256], unsigned *count) {
     return 0;
 }
 
+int mac_files_entries(MacRuntime *rt, MacFileEntry *out, unsigned max, unsigned *count) {
+    FileState *s = rt->file_state;
+    *count = 0;
+    if (!s) return -35;
+    mac_files_flush_staged(s);
+    char (*names)[256];
+    unsigned total;
+    int error = listing(s, &names, &total);
+    if (error) return error;
+    if (total > max) { free(names); return -50; }
+    for (unsigned i = 0; i < total; i++) {
+        int kind = mac_files_classify(s, names[i]);
+        if (kind != FILE_SAVE && kind != FILE_DATA) continue;
+        int fd = mac_files_open_regular(kind == FILE_SAVE ? s->saves : s->directory, names[i], O_RDONLY);
+        if (fd < 0) continue; /* vanished or unreadable between listing and open: not offered */
+        uint8_t info[16] = {0};
+        mac_files_finder_get(fd, info);
+        close(fd);
+        MacFileEntry *e = &out[*count];
+        memcpy(e->name, names[i], sizeof e->name);
+        e->type = (uint32_t)info[0] << 24 | (uint32_t)info[1] << 16 | (uint32_t)info[2] << 8 | info[3];
+        e->creator = (uint32_t)info[4] << 24 | (uint32_t)info[5] << 16 | (uint32_t)info[6] << 8 | info[7];
+        e->flags = (uint16_t)(info[8] << 8 | info[9]);
+        (*count)++;
+    }
+    free(names);
+    return 0;
+}
+
+/* PBHGetFInfo ($A20C): the same lookup and indexed listing as PBGetFInfo on this single-directory volume. Only the volume
+ * root can be named, either as directory ID 2 or as 0 (the default directory); ioDirID (offset 48) is an input and is left
+ * as the caller set it, where PBGetFInfo would store a file number there. */
+int mac_files_hget_info(MacRuntime *rt, uint32_t pb) {
+    uint32_t dir = mac_cpu_read(rt->cpu, pb + 48, 4);
+    if (dir != 0 && dir != 2) return -120; /* dirNFErr */
+    int error = mac_files_get_info(rt, pb);
+    mac_cpu_write(rt->cpu, pb + 48, 4, dir);
+    return error;
+}
+
 int mac_files_get_info(MacRuntime *rt, uint32_t pb) {
     MacCpu *cpu = rt->cpu;
     FileState *s = rt->file_state;
     if (!s) return -35;
-    int error = mac_files_volume_ok(cpu, pb);
+    mac_files_flush_staged(s);                                  /* what an open file has written is visible to a lookup */
+    int error = mac_files_volume_ok_rt(rt, pb);
     if (error) return error;
     int index = (int16_t)mac_cpu_read(cpu, pb + 28, 2);
     uint32_t name_ptr = mac_cpu_read(cpu, pb + 18, 4);
@@ -78,7 +119,7 @@ int mac_files_get_info(MacRuntime *rt, uint32_t pb) {
         memcpy(name, names[index - 1], strlen(names[index - 1]) + 1);
         free(names);
         if (name_ptr && !mac_files_valid(cpu, name_ptr, (uint32_t)strlen(name) + 1)) return -50;
-    } else if ((error = mac_files_read_name(cpu, name_ptr, name, sizeof name))) return error;
+    } else if ((error = mac_files_pb_name(rt, pb, name_ptr, name, sizeof name))) return error;
     int kind = mac_files_classify(s, name);
     if (kind != FILE_SAVE && kind != FILE_DATA) return -43;
     int directory = kind == FILE_SAVE ? s->saves : s->directory;
@@ -121,10 +162,10 @@ int mac_files_get_info(MacRuntime *rt, uint32_t pb) {
 int mac_files_set_info(MacRuntime *rt, uint32_t pb) {
     FileState *s = rt->file_state;
     char name[256];
-    int error = mac_files_read_name(rt->cpu, mac_cpu_read(rt->cpu, pb + 18, 4), name, sizeof name);
+    int error = mac_files_pb_name(rt, pb, mac_cpu_read(rt->cpu, pb + 18, 4), name, sizeof name);
     if (error) return error;
     if (!s) return -35;
-    if ((error = mac_files_volume_ok(rt->cpu, pb))) return error;
+    if ((error = mac_files_volume_ok_rt(rt, pb))) return error;
     if ((error = mac_files_locked_error(s, mac_files_classify(s, name)))) return error;
     int fd = mac_files_open_regular(s->saves, name, O_RDWR);
     if (fd < 0) return fd;

@@ -21,13 +21,13 @@ build/test_mac_containers: src/mac_resource.c tests/test_mac_containers.c includ
 	$(CC) $(CFLAGS) -o $@ src/mac_resource.c tests/test_mac_containers.c
 
 build/test_mac_writable_files: $(RUNTIME_OBJ) src/archive_fs.c tests/test_mac_writable_files.c $(RUNTIME_HDRS) $(CPUOBJ) include/archive_fs.h
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) src/archive_fs.c tests/test_mac_writable_files.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) src/archive_fs.c tests/test_mac_writable_files.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_controls_textedit: $(RUNTIME_OBJ) tests/test_mac_controls_textedit.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_controls_textedit.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_controls_textedit.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_quickdraw_accel: $(RUNTIME_OBJ) tests/test_mac_quickdraw_accel.c $(RUNTIME_HDRS) $(CPUOBJ)
-	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_quickdraw_accel.c $(CPUOBJ) -lm -o $@
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_quickdraw_accel.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_desktop_themes: assets/icons/c/ospi_icon_hd.c src/archive_fs.c tests/test_desktop_themes.c assets/icons/c/ospi_icon_hd.h include/archive_fs.h
 	$(CC) $(CFLAGS) -o $@ assets/icons/c/ospi_icon_hd.c src/archive_fs.c tests/test_desktop_themes.c

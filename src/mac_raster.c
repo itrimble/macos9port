@@ -1,4 +1,6 @@
 #include "mac_runtime.h"
+#include "mac_shape.h"
+#include "mac_qdcolor.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -16,6 +18,8 @@ typedef struct {
     Box bounds, clip;
     uint8_t pattern[8];
     int mode;
+    int indexed;               /* a basic port whose bitmap is the 8-bit screen: pixels are bytes, ink is the palette's black or white */
+    uint8_t black, white;
 } Raster;
 
 static int fail(MacRuntime *rt, const char *message) {
@@ -70,31 +74,76 @@ static int region_box(MacRuntime *rt, uint32_t h, uint32_t *p, Box *b) {
     return get_box(rt, *p + 2, b);
 }
 
+static void constant_rgb(uint32_t c, int *ok, unsigned rgb[3]) { *ok = mac_qd_color_constant(c, rgb); }
+static uint8_t nearest_entry(const MacRuntime *rt, const unsigned rgb[3]) {
+    unsigned best = 0; long bd = -1;
+    for (unsigned i = 0; i < 256; i++) {
+        uint32_t c = rt->palette[i];
+        long dr = (long)((c >> 16) & 255) - (long)rgb[0], dg = (long)((c >> 8) & 255) - (long)rgb[1], db = (long)(c & 255) - (long)rgb[2], d = dr*dr + dg*dg + db*db;
+        if (bd < 0 || d < bd) { bd = d; best = i; }
+    }
+    return (uint8_t)best;
+}
+
 static int canvas(Raster *r, MacRuntime *rt, uint32_t port) {
     memset(r, 0, sizeof *r); r->rt=rt; r->port=port;
     unsigned row=rd(rt,port+6,2);
     if (row & 0xc000) return fail(rt, "Color PixMap rasterization is not supported yet.");
     r->row=row; r->base=rd(rt,port+2,4);
-    if (rt->screen_depth != 1 && r->base == rt->screen_base)
-        return fail(rt, "Monochrome drawing into the indexed screen is unsupported.");
+    if (rt->screen_depth != 1 && r->base == rt->screen_base) {
+        if (rt->screen_depth != 8) return fail(rt, "Monochrome drawing into this screen depth is unsupported.");
+        /* A basic (black-and-white) port over the 8-bit screen. QuickDraw maps its black and white to the device's: the nearest palette
+         * entries are used, and Boolean transfer modes act on the pixel values (indexes), as Apple's Color QuickDraw chapter describes for
+         * indexed devices. Where the real code would dither or pick other entries the results can differ. */
+        r->indexed = 1;
+        unsigned dark = 0, light = 0, lo = UINT32_MAX, hi = 0;
+        for (unsigned i = 0; i < 256; i++) {
+            uint32_t c = rt->palette[i]; unsigned v = ((c >> 16) & 255) + ((c >> 8) & 255) + (c & 255);
+            if (v < lo) { lo = v; dark = i; }
+            if (v >= hi) { hi = v; light = i; }
+        }
+        r->black = (uint8_t)dark; r->white = (uint8_t)light;
+    }
     if (get_box(rt,port+8,&r->bounds)<0 || get_box(rt,port+16,&r->clip)<0) return -1;
     int width=r->bounds.r-r->bounds.l, height=r->bounds.b-r->bounds.t;
-    if (width<0 || height<0 || (unsigned)width>row*8u ||
+    if (width<0 || height<0 || (unsigned)width>row*(r->indexed?1u:8u) ||
         (uint64_t)width*(unsigned)height>8u*1024u*1024u)
         return fail(rt, "QuickDraw bitmap dimensions exceed the mono raster budget.");
     if (range(rt,r->base,(size_t)row*(unsigned)height,0)<0) return -1;
+    if (r->indexed && r->base + (uint64_t)row*(unsigned)height > rt->screen_base + (uint64_t)rt->screen_row_bytes*rt->screen_height)
+        return fail(rt, "QuickDraw bitmap over the screen extends past it.");
     r->clip=intersect(r->clip,r->bounds);
     for (unsigned off=24;off<=28;off+=4) {
         uint32_t data; Box b;
         if (region_box(rt,rd(rt,port+off,4),&data,&b)<0) return -1;
         r->clip=intersect(r->clip,b);
     }
-    if (rd(rt,port+80,4)!=33 || rd(rt,port+84,4)!=30)
+    if (r->indexed) {                                             /* ForeColor/BackColor set the ink: bit 1 draws the foreground, bit 0 the background */
+        int fok, bok; unsigned f[3], b[3];
+        constant_rgb(rd(rt,port+80,4), &fok, f); constant_rgb(rd(rt,port+84,4), &bok, b);
+        if (!fok || !bok) return fail(rt, "A foreground or background color other than QuickDraw's eight constants is unsupported.");
+        if (rd(rt,port+80,4)!=33 || rd(rt,port+84,4)!=30) { r->black = nearest_entry(rt, f); r->white = nearest_entry(rt, b); }
+    } else if (rd(rt,port+80,4)!=33 || rd(rt,port+84,4)!=30)
         return fail(rt, "Non-default mono foreground/background colors are unsupported.");
     return 1;
 }
 
+static void pixel_indexed(Raster *r, int x, int y, int invert) {
+    unsigned bx=(unsigned)(x-r->bounds.l), by=(unsigned)(y-r->bounds.t);
+    uint8_t *p=mac_cpu_ram(r->rt->cpu)+r->base+(size_t)by*r->row+bx;
+    int bit=!!(r->pattern[(unsigned)y&7]&(0x80u>>((unsigned)x&7)));
+    uint8_t src=bit?r->black:r->white;
+    if (r->mode&4) src=(uint8_t)~src;
+    if (invert) { *p=(uint8_t)~*p; return; }
+    switch(r->mode&3) {
+        case 0:*p=src;break;
+        case 1:*p|=src;break;
+        case 2:*p^=src;break;
+        case 3:*p&=(uint8_t)~src;break;
+    }
+}
 static void pixel(Raster *r, int x, int y, int invert) {
+    if (r->indexed) { pixel_indexed(r,x,y,invert); return; }
     unsigned bx=(unsigned)(x-r->bounds.l), by=(unsigned)(y-r->bounds.t);
     uint8_t *p=mac_cpu_ram(r->rt->cpu)+r->base+(size_t)by*r->row+bx/8;
     uint8_t mask=(uint8_t)(0x80u>>(bx&7));
@@ -112,7 +161,7 @@ static void pixel(Raster *r, int x, int y, int invert) {
 }
 
 static int paint(MacRuntime *rt,uint32_t port,Box box,uint32_t pattern,int mode,
-                 int invert,int frame) {
+                 int invert,int frame,const MacShape *outer,const MacShape *inner) {
     Raster r;
     if (mode<8 || mode>15) return fail(rt,"Unsupported QuickDraw pattern transfer mode.");
     if (range(rt,pattern,8,0)<0 || canvas(&r,rt,port)<0) return -1;
@@ -122,16 +171,21 @@ static int paint(MacRuntime *rt,uint32_t port,Box box,uint32_t pattern,int mode,
     if (frame && (!ph || !pw || (int16_t)rd(rt,port+66,2)<0)) return 1;
     Box clipped=intersect(box,r.clip);
     for (int y=clipped.t;y<clipped.b;y++) for(int x=clipped.l;x<clipped.r;x++) {
-        if (frame && x>=box.l+pw && x<box.r-pw && y>=box.t+ph && y<box.b-ph) continue;
+        if (outer && !mac_shape_contains(outer,x,y)) continue;                 /* an oval or round rectangle: only its rows */
+        if (frame && (inner ? mac_shape_contains(inner,x,y) : (x>=box.l+pw && x<box.r-pw && y>=box.t+ph && y<box.b-ph))) continue;
         pixel(&r,x,y,invert);
     }
     return 1;
 }
 
+/* An oval or round rectangle on a black-and-white port, with the same pattern, mode and clip rules as the rectangle calls (mac_shapes.c). */
+int mac_raster_shape(MacRuntime *rt,uint32_t port,int t,int l,int b,int r,uint32_t pattern,int mode,int invert,int frame,const MacShape *outer,const MacShape *inner) {
+    return paint(rt,port,(Box){t,l,b,r},pattern,mode,invert,frame,outer,inner);
+}
 int mac_raster_service(MacRuntime *rt,uint16_t opcode) {
     unsigned args;
     switch(opcode) {
-        case 0xa87c: case 0xa879: case 0xa87a: case 0xa87b:
+        case 0xa862: case 0xa863: case 0xa87c: case 0xa879: case 0xa87a: case 0xa87b:
         case 0xa893: case 0xa891: case 0xa89b: case 0xa89d: case 0xa89a:
         case 0xa8a1: case 0xa8a2: case 0xa8a3: case 0xa8a4: args=4;break;
         case 0xa8a5: args=8;break;
@@ -141,7 +195,11 @@ int mac_raster_service(MacRuntime *rt,uint16_t opcode) {
     }
     uint32_t sp=mac_cpu_get(rt->cpu,MAC_A7),port;
     if (range(rt,sp,args,1)<0 || current_port(rt,&port)<0) return -1;
-    if ((rd(rt,port+6,2)&0xc000)==0xc000)
+    /* GetClip, SetClip and ClipRect only move the clip region, and clipRgn sits at port+28 in both a GrafPort and a
+     * CGrafPort, so they work on either. Everything else here reads pen or pattern fields whose offsets differ. */
+    if ((opcode==0xa862 || opcode==0xa863) && (rd(rt,port+6,2)&0xc000)==0xc000) return 0;   /* colour ports: the colour services own these */
+    int clip_only=opcode==0xa879 || opcode==0xa87a || opcode==0xa87b;
+    if (!clip_only && (rd(rt,port+6,2)&0xc000)==0xc000)
         return fail(rt,"This pen or drawing operation is not implemented for color ports yet.");
     uint32_t arg=args>=4?rd(rt,sp,4):0;
     int rc=1;
@@ -151,7 +209,7 @@ int mac_raster_service(MacRuntime *rt,uint16_t opcode) {
         int mode=(opcode==0xa8a1 || opcode==0xa8a2)?(int)rd(rt,port+56,2):8;
         Box b;
         if(get_box(rt,rectptr,&b)<0)return -1;
-        rc=paint(rt,port,b,pat,mode,opcode==0xa8a4,opcode==0xa8a1);
+        rc=paint(rt,port,b,pat,mode,opcode==0xa8a4,opcode==0xa8a1,NULL,NULL);
     } else if(opcode==0xa879 || opcode==0xa87a || opcode==0xa87b) {
         uint32_t dest; Box b;
         if(opcode==0xa87b) { if(get_box(rt,arg,&b)<0)return -1; }
@@ -168,9 +226,13 @@ int mac_raster_service(MacRuntime *rt,uint16_t opcode) {
             if(ph<0 || pw<0)return fail(rt,"Negative QuickDraw pen size.");
             Box b={oldy<y?oldy:y,oldx<x?oldx:x,(oldy>y?oldy:y)+ph,(oldx>x?oldx:x)+pw};
             if(ph && pw && (int16_t)rd(rt,port+66,2)>=0)
-                rc=paint(rt,port,b,port+58,(int)rd(rt,port+56,2),0,0);
+                rc=paint(rt,port,b,port+58,(int)rd(rt,port+56,2),0,0,NULL,NULL);
         }
         if(rc>0) {wr(rt,port+48,2,(uint16_t)y);wr(rt,port+50,2,(uint16_t)x);}
+    } else if(opcode==0xa862 || opcode==0xa863) {          /* ForeColor / BackColor on a basic port: fgColor at +80, bkColor at +84 */
+        int known; unsigned rgb[3]; constant_rgb(arg,&known,rgb);
+        if(!known)return fail(rt,"ForeColor/BackColor take one of QuickDraw's eight color constants here.");
+        wr(rt,port+(opcode==0xa862?80:84),4,arg);
     } else if(opcode==0xa89b) {
         if((int16_t)rd(rt,sp,2)<0 || (int16_t)rd(rt,sp+2,2)<0)return fail(rt,"Negative QuickDraw pen size.");
         wr(rt,port+52,4,arg);

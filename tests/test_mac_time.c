@@ -18,4 +18,34 @@ static void pause_resume(void){MacRuntime r=fresh();CHECK(call(&r,0xa458,0x3000,
 static void reentrant(void){MacRuntime r=fresh();mac_cpu_set_trap(r.cpu,trap,&r);uint8_t code[]={0x52,0xb9,0,0,0x60,0,0x20,0x49,0x70,1,0xa0,0x5a,0x4e,0x75};memcpy(mac_cpu_ram(r.cpu)+0x5000,code,sizeof code);CHECK(call(&r,0xa458,0x3000,0)==1);CHECK(call(&r,0xa05a,0x3000,1)==1);CHECK(!mac_time_set(&r,5000));CHECK(mac_time_poll(&r,10000)>0 && rd(&r,0x6000,4)==5);CHECK(rd(&r,0x3004,2)==0x8000);done(&r);}
 static void failure(void){MacRuntime r=fresh();CHECK(call(&r,0xa458,MAC_RUNTIME_RAM-20,0)==-1 && !r.time_manager);done(&r);r=fresh();CHECK(call(&r,0xa458,0x3000,0)==1);CHECK(call(&r,0xa05a,0x3000,0)==1);wr(&r,0x5000,2,0x60fe);CHECK(mac_time_poll(&r,10000)==10000 && mac_cpu_halted(r.cpu));done(&r);r=fresh();CHECK(!mac_time_set(&r,5));CHECK(mac_time_set(&r,4)==-1 && r.clock_us==5);done(&r);}
 static void edges(void){MacRuntime r=fresh();CHECK(call(&r,0xa05a,0x3000,1)==1 && mac_cpu_get(r.cpu,MAC_D0)==UINT32_MAX);wr(&r,0x3006,4,0);CHECK(call(&r,0xa058,0x3000,0)==1);CHECK(call(&r,0xa05a,0x3000,-1)==1);CHECK(!mac_time_set(&r,1));mac_cpu_set(r.cpu,MAC_SR,0x2700);CHECK(!mac_time_poll(&r,10000) && rd(&r,0x3004,2)==0x8000);mac_cpu_set(r.cpu,MAC_SR,0x2000);CHECK(!mac_time_poll(&r,10000) && rd(&r,0x3004,2)==0);CHECK(call(&r,0xa059,0x3000,0)==1 && rd(&r,0x300a,4)==0);done(&r);r=fresh();CHECK(call(&r,0xa458,0x3000,0)==1);CHECK(call(&r,0xa05a,0x3000,0)==1);mac_cpu_set(r.cpu,MAC_A7,2);CHECK(!mac_time_poll(&r,10000) && mac_cpu_halted(r.cpu));CHECK(mac_cpu_ram(r.cpu)[0x3004]==0x80);done(&r);}
-int main(void){edges();timing();long_callback();pause_resume();reentrant();failure();puts("timer tests passed");return 0;}
+/* Two tasks due in one poll, each about 60,000 instructions: the second must not be cut off by what the first used of the budget.
+ * A callback that never returns is still stopped, at the per-callback cap. */
+static void two_long_callbacks(void){
+ for(unsigned k=0;k<2;k++){MacRuntime r=fresh();uint8_t*ram=mac_cpu_ram(r.cpu);
+  for(unsigned i=0;i<60000;i++){ram[0x20000+i*2]=0x4e;ram[0x20000+i*2+1]=0x71;}
+  static const uint8_t tail[]={0x52,0xb9,0,0,0x60,0,0x4e,0x75};memcpy(ram+0x20000+120000,tail,sizeof tail);
+  if(k==1){ram[0x20000]=0x60;ram[0x20001]=0xfe;}                       /* bra.s * : never returns */
+  wr(&r,0x3006,4,0x20000);wr(&r,0x3106,4,0x20000);
+  CHECK(call(&r,0xa458,0x3000,0)==1 && call(&r,0xa458,0x3100,0)==1);
+  CHECK(call(&r,0xa05a,0x3000,1)==1 && call(&r,0xa05a,0x3100,1)==1);CHECK(!mac_time_set(&r,1000));
+  size_t ran=mac_time_poll(&r,100000);
+  if(k==0)CHECK(!mac_cpu_halted(r.cpu) && rd(&r,0x6000,4)==2 && ran>=120000);
+  else CHECK(mac_cpu_halted(r.cpu) && rd(&r,0x6000,4)==0);
+  done(&r);}
+}
+/* The interrupted code may have an odd A7 (THINK C frames of odd size): the callback still runs, below it and word aligned, and the
+ * registers and the bytes under the old stack pointer come back as they were. */
+static void odd_stack(void){
+ for(unsigned k=0;k<2;k++){MacRuntime r=fresh();uint8_t*ram=mac_cpu_ram(r.cpu);
+  uint32_t sp=k?0x9001:0x9003;mac_cpu_set(r.cpu,MAC_A7,sp);memset(ram+0x8ff0,0xa5,0x20);
+  CHECK(call(&r,0xa458,0x3000,0)==1 && call(&r,0xa05a,0x3000,1)==1);CHECK(!mac_time_set(&r,1000));
+  mac_cpu_set(r.cpu,MAC_A7,sp);mac_cpu_set(r.cpu,MAC_PC,0x6000);mac_cpu_set(r.cpu,MAC_SR,0x2000);
+  CHECK(mac_time_poll(&r,10000)>0 && !mac_cpu_halted(r.cpu));
+  CHECK(mac_cpu_get(r.cpu,MAC_A7)==sp && mac_cpu_get(r.cpu,MAC_PC)==0x6000);
+  for(unsigned i=0;i<0x20;i++)CHECK(ram[0x8ff0+i]==0xa5);
+  done(&r);}
+ /* but a stack that is not in RAM is still refused */
+ {MacRuntime r=fresh();CHECK(call(&r,0xa458,0x3000,0)==1 && call(&r,0xa05a,0x3000,1)==1);CHECK(!mac_time_set(&r,1000));
+  mac_cpu_set(r.cpu,MAC_A7,MAC_RUNTIME_RAM+9);mac_cpu_set(r.cpu,MAC_SR,0x2000);mac_time_poll(&r,10000);CHECK(mac_cpu_halted(r.cpu));done(&r);}
+}
+int main(void){odd_stack();two_long_callbacks();edges();timing();long_callback();pause_resume();reentrant();failure();puts("timer tests passed");return 0;}

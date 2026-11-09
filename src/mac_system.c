@@ -2,7 +2,8 @@
 
 /* Independent environment-query implementation. Register ABI and selectors:
  * https://leopard-adc.pepas.com/documentation/mac/pdf/Operating_System_Utilities/Gestalt_Manager.pdf
- * sysv is a compatibility profile, not a claim to implement all System 6 APIs.
+ * sysv and the machine type are a compatibility profile (see MAC_PROFILE_* in mac_runtime.h), not a claim to
+ * implement every System 7 API.
  * Unsupported selectors return gestaltUndefSelectorErr, never fabricated support.
  */
 static int environment_result(MacRuntime *rt, int16_t error) {
@@ -26,11 +27,12 @@ static int sys_environs(MacRuntime *rt) {
      * physical keyboard identity, FPU or AppleTalk driver. This API has no sound
      * capability field. Color denotes the selected bounded indexed profile, as
      * in Gestalt; it does not claim complete Color QuickDraw implementation.
+     * The machine type is the Mac II-class profile identity (68020 + Color QuickDraw, no FPU).
      * Successful results identify the registered authored System volume, whose
      * pinned System resource fork has real independently generated backing. */
     mac_cpu_write(cpu,p,2,requested > 2 ? 2 : (uint16_t)requested);
-    mac_cpu_write(cpu,p+2,2,0); /* envMachUnknown */
-    mac_cpu_write(cpu,p+4,2,rt->system_volume ? 0x0607 : 0); /* Compatibility profile. */
+    mac_cpu_write(cpu,p+2,2,rt->system_volume ? MAC_PROFILE_SYSENV_MACHINE : 0); /* envMacII with the registered System */
+    mac_cpu_write(cpu,p+4,2,rt->system_volume ? MAC_PROFILE_SYSTEM_VERSION : 0); /* Compatibility profile. */
     mac_cpu_write(cpu,p+6,2,3); /* env68020 */
     mac_cpu_write(cpu,p+8,1,0);
     mac_cpu_write(cpu,p+9,1,rt->main_device && rt->screen_depth == 8);
@@ -43,12 +45,19 @@ static int sys_environs(MacRuntime *rt) {
 /* Built-in selectors; -5551 (gestaltUndefSelectorErr) when not built in. */
 static int16_t builtin_gestalt(MacRuntime *rt, uint32_t selector, uint32_t *response) {
     switch (selector) {
-    case 0x73797376: *response = 0x0607; return 0; /* sysv */
+    case 0x73797376: *response = MAC_PROFILE_SYSTEM_VERSION; return 0; /* sysv */
+    case 0x6d616368: *response = MAC_PROFILE_GESTALT_MACHINE; return 0; /* mach */
     case 0x70726f63: *response = 3; return 0; /* proc: MC68020 */
     case 0x72616d20: *response = rt->a5 ? rt->a5 : 0x800000; return 0; /* ram : application address space */
     case 0x66707520: return 0; /* fpu : no floating point unit */
     case 0x71642020: /* Selected drawing profile; unsupported calls still halt. */
         *response = rt->main_device && rt->screen_depth == 8 ? 0x100 : 0; return 0;
+    case 0x71647277: /* qdrw: only gestaltHasColor (bit 0), under the same condition as 'qd  '. */
+        *response = rt->main_device && rt->screen_depth == 8 ? 1 : 0; return 0;
+    case 0x66732020: /* fs  : gestaltHasFSSpecCalls (bit 1) only; the FSp calls dispatch through $AA52 (mac_fsspec.c). */
+        *response = 1u << 1; return 0;
+    case 0x73746466: /* stdf: gestaltStandardFile58 (bit 0) only (mac_stdput.c, mac_stdfile.c). */
+        *response = 1; return 0;
     default: return -5551;
     }
 }

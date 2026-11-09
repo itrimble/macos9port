@@ -21,6 +21,8 @@ static void result(MacCpu *cpu, int16_t err) {
     mac_cpu_set(cpu, MAC_SR, sr | (err < 0 ? 8u : err == 0 ? 4u : 0u));
 }
 
+void mac_memory_result(MacCpu *cpu, int16_t err) { result(cpu, err); }
+
 static MacHandle *slot(MacRuntime *rt) {
     for (size_t i = 0; i < rt->handle_count; i++)
         if (!rt->handles[i].handle && !rt->handles[i].pointer) return &rt->handles[i];
@@ -71,6 +73,7 @@ static int move_high(MacRuntime *rt, uint32_t address) {
     if (verify_guard(rt, h) != 0) {
         mac_cpu_halt(cpu, "Guest heap guard redzone corrupted."); return -1;
     }
+    if (mac_heap_owns(rt, h->pointer)) { result(cpu, 0); return 1; } /* heap storage is already out of the low heap's way */
     if (h->size > UINT32_MAX - 32) { result(cpu, -108); return 1; }
     uint32_t amount = (h->size + 3) & ~UINT32_C(3);
     if (!amount) amount = 4;
@@ -102,6 +105,7 @@ static int move_high(MacRuntime *rt, uint32_t address) {
 
 int mac_memory_service(MacRuntime *rt, uint16_t opcode) {
     if (opcode >= 0xa800) return 0;
+    if (rt->heap_bridge) { int served = mac_heap_service(rt, opcode); if (served) return served; }
     MacCpu *cpu = rt->cpu;
     uint32_t a0 = mac_cpu_get(cpu, MAC_A0), d0 = mac_cpu_get(cpu, MAC_D0);
     unsigned call = opcode & 0xff;
@@ -128,6 +132,16 @@ int mac_memory_service(MacRuntime *rt, uint16_t opcode) {
         return 1;
     }
     if (call == 0x64) return move_high(rt, a0);
+    if (call == 0x36) { /* MoreMasters: master pointers are provisioned on demand, so there is nothing to reserve. */
+        result(cpu, 0);
+        return 1;
+    }
+    if (call == 0x4b) { /* SetGrowZone: record GZProc (low-memory GZProc, $1F4). It is not called yet: a failed
+                         * allocation reports memFullErr directly instead of asking the application to free memory. */
+        mac_cpu_write(cpu, 0x1f4, 4, a0);
+        result(cpu, 0);
+        return 1;
+    }
     if (call == 0x55) { /* StripAddress in our initial 24-bit guest mode. */
         mac_cpu_set(cpu, MAC_A0, a0 & 0xffffffu);
         return 1;
@@ -159,6 +173,15 @@ int mac_memory_service(MacRuntime *rt, uint16_t opcode) {
         }
         return 1;
     }
+    if (call == 0x28) { /* RecoverHandle: the handle that owns the relocatable block starting at A0. A pointer that is not
+                         * the start of a live relocatable block gives a nil handle and memWZErr (the real result is undefined). */
+        MacHandle *owner = NULL;
+        for (size_t i = 0; a0 && i < rt->handle_count; i++)
+            if (rt->handles[i].handle && rt->handles[i].pointer == a0) { owner = &rt->handles[i]; break; }
+        mac_cpu_set(cpu, MAC_A0, owner ? owner->handle : 0);
+        result(cpu, owner ? 0 : -111);
+        return 1;
+    }
     if (call == 0x1f || call == 0x23) { /* DisposePtr / DisposeHandle. */
         MacHandle *h = lookup(rt, a0, call == 0x23);
         if (!h) result(cpu, -109);
@@ -167,7 +190,7 @@ int mac_memory_service(MacRuntime *rt, uint16_t opcode) {
             mac_cpu_halt(cpu, "Guest heap guard redzone corrupted.");
             return -1;
         } else {
-            if (h->handle) mac_cpu_write(cpu, h->handle, 4, 0);
+            if (h->handle) { mac_cpu_write(cpu, h->handle, 4, 0); mac_runtime_free_data(rt, h->pointer); }
             memset(h, 0, sizeof *h);
             result(cpu, 0);
         }
@@ -226,6 +249,12 @@ int mac_memory_service(MacRuntime *rt, uint16_t opcode) {
         }
         memmove(mac_cpu_ram(cpu) + a1, mac_cpu_ram(cpu) + a0, d0);
         result(cpu, 0);
+        return 1;
+    }
+    if (call == 0x62 && !(opcode & 0x400)) { /* PurgeSpace: D0 = total free after a purge, A0 = largest contiguous block after one.
+                                              * Nothing is purgeable here and free space is one tail, so both equal what is free. Leaves MemError alone. */
+        mac_cpu_set(cpu, MAC_D0, available(rt));
+        mac_cpu_set(cpu, MAC_A0, available(rt));
         return 1;
     }
     if (call == 0x1c || call == 0x1d || call == 0x61) { /* FreeMem / MaxMem / MaxBlock. */

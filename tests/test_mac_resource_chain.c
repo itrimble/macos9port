@@ -35,6 +35,13 @@ static int open_res(MacRuntime *r,const char *name) {
     CHECK(mac_resource_service(r,0xa997)==1);CHECK(mac_cpu_get(r->cpu,MAC_A7)==SP+4);
     return (int16_t)mac_cpu_read(r->cpu,SP+4,2);
 }
+/* OpenRFPerm(fileName, vRefNum, permission): the same file as OpenResFile; result above 8 bytes of arguments. */
+static int open_perm(MacRuntime *r,const char *name,int vref,int perm) {
+    size_t n=strlen(name);mac_cpu_ram(r->cpu)[NAME]=(uint8_t)n;memcpy(mac_cpu_ram(r->cpu)+NAME+1,name,n);
+    start(r);mac_cpu_write(r->cpu,SP,2,(uint16_t)perm<<8);mac_cpu_write(r->cpu,SP+2,2,(uint16_t)vref);mac_cpu_write(r->cpu,SP+4,4,NAME);mac_cpu_write(r->cpu,SP+8,2,0xabcd);
+    CHECK(mac_resource_service(r,0xa9c4)==1);CHECK(mac_cpu_get(r->cpu,MAC_A7)==SP+8);
+    return (int16_t)mac_cpu_read(r->cpu,SP+8,2);
+}
 static uint32_t get(MacRuntime *r,uint16_t op,int id) {
     start(r);mac_cpu_write(r->cpu,SP,2,(uint16_t)id);mac_cpu_write(r->cpu,SP+2,4,TEXT);
     CHECK(mac_resource_service(r,op)==1);CHECK(mac_cpu_get(r->cpu,MAC_A7)==SP+6);
@@ -58,6 +65,16 @@ int main(void) {
     int second=open_res(&r,"Second");CHECK(second>first && current(&r)==second);
     uint32_t sh=get(&r,0xa81f,128);CHECK(sh!=fh && sh!=ah);bytes_are(&r,sh,"BBB!");
     CHECK(open_res(&r,"FIRST")==first && current(&r)==second);
+    /* A full pathname that starts with the volume's own name is the same file; any other colon is still refused. */
+    CHECK(open_res(&r,"OS Pi Data:First")==first && err(&r)==0);
+    CHECK(open_res(&r,"os pi data:FIRST")==first && err(&r)==0);
+    CHECK(open_perm(&r,"fIrSt",0,1)==first && err(&r)==0 && open_perm(&r,"First",-1,3)==first);   /* the same fork, any volume word and permission */
+    CHECK(open_perm(&r,"Missing",0,1)==-1 && err(&r)==-43 && current(&r)==second);               /* a missing one: -1 and fnfErr, the current file unchanged */
+    CHECK(open_perm(&r,"OS Pi Data:sub:First",0,1)==-1 && err(&r)==-37);
+    CHECK(open_res(&r,"OS Pi Data:Missing")==-1 && err(&r)==-43);
+    CHECK(open_res(&r,"OS Pi Data:")==-1 && err(&r)==-37 && open_res(&r,"Other Disk:First")==-1 && err(&r)==-37);
+    CHECK(open_res(&r,"OS Pi Data:sub:First")==-1 && err(&r)==-37 && open_res(&r,"OS Pi Data:../First")==-1 && err(&r)==-37);
+    CHECK(current(&r)==second);
     use(&r,first);CHECK(err(&r)==0 && get(&r,0xa9a0,128)==fh);
     CHECK(get(&r,0xa99d,1)==sh);CHECK(get(&r,0xa99d,2)==fh);CHECK(get(&r,0xa99d,3)==ah);
     CHECK(mac_resource_chain_count(&r,TEXT,0)==3);CHECK(mac_resource_chain_count(&r,TEXT,1)==1);
@@ -106,6 +123,7 @@ int main(void) {
     memset(&r,0,sizeof r);r.cpu=mac_cpu_create(65536);mac_cpu_set(r.cpu,MAC_A7,65532);
     CHECK(mac_resource_service(&r,0xa997)==-1 && mac_cpu_halted(r.cpu));
     CHECK(!r.resource_chain && !r.handle_count);mac_runtime_destroy(&r);
+    memset(&r,0,sizeof r);r.cpu=mac_cpu_create(65536);mac_cpu_set(r.cpu,MAC_A7,65528);CHECK(mac_resource_service(&r,0xa9c4)==-1 && mac_cpu_halted(r.cpu));mac_runtime_destroy(&r);   /* OpenRFPerm: the 8 argument bytes and the result do not fit */
     for(unsigned i=0;i<8;i++){char p[512];snprintf(p,sizeof p,"%s/Bound%u.rsrc",dir,i);CHECK(unlink(p)==0);}
     char overflow[512];snprintf(overflow,sizeof overflow,"%s/Overflow.rsrc",dir);CHECK(unlink(overflow)==0);
     const char *names[]={"First.rsrc","Second.rsrc","Unique.rsrc","Bad.rsrc","Link.rsrc"};

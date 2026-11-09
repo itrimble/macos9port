@@ -3,7 +3,10 @@
 #include <string.h>
 /* CPU reference PCM mixer. Rendering is explicitly pulled by a consumer; it
  * never claims host playback or advances sound merely because CPU time passed. */
-static int queued(MacRuntime*r,MacSoundChannel*c){
+/* Run queued commands until one takes time (a wait, a sound, a pending callback, a pause) or the queue is empty. Rendering does
+ * this as audio is pulled; SndPlayDoubleBuffer does it first so that instantaneous commands such as ampCmd, which a real synth
+ * consumes at once, do not make an otherwise idle channel look busy. Returns 1, or -1 if a command halted the guest. */
+int mac_sound_pump(MacRuntime*r,MacSoundChannel*c){
  for(unsigned work=0;work<MAC_SOUND_QUEUE && !c->buffer_block && !c->wait_frames && !c->paused && !c->callback_pending && c->count;work++){
   MacSoundCommand cmd=c->queue[c->head];
   c->head=(c->head+1)%c->capacity;c->count--;mac_sound_queue_fields(r,c);
@@ -31,7 +34,7 @@ size_t mac_sound_render(MacRuntime*r,int16_t *out,size_t frames){
     continue;
    }
    if(c->double_buffer.pending)continue;
-   if(queued(r,c)<0)return f;
+   if(mac_sound_pump(r,c)<0)return f;
    if(c->wait_frames)c->wait_frames--;
    if(!c->playing)continue;
    int value=mac_sound_sample(r,c);
@@ -59,7 +62,8 @@ size_t mac_sound_poll(MacRuntime*r,size_t budget){
   uint32_t code=mac_cpu_read(r->cpu,c->address+8,4);if(!code){c->callback_pending=0;continue;}
   if(!mac_sound_range(r,code,2,1)){mac_sound_fail(r,"Invalid sound callback address.");return ran;}
   uint32_t saved[18];for(unsigned j=0;j<18;j++)saved[j]=mac_cpu_get(r->cpu,(MacCpuReg)j);
-  uint32_t sp=saved[MAC_A7];if(sp<12 || !mac_sound_range(r,sp-12,12,1)){mac_sound_fail(r,"Sound callback stack exceeds RAM.");return ran;}
+  uint32_t sp=saved[MAC_A7]&~1u; /* odd A7 of the interrupted code (a THINK C frame of odd size): run the callback just below it, word aligned; the registers come back from `saved` */
+  if(sp<12 || !mac_sound_range(r,sp-12,12,1)){mac_sound_fail(r,"Sound callback stack exceeds RAM.");return ran;}
   uint8_t stack[12];memcpy(stack,mac_cpu_ram(r->cpu)+sp-12,12);
   mac_cpu_write(r->cpu,sp-12,4,SOUND_RETURN);mac_cpu_write(r->cpu,sp-8,4,c->address+20);mac_cpu_write(r->cpu,sp-4,4,c->address);
   mac_cpu_set(r->cpu,MAC_A7,sp-12);mac_cpu_set(r->cpu,MAC_PC,code);c->callback_pending=0;r->sound->callback_active=1;

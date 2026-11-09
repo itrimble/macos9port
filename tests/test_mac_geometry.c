@@ -113,6 +113,45 @@ static void set_point_checks(void) {
         free(saved); mac_cpu_destroy(rt.cpu);
     }
 }
+/* AddPt / SubPt: dst := dst +/- src per coordinate, modulo 2^16; the source is by value, the destination by address; refusals pop nothing and write nothing. */
+static void addsub_checks(void) {
+    const struct { unsigned op; uint32_t dst, src, want; } c[] = {
+        {0xa87e, 0x00100020, 0x00030004, 0x00130024}, {0xa87f, 0x00100020, 0x00030004, 0x000d001c},
+        {0xa87f, 0x00000000, 0x00010001, 0xffffffff}, {0xa87e, 0x7fff7fff, 0x00010001, 0x80008000}, {0xa87e, 0xffffffff, 0x00010002, 0x00000001}};
+    for (unsigned i = 0; i < 5; i++) {
+        MacRuntime rt = fresh(); mac_cpu_set(rt.cpu, MAC_A7, SP);
+        mac_cpu_write(rt.cpu, SP, 4, RECT); mac_cpu_write(rt.cpu, SP + 4, 4, c[i].src); mac_cpu_write(rt.cpu, RECT, 4, c[i].dst);
+        CHECK(mac_geometry_service(&rt, (uint16_t)c[i].op) == 1 && mac_cpu_read(rt.cpu, RECT, 4) == c[i].want && mac_cpu_get(rt.cpu, MAC_A7) == SP + 8);
+        mac_cpu_destroy(rt.cpu);
+    }
+    const uint32_t bad[] = {0, RECT + 1, RAM - 2, UINT32_MAX};
+    for (unsigned i = 0; i < 4; i++) {
+        MacRuntime rt = fresh(); mac_cpu_write(rt.cpu, SP, 4, bad[i]); mac_cpu_write(rt.cpu, SP + 4, 4, 0x00010001);
+        CHECK(mac_geometry_service(&rt, 0xa87f) == -1 && mac_cpu_get(rt.cpu, MAC_A7) == SP);
+        mac_cpu_destroy(rt.cpu);
+    }
+    {   MacRuntime rt = fresh(); mac_cpu_set(rt.cpu, MAC_A7, RAM - 4); CHECK(mac_geometry_service(&rt, 0xa87e) == -1); mac_cpu_destroy(rt.cpu); }
+    {   MacRuntime rt = fresh(); CHECK(mac_geometry_service(&rt, 0xa87d) == 0 && mac_geometry_service(&rt, 0xa881) == 0); mac_cpu_destroy(rt.cpu); }
+}
+/* EqualRect: every edge must match (two empty rectangles with different edges are different). */
+static int equal_rect(MacRuntime *r,const int16_t a[4],const int16_t b[4]){
+    for(unsigned i=0;i<4;i++){mac_cpu_write(r->cpu,RECT+i*2,2,(uint16_t)a[i]);mac_cpu_write(r->cpu,RECT+8+i*2,2,(uint16_t)b[i]);}
+    mac_cpu_set(r->cpu,MAC_A7,SP);mac_cpu_write(r->cpu,SP,4,RECT+8);mac_cpu_write(r->cpu,SP+4,4,RECT);mac_cpu_write(r->cpu,SP+8,2,0x55aa);
+    CHECK(mac_geometry_service(r,0xa8a6)==1 && mac_cpu_get(r->cpu,MAC_A7)==SP+8 && mac_cpu_read(r->cpu,SP+9,1)==0xaa);
+    return mac_cpu_read(r->cpu,SP+8,1);
+}
+static void equal_checks(void){
+    MacRuntime r=fresh();
+    const int16_t base[4]={-10,-20,30,40};
+    CHECK(equal_rect(&r,base,base)==1);
+    for(unsigned i=0;i<4;i++){int16_t other[4];memcpy(other,base,sizeof other);other[i]=(int16_t)(other[i]+1);CHECK(equal_rect(&r,base,other)==0 && equal_rect(&r,other,base)==0);}
+    const int16_t e1[4]={0,0,0,0},e2[4]={5,5,5,5},e3[4]={5,5,2,2};
+    CHECK(equal_rect(&r,e1,e1)==1 && equal_rect(&r,e1,e2)==0 && equal_rect(&r,e2,e3)==0);
+    const int16_t lo[4]={-32768,-32768,32767,32767};CHECK(equal_rect(&r,lo,lo)==1);
+    mac_cpu_set(r.cpu,MAC_A7,SP);mac_cpu_write(r.cpu,SP,4,0);mac_cpu_write(r.cpu,SP+4,4,RECT);CHECK(mac_geometry_service(&r,0xa8a6)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
+    r=fresh();mac_cpu_set(r.cpu,MAC_A7,SP);mac_cpu_write(r.cpu,SP,4,RAM-4);mac_cpu_write(r.cpu,SP+4,4,RECT);CHECK(mac_geometry_service(&r,0xa8a6)==-1 && mac_cpu_get(r.cpu,MAC_A7)==SP);mac_cpu_destroy(r.cpu);
+    r=fresh();mac_cpu_set(r.cpu,MAC_A7,RAM-6);CHECK(mac_geometry_service(&r,0xa8a6)==-1);mac_cpu_destroy(r.cpu);
+}
 static void intersections(void) {
     const int16_t inputs[][8]={{-10,-20,30,40,0,-30,50,10},{0,0,10,10,10,0,20,10},{10,0,-10,20,-20,-20,40,40},{-32768,-32768,32767,32767,0,1,2,3}};
     const int16_t expected[][4]={{0,-20,30,10},{0,0,0,0},{0,0,0,0},{0,1,2,3}};
@@ -128,9 +167,33 @@ static void intersections(void) {
     memset(mac_cpu_ram(r.cpu)+RAM-4,0x5a,4);CHECK(mac_geometry_service(&r,0xa8aa)==-1);
     CHECK(mac_cpu_get(r.cpu,MAC_A7)==SP && mac_cpu_ram(r.cpu)[RAM-1]==0x5a);mac_cpu_destroy(r.cpu);
 }
+static void unions(void) {
+    const int16_t inputs[][8]={{-10,-20,30,40,0,-30,50,10},{0,0,10,10,10,0,20,10},{10,0,-10,20,-20,-20,40,40},{-32768,-32768,0,0,0,0,32767,32767},{5,5,5,5,1,1,2,2}};
+    const int16_t expected[][4]={{-10,-30,50,40},{0,0,20,10},{-20,-20,40,40},{-32768,-32768,32767,32767},{1,1,5,5}};
+    for(unsigned k=0;k<5;k++)for(unsigned alias=0;alias<3;alias++) {
+        MacRuntime r=fresh();uint32_t dst=RECT+alias*8;
+        for(unsigned i=0;i<8;i++)mac_cpu_write(r.cpu,RECT+i*2,2,(uint16_t)inputs[k][i]);
+        mac_cpu_write(r.cpu,SP,4,dst);mac_cpu_write(r.cpu,SP+4,4,RECT+8);mac_cpu_write(r.cpu,SP+8,4,RECT);mac_cpu_write(r.cpu,SP+12,2,0x55aa);
+        CHECK(mac_geometry_service(&r,0xa8ab)==1 && mac_cpu_get(r.cpu,MAC_A7)==SP+12);
+        for(unsigned i=0;i<4;i++)CHECK((int16_t)mac_cpu_read(r.cpu,dst+2*i,2)==expected[k][i]);
+        CHECK(mac_cpu_read(r.cpu,SP+12,2)==0x55aa);mac_cpu_destroy(r.cpu);               /* a procedure: nothing above its arguments changes */
+    }
+    for(unsigned k=0;k<5;k++) {                                                          /* NIL and out-of-RAM rectangles, or a short stack, halt and write nothing */
+        MacRuntime r=fresh();mac_cpu_write(r.cpu,SP,4,k==0?0:k==3?RAM-4:RECT+16);mac_cpu_write(r.cpu,SP+4,4,k==1?0:k==4?RAM-4:RECT+8);mac_cpu_write(r.cpu,SP+8,4,k==2?0:RECT);
+        memset(mac_cpu_ram(r.cpu)+RECT+16,0x5a,8);
+        if(k==4)mac_cpu_write(r.cpu,SP+4,4,RAM-4);
+        CHECK(mac_geometry_service(&r,0xa8ab)==-1 && mac_cpu_halted(r.cpu) && mac_cpu_get(r.cpu,MAC_A7)==SP);
+        for(unsigned i=0;i<8;i++)CHECK(mac_cpu_ram(r.cpu)[RECT+16+i]==0x5a);
+        mac_cpu_destroy(r.cpu);
+    }
+    MacRuntime r=fresh();mac_cpu_set(r.cpu,MAC_A7,RAM-8);CHECK(mac_geometry_service(&r,0xa8ab)==-1);mac_cpu_destroy(r.cpu);
+}
 
 int main(void) {
+    addsub_checks();
+    equal_checks();
     intersections();
+    unions();
     set_point_checks();
     offset_checks();
     MacRuntime rt = fresh();

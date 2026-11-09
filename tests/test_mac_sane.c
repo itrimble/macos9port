@@ -70,7 +70,7 @@ static void integer_tests(void) {
     mac_cpu_destroy(r.cpu);
 }
 static void failure_tests(void) {
-    const unsigned selectors[]={0x100e,0x2810,0x16,0x0000};
+    const unsigned selectors[]={0x100e,0x2810,0x16,0x0008};
     for(unsigned i=0;i<4;i++) {
         MacRuntime r;init(&r);memset(mac_cpu_ram(r.cpu)+DST,0xa5,10);
         if(i==0)put(&r,SRC,4,0x7fc00000);
