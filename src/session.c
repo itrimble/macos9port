@@ -224,6 +224,7 @@ static void format_ram(char *out, size_t n, uint64_t b) {
     }
 }
 void session_command(Session *s, int cmd) {
+    telemetry_command(s, cmd);
     s->menu = -1; s->menu_child = 0;
     if (!s->dialog && !finder_apps_command_allowed(s, cmd)) return;
     if (s->media_focused && !s->dialog && cmd == CMD_QUIT && session_media_hooks() && session_media_hooks()->quit) {

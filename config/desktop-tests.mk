@@ -395,3 +395,9 @@ test-desktop-info: build/test_desktop_info
 	./build/test_desktop_info
 
 test: test-desktop-info
+
+build/test_telemetry: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_telemetry.c $(HDRS)
+	mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_telemetry.c $(FT_LIBS) -lm $(NET_LIBS)
+
+test: build/test_telemetry

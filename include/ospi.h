@@ -401,6 +401,7 @@ void session_text_input(Session *s, const char *text);
 void session_tick(Session *s, uint32_t now_ms);
 int session_quit(const Session *s);
 void session_command(Session *s, int cmd);
+void telemetry_click(Session *s, int x, int y, int button, int clicks); void telemetry_key(Session *s, int key, int mods); void telemetry_command(Session *s, int cmd); void telemetry_frame(Session *s); /* telemetry.h */
 int session_take_startup_toggle(Session *s);
 int session_take_startup_preview(Session *s);
 void session_clamp(Session *s);

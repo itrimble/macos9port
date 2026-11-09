@@ -286,7 +286,7 @@ int main(int argc, char **argv) {
                 s->quit = 1;
             } else if (ev.type == SDL_MOUSEBUTTONDOWN &&
                        (ev.button.button == SDL_BUTTON_LEFT || ev.button.button == SDL_BUTTON_RIGHT)) {
-                logical_point(win, ev.button.x, ev.button.y, &x, &y);
+                logical_point(win, ev.button.x, ev.button.y, &x, &y); telemetry_click(s, x, y, ev.button.button, ev.button.clicks);
                 s->mouse_mods = (SDL_GetModState() & KMOD_SHIFT ? MOD_SHIFT : 0) |
                                 (SDL_GetModState() & KMOD_GUI ? MOD_CMD : 0) |
                                 (SDL_GetModState() & KMOD_ALT ? MOD_OPTION : 0);
@@ -442,7 +442,7 @@ int main(int argc, char **argv) {
         s->host_startup_enabled = boot_enabled;
         desktop_host_tick(s, native_surface_active());
         osa_ipc_poll(s);
-        session_tick(s, SDL_GetTicks());
+        session_tick(s, SDL_GetTicks()); telemetry_frame(s);
         s->print_available = desktop_print_supported();
         session_paint(s, frame, OSPI_W, OSPI_H);
         desktop_print_service(s, frame);

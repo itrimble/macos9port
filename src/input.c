@@ -386,6 +386,7 @@ void session_up(Session *s, int x, int y) {
 }
 
 void session_key(Session *s, int key, int mods) {
+    telemetry_key(s, key, mods);
     s->display_dimmed = 0; s->last_activity_ms = s->input_now_ms;
     if (s->down && (s->drag == 3 || s->drag == 4)) {
         if (key == 27) { s->down = s->drag = s->click_valid = 0; finder_spring_finish(s, 0, 0, 0); }
