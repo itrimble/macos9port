@@ -284,15 +284,14 @@ void session_command(Session *s, int cmd) {
     case CMD_CP_MONITORS:
     case CMD_CP_KEYBOARD:
     case CMD_CP_ENERGY:
-    case CMD_CP_MEMORY:
-    case CMD_CP_NETWORK: {
+    case CMD_CP_MEMORY: case CMD_CP_NETWORK: case CMD_CP_BLUETOOTH: {
         static const char *const ids[] = {
             "general", "sound", "monitors", "keyboard_mouse",
             "energy_saver", "memory", "network"
         };
         context_close();
         finder_apps_command(s, CMD_APP_FINDER);
-        control_panels_open_module(s, ids[cmd - CMD_CP_GENERAL]); native_app_note(s, NATIVE_CONTROLS);
+        control_panels_open_module(s, cmd == CMD_CP_BLUETOOTH ? "bluetooth" : ids[cmd - CMD_CP_GENERAL]); native_app_note(s, NATIVE_CONTROLS);
         break;
     }
     case CMD_APPEARANCE_DESKTOP:

@@ -1,6 +1,7 @@
 #include "quicktime_movie.h"
 #include <SDL.h>
 #include "desktop_bt_host.h"
+#include "desktop_bt_view.h"
 #include "session_int.h"
 #include "audio_service.h"
 #include "control_panel_store.h"
@@ -81,6 +82,7 @@ void desktop_host_init(const char *volume) {
     find_sounds(sounds, sizeof sounds);
     media_panel_init_hooks();
     desktop_bt_host_init();
+    desktop_bt_view_register();
     quicktime_install_backend();
     control_panels_set_audio_hooks(&k_cp_audio_hooks);
     int n = snprintf(preference, sizeof preference, "%s/.os999-sound", volume);
@@ -173,6 +175,7 @@ void desktop_host_sync_present(Session *s, SDL_Renderer *ren, SDL_Texture *tex,
 }
 
 void desktop_host_shutdown(void) {
+    desktop_bt_view_unregister();
     desktop_bt_host_shutdown();
     media_panel_shutdown();
     desktop_sound_shutdown();
