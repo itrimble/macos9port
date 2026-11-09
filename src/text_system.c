@@ -28,7 +28,7 @@ int text_system_init(const FontBookCatalog *catalog) {
     size_t count = 0;
     for (int pass = 0; pass < 3; pass++) for (int i = 0; i < catalog->count; i++) {
         const FontBookEntry *entry = &catalog->fonts[i];
-        if (!entry->active || !entry->valid || !entry->previewable ||
+        if (entry->source == FONT_BOOK_SOURCE_HOST || !entry->active || !entry->valid || !entry->previewable ||
             !preferred(entry, pass) || duplicate(fonts, count, entry)) continue;
         fonts[count++] = (TextLayoutFontSpec){entry->path, entry->face_index};
         if (count == SYSTEM_FALLBACK_LIMIT) break;

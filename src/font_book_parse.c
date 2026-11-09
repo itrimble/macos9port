@@ -34,7 +34,7 @@ static FontBookFormat format_from_name(const char *path) {
     const char *ext = extension(path);
     if (!strcasecmp(ext, ".ttf")) return FONT_BOOK_FORMAT_TRUETYPE;
     if (!strcasecmp(ext, ".otf")) return FONT_BOOK_FORMAT_OPENTYPE;
-    if (!strcasecmp(ext, ".ttc")) return FONT_BOOK_FORMAT_COLLECTION;
+    if (!strcasecmp(ext, ".ttc") || !strcasecmp(ext, ".otc")) return FONT_BOOK_FORMAT_COLLECTION;
     if (!strcasecmp(ext, ".pfa") || !strcasecmp(ext, ".pfb")) return FONT_BOOK_FORMAT_TYPE1;
     if (!strcasecmp(ext, ".dfont") || !strcasecmp(ext, ".rsrc") ||
         !strcasecmp(ext, ".suit") || !strcasecmp(ext, ".suitcase"))

@@ -17,8 +17,9 @@ typedef struct FontBookWindowState {
 } FontBookWindowState;
 
 static const char *k_collections[] = {
-    "All Fonts", "System Folder", "OS999 Fonts", "Active Fonts", "Problems"
+    "All Fonts", "System Folder", "OS999 Fonts", "Active Fonts", "Problems", "Host Fonts"
 };
+enum { COLLECTION_COUNT = 6, COLLECTION_HOST = 5 };
 
 static FontBookWindowState *state(const Window *window) {
     return window && window->kind == WIN_FONT_BOOK ? window->font_book : NULL;
@@ -28,8 +29,9 @@ static int matches(const FontBookEntry *entry, int collection) {
     if (!entry) return 0;
     if (collection == 1) return entry->source == FONT_BOOK_SOURCE_SYSTEM;
     if (collection == 2) return entry->source == FONT_BOOK_SOURCE_BUNDLED;
-    if (collection == 3) return entry->active && entry->valid;
+    if (collection == 3) return entry->active && entry->valid && entry->source != FONT_BOOK_SOURCE_HOST;
     if (collection == 4) return !entry->valid;
+    if (collection == COLLECTION_HOST) return entry->source == FONT_BOOK_SOURCE_HOST;
     return 1;
 }
 
@@ -54,6 +56,10 @@ static void pane_rects(const Layout *layout, Rect *collections, Rect *families, 
     *families = (Rect){content.x + left, content.y, middle, content.h};
     *preview = (Rect){content.x + left + middle, content.y,
                       content.w - left - middle, content.h};
+}
+
+static Rect host_rect(Rect collections) {
+    return (Rect){collections.x + 8, collections.y + collections.h - 44, collections.w - 16, 36};
 }
 
 static Rect toggle_rect(Rect preview) {
@@ -129,9 +135,10 @@ static const char *preview_sample(const FontBookEntry *entry) {
     return "The quick brown fox 0123456789";
 }
 
-static void draw_collections(Fb *fb, Rect rect, FontBookWindowState *book) {
+static void draw_collections(Fb *fb, Rect rect, FontBookWindowState *book, int host_on) {
     fb_text(fb, rect.x + 9, rect.y + 8, desktop_theme_color(THEME_FOREGROUND), "COLLECTIONS");
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < COLLECTION_COUNT; i++) {
+        if (i == COLLECTION_HOST && !host_on) continue;
         Rect row = {rect.x + 1, rect.y + 28 + i * 25, rect.w - 2, 25};
         if (i == book->collection) fb_fill(fb, row.x, row.y, row.w, row.h,
                                            desktop_theme_color(THEME_ACCENT));
@@ -139,6 +146,12 @@ static void draw_collections(Fb *fb, Rect rect, FontBookWindowState *book) {
                 i == book->collection ? C_WHITE : desktop_theme_color(THEME_FOREGROUND),
                 k_collections[i]);
     }
+    Rect box = host_rect(rect);
+    uint32_t ink = desktop_theme_color(THEME_FOREGROUND);
+    fb_frame(fb, box.x, box.y + 2, 12, 12, desktop_theme_color(THEME_FRAME));
+    if (host_on) fb_text(fb, box.x + 2, box.y + 4, ink, "x");
+    fb_text(fb, box.x + 18, box.y + 4, ink, "Show host");
+    fb_text(fb, box.x + 18, box.y + 18, ink, "fonts");
 }
 
 static void draw_families(Fb *fb, Rect rect, FontBookCatalog *catalog,
@@ -171,7 +184,9 @@ static void draw_preview(Fb *fb, Rect rect, FontBookEntry *entry,
     fb_text(fb, rect.x + 14, rect.y + 39, desktop_theme_color(THEME_FOREGROUND), entry->family);
     char detail[256];
     snprintf(detail, sizeof detail, "%s - %s - %s", entry->style,
-             font_book_format_name(entry->format), entry->active ? "Active" : "Inactive");
+             font_book_format_name(entry->format),
+             entry->source == FONT_BOOK_SOURCE_HOST ? "Host font, read-only" :
+             entry->active ? "Active" : "Inactive");
     fb_text(fb, rect.x + 14, rect.y + 60, desktop_theme_color(THEME_DISABLED), detail);
     Rect sample = {rect.x + 12, rect.y + 88, rect.w - 24, 82};
     fb_fill(fb, sample.x, sample.y, sample.w, sample.h, C_WHITE);
@@ -188,7 +203,8 @@ static void draw_preview(Fb *fb, Rect rect, FontBookEntry *entry,
             entry->valid ? desktop_theme_color(THEME_DISABLED) : 0xff9b2424u,
             entry->valid ? entry->path : entry->error);
     fb_unclip(fb);
-    button(fb, toggle_rect(rect), entry->active ? "Deactivate" : "Activate", entry->valid);
+    button(fb, toggle_rect(rect), entry->active ? "Deactivate" : "Activate",
+           entry->valid && entry->source != FONT_BOOK_SOURCE_HOST);
     button(fb, validate_rect(rect), "Validate", 1);
     fb_clip(fb, rect.x + 12, rect.y + rect.h - 68, rect.w - 24, 20);
     fb_text(fb, rect.x + 12, rect.y + rect.h - 64, desktop_theme_color(THEME_DISABLED), book->status);
@@ -204,7 +220,7 @@ void font_book_window_paint(Fb *fb, const Session *session, const Window *window
     pane(fb, collections, desktop_theme_color(THEME_MENU));
     pane(fb, families, desktop_theme_color(THEME_PANEL));
     pane(fb, preview, desktop_theme_color(THEME_MENU));
-    draw_collections(fb, collections, book);
+    draw_collections(fb, collections, book, catalog->host_enabled);
     draw_families(fb, families, catalog, book);
     FontBookEntry *entry = book->selected >= 0 && book->selected < catalog->count ?
                            &catalog->fonts[book->selected] : NULL;
@@ -242,9 +258,23 @@ int font_book_window_down(Session *session, Window *window, const Layout *layout
     if (!book || !catalog || !layout || !rect_has(layout->content, x, y)) return 0;
     Rect collections, families, preview;
     pane_rects(layout, &collections, &families, &preview);
-    if (rect_has(collections, x, y)) {
+    if (rect_has(host_rect(collections), x, y)) {
+        char error[FONT_BOOK_ERROR] = {0};
+        int turning_on = !catalog->host_enabled;
+        if (font_book_host_set_enabled(catalog, turning_on, error, sizeof error) != 0)
+            snprintf(book->status, sizeof book->status, "%s", error[0] ? error : "Host fonts could not be scanned.");
+        else {
+            if (!turning_on && book->collection == COLLECTION_HOST) book->collection = 0;
+            book->scroll = 0;
+            book->selected = visible_at(catalog, book->collection, 0);
+            if (turning_on) snprintf(book->status, sizeof book->status,
+                                     "%d host fonts listed in place; none copied.", visible_count(catalog, COLLECTION_HOST));
+            else snprintf(book->status, sizeof book->status, "Host fonts hidden.");
+        }
+    } else if (rect_has(collections, x, y)) {
         int collection = (y - collections.y - 28) / 25;
-        if (collection >= 0 && collection < 5) {
+        if (collection >= 0 && collection < COLLECTION_COUNT &&
+            (collection != COLLECTION_HOST || catalog->host_enabled)) {
             book->collection = collection; book->scroll = 0;
             book->selected = visible_at(catalog, collection, 0);
         }
