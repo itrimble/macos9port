@@ -35,8 +35,27 @@ main, either identical or in a later version; none is missing or left at its
 old version. They are not pending integrations. A line-by-line audit of the
 later versions has not been done.
 
+Builds 21 and 22 (branch `integration/r10`, not promoted) answer the Build 20
+findings. Both passed all 15 gate stages on the MBP on 10 November. Build 21 is
+commit `99b69bb`, tree `9920c1978887e1fa477bca04dd634dc192c6445d`; Build 22 is
+`94410fe`, tree `05e45aba2a02a6908de2bf0c34daa7059b5ae46a`.
+
+- Usage log: off until the user ticks Help, Record Local Usage Log. Seen in a
+  real window on the Neo with Build 21: a fresh launch wrote nothing, turning it
+  on showed the notice and a check mark and started the log, turning it off
+  removed the consent file and stopped it.
+- Version: one string, 1.1.0, seen in About and the startup log (Build 21).
+  Build 21 did not show its number because the flag sat inside a test-only
+  Makefile block; Build 22 compiles it in (236 compile lines carry the flag),
+  but the About panel of Build 22 was not seen in a window.
+- Host movie window is titled "Movie Player 999" and the menu reads
+  "OS999 Amp..." (label seen in Build 22; movie title covered by its test only).
+- CEF pin moved to 156.0.26 (Chromium 156.0.8078.88). No 157+ CEF exists.
+
 | Candidate | Recorded outcome | Remaining work |
 | --- | --- | --- |
+| Build 21 | Gate passed: usage-log consent, 1.1.0 version string, Movie Player 999 title, CEF 156.0.26 | Superseded by Build 22 |
+| Build 22 | Gate passed: Build 21 plus the build number in About | Not promoted; Ian's hands-on pass pending |
 | Build 13 | Gate passed: R2 desktop fixes, quiet effects, native apps, Notes, Fonts, About | Superseded by Build 20 |
 | Build 14 | Gate passed: browser staging, no-keychain browser, New Folder, Get Info, terminal history | Superseded by Build 20 |
 | Build 15 | Gate passed: Quake III icon and demo-data install | Superseded by Build 20 |
