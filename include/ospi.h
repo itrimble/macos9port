@@ -5,7 +5,22 @@
 #include <stdint.h>
 #include "system_icon_positions.h"
 
-enum { OSPI_W = 1024, OSPI_H = 768 };
+/* The logical desktop size is a runtime value (docs/DISPLAY-MODES.md). OSPI_W and
+ * OSPI_H read the current size; OSPI_MAX_W/H are the constants for static storage.
+ * The two globals are weak so every binary that includes this header gets one
+ * shared copy without linking a particular source file. Change them only through
+ * display_set_size() in display_modes.h. */
+enum { OSPI_DEFAULT_W = 1024, OSPI_DEFAULT_H = 768, OSPI_MIN_W = 480, OSPI_MIN_H = 480,
+       OSPI_MAX_W = 1920, OSPI_MAX_H = 1920 };
+#if defined(_MSC_VER)
+__declspec(selectany) int ospi_display_w = OSPI_DEFAULT_W;
+__declspec(selectany) int ospi_display_h = OSPI_DEFAULT_H;
+#else
+__attribute__((weak)) int ospi_display_w = OSPI_DEFAULT_W;
+__attribute__((weak)) int ospi_display_h = OSPI_DEFAULT_H;
+#endif
+#define OSPI_W (+ospi_display_w)
+#define OSPI_H (+ospi_display_h)
 enum { TITLE_H = 20, INFO_H = 18, CELL_W = 120, CELL_H = 74, SB = 16 };
 enum {
     OSPI_MAX_WIN = 8,

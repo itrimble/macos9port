@@ -196,6 +196,7 @@ int desktop_which(int sw, int sh, int x, int y) {
 void dialog_layout(const Session *s, Rect *box, Rect *cancel, Rect *ok) {
     box->w = s->dialog == 5 ? 500 : 360;
     box->h = s->dialog == 4 || s->dialog == 5 ? 320 : 220;
+    if (box->w > s->sw) box->w = s->sw;   /* narrow display modes */
     box->x = (s->sw - box->w) / 2;
     box->y = (s->sh - box->h) / 2;
     ok->w = 88;

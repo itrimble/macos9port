@@ -14,6 +14,7 @@ static const MenuItem unavailable[] = {
 };
 int menu_submenu(int command) { (void)command; return 0; }
 int menu_count(void) { return 3; }
+void menu_title_rect(int menu, Rect *r) { *r = (Rect){menu * 40, 0, 40, 20}; }   /* every title is on the bar */
 int menu_nitems(int menu) { return menu == 0 ? 4 : menu == 1 ? 2 : 0; }
 const MenuItem *menu_at(int menu, int row) {
     if (row < 0 || row >= menu_nitems(menu)) return NULL;

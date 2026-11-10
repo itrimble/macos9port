@@ -209,11 +209,11 @@ void control_panels_session_shutdown(Session *s) {
 Rect cp_window_rect(const Session *s) {
     int sw = (s && s->sw > 0) ? s->sw : OSPI_W;
     int sh = (s && s->sh > 0) ? s->sh : OSPI_H;
-    int w = CP_WIN_W > sw ? sw : CP_WIN_W;
+    int w = CP_WIN_W;   /* full width on a narrower desktop too: it opens at the left edge and pans by its title bar */
     int h = CP_WIN_H > sh - TITLE_H ? sh - TITLE_H : CP_WIN_H;
-    int x = g_cp_ui.pos_valid ? g_cp_ui.win_x : (sw - w) / 2;
+    int x = g_cp_ui.pos_valid ? g_cp_ui.win_x : sw > w ? (sw - w) / 2 : 0;
     int y = g_cp_ui.pos_valid ? g_cp_ui.win_y : (sh - h) / 2;
-    x = cp_clamp(x, 0, sw - w);
+    x = sw >= w ? cp_clamp(x, 0, sw - w) : cp_clamp(x, sw - w, 0);
     y = cp_clamp(y, TITLE_H, sh - h < TITLE_H ? TITLE_H : sh - h);
     return (Rect){x, y, w, h};
 }

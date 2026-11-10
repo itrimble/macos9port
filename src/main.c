@@ -10,6 +10,7 @@
 #include "desktop_guest.h"
 #include "ext_boot.h"
 #include "desktop_host.h"
+#include "desktop_display.h"
 #include "desktop_shortcuts.h"
 #include "browser_window.h"
 #include "term.h"
@@ -42,14 +43,7 @@ static void take_clip(Session *s) {
     session_set_clip(s, text ? text : "");
     SDL_free(text);
 }
-static void logical_point(SDL_Window *win, int x, int y, int *ox, int *oy) {
-    int ww = 1, wh = 1;
-    SDL_GetWindowSize(win, &ww, &wh);
-    if (ww < 1) ww = 1;
-    if (wh < 1) wh = 1;
-    *ox = x * OSPI_W / ww;
-    *oy = y * OSPI_H / wh;
-}
+#define logical_point desktop_display_point
 static int inside(int x, int y, int left, int top, int width, int height) {
     return x >= left && y >= top && x < left + width && y < top + height;
 }
@@ -79,41 +73,20 @@ int main(int argc, char **argv) {
                 SDL_GetError());
         return 1;
     }
-    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
-    SDL_Window *win = SDL_CreateWindow("OS999", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, OSPI_W, OSPI_H,
-                                       SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_SHOWN);
-    if (!win) {
-        fprintf(stderr, "OS999: could not open a window: %s\n", SDL_GetError());
+    DesktopDisplay display;   /* window, renderer, texture and frame buffers at the saved display mode */
+    if (desktop_display_open(&display, volume) != 0) {
         SDL_Quit();
         return 1;
     }
     desktop_shortcuts_init();
-    SDL_Renderer *ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    if (!ren) {
-        ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_SOFTWARE);
-    }
-    SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, OSPI_W, OSPI_H);
-    if (!ren || !tex) {
-        fprintf(stderr, "OS999: could not create the screen: %s\n", SDL_GetError());
-        SDL_DestroyWindow(win);
-        SDL_Quit();
-        return 1;
-    }
-    int ww = 0, wh = 0, rw = 0, rh = 0;
-    SDL_GetWindowSize(win, &ww, &wh);
-    SDL_GetRendererOutputSize(ren, &rw, &rh);
-    fprintf(stderr, "OS999 window %dx%d  drawable %dx%d\n", ww, wh, rw, rh);
+    SDL_Window *win = display.win;
+    SDL_Renderer *ren = display.ren;
     Session *s = NULL;
-    uint32_t *frame = calloc((size_t)OSPI_W * OSPI_H, sizeof *frame);
-    if (!frame) {
-        SDL_DestroyTexture(tex); SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
-        return 1;
-    }
+    uint32_t *frame = display.frame, *startup_desktop = display.backdrop;
     int dumped = 0;
     const char *dump = getenv("OSPI_DUMP");
     uint32_t *guest_pixels = calloc((size_t)RUNTIME_BRIDGE_MAX_WIDTH *
                                     RUNTIME_BRIDGE_MAX_HEIGHT, sizeof *guest_pixels);
-    uint32_t *startup_desktop = malloc((size_t)OSPI_W * OSPI_H * sizeof *startup_desktop);
     Os999Startup startup = {0};
     const char *boot_animation = getenv("OSPI_BOOT_ANIMATION");
     const char *preview_mode = getenv("OSPI_BOOT_PREVIEW");
@@ -122,11 +95,8 @@ int main(int argc, char **argv) {
     int boot_enabled = os999_startup_pref_read(volume);
     if (boot_animation && strcmp(boot_animation, "0") == 0) boot_enabled = 0;
     else if (boot_animation && strcmp(boot_animation, "1") == 0) boot_enabled = 1;
-    if (!guest_pixels || !startup_desktop) {
-        free(startup_desktop); free(guest_pixels); free(frame); SDL_DestroyTexture(tex);
-        SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit(); return 1;
-    }
-    ext_boot_run(volume, win, ren, tex, frame); /* Space held: Extensions Manager before startup */
+    if (!guest_pixels) { desktop_display_close(&display); SDL_Quit(); return 1; }
+    ext_boot_run(volume, win, ren, display.tex, frame); /* Space held: Extensions Manager before startup */
     desktop_host_init(volume);
     boot_enabled = startup_desktop && boot_enabled;
     if (boot_enabled)
@@ -139,8 +109,7 @@ int main(int argc, char **argv) {
     if (pthread_create(&init_thread, NULL, create_session_worker, &init) != 0) {
         desktop_host_shutdown();
         fprintf(stderr, "OS999: could not start desktop initialization\n");
-        free(startup_desktop); free(guest_pixels); free(frame);
-        SDL_DestroyTexture(tex); SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
+        free(guest_pixels); desktop_display_close(&display); SDL_Quit();
         return 1;
     }
     for (size_t i = 0; i < (size_t)OSPI_W * OSPI_H; i++) startup_desktop[i] = 0xFF3C4F70u;
@@ -194,12 +163,7 @@ int main(int argc, char **argv) {
             os999_startup_frame(&startup, SDL_GetTicks(), session_ready && !startup_failed,
                                 frame, startup_desktop, OSPI_W, OSPI_H);
         else memcpy(frame, startup_desktop, (size_t)OSPI_W * OSPI_H * sizeof *frame);
-        SDL_UpdateTexture(tex, NULL, frame, OSPI_W * (int)sizeof *frame);
-        SDL_RenderClear(ren);
-        SDL_GetRendererOutputSize(ren, &rw, &rh);
-        SDL_Rect boot_dst = {0, 0, rw, rh};
-        SDL_RenderCopy(ren, tex, NULL, &boot_dst);
-        SDL_RenderPresent(ren);
+        desktop_display_present(&display);
         SDL_Delay(12);
     }
     if (!session_ready) {
@@ -210,8 +174,7 @@ int main(int argc, char **argv) {
     if (startup_quit || startup_failed || !s) {
         desktop_host_end_session(s);
         os999_startup_release();
-        free(startup_desktop); free(guest_pixels); free(frame);
-        SDL_DestroyTexture(tex); SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
+        free(guest_pixels); desktop_display_close(&display); SDL_Quit();
         return startup_failed || !s ? 1 : 0;
     }
     /* --open REL uses desktop open semantics and reports errors on stderr. */
@@ -438,7 +401,12 @@ int main(int argc, char **argv) {
         }
         if (session_take_startup_preview(s) && startup_desktop)
             os999_startup_begin(&startup, SDL_GetTicks(), reduce_motion && strcmp(reduce_motion, "1") == 0);
-        desktop_host_sync_present(s, ren, tex, volume, &boot_enabled);
+        if (desktop_display_sync(&display, s)) {   /* a new display mode: new buffers, re-place the guest */
+            frame = display.frame; startup_desktop = display.backdrop;
+            if (guest_placed) guest_window_layout(&guest_window, guest_width, guest_height, 1, guest_width, guest_height);
+            guest_drag = 0;
+        }
+        desktop_host_sync_present(s, ren, display.tex, volume, &boot_enabled);
         s->host_startup_enabled = boot_enabled;
         desktop_host_tick(s, native_surface_active());
         osa_ipc_poll(s);
@@ -473,25 +441,15 @@ int main(int argc, char **argv) {
             }
             dumped = 1;
         }
-        SDL_UpdateTexture(tex, NULL, frame, OSPI_W * (int)sizeof *frame);
-        SDL_RenderClear(ren);
-        int rw = OSPI_W, rh = OSPI_H;
-        SDL_GetRendererOutputSize(ren, &rw, &rh);
-        SDL_Rect dst = {0, 0, rw, rh};
-        SDL_RenderCopy(ren, tex, NULL, &dst);
-        SDL_RenderPresent(ren);
+        desktop_display_present(&display);
     }
     osa_ipc_close();
     native_surface_close();
     browser_window_close();
     desktop_host_end_session(s);
     os999_startup_release();
-    free(startup_desktop);
     free(guest_pixels);
-    free(frame);
-    SDL_DestroyTexture(tex);
-    SDL_DestroyRenderer(ren);
-    SDL_DestroyWindow(win);
+    desktop_display_close(&display);
     SDL_Quit();
     return 0;
 }

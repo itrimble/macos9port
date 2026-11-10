@@ -114,14 +114,20 @@ int control_panels_down(Session *s, int x, int y, int clicks) {
     return 1;
 }
 
+void control_panels_display_changed(void) {
+    g_cp_ui.pos_valid = 0;   /* centre again in the new desktop */
+    g_cp_ui.context_open = g_cp_ui.dragging_win = 0;
+}
+
 int control_panels_move(Session *s, int x, int y) {
     if (!s || !g_cp_ui.open || g_cp_ui.owner != s || !control_panels_active()) return 0;
     if (g_cp_ui.dragging_win) {
-        int sw = s->sw > 0 ? s->sw : OSPI_W;
-        int sh = s->sh > 0 ? s->sh : OSPI_H;
-        g_cp_ui.win_x = cp_clamp(x - g_cp_ui.drag_dx, 0, sw - CP_WIN_W);
-        g_cp_ui.win_y = cp_clamp(y - g_cp_ui.drag_dy, TITLE_H, sh - CP_WIN_H);
+        g_cp_ui.win_x = x - g_cp_ui.drag_dx;
+        g_cp_ui.win_y = y - g_cp_ui.drag_dy;
         g_cp_ui.pos_valid = 1;
+        Rect held = cp_window_rect(s);   /* inside the desktop, or panning when wider than it */
+        g_cp_ui.win_x = held.x;
+        g_cp_ui.win_y = held.y;
         return 1;
     }
     if (g_cp_ui.open_module >= 0) {

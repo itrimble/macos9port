@@ -134,6 +134,17 @@ void bw_close_window(int w) {
     if (BS.norder == 0) SDL_SetCursor(SDL_GetDefaultCursor());
 }
 
+/* Bring a window wholly inside the current desktop: a new window on a small
+ * mode, and every window after the display mode changes. */
+static void fit_desktop(BrowserWin *b) {
+    if (b->w > OSPI_W) b->w = OSPI_W;
+    if (b->h > OSPI_H - TITLE_H) b->h = OSPI_H - TITLE_H;
+    if (b->x + b->w > OSPI_W) b->x = OSPI_W - b->w;
+    if (b->y + b->h > OSPI_H) b->y = OSPI_H - b->h;
+    if (b->x < 0) b->x = 0;
+    if (b->y < TITLE_H) b->y = TITLE_H;
+}
+
 int bw_open_window(const char *url) {
     int w = -1;
     for (int i = 0; i < BW_MAX_WIN; i++) if (!BS.win[i].open) { w = i; break; }
@@ -146,6 +157,7 @@ int bw_open_window(const char *url) {
     b->y = 36 + 20 * w;
     b->w = 928 - 24 * w;
     b->h = 704 - 20 * w;
+    fit_desktop(b);
     overlay_window_open(w, b->surface, sizeof b->surface);
     bw_raise(w);
     BS.focus = 1;
@@ -324,6 +336,11 @@ void browser_window_frame(Session *s, SDL_Window *win, uint32_t *frame, int hidd
         int w = BS.order[k];
         if (BS.fd >= 0 && BS.win[w].ntabs == 0) bw_new_tab(w, "https://www.youtube.com", 1);
     }
+    static int desktop_w, desktop_h;
+    if (desktop_w != OSPI_W || desktop_h != OSPI_H) {
+        if (desktop_w) for (int k = 0; k < BS.norder; k++) fit_desktop(&BS.win[BS.order[k]]);
+        desktop_w = OSPI_W; desktop_h = OSPI_H;
+    }
     g_scale100 = (int)(overlay_scale(win, OSPI_W) * 100.0f + 0.5f);
     for (int k = 0; k < BS.norder; k++) send_size(BS.order[k]);
 
@@ -331,8 +348,15 @@ void browser_window_frame(Session *s, SDL_Window *win, uint32_t *frame, int hidd
     int nmenus = overlay_regions(s, menus);
     /* Keep each popup separately: their bounding union includes browser pixels.
      * Absolute offsets also make overlapping parent/child rectangles safe. */
-    static uint32_t saved[OSPI_W * OSPI_H];
-    for (int i = 0; i < nmenus; i++) {
+    static uint32_t *saved;
+    static size_t saved_pixels;
+    size_t pixels = (size_t)OSPI_W * (size_t)OSPI_H;
+    if (saved_pixels != pixels) {
+        free(saved);
+        saved = malloc(pixels * sizeof *saved);
+        saved_pixels = saved ? pixels : 0;
+    }
+    for (int i = 0; saved && i < nmenus; i++) {
         Rect r = menus[i];
         for (int y = r.y; r.w > 0 && y < r.y + r.h; y++)
             memcpy(&saved[y * OSPI_W + r.x], &frame[y * OSPI_W + r.x],
@@ -365,7 +389,7 @@ void browser_window_frame(Session *s, SDL_Window *win, uint32_t *frame, int hidd
         overlay_place(win, OSPI_W, OSPI_H, w, visible, k, (OverlayRect){c.x, c.y, c.w, c.h},
                       holes, n);
     }
-    for (int i = 0; i < nmenus; i++) {
+    for (int i = 0; saved && i < nmenus; i++) {
         Rect r = menus[i];
         for (int y = r.y; r.w > 0 && y < r.y + r.h; y++)
             memcpy(&frame[y * OSPI_W + r.x], &saved[y * OSPI_W + r.x],
