@@ -61,7 +61,7 @@ int main(int argc, char **argv) {
     if (desktop_host_resolve_volume(argc, argv, volume, sizeof volume) != 0) {
         return 1;
     }
-    fprintf(stderr, "OS999 Stylized 0.1  %s\n", volume);
+    fprintf(stderr, "OS999 Stylized " OS999_VERSION "  %s\n", volume);
     const char *install_url = flag_arg(argc, argv, "--install");
     if (install_url) {
         char rel[OSPI_PATH];
@@ -442,7 +442,7 @@ int main(int argc, char **argv) {
         s->host_startup_enabled = boot_enabled;
         desktop_host_tick(s, native_surface_active());
         osa_ipc_poll(s);
-        telemetry_enable(); session_tick(s, SDL_GetTicks()); telemetry_frame(s);
+        telemetry_start(); session_tick(s, SDL_GetTicks()); telemetry_frame(s);
         s->print_available = desktop_print_supported();
         session_paint(s, frame, OSPI_W, OSPI_H);
         desktop_print_service(s, frame);

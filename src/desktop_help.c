@@ -5,6 +5,14 @@
 
 int desktop_help_command(Session *s, int command) {
     const char *title, *key, *body;
+    if (command == CMD_TELEMETRY_TOGGLE) {
+        int on = !telemetry_consent();
+        if (telemetry_set_consent(on)) dialog_info(s, "Usage Log", "The setting could not be saved.");
+        else dialog_info(s, "Usage Log", on
+            ? "Recording is on. Clicks, shortcuts, commands and window names are written to Library/Application Support/OS999/Telemetry on this Mac. Typed text is never recorded and nothing is sent anywhere."
+            : "Recording is off. Existing log files were left in place.");
+        return 1;
+    }
     switch (command) {
     case CMD_HELP:
         title = "How to Use OS999 Stylized"; key = ":help";

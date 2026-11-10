@@ -12,6 +12,9 @@ CFLAGS ?= -std=c11 -Wall -Wextra -O2 -Iinclude -Iassets/icons/c -D_DEFAULT_SOURC
 CFLAGS += $(CURL_CFLAGS)
 ifeq ($(OS999_ENABLE_TEST_HOOKS),1)
 CFLAGS += -DOS999_ENABLE_TEST_HOOKS=1
+ifneq ($(strip $(OS999_BUILD_NUMBER)),)
+CFLAGS += -DOS999_BUILD_NUMBER=$(OS999_BUILD_NUMBER)
+endif
 endif
 SDL_CFLAGS := $(shell pkg-config --cflags sdl2 2>/dev/null)
 SDL_LIBS := $(shell pkg-config --libs sdl2 2>/dev/null)

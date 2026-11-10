@@ -21,8 +21,40 @@ static int g_off = -1, g_tried;
 static long g_seq;
 static Snap g_last;
 
-static int g_on;   /* opt-in: only the desktop app (or a test naming a path) turns it on */
-void telemetry_enable(void) { g_on = 1; }
+/* Consent: a one-byte file beside the logs. Absent means off, so a new user
+ * records nothing until they choose Help, Record Local Usage Log. */
+static int g_on, g_loaded;
+static int consent_path(char *out, size_t cap) {
+    const char *home = getenv("HOME");
+    return home && snprintf(out, cap, "%s/Library/Application Support/OS999/Telemetry/consent", home) < (int)cap;
+}
+void telemetry_start(void) {
+    if (g_loaded) return;
+    g_loaded = 1;
+    char p[1024];
+    g_on = consent_path(p, sizeof p) && access(p, F_OK) == 0;
+    menu_set_usage_log(g_on);
+}
+int telemetry_consent(void) { telemetry_start(); return g_on; }
+int telemetry_set_consent(int on) {
+    char p[1024];
+    if (!consent_path(p, sizeof p)) return -1;
+    if (on) {
+        char dir[1024]; snprintf(dir, sizeof dir, "%s", p);
+        char *slash = strrchr(dir, '/'); *slash = 0;
+        for (char *c = dir + 1; *c; c++) if (*c == '/') { *c = 0; mkdir(dir, 0700); *c = '/'; }
+        mkdir(dir, 0700);
+        FILE *f = fopen(p, "w");
+        if (!f) return -1;
+        fputs("1\n", f); fclose(f);
+    } else {
+        if (unlink(p) != 0 && access(p, F_OK) == 0) return -1;
+        telemetry_close();
+    }
+    g_loaded = 1; g_on = on != 0; g_last.valid = 0;
+    menu_set_usage_log(g_on);
+    return 0;
+}
 int telemetry_enabled(void) {
     if (g_off < 0) { const char *e = getenv("OS999_TELEMETRY"); g_off = e && !strcmp(e, "0"); }
     return g_on && !g_off;

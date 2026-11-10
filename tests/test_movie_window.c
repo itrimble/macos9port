@@ -263,7 +263,7 @@ int main(void) {
     movie_host_install(&mock_backend);
     CHECK(open_named(s, docs, "clip.mov") == 0);
     movie = &s->win[s->nwin - 1];
-    CHECK(movie->movie_modern && strstr(movie->title, "QuickTime Player"));
+    CHECK(movie->movie_modern && strstr(movie->title, "Movie Player 999"));
     session_key(s, FINDER_KEY_RIGHT, 0);
     CHECK(movie_window_time(movie) == 5000);
     session_key(s, FINDER_KEY_LEFT, 0);

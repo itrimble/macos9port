@@ -9,9 +9,9 @@ ROOT_PIN="$(cd "$(dirname "$0")/.." && pwd)/cef-pin.txt"
 CEF_VERSION="$(sed -n 's/^CEF_VERSION=//p' "$ROOT_PIN")"
 PLATFORM="${1:-macosarm64}"
 case "$PLATFORM" in
-  macosarm64) KIND=""; SHA1="77fc8778dfd008c6c85c1668b38462597804dc89"; DEST=cef ;;
-  linuxarm64) KIND="_minimal"; SHA1="85602db8e813ad824b45ae54218476aa3d91d561"; DEST=cef-linuxarm64 ;;
-  linux64) KIND="_minimal"; SHA1="09235427222e026a4f34399742df27c5d98a4f8a"; DEST=cef-linux64 ;;
+  macosarm64) KIND=""; SHA1="6989ef3226be063ae164d1d9f0764a2f203d4cb1"; DEST=cef ;;
+  linuxarm64) KIND="_minimal"; SHA1="1e66c55ca1a7e4de7c37b3c056435999c7420ebf"; DEST=cef-linuxarm64 ;;
+  linux64) KIND="_minimal"; SHA1="cacfbb7d7261fea682fb67c108de7e4347519ff7"; DEST=cef-linux64 ;;
   *) echo "unknown platform $PLATFORM" >&2; exit 2 ;;
 esac
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"

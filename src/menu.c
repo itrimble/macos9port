@@ -20,7 +20,7 @@ static MenuItem k_pi[] = {
     ITEM("Favorites", CMD_FAVORITES), ITEM("Recent Applications", CMD_MENU_RECENT_APPS),
     ITEM("Recent Documents", CMD_MENU_RECENT_DOCS), SEP,
     ITEM("Tailscale", CMD_TAILSCALE), ITEM("Terminal", CMD_TERMINAL_SHELL), ITEM("OS999 Console", CMD_TERMINAL_CONSOLE),
-    KEY("Chromium Browser", CMD_BROWSER, "Cmd-B", 'b'), ITEM("OS999 Amp (Winamp)...", CMD_MEDIA_PLAYER),
+    KEY("Chromium Browser", CMD_BROWSER, "Cmd-B", 'b'), ITEM("OS999 Amp...", CMD_MEDIA_PLAYER),
     ITEM("Quake III Arena", CMD_QUAKE3),
     ITEM("Quake III Arena Demo", CMD_QUAKE3_DEMO), SEP,
     ITEM("Shut Down", CMD_SHUTDOWN),
@@ -102,7 +102,8 @@ static MenuItem k_special[] = {
     ITEM("Supported Audio Formats...", CMD_SUPPORTED_FORMATS),
 };
 static MenuItem k_help[] = {
-    ITEM("OS999 Help", CMD_HELP), ITEM("Keyboard Shortcuts", CMD_HELP_KEYS), ITEM("What Works Today", CMD_HELP_STATUS),
+    ITEM("OS999 Help", CMD_HELP), ITEM("Keyboard Shortcuts", CMD_HELP_KEYS), ITEM("What Works Today", CMD_HELP_STATUS), SEP,
+    ITEM("Record Local Usage Log", CMD_TELEMETRY_TOGGLE),
 };
 static MenuItem k_windows[OSPI_MAX_WIN + 11];
 static char active_app[OSPI_NAME] = "Finder", guest_name[OSPI_NAME], hide_app[OSPI_NAME + 8];
@@ -111,6 +112,8 @@ static char quit_guest[OSPI_NAME + 8];
 static int window_count;
 static int sound_enabled;
 void menu_set_sound_enabled(int enabled) { sound_enabled = !!enabled; }
+static int usage_log_on;
+void menu_set_usage_log(int on) { usage_log_on = !!on; }
 
 static void update_items(Session *s, MenuItem *items, int count) {
     const Window *w = finder_current(s);
@@ -136,6 +139,7 @@ static void update_items(Session *s, MenuItem *items, int count) {
         case CMD_HELP: case CMD_HELP_KEYS: case CMD_HELP_STATUS: yes = 1; break;
         case CMD_STARTUP_TOGGLE: yes = 1; checked = s->host_startup_enabled; break;
         case CMD_SOUND_TOGGLE: yes = 1; checked = sound_enabled; break;
+        case CMD_TELEMETRY_TOGGLE: yes = 1; checked = usage_log_on; break;
         case CMD_OPEN: yes = appearance_panel_can_open() || (!panel && (selected || s->desk_sel >= 0)); break;
         case CMD_CLOSE: yes = s->guest_focused || panel || (w && !w->desktop_surface); break;
         case CMD_CLOSE_ALL: yes = panel || s->nwin; break;

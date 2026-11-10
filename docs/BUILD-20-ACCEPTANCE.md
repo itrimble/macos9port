@@ -68,5 +68,8 @@ SHA-256 list and `codesign --verify --deep --strict` passes.
    claim. This is the only finding that contradicts Build 20's own title.
 2. One version string and a visible build number.
 3. Rename the host movie window; check the Geneva label and the Winamp label.
-4. Update the pinned Chromium (156 to 158 or later).
+4. Chromium: corrected the same day. The CEF index has no 157 or 158 build;
+   the newest stable is Chromium 156.0.8078.88. The pin can move from
+   8078.80 to that patch, and the status-bar notice will remain until CEF
+   publishes a newer major.
 5. Hands-on pass by Ian for every "Not tested" row, plus listening tests.

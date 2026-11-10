@@ -241,7 +241,7 @@ int movie_window_open(Session *s, const char *title, const char *rel) {
     w->kind = WIN_MOVIE;
     w->movie = movie;
     w->movie_modern = modern;
-    snprintf(w->title, sizeof w->title, modern ? "QuickTime Player 999: %s" : "%s", title && title[0] ? title : "Movie");
+    snprintf(w->title, sizeof w->title, modern ? "Movie Player 999: %s" : "%s", title && title[0] ? title : "Movie");
     snprintf(w->rel, sizeof w->rel, "%s", rel);
     w->x = 36 + (s->nwin % 5) * 22;
     w->y = 42 + (s->nwin % 5) * 22;

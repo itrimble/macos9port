@@ -25,10 +25,15 @@ of work already in this tree; they are saved in
 `bluetooth` worktree moved to `../macos9port-bluetooth-feature` because this
 tree now tracks a `bluetooth/` directory.
 
-Not in Build 20 (1–4 commits each): `feature/storage-installers`,
-`feature/control-panels`, `fix/controlpanels-ramdisk-safety`, `fix/r2-documents`,
+Correction, 10 November: eight branches are not ancestors of Build 20
+(`feature/storage-installers`, `feature/control-panels`,
+`fix/controlpanels-ramdisk-safety`, `fix/r2-documents`,
 `feature/boot-startup-sequence`, `recovery/boot-startup`,
-`recovery/applescript-credit`, `recovery/quicktime-credit`.
+`recovery/applescript-credit`, `recovery/quicktime-credit`), but their work was
+carried in by squash and recovery commits. Every file they change exists in
+main, either identical or in a later version; none is missing or left at its
+old version. They are not pending integrations. A line-by-line audit of the
+later versions has not been done.
 
 | Candidate | Recorded outcome | Remaining work |
 | --- | --- | --- |

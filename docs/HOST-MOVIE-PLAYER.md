@@ -2,7 +2,7 @@
 
 The desktop registers a native FFmpeg video backend and reuses the existing shared audio service. The C functions `NewMovieFromFile`, `StartMovie`, `GetMovieTime` and related helpers are host APIs with Movie Toolbox-like names. They do not implement Apple's guest QuickTime ABI, 68K traps, CFM imports, or proprietary codecs.
 
-Finder opens MOV, QT, MP4 and M4V files in QuickTime Player 999. Controls include play/pause, a seek bar, volume, elapsed/total time, Space, and five-second Left/Right seeks. Dropping one movie from a Finder window onto an open player opens that document without moving it. Host operating-system file drops are not implemented.
+Finder opens MOV, QT, MP4 and M4V files in Movie Player 999. Controls include play/pause, a seek bar, volume, elapsed/total time, Space, and five-second Left/Right seeks. Dropping one movie from a Finder window onto an open player opens that document without moving it. Host operating-system file drops are not implemented.
 
 Video is streamed from a local regular file with a 2 GB limit. Images are bounded to 1920x1080 and duration to 24 hours; external MOV data references are disabled. Codec availability comes from the installed FFmpeg build. The older raw movie path remains available when no modern backend is registered. Audio uses the existing shared output and its playback clock when available; unavailable audio decoding/output can leave video silent.
 

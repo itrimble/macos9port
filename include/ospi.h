@@ -78,7 +78,8 @@ enum { MENU_ARRANGE = 8, MENU_LABELS = 9, MENU_PANELS = 10, MENU_RECENT_APPS = 1
 enum { CMD_APP_MEDIA = 685, CMD_APP_BROWSER = 686, CMD_APP_SWITCHER = 687 };
 enum { BROWSER_ACTIVATE = 1, BROWSER_CLOSE, BROWSER_CLOSE_ALL, BROWSER_QUIT, BROWSER_NEW_WINDOW,
        BROWSER_COPY, BROWSER_PASTE, BROWSER_SELECT_ALL, BROWSER_UNDO };
-enum { CMD_MEDIA_PLAYER = 700, CMD_SUPPORTED_FORMATS = 701, CMD_FONT_BOOK = 703 };
+enum { CMD_MEDIA_PLAYER = 700, CMD_SUPPORTED_FORMATS = 701, CMD_FONT_BOOK = 703, CMD_TELEMETRY_TOGGLE = 704 };
+#define OS999_VERSION "1.1.0" /* keep equal to macos/Info.plist */
 enum { BROWSER_CAN_COPY = 1, BROWSER_CAN_PASTE = 2, BROWSER_CAN_SELECT = 4, BROWSER_CAN_UNDO = 8 };
 
 typedef struct {
@@ -340,6 +341,7 @@ void dialog_layout(const Session *s, Rect *box, Rect *cancel, Rect *ok);
 
 void menu_update(Session *s);
 void menu_set_sound_enabled(int enabled);
+void menu_set_usage_log(int on);
 void menu_wallpaper_page(int page);
 int menu_wallpaper_current_page(void);
 int menu_count(void);
@@ -401,7 +403,7 @@ void session_text_input(Session *s, const char *text);
 void session_tick(Session *s, uint32_t now_ms);
 int session_quit(const Session *s);
 void session_command(Session *s, int cmd);
-void telemetry_click(Session *s, int x, int y, int button, int clicks); void telemetry_key(Session *s, int key, int mods); void telemetry_command(Session *s, int cmd); void telemetry_frame(Session *s); void telemetry_enable(void); /* telemetry.h */
+void telemetry_click(Session *s, int x, int y, int button, int clicks); void telemetry_key(Session *s, int key, int mods); void telemetry_command(Session *s, int cmd); void telemetry_frame(Session *s); void telemetry_start(void); int telemetry_consent(void); int telemetry_set_consent(int on); /* telemetry.h */
 int session_take_startup_toggle(Session *s);
 int session_take_startup_preview(Session *s);
 void session_clamp(Session *s);

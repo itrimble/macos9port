@@ -17,9 +17,11 @@
 > independent tabs, trust reset/recovery and shutdown. Transport coverage is
 > separate: `make test-network` exercises the Garden download API.
 >
-> The official CEF index was checked on 6 November: 156.0.8078.80 remains the
-> newest published build for macOS arm64 and Linux arm64/x64. No 157+ binary
-> was available to upgrade to. Google's served releases still include this
+> The official CEF index was checked again on 10 November: the newest stable
+> build is 156.0.27 (Chromium 156.0.8078.88) for macOS arm64 and Linux
+> arm64/x64, and the pin moved from 156.0.15 to 156.0.26 (same Chromium patch,
+> published 7 November). No 157+ binary exists to upgrade to, so the status bar
+> can still report a newer Chrome than CEF can supply. Google's served releases still include this
 > macOS version; Linux's served version is 157.0.8103.38, so the existing
 > unsupported-version warning remains relevant. Do not disable the guard.
 >
@@ -33,8 +35,8 @@
 
 # OS999 Browser
 
-OS999 Browser is real Chromium, embedded with CEF 156.0.15 (Chromium
-156.0.8078.80), inside OS999's classic chrome. It has a Platinum striped title
+OS999 Browser is real Chromium, embedded with CEF 156.0.26 (Chromium
+156.0.8078.88), inside OS999's classic chrome. It has a Platinum striped title
 bar with close, zoom and WindowShade boxes, back/forward/reload/home buttons,
 an address field with an HTTPS lock, and a status bar with a live frame-rate
 readout and a grow box. Everything is drawn here from scratch; there are no
