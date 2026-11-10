@@ -52,8 +52,38 @@ commit `99b69bb`, tree `9920c1978887e1fa477bca04dd634dc192c6445d`; Build 22 is
   "OS999 Amp..." (label seen in Build 22; movie title covered by its test only).
 - CEF pin moved to 156.0.26 (Chromium 156.0.8078.88). No 157+ CEF exists.
 
+Build 23 (`97f59a7`, tree `7fbd1214510a4d136261d97a01cf6e3d05b65771`, not
+promoted) answers Ian's hands-on pass of Build 22 on 10 November. It passed all
+15 gate stages on the MBP. Seen in a real window on the Neo with the gate
+artifact (scripted clicks, fresh disposable volume):
+
+- The window and bundle are named "OS999"; "Stylized" is gone from the code
+  the user sees.
+- A Window menu sits between View and Special and lists the open windows.
+- Monitors and Display has a Screen size row (75 to 200 percent); 75 percent
+  resized the host window to 768 by 576 and 100 percent restored it. This
+  scales the 1024 by 768 desktop. Choosing a different desktop resolution is
+  not implemented; the size is assumed in about 80 places.
+- The Extensions Manager lists four OS999-authored sample extensions, placed
+  once per volume. Loading them at startup was not watched.
+- OS999's own files live in the volume's hidden `.os999` folder
+  (`src/os999_private.c`): usage log and consent, browser profile, staged
+  browser helper, Quake data and settings, and OS999's temporary files. With
+  the browser open, the helper ran from `.os999/Helpers`, the profile was in
+  `.os999/Browser`, the Mac's `Library/Application Support/OS999` folders were
+  unchanged, and the login keychain's "Chromium Safe Storage" item was not
+  modified. Whether a keychain dialog can still appear on a Mac that already
+  has that item was not established; Ian's report could not be reproduced.
+- Dragging a folder into itself now says so instead of the generic failure.
+
+Still outside the volume: the volume's own default location, temporary files
+made by host tools OS999 starts (curl, unar, Chromium), and the host fonts the
+body text face is read from. Older data left in the Mac's Library by earlier
+builds is not deleted; Quake demo data is copied across once.
+
 | Candidate | Recorded outcome | Remaining work |
 | --- | --- | --- |
+| Build 23 | Gate passed: OS999 name, Window menu, `.os999` storage, screen size, sample extensions, browser helpers off the keychain | Not promoted; Ian's hands-on pass pending |
 | Build 21 | Gate passed: usage-log consent, 1.1.0 version string, Movie Player 999 title, CEF 156.0.26 | Superseded by Build 22 |
 | Build 22 | Gate passed: Build 21 plus the build number in About | Not promoted; Ian's hands-on pass pending |
 | Build 13 | Gate passed: R2 desktop fixes, quiet effects, native apps, Notes, Fonts, About | Superseded by Build 20 |
