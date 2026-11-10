@@ -11,9 +11,7 @@ static void set_err(char *err, size_t n, const char *msg) {
     if (err && n) snprintf(err, n, "%s", msg);
 }
 int install_tempfile(char *path, size_t n, const char *tag) {
-    const char *tmp = getenv("TMPDIR");
-    int k = snprintf(path, n, "%s/ospi-%s-XXXXXX", tmp && *tmp ? tmp : "/tmp", tag);
-    return k < 0 || (size_t)k >= n ? -1 : mkstemp(path);
+    return os999_private_temp(path, n, tag);
 }
 
 int install_archive_supported(const char *name) {

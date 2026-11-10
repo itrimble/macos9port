@@ -70,3 +70,53 @@ int native_catalog_placeholder(const char *root,const char *rel) {
         "double-click it to try OS999's own\nruntime. Support is incomplete. Some\n"
         "archive formats use a legacy launcher.\n");
 }
+
+/* ---- Sample startup extensions --------------------------------------------
+ * Small INITs written for OS999 (every byte is authored here) so the
+ * Extensions Manager has something to list, load, fail and order. They are
+ * placed once per volume; deleting them does not bring them back. */
+static void put16(unsigned char *p, unsigned v) { p[0] = (unsigned char)(v >> 8); p[1] = (unsigned char)v; }
+static void put32(unsigned char *p, unsigned long v) { put16(p, (unsigned)(v >> 16)); put16(p + 2, (unsigned)(v & 0xffff)); }
+
+static int write_new(const char *path, const void *bytes, size_t n) {
+    FILE *f = fopen(path, "wbx");
+    if (!f) return -1;
+    int ok = fwrite(bytes, 1, n, f) == n;
+    return fclose(f) == 0 && ok ? 0 : -1;
+}
+
+/* A resource fork holding one INIT resource, id 0. */
+static int sample_init(const char *dir, const char *name, const unsigned char *code, size_t n, const char *info) {
+    enum { DATA = 256, MAPLEN = 50 };
+    unsigned char fork[DATA + 64 + MAPLEN] = {0};
+    size_t datalen = 4 + ((n + 1) & ~(size_t)1), map = DATA + datalen;
+    char path[OSPI_PATH];
+    if (n > 56 || snprintf(path, sizeof path, "%s/%s", dir, name) >= (int)sizeof path) return -1;
+    put32(fork, DATA); put32(fork + 4, (unsigned long)map); put32(fork + 8, (unsigned long)datalen); put32(fork + 12, MAPLEN);
+    put32(fork + DATA, (unsigned long)n); memcpy(fork + DATA + 4, code, n);
+    put16(fork + map + 24, 28); put16(fork + map + 26, MAPLEN);
+    put16(fork + map + 28, 0); memcpy(fork + map + 30, "INIT", 4);
+    put16(fork + map + 34, 0); put16(fork + map + 36, 10);
+    put16(fork + map + 38, 0); put16(fork + map + 40, 0xffff);
+    if (write_new(path, fork, map + MAPLEN)) return -1;
+    if (!info) return 0;
+    if (snprintf(path, sizeof path, "%s/%s.extinfo", dir, name) >= (int)sizeof path) return -1;
+    return write_new(path, info, strlen(info));
+}
+
+int native_catalog_seed_sample_extensions(const char *root) {
+    static const unsigned char ok[] = {0x4e, 0x75};                              /* RTS */
+    /* MOVE.L #'os99',D0 ; SUBA.L A0,A0 ; NewGestalt ; RTS */
+    static const unsigned char gestalt[] = {0x20, 0x3c, 'o', 's', '9', '9', 0x91, 0xc8, 0xa3, 0xad, 0x4e, 0x75};
+    static const unsigned char faulty[] = {0xa8, 0x9d, 0x4e, 0x75};              /* a trap OS999 does not provide */
+    char marker[OSPI_PATH], dir[OSPI_PATH];
+    if (volume_join(marker, sizeof marker, root, ".os999-sample-extensions") != 0 ||
+        volume_join(dir, sizeof dir, root, "System Folder/Extensions") != 0) return -1;
+    if (access(marker, F_OK) == 0) return 0;
+    if (write_new(marker, "1\n", 2)) return -1;
+    (void)sample_init(dir, "Sample Hello", ok, sizeof ok, NULL);
+    (void)sample_init(dir, "Sample Gestalt", gestalt, sizeof gestalt, "priority 120\n");
+    (void)sample_init(dir, "Sample Needs Hello", ok, sizeof ok, "priority 150\nrequires Sample Hello\n");
+    (void)sample_init(dir, "Sample Faulty", faulty, sizeof faulty, "priority 200\n");
+    return 0;
+}

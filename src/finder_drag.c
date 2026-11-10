@@ -112,7 +112,7 @@ void finder_drag_drop(Session *s, int source_window, int x, int y) {
         return;
     }
     char parent[OSPI_PATH]; snprintf(parent, sizeof parent, "%s", source->rel);
-    int succeeded = 0, failed = 0;
+    int succeeded = 0, failed = 0, into_self = 0;
     int selected = 0;
     for (int i = 0; i < source->nitems; i++) selected += !!window_items(source)[i].selected;
     if (finder_undo_reserve(s, selected)) return;
@@ -120,6 +120,8 @@ void finder_drag_drop(Session *s, int source_window, int x, int y) {
     for (int i = 0; i < source->nitems; i++) {
         if (!window_items(source)[i].selected) continue;
         char name[OSPI_NAME], moved[OSPI_NAME]; strcpy(name, window_items(source)[i].name);
+        char self[OSPI_PATH * 2]; size_t self_n = (size_t)snprintf(self, sizeof self, "%s%s%s", parent, parent[0] ? "/" : "", name);
+        if (!trash && !strncmp(target, self, self_n) && (target[self_n] == 0 || target[self_n] == '/')) { into_self++; continue; }
         int result = trash ? finder_trash(s->root, parent, name, moved) :
             (s->mouse_mods & MOD_OPTION) ? finder_copy_to(s->root, parent, name, target, moved) :
                                          finder_move(s->root, parent, name, target);
@@ -140,6 +142,7 @@ void finder_drag_drop(Session *s, int source_window, int x, int y) {
         }
         if (position_failed) dialog_info(s, "Desktop Icons", "Files were transferred, but some desktop icon positions could not be saved.");
     }
+    if (into_self && !failed) dialog_info(s, "File Transfer", "A folder cannot be moved or copied into itself. Nothing was changed.");
     if (failed) {
         char body[200]; snprintf(body, sizeof body,
             "%d item%s moved or copied; %d could not be transferred. Existing destination files were not replaced.",

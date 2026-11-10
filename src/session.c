@@ -129,7 +129,7 @@ int open_folder(Session *s, const char *rel) {
     return 0;
 }
 int session_open_text(Session *s, const char *title, const char *rel, const char *body) {
-    if (body && !strcmp(body, OS999_LEGACY_README)) body = OS999_CURRENT_README;
+    if (body && (!strcmp(body, OS999_LEGACY_README) || !strcmp(body, OS999_PREVIOUS_README))) body = OS999_CURRENT_README;
     finder_apps_command(s, CMD_APP_FINDER); appearance_panel_blur();
     for (int i = 0; i < s->nwin; i++) {
         if (s->win[i].kind == WIN_TEXT && strcmp(s->win[i].rel, rel ? rel : "") == 0) {

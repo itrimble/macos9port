@@ -227,7 +227,7 @@ static void test_console_commands_and_line_editing(void) {
     CHECK(vt_contains_str(&vt, "wallpaper set") == 1);
 
     CHECK(term_console_exec(&con, &vt, "about") == 0);
-    CHECK(vt_contains_str(&vt, "OS999 Stylized") == 1);
+    CHECK(vt_contains_str(&vt, "OS999") == 1);
 
     CHECK(term_console_exec(&con, &vt, "theme list") == 0);
     CHECK(vt_contains_str(&vt, "Platinum") == 1);

@@ -6,7 +6,7 @@
 static int get(void *ctx, const char *property, char *out, size_t n) {
     (void)ctx;
     const char *value = NULL;
-    if (!strcmp(property, "name")) value = "OS999 Stylized";
+    if (!strcmp(property, "name")) value = "OS999";
     if (!strcmp(property, "version")) value = "OS999 Script 1";
     if (!strcmp(property, "theme")) value = desktop_theme_name(desktop_theme_current());
     if (!value) return -1;

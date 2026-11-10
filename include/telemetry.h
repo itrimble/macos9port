@@ -1,7 +1,7 @@
 #ifndef OS999_TELEMETRY_H
 #define OS999_TELEMETRY_H
-/* Local-only interaction log: one JSON object per line in
- * ~/Library/Application Support/OS999/Telemetry/events-YYYYMMDD.jsonl.
+/* Local-only interaction log: one JSON object per line in the volume's hidden
+ * .os999/Telemetry/events-YYYYMMDD.jsonl (never in the host Mac's Library).
  * Nothing leaves the machine. Typed characters are never recorded (only
  * "char"); shortcuts and special keys are. It is off until the user turns it
  * on (Help, Record Local Usage Log); OS999_TELEMETRY=0 forces it off. */

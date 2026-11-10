@@ -45,7 +45,7 @@ static const struct {
      "Drop TrueType, OpenType, or PostScript\n"
      "Type 1 fonts in this folder.\n"
      "Extensions: .ttf .otf .ttc .pfa .pfb\n\n"
-     "OS999 Stylized ships ChicagoFLF, which Robin\n"
+     "OS999 ships ChicagoFLF, which Robin\n"
      "Casady placed in the public domain.\n"
      "It is not Apple's Chicago. Geneva,\n"
      "Charcoal, and Monaco are used only\n"
@@ -200,6 +200,7 @@ int volume_seed(const char *root) {
             return -1;
         }
     }
+    if (native_catalog_seed_sample_extensions(root) != 0) return -1;
     return native_catalog_seed(root);
 }
 
@@ -327,7 +328,7 @@ int volume_read(const char *root, const char *rel, char *buf, size_t n) {
         unsigned char c = (unsigned char)buf[i];
         if (c != '\n' && c != '\r' && c != '\t' && c < 32) {
             snprintf(buf, n,
-                     "OS999 Stylized cannot show this file as text.\n\n"
+                     "OS999 cannot show this file as text.\n\n"
                      "Double-click a StuffIt, MacBinary,\n"
                      "or disk image to open it in\n"
                      "Systemless. Other files stay put.\n");

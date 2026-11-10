@@ -66,7 +66,7 @@ static int cmd_help(TermVt *vt) {
     con_write(vt,
         "Available OS999 Console commands:\r\n"
         "  help                      Show this command summary\r\n"
-        "  about                     Show OS999 Stylized desktop & host info\r\n"
+        "  about                     Show OS999 desktop & host info\r\n"
         "  theme list                List available color themes\r\n"
         "  theme set <name|id>       Activate a color theme (e.g. platinum)\r\n"
         "  wallpaper list            List available desktop pictures\r\n"
@@ -94,7 +94,7 @@ static int cmd_about(TermConsole *con, TermVt *vt) {
     uint64_t free_mb = (s ? s->free_bytes : 0) / (1024ull * 1024ull);
     const char *arch = (s && s->arch[0]) ? s->arch : host_arch();
     con_printf(vt,
-        "OS999 Stylized \xe2\x80\x94 Classic Mac OS 9 Desktop Environment\r\n"
+        "OS999 \xe2\x80\x94 Classic Desktop Environment\r\n"
         "  Architecture : %s\r\n"
         "  Host Memory  : %llu MB\r\n"
         "  Volume Free  : %llu MB\r\n"

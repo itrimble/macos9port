@@ -68,7 +68,7 @@ static const IconName applications[] = {
     {"Disk First Aid", "disk_utility"}, {"Drive Setup", "disk_utility"},
     {"Apple System Profiler", "system_profiler"}, {"System Profiler", "system_profiler"},
     {"OS999 Runtime", "runtime_68k"}, {"OS Pi Runtime", "runtime_68k"},
-    {"OS Pi", "ospi_desktop"}, {"OS999 Stylized", "ospi_desktop"},
+    {"OS Pi", "ospi_desktop"}, {"OS999 Stylized", "ospi_desktop"}, {"OS999", "ospi_desktop"},
     /* Built-in applications in the Applications folder. */
     {"Web Browser", "web_browser"}, {"OS999 Amp", "amp_player"}, {"Movie Player", "movie_player"},
     {"OS999 Console", "terminal"}, {"Tailscale", "network"},

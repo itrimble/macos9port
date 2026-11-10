@@ -1,7 +1,7 @@
-# OS999 Stylized
+# OS999
 
 I wanted a classic Mac desktop I could actually click on this Mac, on a
-Raspberry Pi, and on a plain x86_64 Linux box. OS999 Stylized 1.1 is that desktop.
+Raspberry Pi, and on a plain x86_64 Linux box. OS999 1.1 is that desktop.
 It is a 64-bit program I wrote from scratch. It is not Mac OS 9.
 
 Jeff Price posted a photo of something he called OS π HD running on a
@@ -42,7 +42,7 @@ Neither path includes an Apple ROM in this repository.
 make run
 ```
 
-That builds `build/OS999 Stylized.app` and opens it. The window is 1024 by 768.
+That builds `build/OS999.app` and opens it. The window is 1024 by 768.
 Your files live in a real folder:
 
 `~/Library/Application Support/OS Pi/Volume`
@@ -253,7 +253,7 @@ that face is used for documents. The 8 by 8 public-domain
 FreeType or a font file is missing. The pi glyph, when the outline face
 has no pi, is mine.
 
-Mac, Mac OS, and Finder are trademarks of Apple. OS999 Stylized is an
+Mac, Mac OS, and Finder are trademarks of Apple. OS999 is an
 independent program and is not affiliated with Apple.
 
 

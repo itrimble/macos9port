@@ -1,10 +1,11 @@
-# OS999 Stylized Development Checklist
+# OS999 Development Checklist
 
 ## Success means working software
 
 Build our own clean-room classic Macintosh runtime. Run the original target
 applications and games with correct graphics, sound, input, persistence, and
-measured hardware acceleration. The product-facing name is OS999 Stylized; the
+measured hardware acceleration. The product-facing name is OS999 (the "Stylized" suffix was dropped on
+10 November 2026); the
 classic desktop remains recognizable while branding and startup evolve. Add
 modern browsing and secure networking, with explicitly isolated legacy protocol
 compatibility. A desktop, splash screen, successful build, or external
@@ -14,7 +15,7 @@ Required end-to-end demonstrations: browse `https://thurrott.com`, play YouTube
 video with verified hardware acceleration, and open classic QuickTime inside
 our runtime to play a video. These are required outcomes, not optional demos.
 
-This checklist includes [Ian’s 7 November compatibility additions](CLASSIC-COMPATIBILITY-CHECKLIST.md).
+This checklist includes [Ian’s 7 and 10 November additions](CLASSIC-COMPATIBILITY-CHECKLIST.md).
 Unchecked items are requirements, not claims of existing functionality.
 
 ## Historical evidence carried forward — 7 November 2026
@@ -59,9 +60,9 @@ See [the preserved baseline](DEVELOPMENT-BASELINE.md). Newer acceptance evidence
   QuickTime and play a video. Run separately supplied QuickTime as guest software on our independent runtime. Its code/assets stay outside our implementation
   and distribution; do not derive runtime code from Apple's implementation. This records a scope decision only; playback remains unimplemented/unverified.
 
-## 0.5 OS999 Stylized branding and startup
+## 0.5 OS999 branding and startup
 
-- [ ] S01 Use “OS999 Stylized” as the display/app name, “OS999” in startup,
+- [ ] S01 Use “OS999” as the display/app name (no “Stylized”), “OS999” in startup,
   “OS999 HD” for the default disk, and the original Granny Smith fruit mark in the menu bar. Remove visible OS Pi labels while preserving internal symbols, bundle/data
   compatibility, and the existing support-volume path. Verify the packaged app.
 - [ ] S02 Ship the optional startup introduction enabled by default, with a

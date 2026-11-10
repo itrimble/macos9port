@@ -56,7 +56,7 @@ int main(void) {
     CHECK(s != NULL);
     if (!s) return 1;
     CHECK(strstr(preference, "/.os999-wallpaper") != NULL);
-    CHECK(menu_count() == 8 && !strcmp(menu_title(5), "Help"));
+    CHECK(menu_count() == 9 && !strcmp(menu_title(5), "Help") && !strcmp(menu_title(8), "Window"));
     CHECK(!strcmp(menu_title(6), "Appearance"));
     CHECK(menu_cmd_for_key('o') == CMD_OPEN);
     CHECK(menu_cmd_for_key('t') == CMD_THEME_NEXT);

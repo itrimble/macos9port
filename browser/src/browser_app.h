@@ -18,6 +18,8 @@ class BrowserApp : public CefApp, public CefBrowserProcessHandler {
       const CefString& process_type,
       CefRefPtr<CefCommandLine> command_line) override;
   void OnContextInitialized() override;
+  void OnBeforeChildProcessLaunch(
+      CefRefPtr<CefCommandLine> command_line) override;
 
  private:
   std::function<void()> on_ready_;

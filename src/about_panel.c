@@ -62,14 +62,13 @@ int about_panel_paint(Fb *fb, const Session *s, const Window *w, const Layout *l
     fb_fill(fb, x, y, cw, 64, C_WHITE); fb_frame(fb, x, y, cw, 64, C_BLACK);
     os999_startup_draw_fruit(fb, x + 38, y + 34, 2, 0.0);
     big_text(fb, x + 84, y + 14, 3, C_BLACK, "OS999");
-    fb_text(fb, x + 86, y + 46, C_BLACK, "Stylized");
     y += 72;
     char ram[32], mem[32], part[32], line[96];
     mb_text(ram, sizeof ram, s->ram);
 #ifdef OS999_BUILD_NUMBER
-    snprintf(line, sizeof line, "Version:  OS999 Stylized " OS999_VERSION ", Build %d (%s)", OS999_BUILD_NUMBER, s->arch);
+    snprintf(line, sizeof line, "Version:  OS999 " OS999_VERSION ", Build %d (%s)", OS999_BUILD_NUMBER, s->arch);
 #else
-    snprintf(line, sizeof line, "Version:  OS999 Stylized " OS999_VERSION " (%s)", s->arch);
+    snprintf(line, sizeof line, "Version:  OS999 " OS999_VERSION " (%s)", s->arch);
 #endif
     fb_text(fb, x, y, C_BLACK, line);
     snprintf(line, sizeof line, "Built-in Memory:  %s", ram);

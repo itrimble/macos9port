@@ -25,8 +25,8 @@ static Snap g_last;
  * records nothing until they choose Help, Record Local Usage Log. */
 static int g_on, g_loaded;
 static int consent_path(char *out, size_t cap) {
-    const char *home = getenv("HOME");
-    return home && snprintf(out, cap, "%s/Library/Application Support/OS999/Telemetry/consent", home) < (int)cap;
+    char dir[OSPI_PATH + 32];
+    return !os999_private_dir("Telemetry", dir, sizeof dir) && snprintf(out, cap, "%s/consent", dir) < (int)cap;
 }
 void telemetry_start(void) {
     if (g_loaded) return;
@@ -40,10 +40,6 @@ int telemetry_set_consent(int on) {
     char p[1024];
     if (!consent_path(p, sizeof p)) return -1;
     if (on) {
-        char dir[1024]; snprintf(dir, sizeof dir, "%s", p);
-        char *slash = strrchr(dir, '/'); *slash = 0;
-        for (char *c = dir + 1; *c; c++) if (*c == '/') { *c = 0; mkdir(dir, 0700); *c = '/'; }
-        mkdir(dir, 0700);
         FILE *f = fopen(p, "w");
         if (!f) return -1;
         fputs("1\n", f); fclose(f);
@@ -79,11 +75,11 @@ static FILE *open_log(void) {
     g_tried = 1;
     if (g_override[0]) snprintf(g_path, sizeof g_path, "%s", g_override);
     else {
-        const char *home = getenv("HOME");
+        char own[OSPI_PATH + 32];
         time_t t = time(NULL); struct tm tm; localtime_r(&t, &tm);
-        if (!home || snprintf(g_path, sizeof g_path,
-                "%s/Library/Application Support/OS999/Telemetry/events-%04d%02d%02d.jsonl",
-                home, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday) >= (int)sizeof g_path) return NULL;
+        if (os999_private_dir("Telemetry", own, sizeof own) || snprintf(g_path, sizeof g_path,
+                "%s/events-%04d%02d%02d.jsonl",
+                own, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday) >= (int)sizeof g_path) return NULL;
     }
     char dir[1024]; snprintf(dir, sizeof dir, "%s", g_path);
     char *slash = strrchr(dir, '/');

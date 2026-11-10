@@ -5,6 +5,7 @@ enum { NATIVE_NONE, NATIVE_TERMINAL, NATIVE_TAILSCALE, NATIVE_CONSOLE,
        NATIVE_BROWSER, NATIVE_MUSIC, NATIVE_MOVIE, NATIVE_NOTES, NATIVE_CONTROLS,
        NATIVE_QUAKE };
 int native_catalog_seed(const char *root);
+int native_catalog_seed_sample_extensions(const char *root); /* once per volume */
 int native_catalog_id(const char *root, const char *rel);
 const char *native_catalog_path(int app);
 int native_catalog_placeholder(const char *root, const char *rel);

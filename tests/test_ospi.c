@@ -265,7 +265,7 @@ int main(void) {
     CHECK(ospi_menu_center(5, 0, &mx, &my) == 0);
     click(s, mx, my, 1);
     CHECK(s->nwin == 2);
-    CHECK(strcmp(s->win[1].title, "How to Use OS999 Stylized") == 0);
+    CHECK(strcmp(s->win[1].title, "How to Use OS999") == 0);
     CHECK(strstr(s->win[1].text, "Cmd-Q") != NULL);
     CHECK(strstr(s->win[1].text, dir) == NULL); /* Help does not expose the host volume path. */
     CHECK(strstr(s->win[1].text, "OS999's own runtime") != NULL);

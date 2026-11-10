@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>OS999 Stylized</string>
+	<string>OS999</string>
 	<key>CFBundleDisplayName</key>
-	<string>OS999 Stylized</string>
+	<string>OS999</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.iantrimble.os999.stylized</string>
 	<key>CFBundleVersion</key>

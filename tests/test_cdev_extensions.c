@@ -23,6 +23,16 @@ int main(int argc, char **argv) {
     snprintf(dir, sizeof dir, "%s/System Folder/Extensions", root);
     struct stat st;
     CHECK(stat(dir, &st) == 0 && S_ISDIR(st.st_mode)); /* seeded */
+    /* A new volume carries four OS999 sample extensions; this test wants its own three. */
+    const char *samples[] = {"Sample Hello", "Sample Gestalt", "Sample Gestalt.extinfo", "Sample Needs Hello",
+                             "Sample Needs Hello.extinfo", "Sample Faulty", "Sample Faulty.extinfo"};
+    ExtList seeded;
+    CHECK(ext_scan(&seeded, root) == 4);
+    for (size_t i = 0; i < sizeof samples / sizeof *samples; i++) {
+        snprintf(path, sizeof path, "%s/%s", dir, samples[i]);
+        CHECK(unlink(path) == 0);
+    }
+    CHECK(volume_seed(root) == 0 && ext_scan(&seeded, root) == 0); /* removed samples do not come back */
     snprintf(path, sizeof path, "%s/System Folder/Control Panels", root);
     CHECK(stat(path, &st) == 0 && S_ISDIR(st.st_mode));
     const char *names[] = {"Alpha", "Bravo", "Charlie"};

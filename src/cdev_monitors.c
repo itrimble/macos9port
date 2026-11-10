@@ -11,9 +11,12 @@ typedef struct {
     int scanlines;
     int integer_scale;
     int dragging_bright;
+    int window_scale; /* percent of the 1024 x 768 desktop the host window shows */
 } MonitorsState;
 
-static MonitorsState g_mon = {0, 100, 0, 0, 1, 0};
+static const int k_window_scales[5] = {75, 100, 125, 150, 200};
+
+static MonitorsState g_mon = {0, 100, 0, 0, 1, 0, 100};
 
 static const char *const k_color_labels[4] = {
     "Millions (32-bit)",
@@ -40,6 +43,7 @@ static void sync_session(const MonitorsState *st, const os999_cdev_host_t *host)
     s->display_gamma = clamp_int(st->gamma_preset, 0, 2);
     s->display_scanlines = !!st->scanlines;
     s->display_integer_scale = !!st->integer_scale;
+    s->display_window_scale = clamp_int(st->window_scale, 50, 200);
 }
 
 static int monitors_load(os999_cdev_t *self, const os999_cdev_host_t *host) {
@@ -52,6 +56,8 @@ static int monitors_load(os999_cdev_t *self, const os999_cdev_host_t *host) {
                 host->get_int(host->store, "monitors", "brightness", 100), 50, 120);
             g_mon.gamma_preset = clamp_int(
                 host->get_int(host->store, "monitors", "gamma_preset", 0), 0, 2);
+            g_mon.window_scale = clamp_int(
+                host->get_int(host->store, "monitors", "window_scale", 100), 50, 200);
         }
         if (host->get_bool) {
             g_mon.scanlines = host->get_bool(host->store, "monitors", "scanlines", 0);
@@ -64,7 +70,7 @@ static int monitors_load(os999_cdev_t *self, const os999_cdev_host_t *host) {
 
 static int monitors_init(os999_cdev_t *self, const os999_cdev_host_t *host) {
     self->priv = &g_mon;
-    g_mon = (MonitorsState){0, 100, 0, 0, 1, 0};
+    g_mon = (MonitorsState){0, 100, 0, 0, 1, 0, 100};
     return monitors_load(self, host);
 }
 
@@ -80,6 +86,7 @@ static int monitors_save(os999_cdev_t *self, const os999_cdev_host_t *host) {
         host->set_int(host->store, "monitors", "color_mode", g_mon.color_mode);
         host->set_int(host->store, "monitors", "brightness", g_mon.brightness);
         host->set_int(host->store, "monitors", "gamma_preset", g_mon.gamma_preset);
+        host->set_int(host->store, "monitors", "window_scale", g_mon.window_scale);
     }
     if (host->set_bool) {
         host->set_bool(host->store, "monitors", "scanlines", g_mon.scanlines);
@@ -100,6 +107,7 @@ static Rect gamma_btn(Rect c, int i) {
 }
 static Rect scanline_chk(Rect c) { return (Rect){c.x + 16, c.y + 294, 268, 24}; }
 static Rect scale_chk(Rect c) { return (Rect){c.x + 300, c.y + 294, 276, 24}; }
+static Rect window_scale_btn(Rect c, int i) { return (Rect){c.x + 112 + i * 92, c.y + 324, 86, 24}; }
 
 static int bright_from_x(Rect track, int x) {
     int span = track.w - 12;
@@ -191,6 +199,13 @@ static int monitors_event(os999_cdev_t *self, const os999_cdev_host_t *host,
         apply_and_save(self, host);
         return 1;
     }
+    for (int i = 0; i < 5; i++) {
+        if (rect_has(window_scale_btn(c, i), x, y)) {
+            g_mon.window_scale = k_window_scales[i];
+            apply_and_save(self, host);
+            return 1;
+        }
+    }
     return 0;
 }
 
@@ -262,8 +277,12 @@ static void monitors_render(os999_cdev_t *self, const os999_cdev_host_t *host,
     cdev_ui_group(fb, (Rect){c.x, c.y + 270, c.w, 86}, "Raster & Scaling Options");
     cdev_ui_checkbox(fb, scanline_chk(c), "CRT Aperture Scanlines", g_mon.scanlines);
     cdev_ui_checkbox(fb, scale_chk(c), "Crisp Nearest-Neighbor Scaling", g_mon.integer_scale);
-    fb_text(fb, c.x + 16, c.y + 326, desktop_theme_color(THEME_DISABLED),
-            "Bit-depth quantization, tone curves, and scanlines render live on the desktop.");
+    fb_text(fb, c.x + 16, c.y + 329, fg, "Screen size:");
+    for (int i = 0; i < 5; i++) {
+        char label[8];
+        snprintf(label, sizeof label, "%d%%", k_window_scales[i]);
+        cdev_ui_button(fb, window_scale_btn(c, i), label, g_mon.window_scale == k_window_scales[i], 1);
+    }
 }
 
 static const os999_cdev_t k_monitors_cdev = {

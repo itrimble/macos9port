@@ -61,29 +61,29 @@ int main(int argc, char **argv) {
     if (desktop_host_resolve_volume(argc, argv, volume, sizeof volume) != 0) {
         return 1;
     }
-    fprintf(stderr, "OS999 Stylized " OS999_VERSION "  %s\n", volume);
+    fprintf(stderr, "OS999 " OS999_VERSION "  %s\n", volume);
     const char *install_url = flag_arg(argc, argv, "--install");
     if (install_url) {
         char rel[OSPI_PATH];
         char err[240];
         err[0] = 0;
         if (install_garden(volume, install_url, rel, sizeof rel, err, sizeof err) != 0) {
-            fprintf(stderr, "OS999 Stylized: %s\n", err[0] ? err : "install failed");
+            fprintf(stderr, "OS999: %s\n", err[0] ? err : "install failed");
             return 1;
         }
-        fprintf(stderr, "OS999 Stylized installed %s\n", rel);
+        fprintf(stderr, "OS999 installed %s\n", rel);
         return 0;
     }
     if (SDL_Init(SDL_INIT_VIDEO) != 0) {
-        fprintf(stderr, "OS999 Stylized: SDL_Init failed: %s\nInstall SDL2 (brew install sdl2, or apt install libsdl2-dev).\n",
+        fprintf(stderr, "OS999: SDL_Init failed: %s\nInstall SDL2 (brew install sdl2, or apt install libsdl2-dev).\n",
                 SDL_GetError());
         return 1;
     }
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
-    SDL_Window *win = SDL_CreateWindow("OS999 Stylized", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, OSPI_W, OSPI_H,
+    SDL_Window *win = SDL_CreateWindow("OS999", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, OSPI_W, OSPI_H,
                                        SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_SHOWN);
     if (!win) {
-        fprintf(stderr, "OS999 Stylized: could not open a window: %s\n", SDL_GetError());
+        fprintf(stderr, "OS999: could not open a window: %s\n", SDL_GetError());
         SDL_Quit();
         return 1;
     }
@@ -94,7 +94,7 @@ int main(int argc, char **argv) {
     }
     SDL_Texture *tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, OSPI_W, OSPI_H);
     if (!ren || !tex) {
-        fprintf(stderr, "OS999 Stylized: could not create the screen: %s\n", SDL_GetError());
+        fprintf(stderr, "OS999: could not create the screen: %s\n", SDL_GetError());
         SDL_DestroyWindow(win);
         SDL_Quit();
         return 1;
@@ -102,7 +102,7 @@ int main(int argc, char **argv) {
     int ww = 0, wh = 0, rw = 0, rh = 0;
     SDL_GetWindowSize(win, &ww, &wh);
     SDL_GetRendererOutputSize(ren, &rw, &rh);
-    fprintf(stderr, "OS999 Stylized window %dx%d  drawable %dx%d\n", ww, wh, rw, rh);
+    fprintf(stderr, "OS999 window %dx%d  drawable %dx%d\n", ww, wh, rw, rh);
     Session *s = NULL;
     uint32_t *frame = calloc((size_t)OSPI_W * OSPI_H, sizeof *frame);
     if (!frame) {
@@ -138,7 +138,7 @@ int main(int argc, char **argv) {
     pthread_t init_thread;
     if (pthread_create(&init_thread, NULL, create_session_worker, &init) != 0) {
         desktop_host_shutdown();
-        fprintf(stderr, "OS999 Stylized: could not start desktop initialization\n");
+        fprintf(stderr, "OS999: could not start desktop initialization\n");
         free(startup_desktop); free(guest_pixels); free(frame);
         SDL_DestroyTexture(tex); SDL_DestroyRenderer(ren); SDL_DestroyWindow(win); SDL_Quit();
         return 1;
@@ -178,7 +178,7 @@ int main(int argc, char **argv) {
             session_ready = 1;
             s = init.session;
             if (!s) {
-                fprintf(stderr, "OS999 Stylized: could not open %s\n", volume);
+                fprintf(stderr, "OS999: could not open %s\n", volume);
                 startup_failed = 1;
                 os999_startup_fail(&startup, SDL_GetTicks());
             } else {
@@ -222,7 +222,7 @@ int main(int argc, char **argv) {
         const char *slash = strrchr(open_rel, '/');
         if (snprintf(full, sizeof full, "%s/%s", volume, open_rel) < (int)sizeof full &&
             classic_open(volume, full, slash ? slash + 1 : open_rel, err, sizeof err) != 0)
-            fprintf(stderr, "OS999 Stylized: --open %s: %s\n", open_rel, err[0] ? err : "could not open");
+            fprintf(stderr, "OS999: --open %s: %s\n", open_rel, err[0] ? err : "could not open");
     }
     GuestWindow guest_window = {0};
     uint64_t guest_sequence = 0;
@@ -434,7 +434,7 @@ int main(int argc, char **argv) {
         if (session_take_startup_toggle(s)) {
             boot_enabled = !boot_enabled;
             if (os999_startup_pref_write(volume, boot_enabled) != 0)
-                fprintf(stderr, "OS999 Stylized: could not save startup preference\n");
+                fprintf(stderr, "OS999: could not save startup preference\n");
         }
         if (session_take_startup_preview(s) && startup_desktop)
             os999_startup_begin(&startup, SDL_GetTicks(), reduce_motion && strcmp(reduce_motion, "1") == 0);

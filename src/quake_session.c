@@ -23,7 +23,7 @@ extern char **environ;
 static Os999QuakeBridge *surface;
 static pid_t child;
 static int child_status, last_x, last_y, pointer_valid;
-static char child_log[128];
+static char child_log[OSPI_PATH + 64];
 
 static void quake_reap(void) {
     if (child > 0 && waitpid(child, &child_status, WNOHANG) == child) child = 0;
@@ -128,7 +128,8 @@ static int open_quake(Session *s, int mode) {
     char *slash = strrchr(exe, '/');
     if (slash) *slash = 0;
     QuakeLaunch q;
-    const char *home = getenv("HOME");
+    /* Quake's data and settings live in OS999's own folder, not the Mac's Library. */
+    char own[OSPI_PATH + 32]; const char *home = os999_private_dir(NULL, own, sizeof own) ? NULL : own;
     int ready = quake_launch_resolve(&q, exe[0] ? exe : NULL, home);
     if (mode == 2 && ready != -1 && ready != 0) demo = 1; /* no retail data: use the demo */
     if (demo) {
@@ -146,7 +147,7 @@ static int open_quake(Session *s, int mode) {
     }
     if (ready == -2) {
 #ifdef __APPLE__
-        dialog_info(s, "Quake III Arena", "Copy pak0.pk3 into ~/Library/Application Support/OS999/Quake3/baseq3 (or demota for the demo).");
+        dialog_info(s, "Quake III Arena", "Put pak0.pk3 in this disk's Downloads or Documents folder and open Quake again.");
 #else
         dialog_info(s, "Quake III Arena", "Copy pak0.pk3 into ~/.local/share/os999/quake3/baseq3 (or demota for the demo).");
 #endif
@@ -154,8 +155,8 @@ static int open_quake(Session *s, int mode) {
     }
     char *argv[24];
     if (!quake_launch_argv(&q, argv, 24)) return -1;
-    char path[] = "/tmp/os999-quake-surface-XXXXXX";
-    int fd = mkstemp(path);
+    char path[OSPI_PATH + 64];
+    int fd = os999_private_temp(path, sizeof path, "quake-surface");
     if (fd < 0) return -1;
     unlink(path);
     if (ftruncate(fd, sizeof *surface)) { close(fd); return -1; }
@@ -164,8 +165,7 @@ static int open_quake(Session *s, int mode) {
     memset(surface, 0, sizeof *surface);
     surface->magic = OS999Q_MAGIC; surface->version = OS999Q_VERSION;
     surface->bytes = sizeof *surface; surface->width = OS999Q_WIDTH; surface->height = OS999Q_HEIGHT;
-    snprintf(child_log, sizeof child_log, "/tmp/os999-quake-log-XXXXXX");
-    int log = mkstemp(child_log);
+    int log = os999_private_temp(child_log, sizeof child_log, "quake-log");
     if (log < 0) { close(fd); quake_close(); return -1; }
     int count = 0;
     while (environ[count]) count++;

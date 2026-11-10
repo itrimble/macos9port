@@ -24,7 +24,7 @@
 #endif
 
 static int previous_menu = -1, previous_dialog;
-static int prev_scale_mode = -1, prev_vsync_mode = -1;
+static int prev_scale_mode = -1, prev_vsync_mode = -1, prev_window_scale = -1;
 
 static int sound_directory(const char *directory) {
     char path[4096];
@@ -78,7 +78,7 @@ void desktop_host_init(const char *volume) {
     char sounds[4096], preference[OSPI_PATH + 32];
     previous_menu = -1;
     previous_dialog = 0;
-    prev_scale_mode = prev_vsync_mode = -1;
+    prev_scale_mode = prev_vsync_mode = prev_window_scale = -1;
     find_sounds(sounds, sizeof sounds);
     media_panel_init_hooks();
     desktop_bt_host_init();
@@ -88,7 +88,7 @@ void desktop_host_init(const char *volume) {
     int n = snprintf(preference, sizeof preference, "%s/.os999-sound", volume);
     if (n <= 0 || (size_t)n >= sizeof preference) return;
     if (!desktop_sound_init(sounds, preference))
-        fprintf(stderr, "OS999 Stylized: desktop sounds unavailable\n");
+        fprintf(stderr, "OS999: desktop sounds unavailable\n");
     int play_chime = 0;
     os999_cp_store_t store;
     if (os999_cp_store_init(&store, volume) == 0) {
@@ -120,9 +120,9 @@ void desktop_host_tick(Session *s, int guest_active) {
     if (s->sound_toggle_request) {
         s->sound_toggle_request = 0;
         if (!desktop_sound_set_enabled(!desktop_sound_enabled()))
-            fprintf(stderr, "OS999 Stylized: could not save sound preference\n");
+            fprintf(stderr, "OS999: could not save sound preference\n");
         if (control_panels_sound_mute_changed(s, !desktop_sound_enabled()) != 0)
-            fprintf(stderr, "OS999 Stylized: could not save panel sound preference\n");
+            fprintf(stderr, "OS999: could not save panel sound preference\n");
     }
     if (s->volume_sync_request) {
         s->volume_sync_request = 0;
@@ -158,6 +158,27 @@ void desktop_host_sync_present(Session *s, SDL_Renderer *ren, SDL_Texture *tex,
         *boot_enabled = os999_startup_pref_read(volume);
         s->host_startup_enabled = *boot_enabled;
     }
+    int scale = s->display_window_scale >= 50 && s->display_window_scale <= 200 ? s->display_window_scale : 100;
+    SDL_Window *host_window = ren ? SDL_RenderGetWindow(ren) : NULL;
+    if (host_window && scale != prev_window_scale) {
+        /* Grow or shrink the host window; the 1024 x 768 desktop is stretched to
+         * fill it. Never exceed the usable area of the display it is on. */
+        int w = OSPI_W * scale / 100, h = OSPI_H * scale / 100;
+        SDL_Rect area;
+        int display = SDL_GetWindowDisplayIndex(host_window);
+        if (display >= 0 && SDL_GetDisplayUsableBounds(display, &area) == 0 && area.w > 0 && area.h > 0) {
+            int top = 0;
+            SDL_GetWindowBordersSize(host_window, &top, NULL, NULL, NULL);
+            area.h -= top;
+            if (w > area.w) { h = h * area.w / w; w = area.w; }
+            if (h > area.h) { w = w * area.h / h; h = area.h; }
+        }
+        if (prev_window_scale >= 0 || scale != 100) {
+            SDL_SetWindowSize(host_window, w, h);
+            SDL_SetWindowPosition(host_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+        }
+        prev_window_scale = scale;
+    }
     int nearest = s->display_integer_scale ? 1 : 0;
     if (tex && nearest != prev_scale_mode) {
 #if SDL_VERSION_ATLEAST(2, 0, 12)
@@ -183,7 +204,14 @@ void desktop_host_shutdown(void) {
     previous_dialog = 0;
 }
 
+static int resolve_volume(int argc, char **argv, char *out, size_t n);
 int desktop_host_resolve_volume(int argc, char **argv, char *out, size_t n) {
+    int result = resolve_volume(argc, argv, out, n);
+    if (!result) os999_private_set_root(out);
+    return result;
+}
+
+static int resolve_volume(int argc, char **argv, char *out, size_t n) {
     const char *chosen = NULL;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--volume") == 0 && i + 1 < argc) {
@@ -196,7 +224,7 @@ int desktop_host_resolve_volume(int argc, char **argv, char *out, size_t n) {
     } else {
         const char *home = getenv("HOME");
         if (!home) {
-            fprintf(stderr, "OS999 Stylized: HOME is not set\n");
+            fprintf(stderr, "OS999: HOME is not set\n");
             return -1;
         }
 #if defined(__APPLE__)
@@ -206,12 +234,12 @@ int desktop_host_resolve_volume(int argc, char **argv, char *out, size_t n) {
 #endif
     }
     if (volume_mkdir_p(path) != 0 || volume_seed(path) != 0) {
-        fprintf(stderr, "OS999 Stylized: could not create the volume at %s\n", path);
+        fprintf(stderr, "OS999: could not create the volume at %s\n", path);
         return -1;
     }
     char resolved[PATH_MAX];
     if (!realpath(path, resolved) || strlen(resolved) >= n) {
-        fprintf(stderr, "OS999 Stylized: could not resolve %s\n", path);
+        fprintf(stderr, "OS999: could not resolve %s\n", path);
         return -1;
     }
     memcpy(out, resolved, strlen(resolved) + 1);

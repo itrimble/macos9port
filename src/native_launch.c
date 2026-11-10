@@ -293,14 +293,12 @@ int native_open(const char *root, const char *full, char *err, size_t n) {
         else return problem(err, n, "Close the currently open classic application first.");
     }
     if (runtime_path(runtime, sizeof runtime))
-        return problem(err, n, "OS999's independent runtime is missing. Build and install ospi-runtime beside OS999 Stylized.");
+        return problem(err, n, "OS999's independent runtime is missing. Build and install ospi-runtime beside OS999.");
     char bridge_name[64];
     RuntimeBridge *bridge = runtime_bridge_create(bridge_name, sizeof bridge_name);
     if (!bridge) return problem(err, n, "Could not create a private guest display surface.");
     char log_path[PATH_MAX];
-    const char *tmp = getenv("TMPDIR");
-    int length = snprintf(log_path, sizeof log_path, "%s/ospi-runtime-XXXXXX", tmp && *tmp ? tmp : "/tmp");
-    int log = length < 0 || (size_t)length >= sizeof log_path ? -1 : mkstemp(log_path);
+    int log = os999_private_temp(log_path, sizeof log_path, "runtime");
     if (log < 0) {
         runtime_bridge_close(bridge); runtime_bridge_unlink(bridge_name);
         return problem(err, n, "Could not create the private runtime log.");

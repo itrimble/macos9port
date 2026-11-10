@@ -106,6 +106,7 @@ static MenuItem k_help[] = {
     ITEM("Record Local Usage Log", CMD_TELEMETRY_TOGGLE),
 };
 static MenuItem k_windows[OSPI_MAX_WIN + 11];
+static MenuItem k_window_menu[OSPI_MAX_WIN + 1]; static int window_menu_count;   /* Finder Window menu: open windows */
 static char active_app[OSPI_NAME] = "Finder", guest_name[OSPI_NAME], hide_app[OSPI_NAME + 8];
 static char window_titles[OSPI_MAX_WIN][OSPI_NAME];
 static char quit_guest[OSPI_NAME + 8];
@@ -240,7 +241,10 @@ void menu_update(Session *s) {
         snprintf(window_titles[i], sizeof window_titles[i], "%s", s->win[i].title);
         k_windows[window_count++] = (MenuItem){window_titles[i], CMD_WINDOW_BASE + i,
             s->dialog ? MI_DISABLED : !s->guest_focused && !s->media_focused && !s->browser_focused && !s->desktop_focus && i == s->nwin - 1 ? MI_CHECKED : 0, NULL, 0};
+        k_window_menu[i] = k_windows[window_count - 1];
     }
+    window_menu_count = s->nwin;
+    if (!s->nwin) k_window_menu[window_menu_count++] = (MenuItem){"No Windows Open", CMD_NONE, MI_DISABLED, NULL, 0};
 }
 
 static MenuItem appearance[WALLPAPERS_PER_PAGE + 8];
@@ -290,7 +294,9 @@ static const struct {
     {"Help", k_help, COUNT(k_help)},
     {"Appearance", NULL, 0},
     {"Finder", k_windows, 0},
+    {"Window", k_window_menu, 0},
 };
+enum { MENU_WINDOW = 8 };
 
 int menu_count(void) { return (int)(sizeof k_menus / sizeof k_menus[0]); }
 
@@ -308,6 +314,7 @@ int menu_nitems(int menu) {
     if (menu == MENU_LABELS) return COUNT(k_labels);
     if (menu == MENU_PANELS) return COUNT(k_panels);
     if (menu == 7) return window_count;
+    if (menu == MENU_WINDOW) return window_menu_count;
     if (menu == MENU_APPEARANCE) {
         menu_wallpaper_page(wallpaper_page);
         return appearance_count;
@@ -326,6 +333,7 @@ const MenuItem *menu_at(int menu, int item) {
         return &(menu == MENU_ARRANGE ? k_arrange : menu == MENU_LABELS ? k_labels : k_panels)[item];
     }
     if (menu == 7) return item >= 0 && item < window_count ? &k_windows[item] : NULL;
+    if (menu == MENU_WINDOW) return item >= 0 && item < window_menu_count ? &k_window_menu[item] : NULL;
     if (menu == MENU_APPEARANCE) {
         menu_wallpaper_page(wallpaper_page);
         return item >= 0 && item < appearance_count ? &appearance[item] : NULL;
@@ -366,7 +374,7 @@ static int item_h(const MenuItem *it) {
 }
 
 void menu_title_rect(int index, Rect *r) {
-    static const int order[] = {0, 1, 2, 3, 4, 6, 5, 7};
+    static const int order[] = {0, 1, 2, 3, 8, 4, 6, 5, 7};
     int x = 6;
     for (int position = 0; position < menu_count(); position++) {
         int i = order[position];

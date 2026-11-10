@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-# OS999 Stylized
+# OS999
 
 Clean-room desktop that looks like a classic Mac, for arm64 and x86_64.
 It is a userspace program, not an OS kernel. Extracted CODE-resource apps
@@ -43,7 +43,8 @@ current acceptance or prohibitions on the newly requested capabilities.
 - Chicago Kare, ChiKareGo, or JohnDDuncanIII/macfonts. ChicagoFLF
   (Robin Casady, public domain, in `fonts/`) is the bundled face.
 
-The on-screen product name is OS999 Stylized. The menu bar uses OS999's
+The on-screen product name is OS999 (Ian, 10 November 2026: no "Stylized"
+anywhere the user can see it). The menu bar uses OS999's
 original Granny Smith fruit mark. Keep Apple-owned logos, source code, and
 system assets out of the project. Musashi (MIT-style) is the only vendored
 third-party code and it supplies CPU instruction execution only; it is
@@ -59,7 +60,7 @@ to the 8x8 bitmap font and `-DOSPI_FREETYPE` is not set.
 BUILDFLEET_LOCAL=1 make test        # build + run every headless check (no window needed)
 make                                # build/ospi (desktop) and build/ospi-runtime (guest helper)
 make runtime                        # only build/ospi-runtime
-make app                            # package + ad-hoc sign "build/OS999 Stylized.app" (macOS)
+make app                            # package + ad-hoc sign "build/OS999.app" (macOS)
 make run                            # make app && open it; on Linux runs ./build/ospi --volume ./volume
 make app APP_BUNDLE="build/OS999 Test.app"   # parallel bundle; never rebuild a live bundle in place
 make test-wallpapers                # converts assets/wallpapers with sips, then checks them

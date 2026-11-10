@@ -70,7 +70,7 @@ enum { CMD_SHOW_CLIPBOARD = 450, CMD_PREFERENCES, CMD_VIEW_OPTIONS,
 enum { VIEW_ICONS = 0, VIEW_LIST = 1, VIEW_BUTTONS = 2,
        SORT_NAME = 0, SORT_KIND = 1, SORT_DATE = 2, SORT_SIZE = 3, SORT_CREATED = 4, SORT_LABEL = 5 };
 enum { MI_DISABLED = 1, MI_CHECKED = 2, MI_SUBMENU = 4 };
-enum { MENU_ARRANGE = 8, MENU_LABELS = 9, MENU_PANELS = 10, MENU_RECENT_APPS = 11, MENU_RECENT_DOCS = 12,
+enum { MENU_ARRANGE = 16, MENU_LABELS = 17, MENU_PANELS = 18, MENU_RECENT_APPS = 19, MENU_RECENT_DOCS = 20, /* submenus sit above the menu bar indices */
        CMD_MENU_ARRANGE = 600, CMD_MENU_LABELS, CMD_MENU_PANELS,
        CMD_MENU_RECENT_APPS = 604, CMD_MENU_RECENT_DOCS = 605,
        CMD_LABEL_BASE = 620, CMD_RECENT_BASE = 640, CMD_RECENT_CLEAR_APPS = 670, CMD_RECENT_CLEAR_DOCS = 671,
@@ -267,6 +267,7 @@ struct Session {
     int system_volume, sound_muted, startup_chime_enabled, volume_sync_request, startup_sync_request;
     char alert_sound[32];
     int display_color_mode, display_brightness, display_gamma, display_scanlines, display_integer_scale;
+    int display_window_scale; /* percent; 0 means 100 */
     int key_repeat_rate, key_repeat_delay_ms, double_click_ms, wheel_speed, natural_scroll;
     int held_key_active, held_key, held_mods;
     uint32_t held_since_ms, held_last_repeat_ms;
@@ -342,6 +343,10 @@ void dialog_layout(const Session *s, Rect *box, Rect *cancel, Rect *ok);
 void menu_update(Session *s);
 void menu_set_sound_enabled(int enabled);
 void menu_set_usage_log(int on);
+/* os999_private.c: OS999's own hidden working folder inside the volume. */
+void os999_private_set_root(const char *root);
+int os999_private_dir(const char *sub, char *out, size_t n);
+int os999_private_temp(char *path, size_t n, const char *tag);
 void menu_wallpaper_page(int page);
 int menu_wallpaper_current_page(void);
 int menu_count(void);

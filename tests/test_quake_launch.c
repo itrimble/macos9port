@@ -100,6 +100,7 @@ int main(int argc, char **args) {
         unlink(inst);
         snprintf(p, sizeof p, "%s.part", inst); CHECK(access(p, F_OK) != 0);
         CHECK(!quake_data_demo_ok(bad));                            /* not the real demo */
+        setenv("HOME", home, 1);                                    /* keep the legacy carry-over away from the real Mac home */
         CHECK(quake_data_import_demo(home, vol) == -1);
     }
 #endif

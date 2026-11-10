@@ -16,20 +16,25 @@ int main(void) {
     char home[] = "/tmp/os999-telemetry-home-XXXXXX";
     CHECK(mkdtemp(home));
     setenv("HOME", home, 1);
+    char lib[600]; snprintf(lib, sizeof lib, "%s/Library", home);
+    static Session unset; memset(&unset, 0, sizeof unset); unset.menu = -1;
+    CHECK(telemetry_set_consent(1) != 0);                  /* no OS999 disk yet: nothing can be turned on */
+    telemetry_click(&unset, 1, 1, 1, 1);
+    CHECK(access(lib, F_OK) != 0);                         /* and nothing is written to the host home */
+    os999_private_set_root(home);
     static Session off; memset(&off, 0, sizeof off); off.menu = -1;
     telemetry_command(&off, 1); telemetry_click(&off, 1, 1, 1, 1);     /* not enabled: no file, no directory */
-    char lib[600]; snprintf(lib, sizeof lib, "%s/Library", home);
     CHECK(access(lib, F_OK) != 0);
     /* Consent: off for a new user, saved when turned on, and off again leaves no recording. */
     telemetry_start();
     CHECK(!telemetry_consent() && !telemetry_enabled());
     telemetry_click(&off, 1, 1, 1, 1);
     CHECK(access(lib, F_OK) != 0);
-    char consent[700]; snprintf(consent, sizeof consent, "%s/Library/Application Support/OS999/Telemetry/consent", home);
+    char consent[700]; snprintf(consent, sizeof consent, "%s/.os999/Telemetry/consent", home);
     CHECK(telemetry_set_consent(1) == 0 && telemetry_consent() && telemetry_enabled());
     CHECK(access(consent, F_OK) == 0);
     telemetry_click(&off, 2, 2, 1, 1);
-    char dir[700], cmd[900]; snprintf(dir, sizeof dir, "%s/Library/Application Support/OS999/Telemetry", home);
+    char dir[700], cmd[900]; snprintf(dir, sizeof dir, "%s/.os999/Telemetry", home);
     snprintf(cmd, sizeof cmd, "ls '%s' | grep -q '^events-'", dir);
     CHECK(system(cmd) == 0);                               /* a log exists only after opting in */
     CHECK(telemetry_set_consent(0) == 0 && !telemetry_consent() && !telemetry_enabled());

@@ -84,11 +84,12 @@ static int find_helper_raw(char *out, size_t n) {
 /* Nested inside another .app the helper crashes on macOS 27, so prefer a clone
  * outside any .app; OSPI_BROWSER stays an explicit override and is not staged. */
 static int find_helper(char *out, size_t n) {
+    char own[OSPI_PATH + 32];
     if (find_helper_raw(out, n) != 0) return -1;
     const char *env = getenv("OSPI_BROWSER");
     if (env && !strcmp(env, out)) return 0;
     char staged[PATH_MAX];
-    if (browser_stage_helper(out, NULL, staged, sizeof staged) == 0) snprintf(out, n, "%s", staged);
+    if (browser_stage_helper(out, os999_private_dir("Helpers", own, sizeof own) ? NULL : own, staged, sizeof staged) == 0) snprintf(out, n, "%s", staged);
     return 0;
 }
 
@@ -122,8 +123,13 @@ int bh_ensure(const char *root) {
     snprintf(a_fd, sizeof a_fd, "--os999-embed-fd=3");
     snprintf(a_port, sizeof a_port, "--os999-embed-port=%s", port);
     snprintf(a_dl, sizeof a_dl, "--os999-download-dir=%s", downloads);
-    char *argv[8] = {path, a_fd, a_port, a_dl, NULL};
+    char *argv[9] = {path, a_fd, a_port, a_dl, NULL};
     int argc = 4;
+    /* The browser's profile, cookies and cache stay inside the OS999 disk. */
+    char own[OSPI_PATH + 32], a_profile[OSPI_PATH + 64];
+    if (!os999_private_dir("Browser", own, sizeof own)) {
+        snprintf(a_profile, sizeof a_profile, "--os999-profile=%s", own); argv[argc++] = a_profile;
+    }
     const char *log = getenv("OSPI_BROWSER_LOG");
     if (log) { snprintf(a_log, sizeof a_log, "--os999-stats-log=%s", log); argv[argc++] = a_log; }
 #ifdef OS999_ENABLE_TEST_HOOKS

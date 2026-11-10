@@ -153,6 +153,7 @@ int control_panels_session_init(Session *s) {
         os999_cp_store_get_int(store, "monitors", "gamma_preset", 0), 0, 2);
     s->display_scanlines = os999_cp_store_get_bool(store, "monitors", "scanlines", 0);
     s->display_integer_scale = os999_cp_store_get_bool(store, "monitors", "integer_scale", 1);
+    s->display_window_scale = cp_clamp(os999_cp_store_get_int(store, "monitors", "window_scale", 100), 50, 200);
     s->key_repeat_rate = cp_clamp(
         os999_cp_store_get_int(store, "keyboard_mouse", "key_repeat_rate", 2), 0, 3);
     s->key_repeat_delay_ms = cp_clamp(

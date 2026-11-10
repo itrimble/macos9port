@@ -31,6 +31,18 @@ void BrowserApp::OnBeforeCommandLineProcessing(
 #endif
 }
 
+void BrowserApp::OnBeforeChildProcessLaunch(
+    CefRefPtr<CefCommandLine> command_line) {
+#if defined(OS_MAC)
+  // The network service and other helpers encrypt cookies and tokens too; give
+  // them the same instruction so none of them opens the user's login keychain.
+  if (!command_line->HasSwitch("use-mock-keychain"))
+    command_line->AppendSwitch("use-mock-keychain");
+#else
+  (void)command_line;
+#endif
+}
+
 void BrowserApp::OnContextInitialized() {
   WebApps::Register();
   if (on_ready_) on_ready_();

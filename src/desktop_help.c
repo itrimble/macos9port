@@ -9,13 +9,13 @@ int desktop_help_command(Session *s, int command) {
         int on = !telemetry_consent();
         if (telemetry_set_consent(on)) dialog_info(s, "Usage Log", "The setting could not be saved.");
         else dialog_info(s, "Usage Log", on
-            ? "Recording is on. Clicks, shortcuts, commands and window names are written to Library/Application Support/OS999/Telemetry on this Mac. Typed text is never recorded and nothing is sent anywhere."
+            ? "Recording is on. Clicks, shortcuts, commands and window names are kept inside the OS999 disk, in its hidden .os999/Telemetry folder. Typed text is never recorded and nothing is sent anywhere."
             : "Recording is off. Existing log files were left in place.");
         return 1;
     }
     switch (command) {
     case CMD_HELP:
-        title = "How to Use OS999 Stylized"; key = ":help";
+        title = "How to Use OS999"; key = ":help";
         body = "Open folders and files with a double-click or File, Open. Cmd-Q quits the active application; in Finder it quits the desktop.\n\n"
                "Right-click or Control-click an item for its contextual menu. "
                "Click outside a menu or press Escape to dismiss it.\n\n"

@@ -1,5 +1,7 @@
 #include "quake_data.h"
+#include <stdlib.h>
 #include <errno.h>
+#include <stdlib.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
@@ -102,6 +104,9 @@ int quake_data_import_demo(const char *home, const char *volume) {
     snprintf(docs, sizeof docs, "%s/Documents", volume ? volume : "");
     snprintf(hdl, sizeof hdl, "%s/Downloads", home ? home : "");
     snprintf(desk, sizeof desk, "%s/Desktop", home ? home : "");
-    const char *const dirs[] = {dl, docs, volume, hdl, desk};
-    return quake_data_import(home, dirs, 5, DEMO_SIZE, DEMO_SHA);
+    /* One-time carry-over from builds that kept the data in the Mac's Library. */
+    char old[1100]; const char *mac = getenv("HOME");
+    snprintf(old, sizeof old, "%s/Library/Application Support/OS999/Quake3/demoq3", mac ? mac : "");
+    const char *const dirs[] = {dl, docs, volume, hdl, desk, old};
+    return quake_data_import(home, dirs, 6, DEMO_SIZE, DEMO_SHA);
 }

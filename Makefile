@@ -1,4 +1,4 @@
-APP_BUNDLE ?= build/OS999 Stylized.app
+APP_BUNDLE ?= build/OS999.app
 # Quake III (GPL-2) is built in its own repository and only copied into the bundle.
 QUAKE_SRC ?= ../macos9port-quake-embedded
 QUAKE_BUILD ?= $(QUAKE_SRC)/build/darwin
@@ -358,7 +358,7 @@ build/test_mac_unloadseg: $(RUNTIME_OBJ) tests/test_mac_unloadseg.c $(RUNTIME_HD
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_unloadseg.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_native_launch: src/control_panel_store.c include/native_settings.h include/control_panel_store.h $(STORAGE_A) src/application_probe.c include/application_probe.h src/native_launch.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c include/native_launch.h include/mac_resource.h include/runtime_bridge.h
-	$(CC) $(CFLAGS) -pthread src/control_panel_store.c src/native_launch.c src/application_probe.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c $(STORAGE_LINK) -o $@
+	$(CC) $(CFLAGS) -pthread src/control_panel_store.c src/native_launch.c src/os999_private.c src/application_probe.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c $(STORAGE_LINK) -o $@
 
 build/test_mac_events: $(RUNTIME_OBJ) tests/test_mac_events.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_events.c $(CPUOBJ) -lm $(FT_LIBS) -o $@

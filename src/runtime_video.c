@@ -259,7 +259,7 @@ static int runtime_video_run(MacRuntime *rt, const char *title, size_t budget,
         cursor.previous_visibility = SDL_ShowCursor(SDL_QUERY);
         cursor.visibility = -1;
     }
-    SDL_Window *window = bridge ? NULL : SDL_CreateWindow(title ? title : "OS999 Stylized Classic Runtime",
+    SDL_Window *window = bridge ? NULL : SDL_CreateWindow(title ? title : "OS999 Classic Runtime",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, rt->screen_width, rt->screen_height,
         SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
     SDL_Renderer *renderer = window ? SDL_CreateRenderer(window, -1,
@@ -470,7 +470,7 @@ done:
         snprintf(message, sizeof message,
             "This application stopped in OS999's development runtime.\n\n%s\n\n"
             "Compatibility is incomplete; no game progress was saved.", reason);
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, "OS999 Stylized — application stopped", message, window);
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, "OS999 — application stopped", message, window);
     }
     free(pixels);
     SDL_DestroyTexture(texture);

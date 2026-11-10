@@ -46,3 +46,32 @@ separately for each item. Preserve the project's clean-room boundaries.
   malformed archives, quotas, rollback, fork persistence, and launch selection.
   Development owner: isolated `storageinstallers` worktree on
   `feature/storage-installers`; implementation and acceptance remain pending.
+
+## Additions from Ian's hands-on pass — 10 November 2026
+
+Ian ran Build 22 on the Neo. He reports that double-click opens folders and
+applications, and that Bluetooth scanning lists real nearby devices. Both are
+his observations in a real window; pairing and connection remain untested.
+
+- [ ] CC07 Self-contained storage: everything OS999 writes stays inside the
+  OS999 disk. Preferences, logs, the browser profile and helper, game data and
+  temporary files must not be written to the host Mac's Library, home or
+  temporary folders. Remaining exceptions must be listed with a reason.
+- [ ] CC08 Name: the product is OS999. Remove "Stylized" from every title,
+  panel, document, bundle name and message the user can see.
+- [ ] CC09 Finder Window menu: a Window menu in the Finder menu bar, between
+  View and Special, listing the open windows and bringing the chosen one front.
+- [ ] CC10 PowerPC execution: load and run original PowerPC (PEF/CFM)
+  applications in our own runtime, alongside 68K. Track real applications
+  separately from synthetic fragments.
+- [ ] CC11 Monitors and Display: the user can change the screen size, both by
+  scaling the window and by choosing a different desktop resolution.
+- [ ] CC12 Browser inside OS999: the browser behaves as an OS999 application
+  with its own profile on the OS999 disk and never asks for, creates or reads
+  an item in the host login keychain.
+- [ ] CC13 Extensions to test: the Extensions Manager has real entries to
+  enable, disable, order and fail safely; supply sample extensions and accept
+  user-supplied ones.
+- [ ] CC14 Finder drags: dragging a folder works or explains exactly why not.
+  Decide and document when a drag moves and when it copies (Ian expected a
+  copy where the same-disk drag moved the file; Option-drag copies today).
