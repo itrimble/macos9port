@@ -130,7 +130,12 @@ static Glyph *render_glyph(FaceSlot *slot, unsigned cp) {
         size_t bytes = (size_t)g->w * (size_t)g->h;
         g->alpha = malloc(bytes);
         if (g->alpha) {
-            if (gs->bitmap.pitch == g->w) {
+            if (gs->bitmap.pixel_mode == FT_PIXEL_MODE_MONO) {   /* embedded 1-bit strike: a row is pitch bytes of bits */
+                for (size_t i = 0; i < bytes; i++) {
+                    size_t row = i / (size_t)g->w, col = i % (size_t)g->w;
+                    g->alpha[i] = gs->bitmap.buffer[row * (size_t)gs->bitmap.pitch + (col >> 3)] & (0x80 >> (col & 7)) ? 255 : 0;
+                }
+            } else if (gs->bitmap.pitch == g->w) {
                 memcpy(g->alpha, gs->bitmap.buffer, bytes);
             } else {
                 for (int row = 0; row < g->h; row++) {
