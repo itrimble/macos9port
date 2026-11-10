@@ -2,11 +2,44 @@
 
 ## Current integration status
 
-Build 8 remains the last promoted baseline. Later runs are separate candidates;
-none of the following changes imply promotion, GUI acceptance or listening tests.
+Build 20 is the promoted baseline as of 10 November 2026. Local main was
+fast-forwarded from Build 8 (`a14d464`) to `a1d2bbe`, whose tree
+`3f385375b033628c380f3d7a89f4c17fe74e3a7f` is the tree in the Build 20 gate
+receipt (`runs/r9-integration-20`, 15 of 15 stages, 9 November). Builds 13–20
+are one linear chain, so the promotion carries all of them. No push.
+
+Promotion followed a scripted windowed pass on the Neo, recorded in
+[the Build 20 acceptance record](BUILD-20-ACCEPTANCE.md). That pass is not
+Ian's hands-on acceptance and found failures that stay open: telemetry records
+by default with no consent control, version strings disagree, the host movie
+window uses the QuickTime name, and the pinned Chromium is two versions behind.
+Listening, gameplay, double-click, guest applications and hardware remain
+untested. PowerPC code does not execute; only the 68K runtime exists.
+
+Ten numbered builds passed the gate (9, 10, 13–20); 11 and 12 failed. Builds
+13–20 were manual snapshot validations outside the watcher queue, so the
+watcher counter was corrected from 13 to 20 under the state lock; the next
+build is 21. The stale dashboard edits that blocked promotion were older copies
+of work already in this tree; they are saved in
+`../macos9port-backups/main-dirty-pre-build20-promotion-20261110`. The nested
+`bluetooth` worktree moved to `../macos9port-bluetooth-feature` because this
+tree now tracks a `bluetooth/` directory.
+
+Not in Build 20 (1–4 commits each): `feature/storage-installers`,
+`feature/control-panels`, `fix/controlpanels-ramdisk-safety`, `fix/r2-documents`,
+`feature/boot-startup-sequence`, `recovery/boot-startup`,
+`recovery/applescript-credit`, `recovery/quicktime-credit`.
 
 | Candidate | Recorded outcome | Remaining work |
 | --- | --- | --- |
+| Build 13 | Gate passed: R2 desktop fixes, quiet effects, native apps, Notes, Fonts, About | Superseded by Build 20 |
+| Build 14 | Gate passed: browser staging, no-keychain browser, New Folder, Get Info, terminal history | Superseded by Build 20 |
+| Build 15 | Gate passed: Quake III icon and demo-data install | Superseded by Build 20 |
+| Build 16 | Gate passed: Quake cursor and focus, Shut Down menu item, Console shutdown | Superseded by Build 20 |
+| Build 17 | Gate passed: Bluetooth and Extensions Manager panels, Font Book, classic runtime merge | Superseded by Build 20 |
+| Build 18 | Gate passed: protected guest heap for every partition size, opt-in host fonts | Superseded by Build 20 |
+| Build 19 | Gate passed on the second attempt (first failed packaging tests): local interaction telemetry | Superseded by Build 20 |
+| Build 20 | Gate passed: Movie chooser, OS 9 style About This Mac, telemetry change | Promoted; open findings above |
 | Build 9 | Complete gate and relocated packaged Quake frame/input probe passed | Local main promotion remains pending |
 | Build 10 | All 15 gate stages passed; later review found movie/audio teardown use-after-free | Diagnostic artifact only; correction carried into the next candidate |
 | Build 11 | Desktop test gate failed because the direct Finder test omitted quota-helper link dependencies | No package assembled; dependency correction carried into R2 |
