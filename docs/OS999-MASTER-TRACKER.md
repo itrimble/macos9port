@@ -2,11 +2,33 @@
 
 ## Current integration status
 
-Build 20 is the promoted baseline as of 10 November 2026. Local main was
-fast-forwarded from Build 8 (`a14d464`) to `a1d2bbe`, whose tree
-`3f385375b033628c380f3d7a89f4c17fe74e3a7f` is the tree in the Build 20 gate
-receipt (`runs/r9-integration-20`, 15 of 15 stages, 9 November). Builds 13–20
-are one linear chain, so the promotion carries all of them. No push.
+Build 24 is the promoted baseline as of 10 November 2026. Local main contains
+merge `18ca9ab`, which carries gate-validated commit `3a854b2` (tree
+`145760afbf7ff452c6054b3c6b34df4a20bda0b7`, the tree in the Build 24 gate
+receipt `runs/r10-integration-24`, 15 of 15 stages, 10 November 11:57). No push.
+
+Build 20 was promoted first (`a1d2bbe`, carrying the linear Builds 13–20
+chain); Builds 21–23 were promoted as source commits `99b69bb`, `94410fe` and
+`97f59a7` plus records on 10 November; Build 24 followed by merge. The
+Build 20 acceptance record and its open findings
+([Build 20](BUILD-20-ACCEPTANCE.md)) were answered by Builds 21–23: usage log
+off until chosen in Help, one 1.1.0 version string with build number, Movie
+Player 999 title, CEF 156.0.26.
+
+Build 24 windowed evidence: the gate artifact was hash-verified on the Neo
+(448 of 448 files match the receipt; strict codesign passes) and launched on a
+fresh disposable volume. The Monitors & Display Desktop Size group was reached
+and the 16:9 shape row selected. An earlier scripted pass on the Neo saw live
+switches to a portrait mode, 1280 by 960 and 1920 by 1200 redrawn at the new
+size with the host window scaled to fit. Not yet seen: the smallest 480-wide
+modes, relaunch persistence of a saved mode, the browser and guest windows at
+non-default sizes, and the startup animation at other sizes. Known gaps:
+several fixed-width panels are cut off below 640 wide, and the preview caption
+clips at the panel edge (fix committed as `d8f8dea`, queued for the next gate).
+A full scripted GUI session wrote no usage-log events with consent off,
+confirming the Build 21 consent fix outside the test suite. Click delivery
+note: a leftover third-party computer-use overlay window on the Neo swallows
+screen-coordinate clicks; posting events directly to the ospi PID works.
 
 Promotion followed a scripted windowed pass on the Neo, recorded in
 [the Build 20 acceptance record](BUILD-20-ACCEPTANCE.md). That pass is not
@@ -52,10 +74,10 @@ commit `99b69bb`, tree `9920c1978887e1fa477bca04dd634dc192c6445d`; Build 22 is
   "OS999 Amp..." (label seen in Build 22; movie title covered by its test only).
 - CEF pin moved to 156.0.26 (Chromium 156.0.8078.88). No 157+ CEF exists.
 
-Build 23 (`97f59a7`, tree `7fbd1214510a4d136261d97a01cf6e3d05b65771`, not
-promoted) answers Ian's hands-on pass of Build 22 on 10 November. It passed all
-15 gate stages on the MBP. Seen in a real window on the Neo with the gate
-artifact (scripted clicks, fresh disposable volume):
+Build 23 (`97f59a7`, tree `7fbd1214510a4d136261d97a01cf6e3d05b65771`, promoted
+into local main on 10 November) answers Ian's hands-on pass of Build 22 on
+10 November. It passed all 15 gate stages on the MBP. Seen in a real window on
+the Neo with the gate artifact (scripted clicks, fresh disposable volume):
 
 - The window and bundle are named "OS999"; "Stylized" is gone from the code
   the user sees.
@@ -83,9 +105,10 @@ builds is not deleted; Quake demo data is copied across once.
 
 | Candidate | Recorded outcome | Remaining work |
 | --- | --- | --- |
-| Build 23 | Gate passed: OS999 name, Window menu, `.os999` storage, screen size, sample extensions, browser helpers off the keychain | Not promoted; Ian's hands-on pass pending |
+| Build 24 | Gate passed: 30 desktop sizes in landscape and portrait, chosen in Monitors & Display and saved per volume | Promoted 10 November; unseen items and open gaps listed above; caption fix `d8f8dea` queued for Build 25 |
+| Build 23 | Gate passed: OS999 name, Window menu, `.os999` storage, screen size, sample extensions, browser helpers off the keychain | Promoted 10 November; loading sample extensions at startup not watched |
 | Build 21 | Gate passed: usage-log consent, 1.1.0 version string, Movie Player 999 title, CEF 156.0.26 | Superseded by Build 22 |
-| Build 22 | Gate passed: Build 21 plus the build number in About | Not promoted; Ian's hands-on pass pending |
+| Build 22 | Gate passed: Build 21 plus the build number in About | Promoted within the Build 24 chain |
 | Build 13 | Gate passed: R2 desktop fixes, quiet effects, native apps, Notes, Fonts, About | Superseded by Build 20 |
 | Build 14 | Gate passed: browser staging, no-keychain browser, New Folder, Get Info, terminal history | Superseded by Build 20 |
 | Build 15 | Gate passed: Quake III icon and demo-data install | Superseded by Build 20 |
