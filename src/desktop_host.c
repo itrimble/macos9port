@@ -24,7 +24,8 @@
 #endif
 
 static int previous_menu = -1, previous_dialog;
-static int prev_scale_mode = -1, prev_vsync_mode = -1, prev_window_scale = -1;
+static int prev_scale_mode = -1, prev_vsync_mode = -1;
+static SDL_Texture *prev_texture;
 
 static int sound_directory(const char *directory) {
     char path[4096];
@@ -78,7 +79,7 @@ void desktop_host_init(const char *volume) {
     char sounds[4096], preference[OSPI_PATH + 32];
     previous_menu = -1;
     previous_dialog = 0;
-    prev_scale_mode = prev_vsync_mode = prev_window_scale = -1;
+    prev_scale_mode = prev_vsync_mode = -1;
     find_sounds(sounds, sizeof sounds);
     media_panel_init_hooks();
     desktop_bt_host_init();
@@ -158,29 +159,10 @@ void desktop_host_sync_present(Session *s, SDL_Renderer *ren, SDL_Texture *tex,
         *boot_enabled = os999_startup_pref_read(volume);
         s->host_startup_enabled = *boot_enabled;
     }
-    int scale = s->display_window_scale >= 50 && s->display_window_scale <= 200 ? s->display_window_scale : 100;
-    SDL_Window *host_window = ren ? SDL_RenderGetWindow(ren) : NULL;
-    if (host_window && scale != prev_window_scale) {
-        /* Grow or shrink the host window; the 1024 x 768 desktop is stretched to
-         * fill it. Never exceed the usable area of the display it is on. */
-        int w = OSPI_W * scale / 100, h = OSPI_H * scale / 100;
-        SDL_Rect area;
-        int display = SDL_GetWindowDisplayIndex(host_window);
-        if (display >= 0 && SDL_GetDisplayUsableBounds(display, &area) == 0 && area.w > 0 && area.h > 0) {
-            int top = 0;
-            SDL_GetWindowBordersSize(host_window, &top, NULL, NULL, NULL);
-            area.h -= top;
-            if (w > area.w) { h = h * area.w / w; w = area.w; }
-            if (h > area.h) { w = w * area.h / h; h = area.h; }
-        }
-        if (prev_window_scale >= 0 || scale != 100) {
-            SDL_SetWindowSize(host_window, w, h);
-            SDL_SetWindowPosition(host_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
-        }
-        prev_window_scale = scale;
-    }
+    /* The host window size (display mode and Screen size) is desktop_display.c's. */
     int nearest = s->display_integer_scale ? 1 : 0;
-    if (tex && nearest != prev_scale_mode) {
+    if (tex && (nearest != prev_scale_mode || tex != prev_texture)) {   /* also a texture remade for a new mode */
+        prev_texture = tex;
 #if SDL_VERSION_ATLEAST(2, 0, 12)
         SDL_SetTextureScaleMode(tex, nearest ? SDL_ScaleModeNearest : SDL_ScaleModeLinear);
 #endif

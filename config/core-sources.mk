@@ -12,3 +12,6 @@ CORE += src/sound_preferences.c src/control_panel_store.c src/cdev_registry.c sr
 CORE += src/native_catalog.c src/native_apps.c
 
 CORE += src/desktop_info.c src/os999_private.c src/telemetry.c src/movie_picker.c src/about_panel.c
+
+# Runtime desktop size and the display mode table (docs/DISPLAY-MODES.md).
+CORE += src/display_modes.c

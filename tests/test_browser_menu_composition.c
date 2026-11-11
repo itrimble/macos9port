@@ -18,7 +18,7 @@ static uint32_t last_modifiers;
 static int ime_cancellations;
 static char clipboard[OS999B_TEXT];
 static OverlayRect captured[BW_MAX_WIN + BW_MAX_OCCLUDERS];
-static uint32_t frame[OSPI_W * OSPI_H];
+static uint32_t frame[OSPI_DEFAULT_W * OSPI_DEFAULT_H];
 #define CHECK(c) do { if (!(c)) { failures++; fprintf(stderr, "FAIL %d: %s\n", __LINE__, #c); } } while (0)
 
 /* No SDL dylib constructors: this test must remain headless, including when

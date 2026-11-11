@@ -373,16 +373,30 @@ static int item_h(const MenuItem *it) {
     return h < 18 ? 18 : h;
 }
 
+/* Narrow desktops (docs/DISPLAY-MODES.md): when the titles and the application
+ * menu do not fit, the padding tightens from 18 to 10 pixels, then titles leave
+ * the bar one at a time: Help, Appearance, Window, Special, View, Edit. The
+ * fruit menu, File and the application menu always stay. A title that left has
+ * an empty rectangle; its Cmd-key shortcuts keep working. */
 void menu_title_rect(int index, Rect *r) {
-    static const int order[] = {0, 1, 2, 3, 8, 4, 6, 5, 7};
-    int x = 6;
-    for (int position = 0; position < menu_count(); position++) {
-        int i = order[position];
-        int width = i == 0 ? 34 : fb_text_width(menu_title(i)) + 18;
-        if (i == index) {
-            *r = (Rect){i == 7 ? OSPI_W - width - 8 : x, 0, width, 20}; return;
+    static const int order[] = {0, 1, 2, 3, 8, 4, 6, 5, 7}, drop[] = {5, 6, 8, 4, 3, 2};
+    int pad = 18, hidden = 0, width[9] = {0};
+    for (int step = 0; ; step++) {
+        int total = 6 + 8;
+        for (int i = 0; i < 9; i++) {
+            width[i] = hidden & (1 << i) ? 0 : i == 0 ? 34 : fb_text_width(menu_title(i)) + pad;
+            total += width[i];
         }
-        x += width;
+        if (total <= OSPI_W || step > 6) break;
+        if (step == 0) pad = 10; else hidden |= 1 << drop[step - 1];
+    }
+    int x = 6;
+    for (int position = 0; position < 9; position++) {
+        int i = order[position];
+        if (i == index && width[i]) {
+            *r = (Rect){i == 7 ? OSPI_W - width[i] - 8 : x, 0, width[i], 20}; return;
+        }
+        x += width[i];
     }
     *r = (Rect){0};
 }

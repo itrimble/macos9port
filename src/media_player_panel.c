@@ -17,7 +17,7 @@ static int state_mode = PANEL_CLOSED;
 static AudioMediaPlayer *active_player;
 static char current_path[1024];
 static WinampState wa = {
-    .x = (OSPI_W - WINAMP_W) / 2,
+    .x = (OSPI_DEFAULT_W - WINAMP_W) / 2,
     .y = 32,
     .show_eq = 1,
     .show_pl = 1,
@@ -228,6 +228,7 @@ void media_panel_tick(void) {
 
 void media_panel_draw(Session *s, Fb *fb) {
     if (!s || !fb || owner != s || state_mode == PANEL_CLOSED || s->media_hidden) return;
+    wa.x = s->sw > WINAMP_W ? (s->sw - WINAMP_W) / 2 : 0;   /* the player stays centred in any display mode */
     winamp_skin_draw(fb, &wa, active_player, current_path);
 }
 

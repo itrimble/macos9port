@@ -34,6 +34,8 @@ int control_panels_regions(const Session *s, Rect out[2]);
 void control_panels_close(void);
 void control_panels_deactivate(void);
 void control_panels_blur(void);
+/* The desktop size changed: forget the dragged position and re-centre. */
+void control_panels_display_changed(void);
 
 void control_panels_draw(Session *s, Fb *fb);
 int control_panels_down(Session *s, int x, int y, int clicks);

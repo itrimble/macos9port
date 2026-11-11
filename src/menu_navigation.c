@@ -71,7 +71,12 @@ int menu_navigation_key(Session *s, int key, int mods) {
         if (count == 9) {
             static const int order[] = {0, 1, 2, 3, 8, 4, 6, 5, 7};
             for (int i = 0; i < count; i++) if (order[i] == s->menu) {
-                s->menu = order[(i + (key == MENU_KEY_RIGHT ? 1 : count - 1)) % count]; break;
+                Rect title = {0};   /* skip titles that left a narrow menu bar */
+                for (int n = 0; n < count && title.w <= 0; n++) {
+                    i = (i + (key == MENU_KEY_RIGHT ? 1 : count - 1)) % count;
+                    menu_title_rect(order[i], &title);
+                }
+                s->menu = order[i]; break;
             }
         } else s->menu = key == MENU_KEY_RIGHT ? (s->menu + 1) % count :
                                         (s->menu + count - 1) % count;

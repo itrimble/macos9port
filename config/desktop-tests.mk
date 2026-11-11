@@ -407,3 +407,13 @@ build/test_movie_picker: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_movie_pi
 	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_movie_picker.c $(FT_LIBS) -lm $(NET_LIBS)
 
 test: build/test_movie_picker
+
+# Display modes: every desktop size painted between guards, narrow menu bar, live switch, persistence.
+build/test_display_modes: $(CORE) $(STORAGE_A) src/desktop_guest.c $(STARTUP_SRC) tests/test_display_modes.c $(HDRS) include/desktop_guest.h src/control_panels_int.h
+	mkdir -p build
+	$(CC) $(CFLAGS) -Isrc -o $@ $(CORE) $(STORAGE_LINK) src/desktop_guest.c $(STARTUP_SRC) tests/test_display_modes.c $(FT_LIBS) -lm $(NET_LIBS)
+
+test-display-modes: build/test_display_modes
+	./build/test_display_modes
+
+test: test-display-modes

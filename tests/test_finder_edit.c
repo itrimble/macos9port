@@ -296,7 +296,7 @@ int main(void) {
     CHECK(front(s)->rel[0] == 0);
 
     /* Painting with an edit in progress, caret on and off. */
-    static uint32_t px[OSPI_W * OSPI_H];
+    static uint32_t px[OSPI_DEFAULT_W * OSPI_DEFAULT_H];
     session_key(s, '\r', 0);
     session_key(s, FINDER_KEY_END, 0);
     session_paint(s, px, OSPI_W, OSPI_H);

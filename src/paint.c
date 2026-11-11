@@ -398,13 +398,12 @@ static void paint_menus(Fb *fb, Session *s) {
     for (int i = 0; i < menu_count(); i++) {
         Rect r;
         menu_title_rect(i, &r);
+        if (r.w <= 0) continue;   /* left the bar on a narrow desktop */
         if (i != 7 && r.x + r.w > menus_right) menus_right = r.x + r.w;
         int open = s->menu == i;
-        if (open) {
-            fb_fill(fb, r.x, 1, r.w, 18, desktop_theme_color(THEME_FOREGROUND));
-        }
+        if (open) fb_fill(fb, r.x, 1, r.w, 18, desktop_theme_color(THEME_FOREGROUND));
         if (i == 0) os999_draw_menu_apple(fb, r.x + 5, 0);
-        else fb_text(fb, r.x + 8, text_y(0, 19), open ? desktop_theme_color(THEME_PANEL) : desktop_theme_color(THEME_FOREGROUND), menu_title(i));
+        else fb_text(fb, r.x + (r.w - fb_text_width(menu_title(i))) / 2 - 1, text_y(0, 19), open ? desktop_theme_color(THEME_PANEL) : desktop_theme_color(THEME_FOREGROUND), menu_title(i));
     }
     time_t now = time(NULL);
     struct tm tm;
