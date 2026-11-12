@@ -106,7 +106,7 @@ int mac_resource_open_by_pointer(MacRuntime *rt,uint32_t pointer,int16_t *ref) {
     unsigned length=mac_cpu_ram(cpu)[pointer];
     if(!length||!valid(cpu,pointer,1+length))return -37;
     char name[256];memcpy(name,mac_cpu_ram(cpu)+pointer+1,length);name[length]=0;
-    unsigned skip=mac_files_volume_prefix(name,length);   /* "OS Pi Data:Name" is the same file as "Name" */
+    unsigned skip=mac_files_volume_prefix(name,length);   /* "OS999 HD:Name" is the same file as "Name" */
     if(skip){memmove(name,name+skip,length-skip+1);length-=skip;}
     for(unsigned i=0;i<length;i++)if((unsigned char)name[i]<32||(unsigned char)name[i]>=127||
         name[i]=='/'||name[i]==':'||name[i]=='\\')return -37;

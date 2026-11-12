@@ -1,5 +1,6 @@
 #include "finder_files.h"
 #include "volume_directory.h"
+#include "volume_capacity.h"
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -219,6 +220,7 @@ static int ramdisk_remaining(const char *root, const char *dest, uint64_t *avail
 static int copy_to(const char *root, const char *rel, const char *name, const char *destination,
                    int duplicate, char out[OSPI_NAME]) {
     if (!name_ok(name) || !out || !strcmp(name, "Trash")) return -1;
+    (void)volume_disk_full_notice(1);   /* forget an older refusal */
     int from = finder_directory_open(root, rel), to = finder_directory_open(root, destination);
     if (from < 0 || to < 0) { if (from >= 0) close(from); if (to >= 0) close(to); return -1; }
     char sourcefork[OSPI_NAME + 6], destfork[OSPI_NAME + 6], next[OSPI_NAME];
@@ -233,6 +235,11 @@ static int copy_to(const char *root, const char *rel, const char *name, const ch
         if (size == UINT64_MAX || fork_size == UINT64_MAX || size > rd_avail || fork_size > rd_avail - size)
             goto done;
     }
+    {   /* The internal disk has a defined size: refuse a copy that would not fit (dskFulErr for the Finder). */
+        uint64_t need = entry_bytes(from, name, 0);
+        uint64_t fork_need = absent(from, sourcefork) ? 0 : entry_bytes(from, sourcefork, 0);
+        if (need != UINT64_MAX && fork_need != UINT64_MAX && volume_space_reserve(root, need + fork_need, NULL, 0)) goto done;
+    }
     for (int i = duplicate ? 1 : 0; i <= 100; i++) {
         int n = i == 0 ? snprintf(next, sizeof next, "%s", name) :
                 i == 1 ? snprintf(next, sizeof next, "%s copy", name) :
@@ -245,7 +252,7 @@ static int copy_to(const char *root, const char *rel, const char *name, const ch
         if (!absent(from, sourcefork) && copy_entry(from, sourcefork, to, destfork, 0, &budget)) {
             remove_owned(to, next, 0); break;
         }
-        strcpy(out, next); result = 0; break;
+        strcpy(out, next); result = 0; volume_space_invalidate(); break;
     }
 done:
     close(from); close(to); return result;

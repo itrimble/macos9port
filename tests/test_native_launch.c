@@ -42,14 +42,15 @@ static void check_log(const char *message) {
 }
 
 static int helper(int argc, char **argv) {
-    if (argc != 9 || strcmp(argv[1], "--window") || strcmp(argv[2], "--indexed") ||
+    if (argc != 11 || strcmp(argv[1], "--window") || strcmp(argv[2], "--indexed") ||
         strcmp(argv[3], "--interactive") || strcmp(argv[4], "--bridge") ||
-        strcmp(argv[6], "--saves")) return 30;
+        strcmp(argv[6], "--saves") || strcmp(argv[8], "--disk")) return 30;
     const char *perf = getenv("OSPI_PERF_TRACE");
     if (!perf || strcmp(perf, "1")) return 32;
     const char *expected = getenv("TEST_FORK"), *saves = getenv("TEST_SAVES");
-    if (!expected || strcmp(argv[8], expected)) return 31;
+    if (!expected || strcmp(argv[10], expected)) return 31;
     if (!saves || strcmp(argv[7], saves)) return 34;
+    if (!argv[9][0]) return 35;   /* --disk names the volume the guest measures */
     RuntimeBridge *bridge = runtime_bridge_open(argv[5]);
     if (!bridge) return 33;
     runtime_bridge_set_state(bridge, RUNTIME_BRIDGE_CLOSED, "test child finished");

@@ -4,6 +4,7 @@
 #include "modern_network.h"
 #include "os999_unpack.h"
 #include "os999_volume.h"
+#include "volume_capacity.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -293,6 +294,14 @@ int install_expand_archive(const char *root, const char *archive, const char *de
     StUnpackInfo info;
     StErr e = {0};
     int rc = st_unpack_file(archive, ST_EXT_ARCHIVE, &a, &info, NULL, &e);
+    if (rc == ST_OK) {   /* the internal disk has a defined size: refuse an expansion that cannot fit (dskFulErr) */
+        char full[220];
+        if (volume_space_reserve(root, a.total, full, sizeof full) == VOLUME_DISK_FULL) {
+            st_archive_free(&a);
+            set_err(err, err_n, full);
+            return -1;
+        }
+    }
     if (rc == ST_OK) {
         StVolume *v = NULL;
         rc = st_vol_open(root, NULL, &v, &e);
@@ -388,6 +397,14 @@ int install_garden(const char *root, const char *page_url, char *created_rel, si
     char leaf[96];
     char kept[OSPI_PATH];
     archive_leaf(file_url, leaf, sizeof leaf);
+    struct stat arch_st;
+    char full[220];
+    if (stat(arch_tmp, &arch_st) == 0 && volume_space_reserve(root, (uint64_t)arch_st.st_size, full, sizeof full)) {
+        unlink(arch_tmp);
+        rmdir(dest);
+        set_err(err, err_n, full);
+        return -1;
+    }
     if (snprintf(kept, sizeof kept, "%s/%s", dest, leaf) >= (int)sizeof kept ||
         archive_copy_file(arch_tmp, kept) != 0) {
         unlink(arch_tmp);

@@ -143,6 +143,14 @@ See [the preserved baseline](DEVELOPMENT-BASELINE.md). Newer acceptance evidence
   each durable step, and undoes unfinished installs. Sidecars are read by
   the runtime's own `mac_resource_open_container` (SF16-SF20). The
   desktop does not use it yet; switching installs over is L06 work.
+  11 November 2026: the internal disk ("OS999 HD", the `--volume` directory) now has a defined capacity
+  (`src/volume_capacity.c`, stored in `<volume>/.os999/capacity`, default the larger of 2 GiB and used + 512 MiB, never
+  above used + host free). Free = min(capacity - used, host free); used counts every regular file in the volume (including
+  `.os999` and forks) plus the sibling `Saves` folder. Finder and the terminal show that free figure; the Memory panel
+  has -1 GB/+1 GB/+10 GB (shrinking below usage is refused). PBHGetVInfo reports it clipped to 65535 blocks and just under
+  2 GiB, and `ospi-runtime --disk` makes guest writes, save-copy staging and Finder copies/installs fail with -34 or a
+  disk-full message. This does not stop other host processes writing into the folder. Headless tests only
+  (`test_volume_capacity`, `test_mac_disk_capacity`); not yet seen in a real window or with a real classic installer.
 - [ ] L05 Select the exact application deterministically. Report unsupported
   formats and missing resources instead of launching a neighboring executable.
 - [ ] L06 Support both a user double-click on a local `.sit` archive and the

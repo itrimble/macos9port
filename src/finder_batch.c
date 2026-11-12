@@ -1,5 +1,6 @@
 #include "finder_batch.h"
 #include "finder_files.h"
+#include "volume_capacity.h"
 #include "finder_state.h"
 #include "session_int.h"
 #include <stdio.h>
@@ -93,8 +94,9 @@ int finder_batch_command(Session *s, int command) {
     reload_folders(s);
     if (failed) {
         char body[200];
+        const char *full = volume_disk_full_notice(1);
         snprintf(body, sizeof body, "%d item(s) completed; %d could not be changed. Existing files were not replaced. Undo applies to the completed items when available.", done, failed);
-        dialog_info(s, "Finder", body);
+        dialog_info(s, "Finder", full ? full : body);
     }
     return 1;
 }

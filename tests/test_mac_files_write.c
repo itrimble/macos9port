@@ -281,7 +281,7 @@ int main(void) {
     /* SetVol accepts only the mounted volume. */
     clear_pb(&rt); put(&rt, 18, 4, 0); put(&rt, 22, 2, 0); CHECK(call(&rt, 0xa015) == 0);
     put(&rt, 22, 2, 0xfffe); CHECK(call(&rt, 0xa015) == -35);
-    pstring(&rt, NAME, "os pi data:"); put(&rt, 18, 4, NAME); put(&rt, 22, 2, 0xffff);
+    pstring(&rt, NAME, "os999 hd:"); put(&rt, 18, 4, NAME); put(&rt, 22, 2, 0xffff);
     CHECK(call(&rt, 0xa015) == 0);
     pstring(&rt, NAME, "Elsewhere:"); CHECK(call(&rt, 0xa015) == -35);
 

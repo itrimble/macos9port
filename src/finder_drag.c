@@ -5,6 +5,7 @@
 #include "finder_drag.h"
 #include "app_switcher.h"
 #include "finder_files.h"
+#include "volume_capacity.h"
 #include "finder_batch.h"
 #include "finder_state.h"
 #include "finder_recent.h"
@@ -147,6 +148,7 @@ void finder_drag_drop(Session *s, int source_window, int x, int y) {
         char body[200]; snprintf(body, sizeof body,
             "%d item%s moved or copied; %d could not be transferred. Existing destination files were not replaced.",
             succeeded, succeeded == 1 ? "" : "s", failed);
-        dialog_info(s, "File Transfer", body);
+        const char *full = volume_disk_full_notice(1);
+        dialog_info(s, "File Transfer", full ? full : body);
     }
 }

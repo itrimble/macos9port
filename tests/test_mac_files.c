@@ -65,7 +65,7 @@ static void flush_checks(MacRuntime *r) {
         CHECK(call(r,0xa013)==errors[i]);
         for(unsigned j=0;j<50;j++)if(j!=16 && j!=17)CHECK(before[j]==mac_cpu_ram(r->cpu)[PB+j]);
     }
-    const char *names[]={"os pi data:","Unknown:","OS Pi Data:Game Data","not a volume",""};
+    const char *names[]={"os999 hd:","Unknown:","OS999 HD:Game Data","not a volume",""};
     const int named_errors[]={0,-35,0,0,0};
     for(unsigned i=0;i<5;i++) {
         unsigned n=(unsigned)strlen(names[i]);mac_cpu_ram(r->cpu)[NAME]=(uint8_t)n;
@@ -111,8 +111,8 @@ int main(void) {
     CHECK(mac_cpu_read(rt.cpu,PB+22,2)==0xffff);
     CHECK(mac_cpu_read(rt.cpu,PB+32,2)==0xffff);
     CHECK(mac_cpu_read(rt.cpu,PB+48,4)==2);
-    CHECK(mac_cpu_ram(rt.cpu)[NAME]==10);
-    CHECK(!memcmp(mac_cpu_ram(rt.cpu)+NAME+1,"OS Pi Data",10));
+    CHECK(mac_cpu_ram(rt.cpu)[NAME]==8);
+    CHECK(!memcmp(mac_cpu_ram(rt.cpu)+NAME+1,"OS999 HD",8));
     CHECK(wd(&rt,-1,0,123,0,0)==0); CHECK(mac_cpu_read(rt.cpu,PB+28,4)==0);
     CHECK(wd(&rt,-32767,0,0,0,0)==-51);
     CHECK(wd(&rt,0,1,0,0,0)==-51); CHECK(wd(&rt,-1,1,0,0,0)==-51);
@@ -138,7 +138,7 @@ int main(void) {
     CHECK(mac_cpu_read(rt.cpu,PB+72,4)==(uint32_t)((int64_t)root_st.st_birthtimespec.tv_sec+2082844800));
 #endif
     CHECK(mac_cpu_read(rt.cpu,PB+80,4)==0);
-    CHECK(!memcmp(mac_cpu_ram(rt.cpu)+NAME+1,"OS Pi Data",10));
+    CHECK(!memcmp(mac_cpu_ram(rt.cpu)+NAME+1,"OS999 HD",8));
     char child[512];snprintf(child,sizeof child,"%s/Child",root);CHECK(mkdir(child,0700)==0);
     CHECK(cat(&rt,0,-1,2,0)==0);CHECK(mac_cpu_read(rt.cpu,PB+52,2)==2);CHECK(rmdir(child)==0);
     put(&rt,52,2,1234);put(&rt,100,4,12345678);
@@ -198,12 +198,12 @@ int main(void) {
     CHECK(mac_cpu_read(rt.cpu,PB+62,2)==0 && mac_cpu_read(rt.cpu,PB+48,4)==512);
     for(unsigned i=64;i<122;i++)CHECK(mac_cpu_ram(rt.cpu)[PB+i]==0xee);
     put(&rt,18,4,NAME);put(&rt,22,2,0);put(&rt,28,2,1);                      /* by index 1: the volume name comes back */
-    CHECK(call(&rt,0xa007)==0 && mac_cpu_ram(rt.cpu)[NAME]==10 && !memcmp(mac_cpu_ram(rt.cpu)+NAME+1,"OS Pi Data",10));
+    CHECK(call(&rt,0xa007)==0 && mac_cpu_ram(rt.cpu)[NAME]==8 && !memcmp(mac_cpu_ram(rt.cpu)+NAME+1,"OS999 HD",8));
     put(&rt,28,2,2);CHECK(call(&rt,0xa007)==-35);                            /* only one volume */
     put(&rt,28,2,0);put(&rt,22,2,77);CHECK(call(&rt,0xa007)==-35);           /* unknown volume reference */
     put(&rt,28,2,0xffff);put(&rt,18,4,0);put(&rt,22,2,0);CHECK(call(&rt,0xa407)==-50);   /* asynchronous */
     put(&rt,18,4,PB+80);put(&rt,22,2,0);put(&rt,28,2,1);                     /* a name buffer past the 64 bytes is not an overlap */
-    CHECK(call(&rt,0xa007)==0 && mac_cpu_ram(rt.cpu)[PB+80]==10);
+    CHECK(call(&rt,0xa007)==0 && mac_cpu_ram(rt.cpu)[PB+80]==8);
     put(&rt,18,4,PB+40);CHECK(mac_cpu_write(rt.cpu,PB+28,2,1)==0 && (mac_cpu_set(rt.cpu,MAC_A0,PB),mac_file_service(&rt,0xa007)==1) && (int16_t)mac_cpu_read(rt.cpu,PB+16,2)==-50); /* inside it is */
     {   /* a 64-byte block at the very end of RAM is enough for PBGetVInfo */
         uint32_t end=4096-64;mac_cpu_set(rt.cpu,MAC_A0,end);
@@ -214,8 +214,8 @@ int main(void) {
     put(&rt,18,4,NAME); put(&rt,22,2,123);
     CHECK(call(&rt,0xa014)==0);
     CHECK(mac_cpu_read(rt.cpu,PB+22,2)==0xffff);
-    CHECK(mac_cpu_ram(rt.cpu)[NAME]==10);
-    CHECK(!memcmp(mac_cpu_ram(rt.cpu)+NAME+1,"OS Pi Data",10));
+    CHECK(mac_cpu_ram(rt.cpu)[NAME]==8);
+    CHECK(!memcmp(mac_cpu_ram(rt.cpu)+NAME+1,"OS999 HD",8));
     put(&rt,18,4,0); CHECK(call(&rt,0xa014)==0);
     put(&rt,18,4,4090); put(&rt,22,2,123);
     CHECK(call(&rt,0xa014)==-50); CHECK(mac_cpu_read(rt.cpu,PB+22,2)==123);
@@ -233,14 +233,14 @@ int main(void) {
     CHECK(open_name(&rt,"Game Data",1)==0);
     CHECK(call(&rt,0xa001)==0);
     /* A full pathname starting with this volume's own name opens the same file; no other colon form does. */
-    CHECK(open_name(&rt,"OS Pi Data:Game Data",1)==0);CHECK(call(&rt,0xa001)==0);
-    CHECK(open_name(&rt,"os pi data:Game Data",1)==0);CHECK(call(&rt,0xa001)==0);
-    CHECK(open_name(&rt,"OS Pi Data:missing",1)==-43);
-    CHECK(open_name(&rt,"OS Pi Data:",1)==-50 && open_name(&rt,"OS Pi Data",1)==-43);   /* no file name; plain name is just a missing file */
-    CHECK(open_name(&rt,"OS Pi Data:sub:Game Data",1)==-50 && open_name(&rt,"OS Pi Data:../escape",1)==-50);
-    CHECK(open_name(&rt,"Other Disk:Game Data",1)==-50 && open_name(&rt,"OS Pi Data::Game Data",1)==-50);
-    CHECK(open_name(&rt,"OS Pi Dat:Game Data",1)==-50 && open_name(&rt,"XOS Pi Data:Game Data",1)==-50);
-    CHECK(open_name(&rt,"OS Pi Data:OS Pi Data:Game Data",1)==-50);                      /* only one prefix is removed */
+    CHECK(open_name(&rt,"OS999 HD:Game Data",1)==0);CHECK(call(&rt,0xa001)==0);
+    CHECK(open_name(&rt,"os999 hd:Game Data",1)==0);CHECK(call(&rt,0xa001)==0);
+    CHECK(open_name(&rt,"OS999 HD:missing",1)==-43);
+    CHECK(open_name(&rt,"OS999 HD:",1)==-50 && open_name(&rt,"OS999 HD",1)==-43);   /* no file name; plain name is just a missing file */
+    CHECK(open_name(&rt,"OS999 HD:sub:Game Data",1)==-50 && open_name(&rt,"OS999 HD:../escape",1)==-50);
+    CHECK(open_name(&rt,"Other Disk:Game Data",1)==-50 && open_name(&rt,"OS999 HD::Game Data",1)==-50);
+    CHECK(open_name(&rt,"OS999 H:Game Data",1)==-50 && open_name(&rt,"XOS999 HD:Game Data",1)==-50);
+    CHECK(open_name(&rt,"OS999 HD:OS999 HD:Game Data",1)==-50);                      /* only one prefix is removed */
     /* PBOpenDF opens the same file as PBOpen and returns a usable reference; it fails exactly like PBOpen. */
     CHECK(open_df(&rt,"Game Data",1)==0);
     uint32_t df_ref=mac_cpu_read(rt.cpu,PB+24,2);CHECK(df_ref>=128);

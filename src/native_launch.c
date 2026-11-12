@@ -303,6 +303,8 @@ int native_open(const char *root, const char *full, char *err, size_t n) {
         runtime_bridge_close(bridge); runtime_bridge_unlink(bridge_name);
         return problem(err, n, "Could not create the private runtime log.");
     }
+    char disk_root[PATH_MAX];   /* the guest measures this internal disk (volume_capacity.h) */
+    if (!realpath(root, disk_root)) snprintf(disk_root, sizeof disk_root, "%s", root);
     NativeSettings settings = native_settings_load(root);
     pid_t mid = fork();
     if (mid == 0) {
@@ -317,7 +319,7 @@ int native_open(const char *root, const char *full, char *err, size_t n) {
             if (!getenv("OSPI_PERF_TRACE")) setenv("OSPI_PERF_TRACE", "1", 1);
             native_settings_apply(&settings);
             char *argv[] = {runtime, "--window", "--indexed", "--interactive",
-                            "--bridge", bridge_name, "--saves", saves, fork_path, NULL};
+                            "--bridge", bridge_name, "--saves", saves, "--disk", disk_root, fork_path, NULL};
             execv(runtime, argv);
             dprintf(STDERR_FILENO, "Could not execute OS999 runtime: %s\n", strerror(errno));
             _exit(127);

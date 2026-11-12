@@ -34,16 +34,16 @@ static void read_only_volume(const char *data) {
     /* FSMakeFSSpec: forms of name, volume and directory. */
     CHECK(make(&rt, -1, 2, "Game Data", SPEC) == 0 && spec_is(&rt, SPEC, -1, 2, "Game Data"));
     CHECK(make(&rt, 0, 0, "Game Data", SPEC) == 0 && spec_is(&rt, SPEC, -1, 2, "Game Data"));
-    CHECK(make(&rt, 99, 0, "OS Pi Data:Game Data", SPEC) == 0);  /* absolute path ignores vRefNum */
-    CHECK(make(&rt, -1, 2, "os pi data:game data", SPEC) == 0);
+    CHECK(make(&rt, 99, 0, "OS999 HD:Game Data", SPEC) == 0);  /* absolute path ignores vRefNum */
+    CHECK(make(&rt, -1, 2, "os999 hd:game data", SPEC) == 0);
     CHECK(make(&rt, -1, 2, ":Game Data", SPEC) == 0);
     CHECK(make(&rt, -1, 2, "Missing", SPEC) == -43 && spec_is(&rt, SPEC, -1, 2, "Missing")); /* usable spec */
     CHECK(make(&rt, -1, 2, "sub", SPEC) == -43);                 /* host directories are not files */
     CHECK(make(&rt, -1, 2, "link", SPEC) == -43);                /* links are never followed */
-    CHECK(make(&rt, -1, 2, "", SPEC) == 0 && spec_is(&rt, SPEC, -1, 1, "OS Pi Data"));
-    CHECK(make(&rt, 0, 0, "", SPEC) == 0 && spec_is(&rt, SPEC, -1, 1, "OS Pi Data"));
-    CHECK(make(&rt, -1, 2, "OS Pi Data:", SPEC) == 0 && spec_is(&rt, SPEC, -1, 1, "OS Pi Data"));
-    CHECK(make_at(&rt, -1, 2, 0, SPEC) == 0 && spec_is(&rt, SPEC, -1, 1, "OS Pi Data")); /* NULL fileName */
+    CHECK(make(&rt, -1, 2, "", SPEC) == 0 && spec_is(&rt, SPEC, -1, 1, "OS999 HD"));
+    CHECK(make(&rt, 0, 0, "", SPEC) == 0 && spec_is(&rt, SPEC, -1, 1, "OS999 HD"));
+    CHECK(make(&rt, -1, 2, "OS999 HD:", SPEC) == 0 && spec_is(&rt, SPEC, -1, 1, "OS999 HD"));
+    CHECK(make_at(&rt, -1, 2, 0, SPEC) == 0 && spec_is(&rt, SPEC, -1, 1, "OS999 HD")); /* NULL fileName */
     CHECK(make(&rt, -1, 2, "Other:Game Data", SPEC) == -35);
     CHECK(make(&rt, 7, 2, "Game Data", SPEC) == -35);
     CHECK(make(&rt, -2, 2, "Game Data", SPEC) == -35);              /* the System volume exists only when the runtime has one */
@@ -54,7 +54,7 @@ static void read_only_volume(const char *data) {
     CHECK(make(&rt, -1, 2, ":sub:file", SPEC) == -120);         /* below the root: no subdirectories */
     CHECK(make(&rt, -1, 2, ":Game Data:", SPEC) == -120);
     CHECK(make(&rt, -1, 2, "::Game Data", SPEC) == -120);
-    CHECK(make(&rt, -1, 2, "OS Pi Data:sub:x", SPEC) == -120);
+    CHECK(make(&rt, -1, 2, "OS999 HD:sub:x", SPEC) == -120);
     CHECK(make(&rt, -1, 2, "../escape", SPEC) == -37);
     CHECK(make(&rt, -1, 2, "a/b", SPEC) == -37);
     CHECK(make(&rt, -1, 2, "a\\b", SPEC) == -37);
@@ -99,7 +99,7 @@ static void read_only_volume(const char *data) {
     CHECK(open_df(&rt, SPEC, 0) >= 128);                            /* fsCurPerm on data: read */
     spec_of(&rt, SPEC, -1, 2, "Missing");
     CHECK(open_df(&rt, SPEC, 1) == -43);
-    spec_of(&rt, SPEC, -1, 1, "OS Pi Data");                         /* the root directory is not a file */
+    spec_of(&rt, SPEC, -1, 1, "OS999 HD");                         /* the root directory is not a file */
     CHECK(open_df(&rt, SPEC, 1) == -43);
     spec_of(&rt, SPEC, -1, 2, "sub");
     CHECK(open_df(&rt, SPEC, 1) == -43);
@@ -144,7 +144,7 @@ static void read_only_volume(const char *data) {
     CHECK(dispatch(&rt, 15, 8) == -46);                              /* FSpExchangeFiles */
     w32(&rt, S, REFBUF); w16(&rt, S + 4, 0); w32(&rt, S + 6, SPEC2);
     CHECK(dispatch(&rt, 5, 10) == -46);                              /* FSpDirCreate */
-    spec_of(&rt, SPEC, -1, 1, "OS Pi Data");
+    spec_of(&rt, SPEC, -1, 1, "OS999 HD");
     CHECK(one_spec(&rt, 6, SPEC) == -46);
     CHECK(host_size(data, "Game Data") == 6);
 
@@ -154,7 +154,7 @@ static void read_only_volume(const char *data) {
     CHECK(finfo(&rt, 7, SPEC, INFO) == 0);
     CHECK(finfo(&rt, 7, SPEC, 0) == -50);
     CHECK(finfo(&rt, 7, SPEC, RAM - 8) == -50);
-    spec_of(&rt, SPEC, -1, 1, "OS Pi Data");
+    spec_of(&rt, SPEC, -1, 1, "OS999 HD");
     CHECK(finfo(&rt, 7, SPEC, INFO) == -43);
     spec_of(&rt, SPEC, -1, 2, "Missing");
     CHECK(finfo(&rt, 7, SPEC, INFO) == -43);

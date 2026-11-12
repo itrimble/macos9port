@@ -215,7 +215,8 @@ struct Session {
     int desk_sel;
     int desktop_focus; /* Background and volume icons own Finder commands. */
     int quit;
-    uint64_t free_bytes;
+    uint64_t free_bytes;     /* internal disk: min(capacity - used, host free); see volume_capacity.h */
+    uint64_t disk_capacity, disk_used;
     uint64_t ram;
     char arch[16];
     uint32_t last_stat;

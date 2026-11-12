@@ -250,6 +250,9 @@ int mac_env_implemented(unsigned key); /* trap_key() values */
 int mac_gestalt_set(MacRuntime *rt, uint32_t selector, uint32_t value, uint32_t proc);
 int mac_geometry_service(MacRuntime *rt, uint16_t opcode);
 int mac_files_root(MacRuntime *rt, const char *directory);
+/* Tie the guest volume to the OS999 internal disk at `volume_root`: PBHGetVInfo then reports its defined capacity and free space,
+ * and guest writes that would pass it fail with dskFulErr (-34). Without this the volume keeps its old read-only, used-bytes figures. */
+int mac_files_disk(MacRuntime *rt, const char *volume_root);
 /* One entry of the merged guest volume listing (data files plus committed saves): host regular files only, sorted by
  * name (byte order), the Finder info the guest has set (zero when none; nothing is invented from the name). */
 typedef struct { char name[256]; uint32_t type, creator; uint16_t flags; } MacFileEntry;

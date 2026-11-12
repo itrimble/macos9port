@@ -30,7 +30,7 @@ int main(void) {
     w32(&rt, REFBUF, 0); CHECK(dir_create(&rt, SPEC, REFBUF) == 0 && mac_cpu_read(rt.cpu, REFBUF, 4) == id);
     spec_of(&rt, SPEC2, -1, 2, "Another folder"); CHECK(dir_create(&rt, SPEC2, REFBUF) == 0 && mac_cpu_read(rt.cpu, REFBUF, 4) >= 3 && mac_cpu_read(rt.cpu, REFBUF, 4) != id);   /* a different name, a different ID */
     spec_of(&rt, SPEC2, -1, 2, "Game Data"); w32(&rt, REFBUF, 0x77); CHECK(dir_create(&rt, SPEC2, REFBUF) == -48 && mac_cpu_read(rt.cpu, REFBUF, 4) == 0x77);   /* a file has the name */
-    spec_of(&rt, SPEC2, -1, 1, "OS Pi Data"); CHECK(dir_create(&rt, SPEC2, REFBUF) == -48);                                                                     /* the volume */
+    spec_of(&rt, SPEC2, -1, 1, "OS999 HD"); CHECK(dir_create(&rt, SPEC2, REFBUF) == -48);                                                                     /* the volume */
     spec_of(&rt, SPEC2, -1, id, "inner"); CHECK(dir_create(&rt, SPEC2, REFBUF) == -120);                                                                         /* no nesting */
     spec_of(&rt, SPEC2, -1, 2, "x"); CHECK(dir_create(&rt, SPEC2, 0x1000000 - 2) == -50 && dir_create(&rt, SPEC2, REFBUF + 1) == -50);                         /* a bad result pointer */
     /* Files in the folder: separate from a root file of the same name, listed by the host with the prefix, found again through FSMakeFSSpec. */

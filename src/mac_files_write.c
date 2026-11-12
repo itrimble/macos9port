@@ -10,7 +10,7 @@
 #include <sys/xattr.h>
 #include <unistd.h>
 
-/* Writable save overlay for the virtual "OS Pi Data" volume (checklist L04).
+/* Writable save overlay for the virtual "OS999 HD" volume (checklist L04).
  * Independent implementation of the public File Manager create/write/delete/
  * rename/file-info interface (Inside Macintosh: Files, chapter 2). Guest
  * names resolve inside one pinned save directory through openat with
@@ -38,10 +38,10 @@ int mac_files_valid(MacCpu *cpu, uint32_t address, uint32_t length) {
     return address <= size && length <= size - address;
 }
 
-/* A full pathname that starts with this volume's own name ("OS Pi Data:Name", the name PBGetVol reports) names the same file
+/* A full pathname that starts with this volume's own name ("OS999 HD:Name", the name PBGetVol reports) names the same file
  * as "Name": the prefix is matched without regard to case and removed. Nothing else with a colon is accepted. */
 unsigned mac_files_volume_prefix(const char *name, size_t length) {
-    static const char prefix[] = "OS Pi Data:";
+    static const char prefix[] = "OS999 HD:";
     const size_t n = sizeof prefix - 1;
     if (length <= n) return 0; /* the bare volume name leaves no file name */
     for (size_t i = 0; i < n; i++) {
@@ -209,6 +209,8 @@ int mac_files_open_save(MacRuntime *rt, const char *name, unsigned permission, G
     if (mac_files_stage_name(name, stage, sizeof stage)) return -50;
     int src = mac_files_open_regular(s->saves, name, O_RDONLY);
     if (src < 0) return src;
+    struct stat copy_size;
+    if (fstat(src, &copy_size) == 0 && volume_budget_spend(&s->disk, (uint64_t)copy_size.st_size)) { close(src); return -34; }
     int dst = openat(s->saves, stage, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
     if (dst < 0 && errno == EEXIST && !unlinkat(s->saves, stage, 0))
         dst = openat(s->saves, stage, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
@@ -403,7 +405,8 @@ static int growth_allowed(FileState *s, int64_t size, int64_t end) {
     unsigned files; uint64_t bytes;
     int error = usage(s, &files, &bytes);
     if (error) return error;
-    return bytes + (uint64_t)(end - size) > s->max_bytes ? -34 : 0;
+    if (bytes + (uint64_t)(end - size) > s->max_bytes) return -34;
+    return volume_budget_spend(&s->disk, (uint64_t)(end - size));   /* the internal disk's own capacity */
 }
 
 int mac_files_write(MacRuntime *rt, uint32_t pb, GuestFile *f) {

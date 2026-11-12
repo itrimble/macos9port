@@ -3,6 +3,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "mac_runtime.h"
 #include "mac_drive_queue.h"
+#include "mac_files_int.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -12,15 +13,19 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-/* Logical, read-only mounted directory, not a physical HFS disk. HVolumeParam
+/* Logical mounted directory, not a physical HFS disk. HVolumeParam
  * is packed on two-byte boundaries and occupies 122 bytes. No raw blocks,
- * disk driver, Finder metadata, or host free-space values are fabricated.
- * Capacity is the occupied 512-byte allocation units of representable root
- * files. Children are counted, but recursive catalog access is not supported.
+ * disk driver or Finder metadata are fabricated.
+ * Once mac_files_disk() ties the volume to the OS999 internal disk, the block
+ * counts are that disk's defined capacity and free space (volume_capacity.h),
+ * clipped the way Mac OS clipped large volumes: at most 65535 allocation
+ * blocks and just under 2 GiB. Otherwise (probes, older tests) capacity is the
+ * occupied 512-byte allocation units of representable root files and nothing is free.
+ * Children are counted, but recursive catalog access is not supported.
  * Public structure: https://ioi-xd.net/os9docs/Files_8h_source.html
  */
 enum { VOLUME_PB_SIZE = 122, SCAN_LIMIT = 4096 };
-static const char volume_name[] = "OS Pi Data";
+static const char volume_name[] = VOLUME_DISK_NAME; /* same name as the desktop disk icon */
 
 static int range(MacCpu *cpu, uint32_t p, size_t n) {
     size_t ram = mac_cpu_ram_size(cpu);
@@ -143,11 +148,24 @@ static int volume_info(MacRuntime *rt, uint32_t pb, int directory_fd, size_t siz
     put32(out + 30, mac_date(metadata.root.st_birthtimespec.tv_sec));
 #endif
     put32(out + 34, mac_date(metadata.root.st_mtime));
-    put16(out + 38, 0x8000); /* Software locked: guest writes are unsupported. */
+    FileState *fs = rt->file_state;
+    VolumeSpace space;
+    int disk = fs && fs->disk.active && volume_budget_space(&fs->disk, &space) == 0;
+    /* Software locked unless the save overlay makes the volume writable. */
+    put16(out + 38, fs && fs->saves >= 0 ? 0 : 0x8000);
     put16(out + 40, (uint16_t)metadata.files);
-    put16(out + 46, (uint16_t)metadata.blocks);
-    put32(out + 48, 512);
-    put32(out + 52, 512);
+    if (disk) {
+        VolumeClassic classic;
+        volume_classic_view(&space, &classic);
+        put16(out + 46, classic.total_blocks);   /* ioVNmAlBlks */
+        put32(out + 48, classic.block_size);     /* ioVAlBlkSiz */
+        put32(out + 52, classic.block_size);     /* ioVClpSiz */
+        put16(out + 62, classic.free_blocks);    /* ioVFrBlk */
+    } else {
+        put16(out + 46, (uint16_t)metadata.blocks);
+        put32(out + 48, 512);
+        put32(out + 52, 512);
+    }
     /* IDs 1 and 2 represent parent/root; reserve IDs 16.. for this snapshot
      * of children. No writable catalog or persistent child IDs are exposed. */
     put32(out + 58, 16u + metadata.files + metadata.directories);

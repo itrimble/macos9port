@@ -78,14 +78,14 @@ int main(void) {
             if (k < 2) CHECK(refs[k] >= 256 && rd(&r, 0xa60, 2) == 0); else CHECK(refs[k] == -1 && (int16_t)rd(&r, 0xa60, 2) == -43);
         }
         CHECK(refs[0] == refs[1]);                                                                                                          /* opening it again returns the same reference */
-        memset(mac_cpu_ram(r.cpu) + 0x2000, 0, 80); w(&r, 0x2002, 4, 1); pstr(&r, 0x2006, "OS Pi Data");                                          /* parID 1: the volume root itself */
+        memset(mac_cpu_ram(r.cpu) + 0x2000, 0, 80); w(&r, 0x2002, 4, 1); pstr(&r, 0x2006, "OS999 HD");                                          /* parID 1: the volume root itself */
         mac_cpu_set(r.cpu, MAC_A7, 0xf000); mac_cpu_set(r.cpu, MAC_D0, 13); w(&r, 0xf000, 2, 0); w(&r, 0xf002, 4, 0x2000);
         CHECK(mac_fsspec_service(&r, 0xaa52) == 1 && (int16_t)rd(&r, 0xf006, 2) == -1 && (int16_t)rd(&r, 0xa60, 2) != 0); }
     mac_cpu_set(r.cpu, MAC_A7, RAM - 2); CHECK(mac_files_crf_service(&r, 0xa9b1) == -1 && mac_cpu_halted(r.cpu)); mac_cpu_destroy(r.cpu);
     /* PBHGetVol / PBHSetVol: the one volume, root directory 2 */
     r = (MacRuntime){0}; r.cpu = mac_cpu_create(RAM); r.heap_next = 0x3000; r.heap_limit = 0x8000; CHECK(mac_files_root(&r, data) == 0);
     pstr(&r, NAME, ""); memset(mac_cpu_ram(r.cpu) + PB, 0, 64); w(&r, PB + 18, 4, NAME + 0x80); w(&r, PB + 48, 4, 0x77777777);
-    CHECK(call(&r, 0xa214) == 0 && rd(&r, PB + 22, 2) == 0xffff && rd(&r, PB + 48, 4) == 2 && rd(&r, PB + 28, 4) == 0 && rd(&r, NAME + 0x80, 1) == 10);
+    CHECK(call(&r, 0xa214) == 0 && rd(&r, PB + 22, 2) == 0xffff && rd(&r, PB + 48, 4) == 2 && rd(&r, PB + 28, 4) == 0 && rd(&r, NAME + 0x80, 1) == 8);
     memset(mac_cpu_ram(r.cpu) + PB, 0, 64); w(&r, PB + 48, 4, 2); CHECK(call(&r, 0xa215) == 0);
     w(&r, PB + 48, 4, 0); CHECK(call(&r, 0xa215) == 0);
     w(&r, PB + 48, 4, 99); CHECK(call(&r, 0xa215) == -120);

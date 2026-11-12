@@ -118,6 +118,10 @@ int main(void) {
     CHECK(unlink(theme_path) == 0);
     snprintf(theme_path, sizeof theme_path, "%s/.os999-finder-state", root);
     CHECK(unlink(theme_path) == 0);
+    snprintf(theme_path, sizeof theme_path, "%s/.os999/capacity", root);   /* the internal disk size is saved at session start */
+    CHECK(unlink(theme_path) == 0);
+    snprintf(theme_path, sizeof theme_path, "%s/.os999", root);
+    CHECK(rmdir(theme_path) == 0);
     snprintf(theme_path, sizeof theme_path, "%s/Desktop Folder", root);
     CHECK(rmdir(theme_path) == 0);
     CHECK(rmdir(root) == 0);

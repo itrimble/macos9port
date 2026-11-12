@@ -61,8 +61,8 @@ int main(void) {
     for (unsigned i = 346; i < 378; i++) CHECK(ram[i] == 0);
     prepare(cpu,1,123,1024); memset(ram+1024,0xcc,20);
     CHECK(mac_volume_info(&rt,256,fd) == 0);
-    CHECK(ram[1024] == 10 && memcmp(ram+1025,"OS Pi Data",10) == 0 && ram[1035] == 0xcc);
-    prepare(cpu,-1,123,1024); ram[1024] = 11; memcpy(ram+1025,"os pi data:",11);
+    CHECK(ram[1024] == 8 && memcmp(ram+1025,"OS999 HD",8) == 0 && ram[1033] == 0xcc);
+    prepare(cpu,-1,123,1024); ram[1024] = 9; memcpy(ram+1025,"os999 hd:",9);
     CHECK(mac_volume_info(&rt,256,fd) == 0);
     prepare(cpu,0,0,0); CHECK(mac_volume_info(&rt,256,fd) == 0);
     CHECK(get(cpu,338,4) == 3); /* Independent enumeration starts at beginning. */

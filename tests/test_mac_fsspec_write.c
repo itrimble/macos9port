@@ -56,7 +56,7 @@ int main(void) {
     CHECK(create(&rt, SPEC, TTXT, TEXT) == -48);
     spec_of(&rt, SPEC, -1, 2, "Game Data");
     CHECK(create(&rt, SPEC, 0, 0) == -48);                           /* one namespace with the data volume */
-    spec_of(&rt, SPEC, -1, 1, "OS Pi Data");
+    spec_of(&rt, SPEC, -1, 1, "OS999 HD");
     CHECK(create(&rt, SPEC, 0, 0) == -48);
     static const char *bad[] = {"../escape", "a/b", "a:b", ".hidden", "..", "", "ThisNameIsDefinitelyOverThirtyOneChars", "a\\b"};
     for (unsigned i = 0; i < sizeof bad / sizeof *bad; i++) {
@@ -120,7 +120,7 @@ int main(void) {
     CHECK(rename_to(&rt, SPEC2, NAME2) == -45);
     spec_of(&rt, SPEC2, -1, 2, "Missing");
     CHECK(rename_to(&rt, SPEC2, NAME2) == -43);
-    spec_of(&rt, SPEC2, -1, 1, "OS Pi Data");
+    spec_of(&rt, SPEC2, -1, 1, "OS999 HD");
     CHECK(rename_to(&rt, SPEC2, NAME2) == -46);
     CHECK(rename_to(&rt, SPEC, NAME2) == 0);
     CHECK(!exists_in(saves, "Pilot 1") && host_size(saves, "Pilot 2") == 5);
@@ -142,7 +142,7 @@ int main(void) {
     /* Delete: data files and the volume root cannot go. */
     spec_of(&rt, SPEC, -1, 2, "Game Data");
     CHECK(one_spec(&rt, 6, SPEC) == -45 && host_size(data, "Game Data") == 6);
-    spec_of(&rt, SPEC, -1, 1, "OS Pi Data");
+    spec_of(&rt, SPEC, -1, 1, "OS999 HD");
     CHECK(one_spec(&rt, 6, SPEC) == -47);
     spec_of(&rt, SPEC, -1, 2, "../Game Data");
     CHECK(one_spec(&rt, 6, SPEC) == -37 && host_size(data, "Game Data") == 6);

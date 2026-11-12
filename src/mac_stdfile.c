@@ -154,7 +154,7 @@ static int begin(MacRuntime *rt, uint32_t sp, uint32_t pc, unsigned selector) {
     s->list.rows = rows;
     unsigned n = prompt ? (unsigned)rd(rt, prompt, 1) : 0; if (n > sizeof s->prompt - 1) n = sizeof s->prompt - 1;
     if (prompt) memcpy(s->prompt, mac_cpu_ram(rt->cpu) + prompt + 1, n);
-    memcpy(s->volume, "OS Pi Data", 11);
+    memcpy(s->volume, "OS999 HD", 9);
     MacFileEntry *entries = malloc(SF_MAX_FILES * sizeof *entries);
     s->all = malloc(SF_MAX_FILES * sizeof *s->all);
     s->hide = calloc(SF_MAX_FILES, 1);

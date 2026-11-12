@@ -20,6 +20,7 @@
 #include "finder_popup.h"
 #include "font_book.h"
 #include "font_book_window.h"
+#include "volume_capacity.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,6 +28,18 @@
 #include <sys/stat.h>
 
 static const SessionMediaHooks *g_media_hooks;
+
+/* Finder windows, the Memory panel and the terminal all read these three numbers. */
+static void refresh_space(Session *s, int fresh) {
+    VolumeSpace sp;
+    if (volume_space(s->root, fresh, &sp) == 0) {
+        s->free_bytes = sp.free;
+        s->disk_capacity = sp.capacity;
+        s->disk_used = sp.used;
+    } else {
+        volume_free_bytes(s->root, &s->free_bytes);   /* could not measure: show the host figure */
+    }
+}
 
 void session_set_media_hooks(const SessionMediaHooks *hooks) { g_media_hooks = hooks; }
 const SessionMediaHooks *session_media_hooks(void) { return g_media_hooks; }
@@ -101,7 +114,8 @@ Session *session_create(const char *root) {
     if (typeface_ready()) typeface_reload(s->root); else typeface_init(s->root);
     s->ram = host_ram();
     snprintf(s->arch, sizeof s->arch, "%s", host_arch());
-    volume_free_bytes(s->root, &s->free_bytes);
+    if (volume_capacity_ensure(s->root) != 0) fprintf(stderr, "OS999: Disk size could not be saved.\n");
+    refresh_space(s, 1);
     s->last_stat = 1;
     if (finder_labels_load(s) < 0) fprintf(stderr, "OS999: Label preferences could not be read.\n");
     finder_recent_load(s);
@@ -214,10 +228,7 @@ void session_tick(Session *s, uint32_t now_ms) {
     if (s->last_stat != 0 && now_ms - s->last_stat < 1000) {
         return;
     }
-    uint64_t b = 0;
-    if (volume_free_bytes(s->root, &b) == 0) {
-        s->free_bytes = b;
-    }
+    refresh_space(s, 0);
     finder_refresh(s);
     s->last_stat = now_ms;
 }

@@ -13,14 +13,14 @@
  * convention: arguments on the stack in declaration order, the OSErr result word below them; the selector
  * is in D0. A Boolean/SignedByte argument is a word holding the byte at the lower (even) address.
  *
- * Volume model, identical to the PB calls in mac_files.c: one flat volume "OS Pi Data" (vRefNum -1, 0 = default)
+ * Volume model, identical to the PB calls in mac_files.c: one flat volume "OS999 HD" (vRefNum -1, 0 = default)
  * whose root directory has ID 2 and parent ID 1. It has no subdirectories, so every path below the root fails with
  * dirNFErr. Application data files are read-only; guest writes go to the save overlay through the same cores
  * the PB calls use (quotas, name rules, one writer, staged commit). Without --saves every mutation fails with the
  * documented File Manager error. Selectors that cannot be implemented honestly halt, naming the selector.
  * Gestalt 'fs  ' reports exactly gestaltHasFSSpecCalls (bit 1), see mac_system.c. */
 enum { SPEC_BYTES = 70, SPEC_NAME_MAX = 63, ROOT_PARENT_ID = 1, ROOT_DIR_ID = 2 };
-#define VOLUME_NAME "OS Pi Data"
+#define VOLUME_NAME "OS999 HD"
 
 typedef struct {
     int root;                       /* the spec names the volume's root directory itself */

@@ -33,6 +33,11 @@ static int valid(MacCpu *cpu, uint32_t address, uint32_t length) {
 
 /* Open staged writes are discarded, never committed: a halt mid-save leaves
  * the previously committed save intact (restart recovery). */
+int mac_files_disk(MacRuntime *rt, const char *volume_root) {
+    FileState *s = rt ? rt->file_state : NULL;
+    return s && volume_root && volume_budget_open(&s->disk, volume_root) == 0 ? 0 : -1;
+}
+
 void mac_files_destroy(MacRuntime *rt) {
     if (!rt || !rt->file_state) return;
     FileState *s = rt->file_state;
@@ -73,7 +78,7 @@ static int result(MacCpu *cpu, uint32_t pb, int error) {
 /* This virtual volume is precisely the explicitly mounted app-data directory,
  * not a host disk. Its stable reference never grants access to other paths. */
 int mac_files_get_volume(MacRuntime *rt, uint32_t pb) {
-    static const char name[] = "OS Pi Data";
+    static const char name[] = "OS999 HD";
     if (!rt->file_state) return -35;
     uint32_t p = mac_cpu_read(rt->cpu, pb + 18, 4);
     if (p && !valid(rt->cpu, p, sizeof name)) return -50;
@@ -175,8 +180,8 @@ static int root_info(MacRuntime *rt, uint32_t pb) {
     count += overlay;
     /* All input, host operations and output bounds checked before guest writes. */
     if (name) {
-        mac_cpu_ram(cpu)[name] = 10;
-        memcpy(mac_cpu_ram(cpu)+name+1,"OS Pi Data",10);
+        mac_cpu_ram(cpu)[name] = 8;
+        memcpy(mac_cpu_ram(cpu)+name+1,"OS999 HD",8);
     }
     mac_cpu_write(cpu,pb+30,1,0x10); /* Directory, no fabricated Finder lock. */
     mac_cpu_write(cpu,pb+31,1,0); /* Non-AFP access-rights field. */
@@ -272,7 +277,7 @@ static int flush_volume(MacRuntime *rt, uint32_t pb) {
         const uint8_t *name = mac_cpu_ram(c)+p+1;
         while (end < n && name[end] != ':') end++;
         if (end && end < n) {
-            static const char *names[] = {"OS Pi Data", "OS Pi System"};
+            static const char *names[] = {"OS999 HD", "OS Pi System"};
             volume = -3;
             for (unsigned i=0;i<2;i++) {
                 if (end != strlen(names[i])) continue;

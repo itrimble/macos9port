@@ -187,7 +187,7 @@ int mac_files_set_vol(MacRuntime *rt, uint32_t pb) {
         const uint8_t *name = mac_cpu_ram(cpu) + p + 1;
         while (end < n && name[end] != ':') end++;
         if (end && end < n) {
-            static const char volume[] = "OS Pi Data";
+            static const char volume[] = "OS999 HD";
             if (end != sizeof volume - 1) return -35;
             for (unsigned i = 0; i < end; i++) {
                 unsigned a = name[i], b = (unsigned char)volume[i];

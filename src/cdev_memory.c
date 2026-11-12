@@ -2,6 +2,7 @@
 #include "cdev_ui.h"
 #include "desktop_theme.h"
 #include "session_int.h"
+#include "volume_capacity.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -108,6 +109,24 @@ static Rect guest_btn(Rect c, int i) { return (Rect){c.x + 314 + i * 66, c.y + 1
 static Rect guard_chk(Rect c) { return (Rect){c.x + 314, c.y + 162, 260, 24}; }
 static Rect clear_chk(Rect c) { return (Rect){c.x + 16, c.y + 256, 268, 24}; }
 static Rect ramdisk_chk(Rect c) { return (Rect){c.x + 306, c.y + 256, 256, 24}; }
+/* Internal disk size: -1 GB, +1 GB, +10 GB along the right edge of the overview group. */
+static Rect disk_btn(Rect c, int i) { return (Rect){c.x + c.w - 184 + i * 61, c.y + 73, 57, 18}; }
+static const char *const k_disk_labels[3] = {"-1 GB", "+1 GB", "+10 GB"};
+static const int k_disk_step_gb[3] = {-1, 1, 10};
+
+static void disk_resize(const os999_cdev_host_t *host, int step_gb) {
+    Session *s = host ? host->session : NULL;
+    if (!s || !s->root[0]) return;
+    VolumeSpace sp;
+    char msg[200];
+    if (volume_space(s->root, 1, &sp) != 0) { dialog_info(s, VOLUME_DISK_NAME, "The disk could not be measured."); return; }
+    uint64_t step = (uint64_t)(step_gb < 0 ? -step_gb : step_gb) * VOLUME_CAPACITY_STEP_BYTES;
+    if (step_gb < 0 && step >= sp.capacity) { dialog_info(s, VOLUME_DISK_NAME, "The disk cannot be made that small."); return; }
+    uint64_t want = step_gb < 0 ? sp.capacity - step : sp.capacity + step;
+    if (volume_capacity_set(s->root, want, msg, sizeof msg) != 0) { dialog_info(s, VOLUME_DISK_NAME, msg); return; }
+    if (volume_space(s->root, 1, &sp) == 0) { s->free_bytes = sp.free; s->disk_capacity = sp.capacity; s->disk_used = sp.used; }
+}
+
 static Rect ramdisk_btn(Rect c, int i) { return (Rect){c.x + 306 + i * 66, c.y + 292, 60, 24}; }
 
 static void apply_and_save(os999_cdev_t *self, const os999_cdev_host_t *host, int sync_fs) {
@@ -128,6 +147,8 @@ static int memory_event(os999_cdev_t *self, const os999_cdev_host_t *host,
     }
     if (ev->type != OS999_CDEV_EV_DOWN) return 0;
     int x = ev->x, y = ev->y;
+    for (int i = 0; i < 3; i++)
+        if (rect_has(disk_btn(c, i), x, y)) { disk_resize(host, k_disk_step_gb[i]); return 1; }
     if (rect_has(cache_def_btn(c), x, y)) {
         g_mem.custom_cache = 0;
         g_mem.disk_cache_kb = 512;
@@ -196,17 +217,26 @@ static void memory_render(os999_cdev_t *self, const os999_cdev_host_t *host,
     uint32_t fg = desktop_theme_color(THEME_FOREGROUND);
     const Session *s = host ? host->session : NULL;
     uint64_t ram = (s && s->ram > 0) ? s->ram : host_ram();
-    uint64_t disk_free = s ? s->free_bytes : 0;
-    if (disk_free == 0 && s && s->root[0]) (void)volume_free_bytes(s->root, &disk_free);
+    VolumeSpace disk = {0};
+    int have_disk = s && s->root[0] && volume_space(s->root, 0, &disk) == 0;
+    uint64_t disk_free = have_disk ? disk.free : (s ? s->free_bytes : 0);
 
     cdev_ui_group(fb, (Rect){c.x, c.y + 2, c.w, 92}, "Host & Runtime Memory Overview");
     cdev_ui_icon(fb, c.x + 16, c.y + 26, "cpu");
     char ram_s[32], free_s[32], info[128];
     fmt_bytes(ram_s, sizeof ram_s, ram);
     fmt_bytes(free_s, sizeof free_s, disk_free);
-    snprintf(info, sizeof info, "Host RAM: %s (%s)   |   Volume Free: %s",
+    snprintf(info, sizeof info, "Host RAM: %s (%s)   |   Disk Free: %s",
              ram_s, (s && s->arch[0]) ? s->arch : host_arch(), free_s);
     fb_text(fb, c.x + 62, c.y + 24, fg, info);
+    if (have_disk) {
+        char used_s[32], cap_s[32], line[96];
+        volume_format_bytes(used_s, sizeof used_s, disk.used);
+        volume_format_bytes(cap_s, sizeof cap_s, disk.capacity);
+        snprintf(line, sizeof line, "%s: %s used of %s", VOLUME_DISK_NAME, used_s, cap_s);
+        fb_text(fb, c.x + 62, c.y + 76, desktop_theme_color(THEME_DISABLED), line);
+        for (int i = 0; i < 3; i++) cdev_ui_button(fb, disk_btn(c, i), k_disk_labels[i], 0, 1);
+    }
 
     Rect bar = {c.x + 62, c.y + 52, c.w - 78, 20};
     fb_fill(fb, bar.x, bar.y, bar.w, bar.h, desktop_theme_color(THEME_TRACK));

@@ -3,6 +3,7 @@
 /* Private state shared by the read-only File Manager service (mac_files.c)
  * and the writable save overlay (mac_files_write.c). Not a public API. */
 #include "mac_runtime.h"
+#include "volume_capacity.h"
 #include <dirent.h>
 #include <stdint.h>
 
@@ -38,6 +39,7 @@ typedef struct {
     int saves;             /* Pinned writable overlay root, or -1 (read-only volume). */
     unsigned max_files;    /* Overlay quotas; zero means no overlay. */
     uint64_t max_bytes;
+    VolumeBudget disk;     /* internal-disk capacity budget (active after mac_files_disk) */
     GuestFile files[FILE_LIMIT];
 } FileState;
 
@@ -48,7 +50,7 @@ int mac_files_valid(MacCpu *cpu, uint32_t address, uint32_t length);
 /* Copy a guest Pascal string into out (NUL terminated). Returns -50 when the
  * pointer, length or characters are unacceptable for any volume operation. */
 int mac_files_read_name(MacCpu *cpu, uint32_t pointer, char *out, size_t capacity);
-/* Length of a leading "OS Pi Data:" (this volume's name, any case) when a file name follows it, else 0. */
+/* Length of a leading "OS999 HD:" (this volume's name, any case) when a file name follows it, else 0. */
 unsigned mac_files_volume_prefix(const char *name, size_t length);
 int mac_files_save_name_ok(const char *name);
 int mac_files_classify(const FileState *s, const char *name);

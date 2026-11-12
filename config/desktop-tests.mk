@@ -131,9 +131,9 @@ test-network: build/test_modern_network
 test: build/test_modern_network
 
 FINDER_VOLUME_SRC := src/native_catalog.c src/volume.c src/volume_folders.c src/mac_icon.c src/mac_icon_palette.c src/mac_resource.c
-build/test_finder_files: $(FINDER_VOLUME_SRC) tests/test_finder_files.c src/finder_files.c src/finder_alias.c src/archive_fs.c include/finder_files.h include/ospi.h include/volume_directory.h
+build/test_finder_files: $(FINDER_VOLUME_SRC) tests/test_finder_files.c src/finder_files.c src/finder_alias.c src/archive_fs.c src/volume_capacity.c include/finder_files.h include/volume_capacity.h include/ospi.h include/volume_directory.h
 	mkdir -p build
-	$(CC) $(CFLAGS) $(FINDER_VOLUME_SRC) tests/test_finder_files.c src/finder_files.c src/finder_alias.c src/archive_fs.c -o $@
+	$(CC) $(CFLAGS) $(FINDER_VOLUME_SRC) tests/test_finder_files.c src/finder_files.c src/finder_alias.c src/archive_fs.c src/volume_capacity.c -o $@
 test: build/test_finder_files
 
 build/test_finder_desktop: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_finder_desktop.c $(HDRS)
@@ -358,9 +358,9 @@ test-quicktime: build/test_quicktime_lifecycle
 build/test_ramdisk_safety: tests/test_ramdisk_safety.c src/volume_folders.c include/ospi.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -Werror tests/test_ramdisk_safety.c src/volume_folders.c -o $@
-build/test_controlpanels_storage_safety: tests/test_controlpanels_storage_safety.c src/control_panel_store.c src/finder_files.c src/volume_folders.c $(HDRS)
+build/test_controlpanels_storage_safety: tests/test_controlpanels_storage_safety.c src/control_panel_store.c src/finder_files.c src/volume_folders.c src/volume_capacity.c $(HDRS)
 	@mkdir -p build
-	$(CC) $(CFLAGS) -Werror tests/test_controlpanels_storage_safety.c src/control_panel_store.c src/finder_files.c src/volume_folders.c -pthread -o $@
+	$(CC) $(CFLAGS) -Werror tests/test_controlpanels_storage_safety.c src/control_panel_store.c src/finder_files.c src/volume_folders.c src/volume_capacity.c -pthread -o $@
 test-controlpanels: test-controlpanels-safety
 .PHONY: test-controlpanels-safety
 test-controlpanels-safety: build/test_ramdisk_safety build/test_controlpanels_storage_safety

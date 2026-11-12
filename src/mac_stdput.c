@@ -9,7 +9,7 @@
  * selector2, reply4, dlgHook4, origName4, prompt4, where4 (22 bytes). The guest is stopped inside the trap; it rewinds its PC and
  * yields each slice, like the Alert and Standard File dialogs, so with no input a run just stays in the dialog.
  *
- * This is a reduced dialog of our own, not the system one: the prompt, "Save in: OS Pi Data", one editable name (1 to 31 characters,
+ * This is a reduced dialog of our own, not the system one: the prompt, "Save in: OS999 HD", one editable name (1 to 31 characters,
  * printable ASCII without ':'; Backspace deletes), a Save button (default, dimmed while the name is empty) and a Cancel button. There
  * is no file list, no Eject or Drive and no "replace existing file?" alert: a name that already exists is returned as it is and the
  * guest's own Create/Open decides what happens. Return and Enter save, Escape and Command-period cancel. A dialog hook halts. origName
@@ -47,7 +47,7 @@ static void draw(MacRuntime *rt, const MacPutState *s) {
     MacPen pen; mac_pen_init(&pen, rt, s->left, s->top, s->width, s->height);
     mac_pen_frame(&pen);
     mac_pen_wrap(&pen, s->left + 16, s->top + 12, s->left + W - 16, s->top + 40, s->prompt, (unsigned)strlen(s->prompt));
-    mac_pen_text(&pen, s->left + 16, s->top + 46, "Save in: OS Pi Data", 19, pen.dark, 0);
+    mac_pen_text(&pen, s->left + 16, s->top + 46, "Save in: OS999 HD", 17, pen.dark, 0);
     mac_pen_box(&pen, s->left + 16, s->top + 62, s->left + W - 16, s->top + 80, pen.dark);
     mac_pen_fill(&pen, s->left + 17, s->top + 63, s->left + W - 17, s->top + 79, pen.light);
     mac_pen_text(&pen, s->left + 20, s->top + 67, s->name, s->nlen, pen.dark, 0);

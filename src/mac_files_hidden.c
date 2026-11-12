@@ -24,7 +24,7 @@ int mac_files_overlay_put_hidden(MacRuntime *rt, const char *name, const uint8_t
     FileState *s = rt ? rt->file_state : NULL;
     if (!s || s->saves < 0) return 1;
     if (!hidden_name_ok(name)) return -50;
-    if (size > s->max_bytes / 4) return -34;
+    if (size > s->max_bytes / 4 || volume_budget_spend(&s->disk, size)) return -34;
     char stage[64];
     if (mac_files_stage_name(name, stage, sizeof stage)) return -50;
     int fd = openat(s->saves, stage, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
