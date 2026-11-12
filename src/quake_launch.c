@@ -82,9 +82,27 @@ int quake_launch_resolve_demo(QuakeLaunch *q, const char *exe_dir, const char *h
     return arena_data(q, path);
 }
 
+/* Full retail game: only a complete, verified baseq3 pak set is accepted. Its data lives in a root of its
+ * own so the demo profile (fs_game demoq3) never loads retail paks, and its settings stay in OS999's folder. */
+int quake_launch_resolve_retail(QuakeLaunch *q, const char *exe_dir, const char *home) {
+    int found = quake_launch_resolve(q, exe_dir, home);
+    if (found == -1) return -1;
+    if (!home || !home[0]) return -3;
+    char data[1100];
+    const char *env = getenv("OS999_QUAKE3_DATA");
+    if (env && env[0]) snprintf(data, sizeof data, "%s", env);          /* explicit data never falls back */
+    else if (snprintf(data, sizeof data, "%s/Library/Application Support/OS999/Quake3-Full", home) >= (int)sizeof data) return -3;
+    if (!quake_data_retail_ok(data)) return -3;
+    q->arena_demo = 0;
+    snprintf(q->game, sizeof q->game, "baseq3");
+    if (fmt(q->datapath, sizeof q->datapath, data, "") ||
+        fmt(q->homepath, sizeof q->homepath, home, "/Library/Application Support/OS999/Quake3-Full-Home")) return -3;
+    return 0;
+}
+
 int quake_launch_argv(const QuakeLaunch *q, char *argv[], int max) {
     static char base_arg[1100], cd_arg[1100], home_arg[1100];
-    if (!q || !argv || max < (q->arena_demo ? 23 : 11)) return 0;
+    if (!q || !argv || max < (q->arena_demo ? 23 : q->homepath[0] ? 14 : 11)) return 0;
     /* The engine joins argv into its own command language. Preserve spaces
      * and reject characters that could terminate a quoted path. */
     const char *paths[] = {q->basepath, q->datapath, q->homepath};
@@ -98,6 +116,7 @@ int quake_launch_argv(const QuakeLaunch *q, char *argv[], int max) {
     argv[n++] = "+set"; argv[n++] = "fs_basepath"; argv[n++] = base_arg;
     argv[n++] = "+set"; argv[n++] = "fs_cdpath"; argv[n++] = cd_arg;
     if (strcmp(q->game, "baseq3")) { argv[n++] = "+set"; argv[n++] = "fs_game"; argv[n++] = (char *)q->game; }
+    if (!q->arena_demo && q->homepath[0]) { argv[n++] = "+set"; argv[n++] = "fs_homepath"; argv[n++] = home_arg; }
     if (q->arena_demo) {
         argv[n++] = "+set"; argv[n++] = "os999_demoProfile"; argv[n++] = "arena-1.11";
         argv[n++] = "+set"; argv[n++] = "fs_homepath"; argv[n++] = home_arg;

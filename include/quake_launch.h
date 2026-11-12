@@ -19,6 +19,9 @@ typedef struct {
 int quake_launch_resolve(QuakeLaunch *q, const char *exe_dir, const char *home);
 /* Explicit Arena 1.11 opt-in. -3 means unsupported or unverified data. */
 int quake_launch_resolve_demo(QuakeLaunch *q, const char *exe_dir, const char *home);
+/* Full retail game, only when baseq3/pak0..pak8.pk3 verify (OS999_QUAKE3_DATA overrides the folder).
+ * -1 engine missing, -3 no complete verified set. Sets game "baseq3" and a private fs_homepath. */
+int quake_launch_resolve_retail(QuakeLaunch *q, const char *exe_dir, const char *home);
 /* Build argv for the resolved launch; returns the argument count. */
 int quake_launch_argv(const QuakeLaunch *q, char *argv[], int max);
 #endif

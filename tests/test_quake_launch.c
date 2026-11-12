@@ -103,6 +103,55 @@ int main(int argc, char **args) {
         setenv("HOME", home, 1);                                    /* keep the legacy carry-over away from the real Mac home */
         CHECK(quake_data_import_demo(home, vol) == -1);
     }
+    { /* The full retail set: nine paks in the real table; here a two-file synthetic table with injected hashes. */
+        static const char b0[] = "retail fixture pak0", b1[] = "retail fixture pak1 longer";
+        const QuakePak fake[] = {
+            {"pak0.pk3", 19, "70e31c53f2d55f25f8f20c8465935d39693986575cdbaf3de0f754f4e3b73b76"},
+            {"pak1.pk3", 26, "0c63e4d72d5a2b211b60cf1c3572e41764fc1897211db967d91d2e6d934ad4f5"}};
+        int cnt = 0; const QuakePak *real = quake_data_retail_table(&cnt);
+        CHECK(cnt == 9 && !strcmp(real[0].name, "pak0.pk3") && !strcmp(real[8].name, "pak8.pk3"));
+        for (int i = 0; i < cnt; i++) CHECK(real[i].size > 0 && strlen(real[i].sha256) == 64);
+        char src[512], nest[512], base[512], h2[512], inst[512], root2[512];
+        snprintf(src, sizeof src, "%s/chosen", root); mkdir(src, 0755);
+        snprintf(nest, sizeof nest, "%s/chosen/Quake III Arena (Complete)", root); mkdir(nest, 0755);
+        snprintf(base, sizeof base, "%s/baseq3", nest); mkdir(base, 0755);
+        snprintf(p, sizeof p, "%s/pak0.pk3", base); FILE *f = fopen(p, "wb"); fwrite(b0, 1, 19, f); fclose(f);
+        const char *const dirs[] = {src};
+        snprintf(h2, sizeof h2, "%s/home2", root); mkdir(h2, 0755);
+        snprintf(root2, sizeof root2, "%s/Library/Application Support/OS999/Quake3-Full", h2);
+        CHECK(quake_data_import_set(h2, dirs, 1, fake, 2) == -1);        /* only pak0: incomplete set */
+        snprintf(inst, sizeof inst, "%s/baseq3/pak0.pk3", root2);
+        CHECK(access(inst, F_OK) != 0);
+        snprintf(p, sizeof p, "%s/pak1.pk3", base); f = fopen(p, "wb"); fputs("retail fixture pak1 TAMPER!", f); fclose(f);
+        CHECK(quake_data_import_set(h2, dirs, 1, fake, 2) == -1);        /* tampered, same size */
+        CHECK(access(inst, F_OK) != 0);                                  /* nothing installed from a bad set */
+        f = fopen(p, "wb"); fwrite(b1, 1, 26, f); fclose(f);
+        CHECK(quake_data_import_set(h2, dirs, 1, fake, 2) == 0);         /* found inside a subfolder */
+        CHECK(quake_data_retail_set_ok(root2, fake, 2) && !quake_data_retail_set_ok(root2, real, cnt));
+        struct stat st; CHECK(!stat(inst, &st) && (st.st_mode & 077) == 0);
+        CHECK(quake_data_import_set(h2, dirs, 1, fake, 2) == 1);         /* already installed */
+        snprintf(p, sizeof p, "%s.part", inst); CHECK(access(p, F_OK) != 0);
+        setenv("OS999_QUAKE3_DATA", root2, 1);
+        CHECK(quake_launch_resolve_retail(&q, exe, h2) == -3);           /* the real table does not match fixtures */
+        unsetenv("OS999_QUAKE3_DATA");
+        CHECK(quake_launch_resolve_retail(&q, exe, h2) == -3);           /* nothing installed under the real name */
+        CHECK(quake_launch_resolve_retail(&q, "/nonexistent", h2) == -1);
+        const char *rd = getenv("OS999_TEST_RETAIL_DATA"); /* optional: a folder holding the real baseq3, kept outside Git */
+        if (rd) {
+            setenv("OS999_QUAKE3_DATA", rd, 1);
+            CHECK(quake_launch_resolve_retail(&q, exe, h2) == 0 && !q.arena_demo && !strcmp(q.game, "baseq3"));
+            CHECK(strstr(q.homepath, "Quake3-Full-Home") != NULL);
+            unsetenv("OS999_QUAKE3_DATA");
+            printf("retail data at %s: accepted, game=%s\n", rd, q.game);
+        }
+        memset(&q, 0, sizeof q); strcpy(q.game, "baseq3");
+        strcpy(q.basepath, "/tmp/engine"); strcpy(q.datapath, "/tmp/full"); strcpy(q.homepath, "/tmp/full-home");
+        char *ra[16];
+        CHECK(quake_launch_argv(&q, ra, 13) == 0);
+        CHECK(quake_launch_argv(&q, ra, 16) == 10 && ra[10] == NULL);
+        CHECK(!strcmp(ra[8], "fs_homepath") && !strcmp(ra[9], "\"/tmp/full-home\""));
+        for (int i = 1; i < 10; i++) CHECK(strcmp(ra[i], "fs_game") && strcmp(ra[i], "os999_demoProfile"));
+    }
 #endif
     unsetenv("OS999_QUAKE3_DATA");
     printf("quake launch: %d checks, %d failures\n", checks, failures);
