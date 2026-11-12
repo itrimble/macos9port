@@ -261,7 +261,7 @@ static void draw_monitor_preview(Fb *fb, Rect box) {
     char line[48];
     snprintf(line, sizeof line, "Canvas: %d x %d", OSPI_W, OSPI_H);
     fb_text(fb, box.x + 88, box.y + 20, fg, line);
-    snprintf(line, sizeof line, "%s %s desktop", display_mode_aspect(mode), OSPI_H > OSPI_W ? "portrait" : "landscape");
+    snprintf(line, sizeof line, "%s %s", display_mode_aspect(mode), OSPI_H > OSPI_W ? "portrait" : "landscape"); /* must fit the group box */
     fb_text(fb, box.x + 88, box.y + 40, fg, line);
     snprintf(line, sizeof line, "Shown at %d%%", g_mon.window_scale);
     fb_text(fb, box.x + 88, box.y + 60, desktop_theme_color(THEME_DISABLED), line);
