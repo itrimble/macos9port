@@ -11,7 +11,7 @@
  * nLines 94, lineStarts[nLines+1] at 96.
  *
  * Limits, all deliberate: the font is a guest bitmap strike (mac_font.c), so a family/size the guest lacks halts; word and line
- * hooks (wordBreak, clikLoop, highHook, caretHook) must be NIL; TEClick sets the selection at the click and does not track a drag
+ * hooks (wordBreak, highHook, caretHook) must be NIL (clikLoop may be set: it is never called); TEClick sets the selection at the click and does not track a drag
  * (it cannot block waiting for the mouse); selection and caret are drawn by inverting pixels; an edit redraws from the edited line to
  * the bottom of the view; text is limited to 32000 characters and 4000 lines; left, centre and right justification only. */
 enum { REC = 98, TE_TYPE = 0x54455243, TE_TEXT = 0x54455854, MAX_TEXT = 32000, MAX_LINES = 4000, CARET_TICKS = 20 };
@@ -61,7 +61,7 @@ static int te_of(MacRuntime *rt, uint32_t h, uint32_t *rec) {
     return 0;
 }
 static int face_of(MacRuntime *rt, uint32_t r, MacTextFace *f) {
-    if (rd(rt, r + WB, 4) || rd(rt, r + CLIK, 4) || rd(rt, r + HIGH, 4) || rd(rt, r + CARET, 4)) return fail(rt, "TextEdit hooks (wordBreak, clikLoop, highHook, caretHook) are unsupported.");
+    if (rd(rt, r + WB, 4) || rd(rt, r + HIGH, 4) || rd(rt, r + CARET, 4)) return fail(rt, "TextEdit hooks (wordBreak, highHook, caretHook) are unsupported.");   /* clikLoop is only called while TEClick tracks a drag, which it does not */
     return mac_text_face(rt, s16(rt, r + FONT), s16(rt, r + SIZE), rd(rt, r + FACE, 1), 0, f);
 }
 static int text_at(MacRuntime *rt, uint32_t r, uint32_t *p) {
@@ -220,7 +220,17 @@ static int te_dispatch(MacRuntime *rt) {
     uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7);
     if ((sp & 1) || !ok(rt, sp, 12)) return fail(rt, "TEDispatch has an invalid stack.");
     unsigned sel = rd(rt, sp, 2);
-    if (sel != 8) return fail(rt, "TEDispatch selectors other than 8 (TEGetPoint) are unsupported.");
+    if (sel == 9) {   /* TEGetHeight(endLine, startLine, hTE): LONGINT. Stack: selector, hTE, startLine, endLine, result. The height of the lines from startLine up to endLine (so
+                       * (nLines, 0, hTE) is the whole text); every line is lineHeight tall here. That the range is half-open is from how programs use the call. */
+        uint32_t r9;
+        if (!ok(rt, sp, 18)) return fail(rt, "TEDispatch has an invalid stack.");
+        if (te_of(rt, rd(rt, sp + 2, 4), &r9)) return -1;
+        long n9 = (long)(int32_t)rd(rt, sp + 10, 4) - (long)(int32_t)rd(rt, sp + 6, 4);
+        wr(rt, sp + 14, 4, (uint32_t)(n9 > 0 ? n9 * s16(rt, r9 + LINE_H) : 0));
+        mac_cpu_set(rt->cpu, MAC_A7, sp + 14);
+        return 1;
+    }
+    if (sel != 8) return fail(rt, "TEDispatch selectors other than 8 (TEGetPoint) and 9 (TEGetHeight) are unsupported.");
     uint32_t r; MacTextFace f, *fp = &f; uint32_t t = 0;
     if (te_of(rt, rd(rt, sp + 2, 4), &r) || face_of(rt, r, fp) || text_at(rt, r, &t)) return -1;
     int off = s16(rt, sp + 6), n = s16(rt, r + LEN), lines = s16(rt, r + NLINES), lh = s16(rt, r + LINE_H);
@@ -236,7 +246,7 @@ int mac_textedit_service(MacRuntime *rt, uint16_t op) {
     if (op == 0xa83d) { if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1; return te_dispatch(rt); }
     if (op < 0xa9c8 || op > 0xa9e0) return 0;
     static const struct { uint16_t op; unsigned args; } calls[] = {
-        {0xa9cc, 0}, {0xa9d2, 8}, {0xa9cd, 4}, {0xa9cb, 4}, {0xa9cf, 12}, {0xa9d1, 12}, {0xa9d3, 8}, {0xa9d4, 10}, {0xa9d8, 4}, {0xa9d9, 4}, {0xa9da, 4}, {0xa9dc, 6}, {0xa9df, 6}};
+        {0xa9cc, 0}, {0xa9d2, 8}, {0xa9cd, 4}, {0xa9cb, 4}, {0xa9cf, 12}, {0xa9d1, 12}, {0xa9d3, 8}, {0xa9d4, 10}, {0xa9d8, 4}, {0xa9d9, 4}, {0xa9da, 4}, {0xa9dc, 6}, {0xa9df, 6}, {0xa9d0, 4}};
     unsigned args = 0; int known = 0;
     for (unsigned i = 0; i < sizeof calls / sizeof *calls; i++) if (calls[i].op == op) { known = 1; args = calls[i].args; }
     if (!known) return 0;
@@ -256,6 +266,7 @@ int mac_textedit_service(MacRuntime *rt, uint16_t op) {
         uint32_t th = rd(rt, r + HTEXT, 4);
         if (dispose(rt, th) || dispose(rt, h)) return fail(rt, "TEDispose could not release its handles.");
         break; }
+    case 0xa9d0: if (recalc(rt, h, r)) return -1; break;         /* TECalText(hTE): line starts again from the text */
     case 0xa9cb: wr(rt, sp + 4, 4, rd(rt, r + HTEXT, 4)); break;    /* TEGetText: the result sits above the argument */
     case 0xa9cf: {                                               /* TESetText(text, length, hTE) */
         uint32_t src = rd(rt, sp + 8, 4), n = rd(rt, sp + 4, 4);

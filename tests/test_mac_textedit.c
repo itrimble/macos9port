@@ -90,7 +90,7 @@ static void basics(void) {
     wrw(SPT, 4, h); wrw(SPT + 4, 2, 0xffff); mac_cpu_set(rt.cpu, MAC_A7, SPT); CHECK(call(0xa9df) == 1 && mac_cpu_get(rt.cpu, MAC_A7) == SPT + 6 && fld(h, 58) == -1);
     mac_cpu_set(rt.cpu, MAC_A7, SPT); CHECK(call(0xa9cc) == 1 && mac_cpu_get(rt.cpu, MAC_A7) == SPT);
     CHECK(hcall(0xa9da, h) == 1 && mac_cpu_get(rt.cpu, MAC_A7) == SPT + 4);
-    CHECK(call(0xa9c8) == 0 && call(0xa9e1) == 0 && call(0xa9d0) == 0);          /* TECalText and other calls are not claimed here */
+    CHECK(call(0xa9c8) == 0 && call(0xa9e1) == 0);          /* TECalText and other calls are not claimed here */
     mac_cpu_destroy(rt.cpu);
 }
 static void wrap(void) {
@@ -218,6 +218,12 @@ static void dispatch(void) {
     get_point(h, -4, &v, &hh); CHECK(v == 7 && hh == 2);
     wrw(rec(h) + 58, 2, 1); set_text(h, "AA", 2); get_point(h, 1, &v, &hh); CHECK(v == 7 && hh == 4 + 4);                       /* centred: "AA" starts at 4 */
     set_text(h, "AB\r", 3); get_point(h, 3, &v, &hh); CHECK(v == 11);                  /* the empty last line after a CR */
+    set_text(h, "AAA BBB CCC", 11);
+    #define HEIGHT(end, start) (wrw(SPT, 2, 9), wrw(SPT + 2, 4, h), wrw(SPT + 6, 4, (uint32_t)(start)), wrw(SPT + 10, 4, (uint32_t)(end)), wrw(SPT + 14, 4, 0xdeadbeef), mac_cpu_set(rt.cpu, MAC_A7, SPT), call(0xa83d) == 1 && mac_cpu_get(rt.cpu, MAC_A7) == SPT + 14 ? (int32_t)rdw(SPT + 14, 4) : -999)
+    CHECK(HEIGHT(3, 0) == 12 && HEIGHT(2, 1) == 4 && HEIGHT(1, 1) == 0 && HEIGHT(0, 3) == 0);          /* TEGetHeight: lines startLine up to endLine, 4 pixels each */
+    wrw(rec(h) + 94, 2, 0); CHECK(hcall(0xa9d0, h) == 1 && (int16_t)rdw(rec(h) + 94, 2) == 3);        /* TECalText finds the line starts again */
+    wrw(rec(h) + 42, 4, 0x1000); CHECK(hcall(0xa9d0, h) == 1 && !mac_cpu_halted(rt.cpu));              /* a clikLoop is allowed */
+    wrw(rec(h) + 42, 4, 0);
     wrw(SPT, 2, 7); wrw(SPT + 2, 4, h); mac_cpu_set(rt.cpu, MAC_A7, SPT); CHECK(call(0xa83d) == -1 && mac_cpu_halted(rt.cpu));
     mac_cpu_destroy(rt.cpu);
 }
@@ -232,7 +238,7 @@ static void disposal_and_refusals(void) {
         if (k == 0) arg = 0x1234;                                      /* not a handle of ours */
         if (k == 1) arg = 0;
         if (k == 2) wrw(rec(th2) + 38, 4, 0x1000);                     /* a wordBreak hook */
-        if (k == 3) wrw(rec(th2) + 42, 4, 0x1000);                     /* a clikLoop hook */
+        if (k == 3) wrw(rec(th2) + 86, 4, 0x1000);                     /* a highHook (a clikLoop is allowed: nothing calls it) */
         if (k == 4) wrw(rec(th2) + 74, 2, 99);                         /* a font the guest lacks */
         if (k == 5) { mac_cpu_set(rt.cpu, MAC_A7, SPT + 1); rc = call(0xa9d8); CHECK(rc == -1 && mac_cpu_halted(rt.cpu)); mac_cpu_destroy(rt.cpu); continue; }
         if (k == 6) { op = 0xa9cf; wrw(SPT, 4, th2); wrw(SPT + 4, 4, 40000); wrw(SPT + 8, 4, TEXT); mac_cpu_set(rt.cpu, MAC_A7, SPT); rc = call(op); CHECK(rc == -1 && mac_cpu_halted(rt.cpu)); mac_cpu_destroy(rt.cpu); continue; }

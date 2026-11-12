@@ -160,6 +160,7 @@ int main(void) {
     session_command(s,CMD_CLOSE_ALL);menu_update(s);
     CHECK(s->nwin==0 && (action(1,CMD_CLOSE)->flags&MI_DISABLED));
     s->clipboard_write_request=0;session_key(s,'c',MOD_CMD);CHECK(!s->clipboard_write_request);
+    CHECK(s->dialog && !strcmp(s->dialog_title,"Not Available")); session_key(s,27,0); CHECK(!s->dialog); /* disabled key explains itself */
     session_command(s,CMD_OPEN); /* No selection: no new window. */
     s->desk_sel=1; session_command(s,CMD_NEW_FOLDER);
     CHECK(s->nwin==1 && !strcmp(s->win[0].rel,"Trash"));

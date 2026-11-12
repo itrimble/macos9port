@@ -80,7 +80,7 @@ static int set_rgb(MacRuntime *rt,uint32_t port,const unsigned rgb[3],int back) 
     wr(rt,port+(back?84:80),4,index);return 1;
 }
 /* preset: when not NULL the rectangle to paint (the call is PaintRect, op $A8A2), instead of one read from the stack. */
-static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op,const Box *preset,uint32_t fillpat,const MacShape *outer,const MacShape *inner) {
+static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op,const Box *preset,uint32_t fillpat,const MacShape *outer,const MacShape *inner,const MacPixTile *tile) {
     uint32_t pm;
     if(handle(rt,rd(rt,port+2,4),50,&pm)<0)return -1;
     unsigned row=rd(rt,pm+4,2);
@@ -117,7 +117,8 @@ static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op,const Box *
     if(mode<8)mode+=8;
     if(mode<8 || mode>15)return fail(rt,"Unsupported color pattern transfer mode.");
     uint8_t pat[8];
-    if(op==0xa8a5) {
+    if(tile) memset(pat,255,8);
+    else if(op==0xa8a5) {
         if(!arg || valid(rt,arg,8,0)<0)return fail(rt,"Invalid color fill pattern.");
         memcpy(pat,mac_cpu_ram(rt->cpu)+arg,8);
     } else if(op==0xa8a4) memset(pat,255,8);
@@ -131,6 +132,7 @@ static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op,const Box *
         if(outer && !mac_shape_contains(outer,x,y))continue;                   /* an oval or round rectangle: only its rows */
         if(op==0xa8a1 && (inner?mac_shape_contains(inner,x,y):(x>=b.l+pw && x<b.r-pw && y>=b.t+ph && y<b.b-ph)))continue;
         uint8_t *p=mac_cpu_ram(rt->cpu)+base+(size_t)(y-bounds.t)*row+(unsigned)(x-bounds.l);
+        if(tile){*p=tile->px[(size_t)(((y%tile->h)+tile->h)%tile->h)*(size_t)tile->w+(size_t)(((x%tile->w)+tile->w)%tile->w)];continue;}
         int bit=!!(pat[(unsigned)y&7]&(0x80u>>((unsigned)x&7)));
         if(mode&4)bit=!bit;
         if(op==0xa8a4)*p^=255;
@@ -147,13 +149,18 @@ static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op,const Box *
 /* Paint a rectangle in the port's pen pattern and mode, clipped like PaintRect (used for pen strokes). */
 int mac_color_paint_box(MacRuntime *rt,uint32_t port,int t,int l,int b,int r) {
     Box x={t,l,b,r};
-    return draw(rt,port,0,0xa8a2,&x,0,NULL,NULL);
+    return draw(rt,port,0,0xa8a2,&x,0,NULL,NULL,NULL);
 }
 /* An oval or round rectangle on an indexed colour port: `op` is the rectangle call it behaves like ($A8A1 frame, $A8A2 paint, $A8A3 erase, $A8A4 invert,
  * $A8A5 fill with the pattern at fillpat). */
 int mac_color_shape(MacRuntime *rt,uint32_t port,int t,int l,int b,int r,uint16_t op,uint32_t fillpat,const MacShape *outer,const MacShape *inner) {
     Box x={t,l,b,r};
-    return draw(rt,port,0,op,&x,fillpat,outer,inner);
+    return draw(rt,port,0,op,&x,fillpat,outer,inner,NULL);
+}
+/* The same, filled with the pixels of a pixel pattern (mac_pixpat.c) instead of a 1-bit pattern: a plain copy, tiled from the port's local origin. */
+int mac_color_tile(MacRuntime *rt,uint32_t port,int t,int l,int b,int r,const MacPixTile *tile,const MacShape *outer) {
+    Box x={t,l,b,r};
+    return draw(rt,port,0,0xa8a5,&x,0,outer,NULL,tile);
 }
 /* GetForeColor / GetBackColor(VAR color: RGBColor) ($AA19 / $AA1A, MPW listing): a colour port holds the RGB it was given (CGrafPort +36 / +42);
  * a basic port holds one of QuickDraw's eight colour constants, reported as the pure colour it stands for. Anything else halts. */
@@ -187,7 +194,7 @@ int mac_color_raster_service(MacRuntime *rt,uint16_t opcode) {
     if((rd(rt,port+6,2)&0xc000)!=0xc000)return 0;
     uint32_t sp=mac_cpu_get(rt->cpu,MAC_A7);unsigned args=opcode==0xa8a5?8:4;
     if(valid(rt,sp,args,1)<0)return -1;
-    int rc=opcode==0xa862 || opcode==0xa863?constant_color(rt,port,rd(rt,sp,4),opcode==0xa863):opcode==0xaa14 || opcode==0xaa15?rgb(rt,port,rd(rt,sp,4),opcode==0xaa15):draw(rt,port,sp,opcode,NULL,0,NULL,NULL);
+    int rc=opcode==0xa862 || opcode==0xa863?constant_color(rt,port,rd(rt,sp,4),opcode==0xa863):opcode==0xaa14 || opcode==0xaa15?rgb(rt,port,rd(rt,sp,4),opcode==0xaa15):draw(rt,port,sp,opcode,NULL,0,NULL,NULL,NULL);
     if(rc>0)mac_cpu_set(rt->cpu,MAC_A7,sp+args);
     return rc;
 }

@@ -1,4 +1,9 @@
-# Pinned CEF/Chromium for OS999 Browser. Bump both lines (and the SHA-1s in
-# scripts/fetch-cef.sh) to update; the version guard measures age from DATE.
+# Pinned CEF/Chromium for OS999 Browser. Bump CEF_VERSION, CEF_RELEASE_DATE and
+# the matching CEF_SHA1_* lines together; the version guard measures age from
+# DATE. fetch-cef.sh and scripts/gate_pins.py (integration preflight) both read
+# this file from the candidate tree; no other copy of these values exists.
 CEF_VERSION=156.0.26+g8ea0c73+chromium-156.0.8078.88
 CEF_RELEASE_DATE=2026-11-07
+CEF_SHA1_macosarm64=6989ef3226be063ae164d1d9f0764a2f203d4cb1
+CEF_SHA1_linuxarm64=1e66c55ca1a7e4de7c37b3c056435999c7420ebf
+CEF_SHA1_linux64=cacfbb7d7261fea682fb67c108de7e4347519ff7

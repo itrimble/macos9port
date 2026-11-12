@@ -15,6 +15,7 @@ void finder_refresh(Session *s);
 int open_folder(Session *s, const char *rel);
 int session_is_sit(const char *name);
 void session_open_sit(Session *s, const char *rel);
+int session_sit_command(Session *s, int cmd);
 void dialog_info(Session *s, const char *title, const char *body);
 int session_open_quake(Session *s);
 int session_open_quake_demo(Session *s);

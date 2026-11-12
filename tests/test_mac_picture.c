@@ -17,14 +17,16 @@ static void begin_ext(Writer*w,unsigned width,unsigned height,uint32_t hres,uint
  memset(w,0,sizeof *w);word(w,0);rect(w,0,0,height,width);word(w,0x11);word(w,0x2ff);word(w,0xc00);
  word(w,version);word(w,reserved);lng(w,hres);lng(w,vres);rect(w,t,l,b,r);lng(w,reserved2);
 }
+static int band_mask[4],band_masked;   /* when set: PackBitsRgn (0x99) with this rectangle as its mask region */
 static void band(Writer*w,unsigned width,unsigned top,unsigned height,int repeat,int sparse){
- align(w);word(w,0x98);word(w,0x8000|width);rect(w,top,0,top+height,width);
+ align(w);word(w,band_masked?0x99:0x98);word(w,0x8000|width);rect(w,top,0,top+height,width);
  word(w,0);word(w,0);lng(w,0);lng(w,72u<<16);lng(w,72u<<16);
  word(w,0);word(w,8);word(w,1);word(w,8);lng(w,0);lng(w,0);lng(w,0);
  lng(w,123);word(w,sparse?0:0x8000);word(w,1);
  word(w,sparse?5:0);word(w,65535);word(w,0);word(w,0);
  word(w,sparse?7:0);word(w,0);word(w,65535);word(w,0);
  rect(w,top,0,top+height,width);rect(w,top,0,top+height,width);word(w,0);
+ if(band_masked){word(w,10);rect(w,band_mask[0],band_mask[1],band_mask[2],band_mask[3]);}
  for(unsigned y=0;y<height;y++){
   if(width<8){for(unsigned x=0;x<width;x++)byte(w,x<width/2?(sparse?5:0):(sparse?7:1));}
   else if(width>250){word(w,4);byte(w,129);byte(w,0);byte(w,129);byte(w,1);}
@@ -46,6 +48,13 @@ static void decoder(void){
  begin(&w,256,1);band(&w,256,0,1,1,0);end(&w);CHECK(!mac_pict_decode(w.b,w.n,256,1,&p,&i,error,sizeof error));CHECK(i.pixels[127]==10&&i.pixels[128]==20);mac_pict_destroy(&i);
  begin(&w,4,1);band(&w,4,0,1,0,0);end(&w);CHECK(!mac_pict_decode(w.b,w.n,4,1,&p,&i,error,sizeof error));CHECK(i.pixels[0]==10&&i.pixels[3]==20);mac_pict_destroy(&i);
  w.b[w.n-1]=0xfe;CHECK(mac_pict_decode(w.b,w.n,4,1,&p,&i,error,sizeof error)==-1);
+ /* PackBitsRgn: only the pixels inside the mask region are drawn; a truncated or undersized region is refused */
+ band_masked=1;band_mask[0]=0;band_mask[1]=2;band_mask[2]=1;band_mask[3]=6;
+ begin(&w,8,2);band(&w,8,0,1,0,0);band(&w,8,1,1,1,0);end(&w);band_masked=0;p=colors();
+ CHECK(!mac_pict_decode(w.b,w.n,8,2,&p,&i,error,sizeof error));
+ for(unsigned x=0;x<8;x++){CHECK(i.covered[x]==(x>=2&&x<6));CHECK(!i.covered[8+x]);}
+ CHECK(i.pixels[2]==10&&i.pixels[5]==20);mac_pict_destroy(&i);
+ for(size_t n=0;n<w.n;n++)CHECK(mac_pict_decode(w.b,n,8,2,&p,&i,error,sizeof error)==-1);
 }
 static void extended_header(void){
  Writer w;MacPictPalette p=colors();MacPictImage i;char error[160];

@@ -1,3 +1,4 @@
+#include "desktop_menu_status.h"
 #include "notes.h"
 #include "finder_desktop_surface.h"
 #include "finder_spring.h"
@@ -148,7 +149,7 @@ void session_destroy(Session *s) {
     if (g_media_hooks && g_media_hooks->quit) g_media_hooks->quit(s);
     else if (g_media_hooks && g_media_hooks->close) g_media_hooks->close();
     font_book_session_shutdown(s);
-    desktop_theme_shutdown(); desktop_wallpaper_shutdown(); if (s) { free(s->expanded_undo); free(s->clipboard_large_in); free(s->clipboard_large_out); } free(s);
+    desktop_theme_shutdown(); desktop_wallpaper_shutdown(); desktop_menu_untrack(s); if (s) { free(s->expanded_undo); free(s->clipboard_large_in); free(s->clipboard_large_out); } free(s);
 }
 
 int session_take_startup_toggle(Session *s) {

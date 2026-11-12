@@ -3,6 +3,7 @@
 #include "ospi.h"
 #include "mac_resource.h"
 #include "application_probe.h"
+#include "native_policy.h"
 #include "runtime_bridge.h"
 
 #include <errno.h>
@@ -282,6 +283,14 @@ static int saves_directory(const char *root, const char *fork_path, char *out, s
 int native_open(const char *root, const char *full, char *err, size_t n) {
     if (err && n) err[0] = 0;
     char fork_path[PATH_MAX], runtime[PATH_MAX], saves[PATH_MAX];
+    /* Classify from the real forks first: an unsupported program is refused here, with the reason, and is never
+     * handed to another runtime. A launchable one gets its profile's extra arguments (usually none). */
+    NativeSettings settings = native_settings_load(root);
+    LaunchPolicy policy;
+    char policy_line[1024];
+    int decided = native_policy_prepare(root, full, &settings, &policy, policy_line, sizeof policy_line, err, n);
+    if (decided < 0) return -1;
+    if (decided > 0) policy.nargs = 0;
     int applicable = resolve_fork(root, full, fork_path, sizeof fork_path, err, n);
     if (applicable != 0) return applicable;
     if (saves_directory(root, fork_path, saves, sizeof saves))
@@ -305,7 +314,7 @@ int native_open(const char *root, const char *full, char *err, size_t n) {
     }
     char disk_root[PATH_MAX];   /* the guest measures this internal disk (volume_capacity.h) */
     if (!realpath(root, disk_root)) snprintf(disk_root, sizeof disk_root, "%s", root);
-    NativeSettings settings = native_settings_load(root);
+    if (decided == 0) dprintf(log, "%s\n", policy_line);
     pid_t mid = fork();
     if (mid == 0) {
         if (setsid() < 0) _exit(125);
@@ -318,8 +327,12 @@ int native_open(const char *root, const char *full, char *err, size_t n) {
             if (log > STDERR_FILENO) close(log);
             if (!getenv("OSPI_PERF_TRACE")) setenv("OSPI_PERF_TRACE", "1", 1);
             native_settings_apply(&settings);
-            char *argv[] = {runtime, "--window", "--indexed", "--interactive",
-                            "--bridge", bridge_name, "--saves", saves, "--disk", disk_root, fork_path, NULL};
+            char *argv[10 + LAUNCH_MAX_ARGS + 2] = {runtime, "--window", "--indexed", "--interactive",
+                            "--bridge", bridge_name, "--saves", saves, "--disk", disk_root};
+            int ac = 10;
+            for (int i = 0; i < policy.nargs; i++) argv[ac++] = policy.args[i];
+            argv[ac++] = fork_path;
+            argv[ac] = NULL;
             execv(runtime, argv);
             dprintf(STDERR_FILENO, "Could not execute OS999 runtime: %s\n", strerror(errno));
             _exit(127);

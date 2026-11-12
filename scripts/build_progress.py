@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 
-STAGES = [('sdl', 'Build private SDL2'), ('browser', 'Build and verify Chromium helper'),
+STAGES = [('pins', 'Validate candidate pins'), ('sdl', 'Build private SDL2'), ('browser', 'Build and verify Chromium helper'),
           ('quake', 'Build signed Quake modules and engine'), ('provenance', 'Verify build inputs'),
           ('package_tests', 'Packaging regression tests'), ('desktop', 'Desktop, runtime and storage tests'),
           ('tailnet', 'Tailnet tests'), ('tls', 'TLS integration tests'),

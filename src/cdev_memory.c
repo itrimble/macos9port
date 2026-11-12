@@ -1,6 +1,7 @@
 #include "os999_cdev.h"
 #include "cdev_ui.h"
 #include "desktop_theme.h"
+#include "guest_memory.h"
 #include "session_int.h"
 #include "volume_capacity.h"
 
@@ -70,6 +71,10 @@ static int memory_load(os999_cdev_t *self, const os999_cdev_host_t *host) {
             int rm = host->get_int(host->store, "memory", "ram_disk_mb", 8);
             g_mem.ram_disk_mb = (rm == 4 || rm == 8 || rm == 16 || rm == 32) ? rm : 8;
         }
+    }
+    if (host && host->session && host->store && host->get_int) { /* RAM display: remember the saved guest machine RAM / addressing */
+        host->session->guest_machine_mb = host->get_int(host->store, "memory", "guest_machine_mb", 0);
+        host->session->guest_addr_bits = host->get_int(host->store, "memory", "addr_bits", 0);
     }
     sync_session(&g_mem, host, 0);
     return 0;
@@ -271,8 +276,10 @@ static void memory_render(os999_cdev_t *self, const os999_cdev_host_t *host,
         cdev_ui_button(fb, guest_btn(c, i), k_guest_labels[i],
                        g_mem.guest_ram_mb == k_guest_mb[i], 1);
     cdev_ui_checkbox(fb, guard_chk(c), "Software Bounds & Redzones", g_mem.heap_guard);
-    fb_text(fb, c.x + 314, c.y + 196, desktop_theme_color(THEME_DISABLED),
-            "24-bit guest A5 & redzone guard.");
+    GuestMemoryConfig gm = guest_memory_from_env(s ? s->guest_machine_mb : 0, s ? s->guest_addr_bits : 0);
+    char gml[64];
+    snprintf(gml, sizeof gml, "Guest RAM %u MB, %d-bit addressing.", gm.ram_mb, gm.addr32 ? 32 : 24);
+    fb_text(fb, c.x + 314, c.y + 196, desktop_theme_color(THEME_DISABLED), gml);
 
     cdev_ui_group(fb, (Rect){c.x, c.y + 232, c.w, 124}, "Scratch Volume & Shutdown Policy");
     cdev_ui_checkbox(fb, clear_chk(c), "Clear RAM Disk on Shutdown", g_mem.clear_on_quit);

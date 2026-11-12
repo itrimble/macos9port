@@ -94,12 +94,12 @@ static void move_cb(void *user, uint32_t token, uint32_t address) {
     if (m) m->pointer = address;
 }
 
-int mac_heap_attach(MacRuntime *rt, uint32_t lo, uint32_t hi) {
+static int attach(MacRuntime *rt, uint32_t lo, uint32_t hi, int fresh) {
     if (!rt || !rt->cpu || rt->heap_bridge || lo >= hi || (lo & 7) || hi > mac_cpu_ram_size(rt->cpu)) return -1;
     MacHeapBridge *b = calloc(1, sizeof *b);
     if (!b) return -1;
     b->rt = rt; b->lo = lo; b->hi = hi;
-    memset(mac_cpu_ram(rt->cpu) + lo, 0, hi - lo); /* the heap invariant: free space is zero */
+    if (!fresh) memset(mac_cpu_ram(rt->cpu) + lo, 0, hi - lo); /* the heap invariant: free space is zero (fresh RAM already is) */
     Os999Config c = {.initial_commit = 64 * 1024, .grow_chunk = 64 * 1024, .max_handles = 0xfffff,
                      .ext_base = mac_cpu_ram(rt->cpu) + lo, .ext_size = hi - lo, .guest_base = lo,
                      .on_move = move_cb, .on_move_user = b};
@@ -109,6 +109,9 @@ int mac_heap_attach(MacRuntime *rt, uint32_t lo, uint32_t hi) {
     rt->heap_bridge = b;
     return 0;
 }
+
+int mac_heap_attach(MacRuntime *rt, uint32_t lo, uint32_t hi) { return attach(rt, lo, hi, 0); }
+int mac_heap_attach_fresh(MacRuntime *rt, uint32_t lo, uint32_t hi) { return attach(rt, lo, hi, 1); }
 
 void mac_heap_detach(MacRuntime *rt) {
     MacHeapBridge *b = rt ? rt->heap_bridge : NULL;

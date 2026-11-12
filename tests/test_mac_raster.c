@@ -107,6 +107,16 @@ int main(void) {
     CHECK(call(&rt,0xa896,0)==1);CHECK(call(&rt,0xa891,0x00060007)==1);
     CHECK(byte(&rt,6,0)==0xf0);CHECK(mac_cpu_read(rt.cpu,PORT+48,4)==0x00060007);
     CHECK(call(&rt,0xa897,0)==1);
+    /* GetPenState/SetPenState on a basic port: the 18 bytes at pnLoc..pnPat round trip, and bad states are refused */
+    {   const uint32_t ST=0x600200;
+        mac_cpu_write(rt.cpu,PORT+52,4,0x00020003);mac_cpu_write(rt.cpu,PORT+56,2,10);
+        CHECK(call(&rt,0xa898,ST)==1 && mac_cpu_read(rt.cpu,ST,4)==mac_cpu_read(rt.cpu,PORT+48,4) && mac_cpu_read(rt.cpu,ST+4,4)==0x00020003 && mac_cpu_read(rt.cpu,ST+8,2)==10);
+        mac_cpu_write(rt.cpu,ST+4,4,0x00050006);mac_cpu_write(rt.cpu,ST+8,2,9);
+        CHECK(call(&rt,0xa899,ST)==1 && mac_cpu_read(rt.cpu,PORT+52,4)==0x00050006 && mac_cpu_read(rt.cpu,PORT+56,2)==9);
+        MacRuntime q;CHECK(init(&q)==0);mac_cpu_write(q.cpu,ST+8,2,3);                            /* a transfer mode outside 8-15 */
+        CHECK(call(&q,0xa899,ST)==-1 && mac_cpu_halted(q.cpu));mac_cpu_destroy(q.cpu);
+        CHECK(init(&q)==0);CHECK(call(&q,0xa898,0)==-1 && mac_cpu_halted(q.cpu));mac_cpu_destroy(q.cpu);   /* nil state */
+    }
 
     /* Guest bitmap origin may be negative; storage offsets remain nonnegative. */
     clear(&rt);rect(&rt,PORT+8,-2,-8,478,632);rect(&rt,PORT+16,-2,-8,478,632);

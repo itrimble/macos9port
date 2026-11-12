@@ -6,7 +6,7 @@
 /* Independent bounded CPU CopyBits; public ABI/semantics:
  * dev.os9.ca/techpubs/mac/QuickDraw/QuickDraw-166.html */
 typedef struct { int t,l,b,r; } Box;
-typedef struct { uint32_t base,table; unsigned row,depth; Box bounds; } Image;
+typedef struct { uint32_t base,table; unsigned row,depth; int direct; Box bounds; } Image;   /* direct: 16- or 32-bit pixels holding colour, not an index */
 static int fail(MacRuntime *rt,const char*s){mac_cpu_halt(rt->cpu,s);return -1;}
 static int valid(MacRuntime *rt,uint32_t p,size_t n,int align){
     if((align&&(p&1))||p>mac_cpu_ram_size(rt->cpu)||n>mac_cpu_ram_size(rt->cpu)-p)
@@ -25,6 +25,7 @@ static Box intersect(Box a,Box b){
 }
 /* Complex mask, visible and clip regions: the regions kept for the transfer in progress (slot 0 the mask, 1 visRgn, 2 clipRgn), tested per pixel;
  * a plain rectangle region only narrows the box. Freed by the service entry points. */
+static unsigned g_fg[3],g_bg[3];   /* the destination port's colours, which colour a 1-bit source in a converting transfer */
 static MacRgn *g_rgn[3];
 static void free_rgns(void){for(unsigned i=0;i<3;i++){if(g_rgn[i]){mac_rgn_free(g_rgn[i]);free(g_rgn[i]);g_rgn[i]=NULL;}}}
 static int inside(int x,int y){for(unsigned i=0;i<3;i++)if(g_rgn[i]&&!mac_rgn_contains(g_rgn[i],x,y))return 0;return 1;}
@@ -57,15 +58,18 @@ static int image(MacRuntime*rt,uint32_t p,Image*i){
         if(!p||valid(rt,p,50,1)<0)return fail(rt,"CopyBits colour port PixMap is invalid.");
         row=rd(rt,p+4,2);
         if((row&0xc000)==0xc000)return fail(rt,"CopyBits colour port PixMap is itself a port.");
-    }i->base=rd(rt,p,4);i->row=row&0x3fff;i->depth=1;i->table=0;
+    }i->base=rd(rt,p,4);i->row=row&0x3fff;i->depth=1;i->table=0;i->direct=0;
     if(box(rt,p+6,&i->bounds)<0)return -1;
     if(row&0x8000){
         if(valid(rt,p,50,1)<0)return -1;
         i->depth=rd(rt,p+32,2);i->table=rd(rt,p+42,4);
-        if(rd(rt,p+16,2)||rd(rt,p+30,2)||rd(rt,p+34,2)!=1||rd(rt,p+36,2)!=i->depth)
-            return fail(rt,"CopyBits packed or direct pixel format unsupported.");
+        if(rd(rt,p+16,2))return fail(rt,"CopyBits packed pixel format unsupported.");
+        if(rd(rt,p+30,2)==16) {      /* RGBDirect: xRGB 1-5-5-5 at 16 bits, 8-8-8-8 at 32 */
+            if((i->depth!=16&&i->depth!=32)||rd(rt,p+34,2)!=3||rd(rt,p+36,2)!=(i->depth==16?5u:8u))return fail(rt,"CopyBits direct pixel format unsupported.");
+            i->direct=1;
+        } else if(rd(rt,p+30,2)||rd(rt,p+34,2)!=1||rd(rt,p+36,2)!=i->depth)return fail(rt,"CopyBits indexed pixel format unsupported.");
     }
-    if((row&0x4000)||(i->depth!=1&&i->depth!=8))return fail(rt,"CopyBits supports 1-bit and 8-bit images only.");
+    if((row&0x4000)||(i->depth!=1&&i->depth!=8&&!i->direct))return fail(rt,"CopyBits supports 1-bit, 8-bit and direct 16/32-bit images only.");
     int w=i->bounds.r-i->bounds.l,h=i->bounds.b-i->bounds.t;
     if(w<0||h<0||(uint64_t)w*i->depth>(uint64_t)i->row*8||
        (uint64_t)w*(unsigned)h>8u*1024*1024)return fail(rt,"CopyBits image exceeds pixel budget.");
@@ -104,6 +108,45 @@ static void put(unsigned char*ram,Image*i,int x,int y,unsigned v){
     unsigned dx=(unsigned)(x-i->bounds.l);uint32_t p=i->base+(unsigned)(y-i->bounds.t)*i->row;
     if(i->depth==8)ram[p+dx]=(unsigned char)v;
     else {unsigned bit=1u<<(7-dx%8);ram[p+dx/8]=(unsigned char)((ram[p+dx/8]&~bit)|(v?bit:0));}
+}
+/* Transfers between different pixel formats (and any direct format): srcCopy only, through RGB. An indexed source is read through its colour table
+ * (the palette when it has none), a 1-bit source is white for 0 and black for 1, and the destination takes the nearest colour of its table by squared RGB
+ * distance (nearest on a 5-bit-per-channel grid, so close colours may share an entry), or white/black by luminance at 1 bit, or the colour packed. */
+static void table_rgb(MacRuntime*rt,uint32_t h,unsigned idx,unsigned c[3]){
+    uint32_t t=h&&valid(rt,h,4,1)>0?rd(rt,h,4):0;
+    if(t&&t<mac_cpu_ram_size(rt->cpu)-8&&idx<=rd(rt,t+6,2)&&t+8+(idx+1)*8<=mac_cpu_ram_size(rt->cpu)){for(unsigned k=0;k<3;k++)c[k]=rd(rt,t+10+idx*8+k*2,2);return;}
+    uint32_t p=rt->palette[idx&255];c[0]=((p>>16)&255)*257;c[1]=((p>>8)&255)*257;c[2]=(p&255)*257;
+}
+static void rgb_at(MacRuntime*rt,const Image*i,int x,int y,unsigned c[3]){
+    const unsigned char*ram=mac_cpu_ram(rt->cpu);
+    unsigned dx=(unsigned)(x-i->bounds.l);uint32_t p=i->base+(unsigned)(y-i->bounds.t)*i->row;
+    if(i->depth==32){const unsigned char*q=ram+p+dx*4;c[0]=q[1]*257u;c[1]=q[2]*257u;c[2]=q[3]*257u;}
+    else if(i->depth==16){unsigned v=ram[p+dx*2]<<8|ram[p+dx*2+1];for(unsigned k=0;k<3;k++){unsigned q=(v>>(10-5*k))&31;c[k]=q*0xffffu/31;}}
+    else if(i->depth==1){unsigned bit=(ram[p+dx/8]>>(7-dx%8))&1;for(unsigned k=0;k<3;k++)c[k]=bit?g_fg[k]:g_bg[k];}
+    else table_rgb(rt,i->table,ram[p+dx],c);
+}
+static void rgb_put(MacRuntime*rt,const Image*i,int x,int y,const unsigned c[3],int*cache,int count_hint){
+    unsigned char*ram=mac_cpu_ram(rt->cpu);(void)count_hint;
+    unsigned dx=(unsigned)(x-i->bounds.l);uint32_t p=i->base+(unsigned)(y-i->bounds.t)*i->row;
+    if(i->depth==32){unsigned char*q=ram+p+dx*4;q[0]=0;q[1]=(unsigned char)(c[0]>>8);q[2]=(unsigned char)(c[1]>>8);q[3]=(unsigned char)(c[2]>>8);}
+    else if(i->depth==16){unsigned v=(c[0]>>11)<<10|(c[1]>>11)<<5|(c[2]>>11);ram[p+dx*2]=(unsigned char)(v>>8);ram[p+dx*2+1]=(unsigned char)v;}
+    else if(i->depth==1){unsigned lum=(c[0]*30+c[1]*59+c[2]*11)/100,bit=lum<0x8000;unsigned m=1u<<(7-dx%8);ram[p+dx/8]=(unsigned char)((ram[p+dx/8]&~m)|(bit?m:0));}
+    else {
+        unsigned key=(c[0]>>11)<<10|(c[1]>>11)<<5|(c[2]>>11);
+        if(cache[key]<0){
+            uint64_t best=UINT64_MAX;int pick=0;unsigned e[3];
+            uint32_t t=i->table&&valid(rt,i->table,4,1)>0?rd(rt,i->table,4):0;
+            unsigned n=t&&t<mac_cpu_ram_size(rt->cpu)-8?rd(rt,t+6,2)+1:256;
+            if(n>256)n=256;
+            for(unsigned k=0;k<n;k++){
+                table_rgb(rt,i->table,k,e);uint64_t d=0;
+                for(unsigned q=0;q<3;q++){int64_t dd=(int64_t)(int)(key>>(10-5*q)&31)*0xffff/31-(int64_t)e[q];d+=(uint64_t)(dd*dd);}
+                if(d<best){best=d;pick=(int)k;}
+            }
+            cache[key]=pick;
+        }
+        ram[p+dx]=(unsigned char)cache[key];
+    }
 }
 static int tables_ok(MacRuntime*rt,Image*srcp,Image*dstp,unsigned mode,int*linked_source,unsigned*palette_count,unsigned*table_size,unsigned char conv[256],int*convert){
     *convert=0;
@@ -159,8 +202,9 @@ static int tables_ok(MacRuntime*rt,Image*srcp,Image*dstp,unsigned mode,int*linke
     }
     return 1;
 }
-static int port_clip(MacRuntime*rt,Image*dstp,Box*clipp){
+static int port_clip(MacRuntime*rt,Image*dstp,Box*clipp,int colorize){
     Image dst=*dstp;Box clip=*clipp,r;
+    for(unsigned k=0;k<3;k++){g_fg[k]=0;g_bg[k]=0xffff;}
     uint32_t port=rt->current_port;
     if(rt->qd_globals){if(valid(rt,rt->qd_globals,4,1)<0)return -1;port=rd(rt,rt->qd_globals,4);}
     if(port){
@@ -172,7 +216,10 @@ static int port_clip(MacRuntime*rt,Image*dstp,Box*clipp){
         if(rd(rt,bm,4)==dst.base){
             for(unsigned off=24;off<=28;off+=4){if(region(rt,rd(rt,port+off,4),&r,off==24?1:2)<0)return -1;clip=intersect(clip,r);}
         }
-        if(color){
+        if(colorize){
+            for(unsigned k=0;k<3;k++){g_fg[k]=color?rd(rt,port+36+2*k,2):0;g_bg[k]=color?rd(rt,port+42+2*k,2):0xffff;}
+            if(!color&&(rd(rt,port+80,4)!=33||rd(rt,port+84,4)!=30))return fail(rt,"CopyBits nondefault mono colors unsupported.");
+        }else if(color){
             if(rd(rt,port+36,4)||rd(rt,port+40,2)||rd(rt,port+42,4)!=0xffffffffu||rd(rt,port+46,2)!=0xffff)
                 return fail(rt,"CopyBits nondefault port color mapping unsupported.");
         }else if(rd(rt,port+80,4)!=33||rd(rt,port+84,4)!=30)
@@ -193,13 +240,14 @@ static int copymask(MacRuntime*rt){
        box(rt,rd(rt,sp+8,4),&sr)<0||box(rt,rd(rt,sp+4,4),&mr)<0||box(rt,rd(rt,sp,4),&dr)<0)return -1;
     if(mask.depth!=1)return fail(rt,"CopyMask needs a 1-bit mask bitmap.");
     if(src.depth!=dst.depth)return fail(rt,"CopyMask mixed pixel depths unsupported.");
+    if(src.direct||dst.direct)return fail(rt,"CopyMask direct (16/32-bit) pixels are unsupported.");
     crop_to_source(&sr,&dr,src.bounds);
     unsigned palette_count=0,table_size=0;int linked_source=0;
     unsigned char conv[256];int convert=0;
     if(tables_ok(rt,&src,&dst,0,&linked_source,&palette_count,&table_size,conv,&convert)<0)return -1;
     if(linked_source)return fail(rt,"CopyMask with a palette-linked source color table is unsupported.");
     Box clip=intersect(dr,dst.bounds);
-    if(port_clip(rt,&dst,&clip)<0)return -1;
+    if(port_clip(rt,&dst,&clip,0)<0)return -1;
     int sw=sr.r-sr.l,sh=sr.b-sr.t,dw=dr.r-dr.l,dh=dr.b-dr.t,mw=mr.r-mr.l,mh=mr.b-mr.t;
     if(sw<=0||sh<=0||dw<=0||dh<=0||mw<=0||mh<=0||clip.r<=clip.l||clip.b<=clip.t){mac_cpu_set(rt->cpu,MAC_A7,sp+24);return 1;}
     if(sr.l<src.bounds.l||sr.t<src.bounds.t||sr.r>src.bounds.r||sr.b>src.bounds.b)return fail(rt,"CopyMask source rectangle exceeds source bounds.");
@@ -230,21 +278,36 @@ static int copybits_core(MacRuntime*rt,uint16_t opcode){
     Image src,dst;Box sr,dr;
     if(image(rt,rd(rt,sp+18,4),&src)<0||image(rt,rd(rt,sp+14,4),&dst)<0||
        box(rt,rd(rt,sp+10,4),&sr)<0||box(rt,rd(rt,sp+6,4),&dr)<0)return -1;
-    if(src.depth!=dst.depth)return fail(rt,"CopyBits mixed pixel depths unsupported.");
+    int mixed=src.depth!=dst.depth||src.direct||dst.direct;
+    if(mixed&&mode!=0)return fail(rt,"CopyBits transfer modes other than srcCopy between different or direct pixel formats are unsupported.");
     crop_to_source(&sr,&dr,src.bounds);
     unsigned palette_count=0,table_size=0;int linked_source=0;
     unsigned char conv[256];int convert=0;
-    if(tables_ok(rt,&src,&dst,mode,&linked_source,&palette_count,&table_size,conv,&convert)<0)return -1;
+    if(!mixed&&tables_ok(rt,&src,&dst,mode,&linked_source,&palette_count,&table_size,conv,&convert)<0)return -1;
     Box clip=intersect(dr,dst.bounds),r;
     uint32_t mask=rd(rt,sp,4);
     if(mask){if(region(rt,mask,&r,0)<0)return -1;clip=intersect(clip,r);}
-    if(port_clip(rt,&dst,&clip)<0)return -1;
+    if(port_clip(rt,&dst,&clip,mixed)<0)return -1;
     int sw=sr.r-sr.l,sh=sr.b-sr.t,dw=dr.r-dr.l,dh=dr.b-dr.t;
     if(sw<=0||sh<=0||dw<=0||dh<=0||clip.r<=clip.l||clip.b<=clip.t){mac_cpu_set(rt->cpu,MAC_A7,sp+22);return 1;}
     if(sr.l<src.bounds.l||sr.t<src.bounds.t||sr.r>src.bounds.r||sr.b>src.bounds.b)
         return fail(rt,"CopyBits source rectangle exceeds source bounds.");
     size_t w=(unsigned)(clip.r-clip.l),h=(unsigned)(clip.b-clip.t);
     if(w*h>8u*1024*1024)return fail(rt,"CopyBits transfer exceeds pixel budget.");
+    if(mixed){
+        unsigned short*rgb=malloc(w*h*6);int*cache=malloc(32768*sizeof(int));
+        if(!rgb||!cache){free(rgb);free(cache);return fail(rt,"CopyBits conversion allocation failed.");}
+        for(unsigned i=0;i<32768;i++)cache[i]=-1;
+        for(size_t y=0;y<h;y++)for(size_t x=0;x<w;x++){
+            int sx=sr.l+(int)(((int64_t)clip.l+(int)x-dr.l)*sw/dw),sy=sr.t+(int)(((int64_t)clip.t+(int)y-dr.t)*sh/dh);
+            unsigned c[3];rgb_at(rt,&src,sx,sy,c);for(unsigned k=0;k<3;k++)rgb[3*(y*w+x)+k]=(unsigned short)c[k];
+        }
+        for(size_t y=0;y<h;y++)for(size_t x=0;x<w;x++)if(inside(clip.l+(int)x,clip.t+(int)y)){
+            unsigned c[3]={rgb[3*(y*w+x)],rgb[3*(y*w+x)+1],rgb[3*(y*w+x)+2]};
+            rgb_put(rt,&dst,clip.l+(int)x,clip.t+(int)y,c,cache,0);
+        }
+        free(rgb);free(cache);mac_cpu_set(rt->cpu,MAC_A7,sp+22);return 1;
+    }
     unsigned char*snapshot=malloc(w*h);
     if(!snapshot)return fail(rt,"CopyBits snapshot allocation failed.");
     unsigned char*ram=mac_cpu_ram(rt->cpu);

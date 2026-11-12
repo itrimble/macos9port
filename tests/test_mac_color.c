@@ -52,6 +52,14 @@ static void layout(void) {
         CHECK(rd(&rt, SP + 6, 2) == (yes ? 0x01aa : 0x00aa));
         CHECK(mac_cpu_get(rt.cpu, MAC_A7) == SP + 6);
     }
+    /* GetMaxDevice: the screen for a rectangle that touches it, nil for one that does not or is empty, a halt for a bad pointer */
+    static const int16_t rects[5][5] = {{0, 0, 480, 640, 1}, {-50, -50, 10, 10, 1}, {479, 639, 600, 800, 1}, {480, 0, 600, 640, 0}, {10, 10, 10, 50, 0}};
+    for (unsigned i = 0; i < 5; i++) {
+        mac_cpu_set(rt.cpu, MAC_A7, SP); wr(&rt, SP, 4, 0x9000); wr(&rt, SP + 4, 4, 0x55aa55aa);
+        for (unsigned k = 0; k < 4; k++) wr(&rt, 0x9000 + k * 2, 2, (uint16_t)rects[i][k]);
+        CHECK(mac_color_service(&rt, 0xaa27) == 1 && mac_cpu_get(rt.cpu, MAC_A7) == SP + 4);
+        CHECK(rd(&rt, SP + 4, 4) == (rects[i][4] ? rt.main_device : 0));
+    }
     mac_cpu_set(rt.cpu, MAC_A7, SP); wr(&rt, SP, 4, rt.main_device);
     CHECK(mac_color_service(&rt, 0xaa31) == 1 && rt.current_device == rt.main_device);
     CHECK(mac_color_service(&rt, 0xaa00) == 0); /* Color ports remain unsupported. */
@@ -70,6 +78,10 @@ static void faults(void) {
     wr(&rt, SP, 4, MAC_RUNTIME_RAM - 2); wr(&rt, SP + 4, 4, 0xcafebabe);
     CHECK(mac_color_service(&rt, 0xaa2b) == -1 && mac_cpu_halted(rt.cpu));
     CHECK(mac_cpu_ram(rt.cpu)[SP + 4] == 0xca && mac_cpu_get(rt.cpu, MAC_A7) == SP);
+    mac_cpu_destroy(rt.cpu);
+    rt = fresh(); CHECK(mac_color_init(&rt) == 1);
+    wr(&rt, SP, 4, 0);
+    CHECK(mac_color_service(&rt, 0xaa27) == -1 && mac_cpu_halted(rt.cpu) && mac_cpu_get(rt.cpu, MAC_A7) == SP);
     mac_cpu_destroy(rt.cpu);
 }
 int main(void) { layout(); faults(); puts("mac color device tests passed"); return 0; }

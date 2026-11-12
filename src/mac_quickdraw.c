@@ -94,10 +94,12 @@ static int init_graf(MacRuntime *rt, uint32_t globals) {
     if (globals < 126 || !range(rt, globals - 126, 130) || !range(rt, a5, 4)) return -1;
     rt->qd_globals = globals;
     rt->current_port = 0;
-    rt->screen_base = 0xe00000;
-    rt->screen_width = 640; rt->screen_height = 480; rt->screen_row_bytes = 80;
-    rt->screen_depth = 1;
-    rt->palette[0] = 0xffffff; rt->palette[1] = 0;
+    if (!rt->main_device) { /* a second InitGraf on the indexed display keeps the device it already has (its depth, row bytes and colours) */
+        rt->screen_base = 0xe00000;
+        rt->screen_width = 640; rt->screen_height = 480; rt->screen_row_bytes = 80;
+        rt->screen_depth = 1;
+        rt->palette[0] = 0xffffff; rt->palette[1] = 0;
+    }
     if (!range(rt, rt->screen_base, 80 * 480)) return -1;
     memset(mac_cpu_ram(rt->cpu) + globals - 126, 0, 130);
     wr(rt, globals - 126, 4, 1);
@@ -158,12 +160,29 @@ static int set_origin(MacRuntime *rt, uint32_t sp) {
     return 1;
 }
 
+/* PortSize(width, height) resizes the current port's portRect from its top-left; MovePortTo(leftGlobal, topGlobal)
+ * moves the bounds rectangle so that portRect's top-left sits at that global point (global = local - bounds.topLeft).
+ * Neither touches the visible or clip region, nor the screen. */
+static int port_place(MacRuntime *rt, uint32_t sp, int move) {
+    int second = (int16_t)rd(rt, sp, 2), first = (int16_t)rd(rt, sp + 2, 2);
+    if (!rt->qd_globals || !range(rt, rt->qd_globals, 4)) return -1;
+    uint32_t port = rd(rt, rt->qd_globals, 4), bounds = port_bounds(rt, port);
+    if (!bounds || !range(rt, bounds, 8)) return -1;
+    int top = (int16_t)rd(rt, port + 16, 2), left = (int16_t)rd(rt, port + 18, 2);
+    if (!move) {
+        wr(rt, port + 20, 2, (uint16_t)(top + second)); wr(rt, port + 22, 2, (uint16_t)(left + first));
+        return 1;
+    }
+    shift_rect(rt, bounds, top - second - (int16_t)rd(rt, bounds, 2), left - first - (int16_t)rd(rt, bounds + 2, 2));
+    return 1;
+}
+
 int mac_quickdraw_service(MacRuntime *rt, uint16_t opcode) {
     MacCpu *cpu = rt->cpu;
     uint32_t sp = mac_cpu_get(cpu, MAC_A7);
     unsigned args = 0;
     switch (opcode) {
-        case 0xa870: case 0xa871: case 0xa878: args = 4; break;
+        case 0xa870: case 0xa871: case 0xa878: case 0xa876: case 0xa877: args = 4; break;
         case 0xa8a9: args = 8; break;
         case 0xa86e: case 0xa86d: case 0xa86f: case 0xa873: case 0xa874: case 0xa875: case 0xa87d: args = 4; break;
         case 0xa8a7: args = 12; break;
@@ -171,10 +190,11 @@ int mac_quickdraw_service(MacRuntime *rt, uint16_t opcode) {
         default: return 0;
     }
     if (!range(rt, sp, args)) return -1;
-    uint32_t p = args == 4 && opcode != 0xa878 ? rd(rt, sp, 4) : 0;
+    uint32_t p = args == 4 && opcode != 0xa878 && opcode != 0xa876 && opcode != 0xa877 ? rd(rt, sp, 4) : 0;
     int rc = 1;
     switch (opcode) {
         case 0xa878: rc = set_origin(rt, sp); break;
+        case 0xa876: case 0xa877: rc = port_place(rt, sp, opcode == 0xa877); break;
         case 0xa870: case 0xa871: {
             /* The bounds rectangle is in local coordinates and its top-left is the bitmap's first pixel, so a point's
              * pixel position is local - bounds.topLeft: LocalToGlobal subtracts it and GlobalToLocal adds it. */

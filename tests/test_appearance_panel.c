@@ -195,6 +195,10 @@ int main(void) {
     return failures ? 1 : 0;
 }
 
+void desktop_menu_track(Session *s) { (void)s; }
+Session *desktop_menu_tracked(void) { return NULL; }
+void desktop_menu_note_unavailable(int c) { (void)c; }
+const char *desktop_menu_reason(const Session *s, int c) { (void)s; (void)c; return NULL; }
 int desktop_command_enabled(Session *s, int cmd) { (void)s; (void)cmd; return 0; }
 
 int finder_apps_enabled(const Session *s, int command) { (void)s; (void)command; return 0; }

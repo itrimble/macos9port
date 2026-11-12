@@ -79,6 +79,7 @@ static void draw(MacRuntime *rt, const MacAlertState *s) {
 static int begin(MacRuntime *rt, uint32_t sp, uint32_t pc) {
     uint32_t filter = mac_cpu_read(rt->cpu, sp, 4);
     int16_t id = (int16_t)mac_cpu_read(rt->cpu, sp + 4, 2);
+    if (rt->trace) fprintf(stderr, "alert ALRT %d\n", id);
     if (!valid(rt, sp, 8)) return fail(rt, "Alert stack is invalid.");
     if (filter) return fail(rt, "Alert filter procedures are unsupported.");
     if (rt->screen_depth != 8 || rt->screen_width != 640 || rt->screen_height != 480 || rt->screen_row_bytes != 640 ||
@@ -157,7 +158,7 @@ static int step(MacRuntime *rt, MacAlertState *s) {
 int mac_alert_service(MacRuntime *rt, uint16_t opcode) {
     if (opcode < 0xa985 || opcode > 0xa988) return 0;
     if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1;
-    uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7), pc = (mac_cpu_get(rt->cpu, MAC_PC) - 2) & 0xffffff;
+    uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7), pc = (mac_cpu_get(rt->cpu, MAC_PC) - 2) & mac_cpu_addr_mask(rt->cpu);
     if ((sp & 1) || !valid(rt, sp, 8)) return fail(rt, "Alert stack is invalid.");
     if (rt->last_trap_pc >= 0x2000 && rt->last_trap_pc < 0x2000 + 4096 * 8)
         return fail(rt, "Alert reached through a patched trap vector is unsupported.");

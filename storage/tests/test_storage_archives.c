@@ -84,9 +84,7 @@ static void test_zip(void) {
     CHECK_RC(st_zip_decode(z.p, z.n, &a, NULL, &err), ST_EPATH);
     ZEnt abs[] = {{"/etc/passwd", (const uint8_t *)"x", 1, 0, 0}};
     zip_build(&z, abs, 1);
-    CHECK_RC(st_zip_decode(z.p, z.n, &a, NULL, &err), ST_OK);
-    CHECK(a.n == 1 && !strcmp(a.v[0].path, "etc/passwd")); /* rooted under the destination */
-    st_archive_free(&a);
+    CHECK_RC(st_zip_decode(z.p, z.n, &a, NULL, &err), ST_EPATH); /* refused, not made relative (11 Nov 2026) */
     ZEnt enc[] = {{"secret", (const uint8_t *)"x", 1, 0, 1}};
     zip_build(&z, enc, 1);
     CHECK_RC(st_zip_decode(z.p, z.n, &a, NULL, &err), ST_EUNSUPPORTED);

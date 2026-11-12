@@ -1,4 +1,5 @@
 #include "mac_pict.h"
+#include "mac_rgn.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -52,8 +53,17 @@ static unsigned index_at(const uint8_t*decoded,unsigned row,unsigned bits,unsign
 static int ceil_ratio(int64_t n,int d){return (int)(n>=0?(n+d-1)/d:n/d);}
 /* Scale the part of `src` (in `bounds` coordinates, drawn into `dst`) that lies inside frame, clip and dst into the
  * output image, mapping each source index through `mapping`. */
+/* The mask region of BitsRgn / PackBitsRgn (0x91 / 0x99): rgnSize, then the region, in the picture's coordinates. */
+static int mask_region(Reader*r,MacRgn*mask){
+    const uint8_t*p=take(r,2);if(!p)return 0;
+    unsigned size=u16(p);const char*why=NULL;
+    if(size<10)return reject(r,"PICT mask region is shorter than a region header.");
+    r->pos-=2;p=take(r,size);if(!p)return 0;
+    if(mac_rgn_decode(p,size,mask,&why))return reject(r,"PICT mask region is malformed or too complex.");
+    return 1;
+}
 static void paint(MacPictImage*out,Box frame,Box clip,Box bounds,Box src,Box dst,const uint8_t*decoded,
-                  unsigned row,unsigned bits,const uint8_t*mapping){
+                  unsigned row,unsigned bits,const uint8_t*mapping,const MacRgn*mask){
     Box area=intersection(intersection(frame,clip),dst);
     if(positive(area)){
         int fw=frame.r-frame.l,fh=frame.b-frame.t;
@@ -65,11 +75,12 @@ static void paint(MacPictImage*out,Box frame,Box clip,Box bounds,Box src,Box dst
             int sx=src.l+(int)(xx*(src.r-src.l)/((int64_t)out->width*(dst.r-dst.l)));
             int sy=src.t+(int)(yy*(src.b-src.t)/((int64_t)out->height*(dst.b-dst.t)));
             size_t at=(size_t)y*out->width+(unsigned)x;
+            if(mask && !mac_rgn_contains(mask,frame.l+(int)((int64_t)x*fw/out->width),frame.t+(int)((int64_t)y*fh/out->height)))continue;
             out->pixels[at]=mapping[index_at(decoded,row,bits,(unsigned)(sx-bounds.l),(unsigned)(sy-bounds.t))];out->covered[at]=1;
         }
     }
 }
-static int bitmap(Reader*r,Box frame,Box clip,MacPictImage*out,const MacPictPalette*palette,size_t *budget){
+static int bitmap(Reader*r,Box frame,Box clip,MacPictImage*out,const MacPictPalette*palette,size_t *budget,int rgn){
     const uint8_t*p=take(r,46);if(!p)return 0;
     unsigned row=u16(p)&0x3fff;Box bounds=box(p+2);
     unsigned bits=u16(p+28); /* pixelSize: indexed PixMaps of 1, 2, 4 or 8 bits per pixel */
@@ -93,16 +104,18 @@ static int bitmap(Reader*r,Box frame,Box clip,MacPictImage*out,const MacPictPale
     p=take(r,18);if(!p)return 0;Box src=box(p),dst=box(p+8);
     if(u16(p+16)!=0 || !positive(src) || !positive(dst) || !contains(bounds,src))
         return reject(r,"PICT requires bounded positive rectangles and srcCopy.");
-    uint8_t *decoded=malloc(pixels);if(!decoded)return reject(r,"PICT scanline allocation failed.");
-    if(!unpack(r,row,(unsigned)(bounds.b-bounds.t),decoded)){free(decoded);return 0;}
+    MacRgn mask;mac_rgn_init(&mask);
+    if(rgn && !mask_region(r,&mask)){mac_rgn_free(&mask);return 0;}
+    uint8_t *decoded=malloc(pixels);if(!decoded){mac_rgn_free(&mask);return reject(r,"PICT scanline allocation failed.");}
+    if(!unpack(r,row,(unsigned)(bounds.b-bounds.t),decoded)){free(decoded);mac_rgn_free(&mask);return 0;}
     /* Validate every actual pixel, including clipped pixels; row padding is not color data. */
     for(int y=0;y<bounds.b-bounds.t;y++)for(int x=0;x<bounds.r-bounds.l;x++)
-        if(!defined[index_at(decoded,row,bits,(unsigned)x,(unsigned)y)]){free(decoded);return reject(r,"PICT pixels reference undefined source colors.");}
-    paint(out,frame,clip,bounds,src,dst,decoded,row,bits,mapping);
-    free(decoded);return 1;
+        if(!defined[index_at(decoded,row,bits,(unsigned)x,(unsigned)y)]){free(decoded);mac_rgn_free(&mask);return reject(r,"PICT pixels reference undefined source colors.");}
+    paint(out,frame,clip,bounds,src,dst,decoded,row,bits,mapping,rgn?&mask:NULL);
+    free(decoded);mac_rgn_free(&mask);return 1;
 }
-/* Version-1 BitsRect (0x90) / PackBitsRect (0x98): a plain 1-bit BitMap, 1 = black, 0 = white. */
-static int bitmap_v1(Reader*r,int packed,Box frame,Box clip,MacPictImage*out,const MacPictPalette*palette,size_t *budget){
+/* BitsRect (0x90) / PackBitsRect (0x98) and their region forms (0x91 / 0x99) on a plain 1-bit BitMap, 1 = black, 0 = white. */
+static int bitmap_v1(Reader*r,int packed,Box frame,Box clip,MacPictImage*out,const MacPictPalette*palette,size_t *budget,int rgn){
     const uint8_t*p=take(r,28);if(!p)return 0;
     unsigned row=u16(p);Box bounds=box(p+2),src=box(p+10),dst=box(p+18);
     if((row&0xc000) || !row || (row&1) || !positive(bounds) || u16(p+26)!=0 ||
@@ -116,11 +129,13 @@ static int bitmap_v1(Reader*r,int packed,Box frame,Box clip,MacPictImage*out,con
     unsigned w=match(palette,white),k=match(palette,black);
     if(w==256 || k==256)return reject(r,"No destination palette color is available (1-bit ports need an exact black or white).");
     uint8_t mapping[2]={(uint8_t)w,(uint8_t)k};
-    uint8_t *decoded=malloc(pixels);if(!decoded)return reject(r,"PICT scanline allocation failed.");
-    if(packed){if(!unpack(r,row,(unsigned)(bounds.b-bounds.t),decoded)){free(decoded);return 0;}}
-    else {const uint8_t*d=take(r,pixels);if(!d){free(decoded);return 0;}memcpy(decoded,d,pixels);}
-    paint(out,frame,clip,bounds,src,dst,decoded,row,1,mapping);
-    free(decoded);return 1;
+    MacRgn mask;mac_rgn_init(&mask);
+    if(rgn && !mask_region(r,&mask)){mac_rgn_free(&mask);return 0;}
+    uint8_t *decoded=malloc(pixels);if(!decoded){mac_rgn_free(&mask);return reject(r,"PICT scanline allocation failed.");}
+    if(packed){if(!unpack(r,row,(unsigned)(bounds.b-bounds.t),decoded)){free(decoded);mac_rgn_free(&mask);return 0;}}
+    else {const uint8_t*d=take(r,pixels);if(!d){free(decoded);mac_rgn_free(&mask);return 0;}memcpy(decoded,d,pixels);}
+    paint(out,frame,clip,bounds,src,dst,decoded,row,1,mapping,rgn?&mask:NULL);
+    free(decoded);mac_rgn_free(&mask);return 1;
 }
 void mac_pict_destroy(MacPictImage*i){if(i){free(i->pixels);free(i->covered);memset(i,0,sizeof *i);}}
 int mac_pict_decode(const uint8_t *data,size_t size,unsigned width,unsigned height,
@@ -142,7 +157,7 @@ int mac_pict_decode(const uint8_t *data,size_t size,unsigned width,unsigned heig
             else if(op==0)continue;
             else if(op==0xa0){if(!take(&r,2))goto bad;}
             else if(op==1){p=take(&r,10);if(!p)goto bad;if(u16(p)!=10){r.error="PICT complex clipping regions are unsupported.";goto bad;}clip=box(p+2);}
-            else if(op==0x90 || op==0x98){if(!bitmap_v1(&r,op==0x98,frame,clip,out,palette,&budget))goto bad;}
+            else if(op==0x90 || op==0x98 || op==0x91 || op==0x99){if(!bitmap_v1(&r,op>=0x98,frame,clip,out,palette,&budget,op&1))goto bad;}
             else {r.error="Unsupported PICT version 1 opcode.";goto bad;}
         }
         r.error="PICT has no end marker or exceeds the opcode budget.";goto bad;
@@ -171,7 +186,11 @@ int mac_pict_decode(const uint8_t *data,size_t size,unsigned width,unsigned heig
         else if(op==0 || op==0x1e)continue;
         else if(op==0xa0){if(!take(&r,2))goto bad;} /* Default comment procedure ignores comments. */
         else if(op==1){p=take(&r,10);if(!p)goto bad;if(u16(p)!=10){r.error="PICT complex clipping regions are unsupported.";goto bad;}clip=box(p+2);}
-        else if(op==0x98){if(!bitmap(&r,frame,clip,out,palette,&budget))goto bad;}
+        else if(op==0x98 || op==0x99 || op==0x90 || op==0x91){   /* the record is a PixMap when rowBytes has its high bit, otherwise a 1-bit BitMap */
+            if(r.pos+2>r.size){r.error="Truncated PICT stream.";goto bad;}
+            if(u16(r.p+r.pos)&0x8000){if(!bitmap(&r,frame,clip,out,palette,&budget,op&1))goto bad;}
+            else if(!bitmap_v1(&r,op>=0x98,frame,clip,out,palette,&budget,op&1))goto bad;
+        }
         else {r.error="Unsupported PICT opcode.";goto bad;}
     }
     r.error="PICT has no end marker or exceeds the opcode budget.";

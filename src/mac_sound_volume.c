@@ -8,6 +8,15 @@
 int mac_sound_volume_service(MacRuntime *rt, uint16_t opcode) {
     if (opcode != 0xa800) return 0;
     uint32_t selector = mac_cpu_get(rt->cpu, MAC_D0);
+    if (selector == 0x000c0008u) {   /* FUNCTION SndSoundManagerVersion: NumVersion. No arguments; the 4-byte result slot is at SP. We report 3.0 final ($03008000): the
+                                      * calls this runtime has reach as far as SndPlayDoubleBuffer and the default output volume. It is an identity, not a promise:
+                                      * a Sound Manager call that is not implemented still halts. */
+        if (mac_cpu_halted(rt->cpu)) return -1;
+        uint32_t at = mac_cpu_get(rt->cpu, MAC_A7), size = (uint32_t)mac_cpu_ram_size(rt->cpu);
+        if ((at & 1) || at < 0x400 || at > size || size - at < 4) { mac_cpu_halt(rt->cpu, "SndSoundManagerVersion stack is invalid."); return -1; }
+        mac_cpu_write(rt->cpu, at, 4, 0x03008000u);
+        return 1;
+    }
     int set = selector == 0x02300018u || selector == 0x02300024u;
     if (selector != 0x022c0018u && selector != 0x022c0024u && !set) return 0;
     if (mac_cpu_halted(rt->cpu)) return -1;

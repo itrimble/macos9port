@@ -1,0 +1,80 @@
+#include "mac_ppc.h"
+
+/* Signature rows for register-based OS traps: Memory Manager, OS utilities and the parameter-block File Manager.
+ * Names, parameter lists and trap words are public interface facts of the classic Mac OS API, written from memory;
+ * nothing here is copied from Apple headers. The grammar is in include/mac_ppc.h. */
+#define PB(name, trap) {name, trap, "@A0>D0w"}
+#define HFS(name, selector) {name, 0xa260, "@A0,D0=" selector ">D0w"}
+
+static const MacPpcSig sigs[] = {
+    {"NewPtr", 0xa11e, "@D0>A0"},
+    {"NewPtrClear", 0xa31e, "@D0>A0"},
+    {"NewPtrSys", 0xa51e, "@D0>A0"},
+    {"NewPtrSysClear", 0xa71e, "@D0>A0"},
+    {"DisposePtr", 0xa01f, "@A0>"},
+    {"GetPtrSize", 0xa021, "@A0>D0"},
+    {"SetPtrSize", 0xa020, "@A0,D0>"},
+    {"NewHandle", 0xa122, "@D0>A0"},
+    {"NewHandleClear", 0xa322, "@D0>A0"},
+    {"NewHandleSys", 0xa522, "@D0>A0"},
+    {"DisposeHandle", 0xa023, "@A0>"},
+    {"GetHandleSize", 0xa025, "@A0>D0"},
+    {"SetHandleSize", 0xa024, "@A0,D0>"},
+    {"ReallocateHandle", 0xa027, "@A0,D0>"},
+    {"EmptyHandle", 0xa02b, "@A0>"},
+    {"HLock", 0xa029, "@A0>"},
+    {"HUnlock", 0xa02a, "@A0>"},
+    {"HPurge", 0xa049, "@A0>"},
+    {"HNoPurge", 0xa04a, "@A0>"},
+    {"MoveHHi", 0xa064, "@A0>"},
+    {"HGetState", 0xa069, "@A0>D0b"},
+    {"HSetState", 0xa06a, "@A0,D0>"},
+    {"RecoverHandle", 0xa128, "@A0>A0"},
+    {"RecoverHandleSys", 0xa528, "@A0>A0"},
+    {"BlockMove", 0xa02e, "@A0,A1,D0>"},
+    {"BlockMoveData", 0xa22e, "@A0,A1,D0>"},
+    {"MaxApplZone", 0xa063, "@>"},
+    {"MoreMasters", 0xa036, "@>"},
+    {"MaxMem", 0xa11d, "@*A0>D0"},
+    {"FreeMem", 0xa01c, "@>D0"},
+    {"CompactMem", 0xa04c, "@D0>D0"},
+    {"PurgeMem", 0xa04d, "@D0>"},
+    {"MaxBlock", 0xa061, "@>D0"},
+    {"StackSpace", 0xa065, "@>D0"},
+    {"PurgeSpace", 0xa162, "@*D0,*A0>"},
+    {"SetGrowZone", 0xa04b, "@A0>"},
+    {"SetApplLimit", 0xa02d, "@A0>"},
+    {"HandToHand", 0xa9e1, "@&A0>D0w"},
+    {"PtrToHand", 0xa9e3, "@A0,*A0,D0>D0w"},
+    {"PtrToXHand", 0xa9e2, "@A0,A1,D0>D0w"},
+    {"HandAndHand", 0xa9e4, "@A0,A1>D0w"},
+    {"PtrAndHand", 0xa9ef, "@A0,A1,D0>D0w"},
+    {"Gestalt", 0xa1ad, "@D0,*A0>D0w"},
+    {"SysEnvirons", 0xa090, "@D0,A0>D0w"},
+    {"Delay", 0xa03b, "@A0,*D0>"},
+    {"SecondsToDate", 0xa9c6, "@D0,A0>"},
+    {"DateToSeconds", 0xa9c7, "@A0,*D0>"},
+    {"SetToolTrapAddress", 0xa647, "@A0,D0>"},
+    {"SetOSTrapAddress", 0xa247, "@A0,D0>"},
+    {"NumToString", 0xa9ee, "@D0,A0>/w0000"},
+    {"StringToNum", 0xa9ee, "@A0,*D0>/w0001"},
+    {"DrvrInstall", 0xa03d, "@A0,D0>D0w"},
+    {"VInstall", 0xa033, "@A0>D0w"},
+    {"VRemove", 0xa034, "@A0>D0w"},
+    PB("PBOpenSync", 0xa000), PB("PBCloseSync", 0xa001), PB("PBReadSync", 0xa002), PB("PBWriteSync", 0xa003),
+    PB("PBGetVInfoSync", 0xa007), PB("PBCreateSync", 0xa008), PB("PBDeleteSync", 0xa009), PB("PBOpenRFSync", 0xa00a),
+    PB("PBGetFInfoSync", 0xa00c), PB("PBSetFInfoSync", 0xa00d), PB("PBGetEOFSync", 0xa011), PB("PBSetEOFSync", 0xa012),
+    PB("PBFlushVolSync", 0xa013), PB("PBGetVolSync", 0xa014), PB("PBSetVolSync", 0xa015), PB("PBGetFPosSync", 0xa018),
+    PB("PBSetFPosSync", 0xa044), PB("PBFlushFileSync", 0xa045),
+    PB("PBHOpenSync", 0xa200), PB("PBHGetVInfoSync", 0xa207), PB("PBHCreateSync", 0xa208), PB("PBHDeleteSync", 0xa209),
+    PB("PBHOpenRFSync", 0xa20a), PB("PBHGetFInfoSync", 0xa20c), PB("PBHSetFInfoSync", 0xa20d), PB("PBHGetVolSync", 0xa214),
+    PB("PBHSetVolSync", 0xa215),
+    HFS("PBOpenWDSync", "1"), HFS("PBCloseWDSync", "2"), HFS("PBCatMoveSync", "5"), HFS("PBDirCreateSync", "6"),
+    HFS("PBGetWDInfoSync", "7"), HFS("PBGetFCBInfoSync", "8"), HFS("PBGetCatInfoSync", "9"), HFS("PBSetCatInfoSync", "A"),
+    HFS("PBHOpenDFSync", "1A"),
+};
+
+const MacPpcSig *mac_ppc_sigs_memory(size_t *count) {
+    *count = sizeof sigs / sizeof sigs[0];
+    return sigs;
+}

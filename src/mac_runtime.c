@@ -1,4 +1,5 @@
 #include "mac_runtime.h"
+#include "guest_memory.h"
 #include "mac_sound.h"
 #include "mac_time.h"
 #include "mac_resource_chain.h"
@@ -10,11 +11,17 @@
 #include <string.h>
 #include <time.h>
 
-static int g_policy_heap_mb = 8, g_policy_guard = 0;
+static int g_policy_heap_mb = 8, g_policy_guard = 0, g_policy_ram_mb = 0, g_policy_addr = 0;
 
 void mac_runtime_set_memory_policy(int heap_mb, int guard_allocs) {
-    g_policy_heap_mb = (heap_mb == 2 || heap_mb == 4 || heap_mb == 8 || heap_mb == 12) ? heap_mb : 8;
+    g_policy_heap_mb = (heap_mb == 2 || heap_mb == 4 || heap_mb == 8 || heap_mb == 12 ||
+                        (heap_mb >= 16 && heap_mb <= 1008)) ? heap_mb : 8;
     g_policy_guard = !!guard_allocs;
+}
+
+void mac_runtime_set_machine_policy(int ram_mb, int addr_bits) {
+    g_policy_ram_mb = ram_mb > 0 ? ram_mb : 0;
+    g_policy_addr = addr_bits == 24 || addr_bits == 32 ? addr_bits : 0;
 }
 
 /* Independently implemented from the CODE resource/jump-table format described
@@ -86,34 +93,29 @@ uint32_t mac_runtime_resource_owned(MacRuntime *rt, uint32_t type, int16_t id, i
     return h;
 }
 
-int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, size_t n) {
-    if (!rt || !fork) return -1;
-    memset(rt, 0, sizeof *rt);
-    if (err && n) err[0] = 0;
-    rt->fork = *fork;
-    MacResource zero;
-    if (mac_resource_find(fork, MAC_CODE_TYPE, 0, &zero) != 0 || zero.size < 24)
-        return fail(rt, err, n, "Missing or truncated CODE 0 jump table.");
-    uint32_t above = be32(zero.data), below = be32(zero.data + 4);
-    uint32_t length = be32(zero.data + 8), offset = be32(zero.data + 12);
-    if (below > 0x100000 || above > 0x100000 || length < 8 || length % 8 || (offset & 1) ||
-        length > zero.size - 16 || offset > above || length > above - offset)
-        return fail(rt, err, n, "Unsupported or invalid CODE 0 layout.");
-    rt->cpu = mac_cpu_create_model(MAC_RUNTIME_RAM, MAC_CPU_68020);
-    if (!rt->cpu) return fail(rt, err, n, "Could not allocate guest memory.");
+/* Everything up to the point where application code is placed: guest RAM, the partition's heap split, the screen
+ * defaults. `below` is the size of the A5 globals area. Shared by the 68K (CODE 0) and PowerPC (cfrg) start paths. */
+static int machine_begin(MacRuntime *rt, const MacResourceFork *fork, uint32_t below, uint32_t *appl_limit, char *err, size_t n) {
+    GuestMemoryConfig mem = guest_memory_from_env(g_policy_ram_mb, g_policy_addr);
+    rt->cpu = mac_cpu_create_mode((size_t)mem.ram_mb << 20, MAC_CPU_68020, mem.addr32 ? MAC_ADDR_32 : MAC_ADDR_24);
+    if (!rt->cpu) {
+        char msg[256];
+        snprintf(msg, sizeof msg, "Could not allocate %u MB of guest memory (%s) Set OS999_GUEST_RAM_MB lower.",
+                 mem.ram_mb, mac_cpu_create_error());
+        return fail(rt, err, n, msg);
+    }
+    rt->addr32 = mem.addr32;
     int heap_mb = g_policy_heap_mb;
     const char *env_mb = getenv("OS999_GUEST_HEAP_MB");
     if (env_mb && env_mb[0]) heap_mb = atoi(env_mb);
     const char *env_guard = getenv("OS999_GUEST_GUARD");
     rt->guard_allocs = (env_guard && env_guard[0]) ? (atoi(env_guard) != 0) : g_policy_guard;
-    if (heap_mb == 2) { rt->a5 = 0x200000; rt->heap_limit = 0x1c0000; }
-    else if (heap_mb == 4) { rt->a5 = 0x400000; rt->heap_limit = 0x300000; }
-    else if (heap_mb == 12) { rt->a5 = 0xc00000; rt->heap_limit = 0xb00000; }
-    else { rt->a5 = 0x800000; rt->heap_limit = 0x700000; }
-    if (rt->a5 < below + 0x140000) { rt->a5 = 0x800000; rt->heap_limit = 0x700000; }
-    if (rt->heap_limit > rt->a5 - below - 0x10000) rt->heap_limit = rt->a5 - below - 0x10000;
-    rt->jump_table = rt->a5 + offset;
-    rt->jump_size = length;
+    MacPartitionLayout lay;
+    mac_partition_layout(heap_mb, mac_partition_preferred(fork), (uint32_t)mac_cpu_ram_size(rt->cpu), rt->addr32, below, &lay);
+    rt->a5 = lay.a5; rt->heap_limit = lay.heap_limit; rt->partition_extended = lay.extended;
+    /* What the guest is told the machine has. 32-bit: the RAM itself. 24-bit: the legacy value (the partition top), so
+     * the fallback reproduces the earlier 16 MB runtime exactly. */
+    rt->ram_reported = rt->addr32 ? (uint32_t)mac_cpu_ram_size(rt->cpu) : rt->a5;
     rt->heap_next = 0x100000;
     /* The upper half of the partition's heap span becomes the auto-growing protected
      * heap; the bump allocator keeps the lower half for runtime-internal records.
@@ -122,8 +124,14 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
      * The split is half of the span rounded down to 64 KiB, which is 0x400000
      * for the default 8 MiB partition. */
     rt->stack_base = rt->a5 - below;
-    uint32_t appl_limit = rt->heap_limit;
-    if (rt->heap_limit > rt->heap_next) {
+    *appl_limit = rt->heap_limit;
+    if (rt->partition_extended) {
+        /* Extended partition: the whole of [16 MB, stack) is the protected heap; the bump region below keeps its 3 MB for
+         * runtime records. The RAM is untouched since it was reserved, so attaching does not commit the window. */
+        uint32_t hi = (rt->stack_base - 0x100000u) & ~UINT32_C(7);
+        if (mac_heap_attach_fresh(rt, 0x1000000u, hi)) return fail(rt, err, n, "Could not create the protected guest heap.");
+        *appl_limit = hi;
+    } else if (rt->heap_limit > rt->heap_next) {
         uint32_t span = rt->heap_limit - rt->heap_next;
         uint32_t lo = rt->heap_next + ((span / 2) & ~UINT32_C(0xffff));
         uint32_t ceil = rt->stack_base > 0x30000 ? rt->stack_base - 0x30000 : rt->heap_limit;
@@ -141,6 +149,54 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
     rt->palette[0] = 0xffffffff;
     rt->palette[1] = 0xff000000;
     rt->modifiers = 0x80; /* btnState: no mouse button held. */
+    return 0;
+}
+
+/* Registers, process-owned low-memory globals, the authored System volume and the trap table. `pc` is where the 68K
+ * CPU starts; `jt_offset` is CurJTOffset (0 when there is no jump table). */
+static int machine_finish(MacRuntime *rt, uint32_t below, uint32_t pc, uint32_t jt_offset, uint32_t appl_limit, char *err, size_t n) {
+    /* Classic Mac OS runs application code in supervisor mode, and ordinary programs use privileged instructions: heap code
+     * brackets critical sections with MOVE SR,-(A7) and ORI #$0200,SR. In user mode those raise a privilege violation (an empty
+     * vector sent Castle of Dr. Brain to address 0 with A7 = $FFFFFFF8). The test checks that A7 is intact after this, in either order
+     * of the two stores (I expected the stack pointer to be swapped by the mode change; it is not, with this CPU wrapper). */
+    mac_cpu_set(rt->cpu, MAC_SR, 0x2000);
+    mac_cpu_set(rt->cpu, MAC_A5, rt->a5);
+    mac_cpu_set(rt->cpu, MAC_A7, rt->a5 - below);
+    mac_cpu_set(rt->cpu, MAC_PC, pc);
+    /* Process-owned low-memory globals needed before the first Toolbox call. */
+    mac_cpu_write(rt->cpu, 0x904, 4, rt->a5); /* CurrentA5 */
+    mac_cpu_write(rt->cpu, 0x908, 4, rt->a5 - below); /* CurStackBase: below A5 globals */
+    mac_appfork_publish(rt); /* CurApRefNum, CurMap and TopMapHndl for code that reads its own resource file directly */
+    mac_cpu_write(rt->cpu, 0x934, 2, jt_offset); /* CurJTOffset */
+    mac_cpu_write(rt->cpu, 0x15a, 2, MAC_PROFILE_SYSTEM_VERSION); /* Guest compatibility profile, not host OS. */
+    mac_cpu_write(rt->cpu, 0x12f, 1, 2); /* 68020 */
+    mac_cpu_write(rt->cpu, 0x108, 4, rt->ram_reported); /* MemTop: top of RAM (32-bit: the machine's RAM; 24-bit: the legacy partition top) */
+    mac_cpu_write(rt->cpu, 0x130, 4, appl_limit); /* ApplLimit: the partition's heap top, before the bump/protected split */
+    rt->system_volume = mac_system_volume_create(rt);
+    if (!rt->system_volume) return fail(rt, err, n, "Could not create authored System volume.");
+    if (mac_drive_mount(rt, 2, 1)) return fail(rt, err, n, "Could not mount authored System drive.");
+    mac_traps_init(rt);
+    mac_cpu_set_trap(rt->cpu, mac_runtime_trap, rt);
+    return 0;
+}
+
+int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, size_t n) {
+    if (!rt || !fork) return -1;
+    memset(rt, 0, sizeof *rt);
+    if (err && n) err[0] = 0;
+    rt->fork = *fork;
+    MacResource zero;
+    if (mac_resource_find(fork, MAC_CODE_TYPE, 0, &zero) != 0 || zero.size < 24)
+        return fail(rt, err, n, "Missing or truncated CODE 0 jump table.");
+    uint32_t above = be32(zero.data), below = be32(zero.data + 4);
+    uint32_t length = be32(zero.data + 8), offset = be32(zero.data + 12);
+    if (below > 0x100000 || above > 0x100000 || length < 8 || length % 8 || (offset & 1) ||
+        length > zero.size - 16 || offset > above || length > above - offset)
+        return fail(rt, err, n, "Unsupported or invalid CODE 0 layout.");
+    uint32_t appl_limit;
+    if (machine_begin(rt, fork, below, &appl_limit, err, n)) return -1;
+    rt->jump_table = rt->a5 + offset;
+    rt->jump_size = length;
     uint8_t *ram = mac_cpu_ram(rt->cpu);
     memcpy(ram + rt->jump_table, zero.data + 16, length);
     /* Validate every referenced segment, but leave non-startup entries lazy:
@@ -159,29 +215,24 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
     }
     if (mac_runtime_load_segment(rt, (int16_t)be16(zero.data + 20)))
         return fail(rt, err, n, "Could not load startup CODE segment.");
-    /* Classic Mac OS runs application code in supervisor mode, and ordinary programs use privileged instructions: heap code
-     * brackets critical sections with MOVE SR,-(A7) and ORI #$0200,SR. In user mode those raise a privilege violation (an empty
-     * vector sent Castle of Dr. Brain to address 0 with A7 = $FFFFFFF8). The test checks that A7 is intact after this, in either order
-     * of the two stores (I expected the stack pointer to be swapped by the mode change; it is not, with this CPU wrapper). */
-    mac_cpu_set(rt->cpu, MAC_SR, 0x2000);
-    mac_cpu_set(rt->cpu, MAC_A5, rt->a5);
-    mac_cpu_set(rt->cpu, MAC_A7, rt->a5 - below);
-    mac_cpu_set(rt->cpu, MAC_PC, rt->jump_table + 2);
-    /* Process-owned low-memory globals needed before the first Toolbox call. */
-    mac_cpu_write(rt->cpu, 0x904, 4, rt->a5); /* CurrentA5 */
-    mac_cpu_write(rt->cpu, 0x908, 4, rt->a5 - below); /* CurStackBase: below A5 globals */
-    mac_appfork_publish(rt); /* CurApRefNum, CurMap and TopMapHndl for code that reads its own resource file directly */
-    mac_cpu_write(rt->cpu, 0x934, 2, offset); /* CurJTOffset */
-    mac_cpu_write(rt->cpu, 0x15a, 2, MAC_PROFILE_SYSTEM_VERSION); /* Guest compatibility profile, not host OS. */
-    mac_cpu_write(rt->cpu, 0x12f, 1, 2); /* 68020 */
-    mac_cpu_write(rt->cpu, 0x108, 4, rt->a5); /* Guest MemTop */
-    mac_cpu_write(rt->cpu, 0x130, 4, appl_limit); /* ApplLimit: the partition's heap top, before the bump/protected split */
-    rt->system_volume = mac_system_volume_create(rt);
-    if (!rt->system_volume) return fail(rt, err, n, "Could not create authored System volume.");
-    if (mac_drive_mount(rt, 2, 1)) return fail(rt, err, n, "Could not mount authored System drive.");
-    mac_traps_init(rt);
-    mac_cpu_set_trap(rt->cpu, mac_runtime_trap, rt);
-    return 0;
+    return machine_finish(rt, below, rt->jump_table + 2, offset, appl_limit, err, n);
+}
+
+/* A machine with no 68K application code: the same guest RAM, heap, low-memory globals, resource chain and trap table
+ * as mac_runtime_init, with an A5 world of MAC_NATIVE_A5_BELOW bytes for the QuickDraw globals pointer and nothing
+ * above A5. The PowerPC start path (mac_ppc_runtime.c) loads its fragment into this machine. The 68K CPU is parked on
+ * an ExitToShell so that running it by mistake ends cleanly instead of executing zeros. */
+int mac_runtime_init_machine(MacRuntime *rt, const MacResourceFork *fork, char *err, size_t n) {
+    if (!rt || !fork) return -1;
+    memset(rt, 0, sizeof *rt);
+    if (err && n) err[0] = 0;
+    rt->fork = *fork;
+    uint32_t appl_limit;
+    if (machine_begin(rt, fork, MAC_NATIVE_A5_BELOW, &appl_limit, err, n)) return -1;
+    rt->jump_table = rt->a5 + 32;
+    rt->jump_size = 0;
+    mac_cpu_write(rt->cpu, rt->jump_table, 2, 0xa9f4);
+    return machine_finish(rt, MAC_NATIVE_A5_BELOW, rt->jump_table, 32, appl_limit, err, n);
 }
 
 int mac_runtime_load_segment(MacRuntime *rt, int16_t id) {
@@ -222,6 +273,8 @@ void mac_runtime_destroy(MacRuntime *rt) {
     mac_dlgmgr_destroy(rt);
     mac_alert_destroy(rt);
     mac_cdef_destroy(rt);
+    mac_mdef_destroy(rt);
+    mac_gworld_destroy(rt);
     mac_scrap_destroy(rt);
     mac_rgn_record_destroy(rt);
     mac_menuselect_destroy(rt);
@@ -229,6 +282,7 @@ void mac_runtime_destroy(MacRuntime *rt) {
     mac_drive_destroy(rt);
     mac_system_volume_destroy(rt->system_volume);
     rt->system_volume = NULL;
+    mac_ppc_destroy(rt);
     mac_cpu_destroy(rt->cpu);
     rt->cpu = NULL;
 }
@@ -251,7 +305,7 @@ size_t mac_runtime_run(MacRuntime *rt, size_t instructions) {
     if (ran < instructions && !mac_cpu_halted(rt->cpu))
         ran += mac_vbl_poll(rt, instructions - ran);
     if (ran < instructions && !mac_cpu_halted(rt->cpu))
-        ran += mac_cpu_run(rt->cpu, instructions - ran);
+        ran += rt->ppc ? mac_ppc_run(rt, instructions - ran) : mac_cpu_run(rt->cpu, instructions - ran);
     rt->instructions += ran;
     return ran;
 }
@@ -271,8 +325,8 @@ size_t mac_runtime_run_cycles(MacRuntime *rt, uint64_t cycles) {
     if (!mac_cpu_halted(rt->cpu) && ran < service_budget)
         ran += mac_vbl_poll(rt, service_budget - ran);
     uint64_t used = mac_cpu_cycles(rt->cpu) - cycle_start;
-    if (!mac_cpu_halted(rt->cpu) && used < cycles)
-        ran += mac_cpu_run_cycles(rt->cpu, cycles - used);
+    if (!mac_cpu_halted(rt->cpu) && used < cycles) /* a PowerPC application: one instruction is costed as 4 cycles */
+        ran += rt->ppc ? mac_ppc_run(rt, (size_t)((cycles - used) / 4) + 1) : mac_cpu_run_cycles(rt->cpu, cycles - used);
     rt->instructions += ran;
     return ran;
 }

@@ -10,6 +10,12 @@
  */
 typedef struct MacCpu MacCpu;
 typedef enum { MAC_CPU_68000, MAC_CPU_68020 } MacCpuModel;
+/* Address bus width. 24-bit masks every address to 16 MB (the original Macintosh mode); 32-bit uses the full
+ * 68020 bus, so guest RAM may exceed 16 MB. A 68000 is always 24-bit. */
+typedef enum { MAC_ADDR_24, MAC_ADDR_32 } MacAddrMode;
+#define MAC_CPU_RAM_MIN 4096u
+#define MAC_CPU_RAM_24BIT_MAX 0x1000000u
+#define MAC_CPU_RAM_MAX 0x40000000u /* 1 GiB host-side ceiling */
 typedef enum {
     MAC_D0, MAC_D1, MAC_D2, MAC_D3, MAC_D4, MAC_D5, MAC_D6, MAC_D7,
     MAC_A0, MAC_A1, MAC_A2, MAC_A3, MAC_A4, MAC_A5, MAC_A6, MAC_A7,
@@ -22,7 +28,18 @@ typedef enum {
 typedef int (*MacCpuTrap)(MacCpu *cpu, uint16_t opcode, uint32_t pc, void *user);
 
 MacCpu *mac_cpu_create(size_t ram_size);
+/* Model only: 24-bit addressing up to 16 MB, 32-bit (68020) above that. Existing callers keep their behaviour. */
 MacCpu *mac_cpu_create_model(size_t ram_size, MacCpuModel model);
+/* Explicit addressing mode. RAM is reserved with mmap and committed lazily by the host, so a large size costs
+ * address space, not resident memory. Returns NULL (and sets mac_cpu_create_error) when the size or mode is
+ * invalid or the host cannot reserve the memory; it never aborts. */
+MacCpu *mac_cpu_create_mode(size_t ram_size, MacCpuModel model, MacAddrMode mode);
+const char *mac_cpu_create_error(void);
+/* Test seam: make the next RAM reservation fail as if the host were out of memory. */
+void mac_cpu_test_fail_next_alloc(int fail);
+MacAddrMode mac_cpu_addr_mode(const MacCpu *cpu);
+/* 0x00ffffff in 24-bit mode, 0xffffffff in 32-bit mode. StripAddress and PC/handle masking use it. */
+uint32_t mac_cpu_addr_mask(const MacCpu *cpu);
 void mac_cpu_destroy(MacCpu *cpu);
 uint8_t *mac_cpu_ram(MacCpu *cpu);
 size_t mac_cpu_ram_size(const MacCpu *cpu);

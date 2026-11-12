@@ -9,6 +9,9 @@
 typedef int (*MacGuestDone)(void *rt, void *ctx, uint32_t result);
 
 #define MAC_CODE_TYPE UINT32_C(0x434f4445)
+/* Guest RAM is chosen per launch by guest_memory.h (default 256 MB, 32-bit addressing). MAC_RUNTIME_RAM is the size
+ * of the 24-bit address space (16 MB): the low "system region" that holds the globals, the runtime's own records, the
+ * screen and the 2..12 MB partitions, and the whole machine in the 24-bit fallback. Tests use it as that boundary. */
 #define MAC_RUNTIME_RAM (16u * 1024u * 1024u)
 #define MAC_RUNTIME_HANDLES 4096
 /* Guest compatibility profile (Ian, 2026-11-07): the virtual machine presents itself as a Mac II-class
@@ -70,6 +73,8 @@ typedef struct {
     MacCpu *cpu;
     MacResourceFork fork;
     uint32_t a5, jump_table, jump_size, heap_next, heap_limit, heap_high, heap_high_end, stack_base;
+    uint32_t ram_reported;      /* what MemTop ($108) and Gestalt 'ram ' say: the machine RAM in 32-bit mode, the legacy a5 in 24-bit mode */
+    int addr32, partition_extended; /* 32-bit addressing; partition placed above the 24-bit region */
     uint64_t instructions, traps;
     uint16_t last_trap;
     uint32_t last_trap_pc;
@@ -125,6 +130,8 @@ typedef struct {
     uint32_t appfork_mark; /* file mark of the application resource fork opened for direct reads (mac_appfork.c) */
     struct MacAlertState *alert; /* native alert dialog (mac_alert.c) */
     struct MacCdefJob *cdef;     /* control definition calls in flight (mac_cdef.c) */
+    struct MacMdef *mdef;        /* menu definition calls in flight (mac_mdef.c) */
+    struct MacGWorlds *gworlds;  /* offscreen graphics worlds (mac_gworld.c) */
     struct MacRgnRec *rgn_rec;   /* OpenRgn..CloseRgn recording in progress (mac_regions.c) */
     struct MacMenuSel *menusel;  /* MenuSelect tracking in progress (mac_menuselect.c) */
     int16_t menu_hilite;         /* ID of the menu whose title is highlighted, 0 for none */
@@ -132,15 +139,31 @@ typedef struct {
     struct { int active; MacGuestDone done; void *ctx; uint32_t sp, resume_pc, result_bytes; } guest; /* mac_guestcall.c */
     struct { int active; uint32_t deadline, pc, sp; } delay; /* _Delay in progress (mac_delay.c); host memory only */
     MacAppleEvents appleevents; /* Apple Event Manager handler tables, host memory only (mac_appleevents.c) */
+    struct { uint64_t trap; uint32_t pc; int16_t id; unsigned repeats; } loadseg; /* consecutive identical LoadSeg calls (mac_services.c) */
+    struct MacPpcState *ppc; /* PowerPC application state (mac_ppc.h); NULL for a 68K application */
 } MacRuntime;
 
-/* Configure default guest RAM partition (2..12 MiB; 0 = 8 MiB baseline) and
- * 16-byte heap guard redzones for subsequent mac_runtime_init calls. */
+/* Configure default guest RAM partition (2, 4, 8, 12 MiB; 16..1008 MiB when the machine has the room and
+ * runs in 32-bit mode; anything else = the 8 MiB baseline) and 16-byte heap guard redzones for subsequent mac_runtime_init calls. */
 void mac_runtime_set_memory_policy(int heap_mb, int guard_allocs);
+/* Saved machine RAM (MiB) and addressing for subsequent inits: ram_mb 0 = unset, addr_bits 0 = unset, 24 or 32.
+ * Unset everything = today's 16 MB, 24-bit machine (see guest_memory.h). The environment (OS999_GUEST_RAM_MB / OS999_GUEST_ADDRESSING) overrides both. */
+void mac_runtime_set_machine_policy(int ram_mb, int addr_bits);
+/* Partition geometry for a request (pure, testable). `extended` places the partition at 16 MB and up. */
+typedef struct { uint32_t a5, heap_limit, base; int heap_mb, extended; } MacPartitionLayout;
+void mac_partition_layout(int heap_mb, uint32_t size_preferred, uint32_t ram_bytes, int addr32,
+                          uint32_t below, MacPartitionLayout *out);
+uint32_t mac_partition_preferred(const MacResourceFork *fork); /* SIZE -1 preferred size, 0 if absent */
 
 /* The fork's backing bytes must outlive the runtime. This is a development
  * runtime, not a sandbox or a claim of complete Macintosh compatibility. */
 int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, size_t n);
+/* The same machine without 68K application code (no CODE 0): the PowerPC start path builds on it (mac_ppc.h). */
+#define MAC_NATIVE_A5_BELOW 0x8000u
+int mac_runtime_init_machine(MacRuntime *rt, const MacResourceFork *fork, char *err, size_t n);
+size_t mac_ppc_run(MacRuntime *rt, size_t budget); /* runs the PowerPC application; only called when rt->ppc is set */
+void mac_ppc_destroy(MacRuntime *rt);
+int mac_ppc_mixed_trap(MacRuntime *rt, uint32_t pc); /* _MixedModeMagic $AAFE: 68K code reached a routine descriptor */
 void mac_runtime_destroy(MacRuntime *rt);
 void mac_clock_publish(MacRuntime *rt); /* low-memory Ticks ($16A) and Time ($20C) from rt->ticks */
 size_t mac_runtime_run(MacRuntime *rt, size_t instructions);
@@ -168,6 +191,8 @@ void mac_resedit_destroy(MacRuntime *rt);
 int mac_files_overlay_put_hidden(MacRuntime *rt, const char *name, const uint8_t *data, size_t size);
 int mac_files_overlay_get_hidden(MacRuntime *rt, const char *name, size_t limit, uint8_t **data, size_t *size);
 int mac_heap_attach(MacRuntime *rt, uint32_t lo, uint32_t hi);
+/* Same, for RAM known to be untouched (freshly reserved): skips zeroing the window, so a 200 MB heap stays uncommitted. */
+int mac_heap_attach_fresh(MacRuntime *rt, uint32_t lo, uint32_t hi);
 void mac_heap_detach(MacRuntime *rt);
 int mac_heap_owns(const MacRuntime *rt, uint32_t address);
 /* Runtime-owned, zeroed, non-relocatable storage in the protected heap (0 on failure);
@@ -210,6 +235,9 @@ int mac_dialog_next_event(MacRuntime *rt, MacEvent *out); /* next mouse/key even
 int mac_alert_service(MacRuntime *rt, uint16_t opcode); /* Alert, StopAlert, NoteAlert, CautionAlert: $A985..$A988 */
 void mac_alert_destroy(MacRuntime *rt);
 void mac_cdef_destroy(MacRuntime *rt);
+void mac_mdef_destroy(MacRuntime *rt);
+void mac_gworld_destroy(MacRuntime *rt);
+int mac_gworld_service(MacRuntime *rt, uint16_t opcode); /* QDOffscreen ($AB1D), mac_gworld.c */
 int mac_sysbeep_service(MacRuntime *rt, uint16_t opcode); /* SysBeep (mac_sysbeep.c) */
 int mac_textbox_service(MacRuntime *rt, uint16_t opcode); /* TextBox (mac_textbox.c) */
 uint32_t mac_partition_heap_hi(const MacResourceFork *fork, uint32_t lo, uint32_t floor_hi, uint32_t ceiling);   /* heap end from the SIZE resource (mac_partition.c) */
@@ -225,6 +253,7 @@ void mac_scrap_destroy(MacRuntime *rt); /* mac_scrap.c */
 void mac_rgn_record_observe(MacRuntime *rt, uint16_t opcode); /* called before every trap: records outline calls while a region is open */
 void mac_rgn_record_destroy(MacRuntime *rt);
 int mac_menuselect_service(MacRuntime *rt, uint16_t opcode);
+int mac_script_service(MacRuntime *rt, uint16_t opcode); /* Script Manager, Roman only (mac_script.c) */
 void mac_menuselect_destroy(MacRuntime *rt);
 int mac_region_box_algebra(unsigned op, const int a[4], const int b[4], int out[4]); /* rectangle algebra, mac_regions.c */
 int mac_window_inval_service(MacRuntime *rt, uint16_t opcode); /* InvalRect/InvalRgn/ValidRect/ValidRgn, $A927..$A92A */
@@ -239,6 +268,7 @@ int mac_shapes_service(MacRuntime *rt, uint16_t opcode); /* ovals and round rect
 int mac_devmgr_service(MacRuntime *rt, uint16_t opcode); /* Device Manager Control, mac_devmgr.c */
 int mac_dlgmgr_service(MacRuntime *rt, uint16_t opcode); /* GetNewDialog, ModalDialog and friends (mac_dlgmgr.c) */
 void mac_dlgmgr_destroy(MacRuntime *rt);
+int mac_dlgmgr_is_dialog(MacRuntime *rt, uint32_t ptr);   /* ptr is an open DialogPtr made by GetNewDialog */
 uint32_t mac_dlgmgr_redirect_bits(MacRuntime *rt, uint32_t bits);   /* &theDialog->portBits (dialog + 2) -> the dialog's port window's portBits; any other address unchanged */
 int mac_menu_service(MacRuntime *rt, uint16_t opcode);
 int mac_toolbox_service(MacRuntime *rt, uint16_t opcode);
@@ -267,6 +297,8 @@ int mac_random_service(MacRuntime *rt, uint16_t opcode);
 int mac_text_state_service(MacRuntime *rt, uint16_t opcode);
 int mac_text_service(MacRuntime *rt, uint16_t opcode);
 int mac_stdprocs_service(MacRuntime *rt, uint16_t opcode);
+int mac_pixpat_service(MacRuntime *rt, uint16_t opcode); /* pixel patterns (mac_pixpat.c) */
+int mac_fontnames_service(MacRuntime *rt, uint16_t opcode); /* GetFNum, GetFontName, RealFont (mac_fontnames.c) */
 int mac_toolutil_service(MacRuntime *rt, uint16_t opcode);
 uint32_t mac_native_stub(unsigned key);
 int mac_textedit_service(MacRuntime *rt, uint16_t opcode);

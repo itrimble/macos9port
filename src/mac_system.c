@@ -48,7 +48,10 @@ static int16_t builtin_gestalt(MacRuntime *rt, uint32_t selector, uint32_t *resp
     case 0x73797376: *response = MAC_PROFILE_SYSTEM_VERSION; return 0; /* sysv */
     case 0x6d616368: *response = MAC_PROFILE_GESTALT_MACHINE; return 0; /* mach */
     case 0x70726f63: *response = 3; return 0; /* proc: MC68020 */
-    case 0x72616d20: *response = rt->a5 ? rt->a5 : 0x800000; return 0; /* ram : application address space */
+    case 0x72616d20: *response = rt->ram_reported ? rt->ram_reported : rt->a5 ? rt->a5 : 0x800000; return 0; /* ram : physical RAM (24-bit fallback: the legacy value) */
+    case 0x6c72616d: *response = (uint32_t)mac_cpu_ram_size(rt->cpu); return 0; /* lram: logical RAM size */
+    case 0x61646472: /* addr: gestalt32BitAddressing (bit 0) while in 32-bit mode; gestalt32BitCapable (bit 2) always */
+        *response = (rt->addr32 ? 1u : 0u) | 4u; return 0;
     case 0x66707520: return 0; /* fpu : no floating point unit */
     case 0x71642020: /* Selected drawing profile; unsupported calls still halt. */
         *response = rt->main_device && rt->screen_depth == 8 ? 0x100 : 0; return 0;

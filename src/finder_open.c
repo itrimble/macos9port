@@ -65,7 +65,12 @@ void open_item(Session *s, Window *w, int index) {
     int native = native_catalog_id(s->root, rel);
     if (native) { (void)native_app_open(s, native); return; }
     if (volume_builtin_font_book(s->root, rel)) { font_book_window_open(s); return; }
-    if (session_is_sit(window_items(w)[index].name)) {
+    int sit = session_is_sit(window_items(w)[index].name);
+    if (!sit && window_items(w)[index].kind == ITEM_FILE) {   /* a StuffIt archive with no useful name */
+        char probe[OSPI_PATH];
+        sit = volume_join(probe, sizeof probe, s->root, rel) == 0 && install_archive_sniff(probe);
+    }
+    if (sit) {
         session_open_sit(s, rel);
         return;
     }

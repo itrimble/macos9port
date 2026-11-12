@@ -177,9 +177,32 @@ See [the preserved baseline](DEVELOPMENT-BASELINE.md). Newer acceptance evidence
   passes (native MacBinary install with unar absent, stubbed unar paths,
   Garden route); 69 of the desktop tests that build on the Linux VM pass. A
   macOS app run with a real Garden `.sit` and Ian's acceptance are open.
+  11 November 2026 (branch `sit-double-click`): opening a local archive (double-click or File > Open; `.sit`, `.sitx`,
+  `.sea`, `.hqx`, `.bin`, `.cpt`, `.zip`, disk images, or any file whose first bytes are a StuffIt signature) now asks first.
+  An OS999 dialog names the archive and the new folder, with Expand and Cancel. Expand makes a new folder beside the
+  archive (never Applications unless the archive is already there; Install from Garden still uses Applications), picks a
+  unique name ("Pack", "Pack 2") so nothing is overwritten, extracts into a hidden `.Expanding` sibling through the same
+  `install_expand_archive` path Install uses (forks as `.rsrc` sidecars, type/creator kept), checks the unpacked total
+  against disk capacity first, then renames it into place. On any failure the temporary and reserved folders are removed.
+  Absolute paths, `..` and symlinks are refused or never materialized; nothing is executed and extracted files get no
+  exec bit. Afterwards the new folder opens and its one application, if exactly one at the top level, is selected.
+  Absolute ZIP names used to be silently made relative in `st_zip.c`; they are now refused (storage test updated).
+  Headless only: `test_sit_expand` (success, name clash, `..`, absolute, symlink entry, capacity refusal, bad CRC,
+  encrypted, truncated, garbage StuffIt, content sniff, nothing run, dialog Cancel/Expand and app selection) passes.
+  Not seen in a real window; no real `.sit` specimen or `unar`-only variant (StuffIt 13/15/X) was tried in this change;
+  the dialog is a plain two-button confirm with no progress bar, so a large archive blocks the UI while it expands.
 - [ ] R01 Implement the 68k execution core, memory model, exceptions, instruction
   accounting, and reproducible traces. Validate with independently authored
   instruction vectors, including flags, alignment, branches, and fault cases.
+  11 Nov, guest RAM (note, not a pass): the CPU adapter now supports 24-bit (16 MB cap, address bits 24-31 ignored by
+  the bus) and 32-bit addressing (up to 1 GiB host ceiling; the 68020 bus itself could reach 4 GB). RAM is an mmap
+  reservation committed on first touch. 256 MB with 32-bit addressing is OPT-IN (`--ram-mb 256 --addressing 32` or
+  `OS999_GUEST_RAM_MB` / `OS999_GUEST_ADDRESSING`); the default launch is still the 16 MB, 24-bit machine, because no
+  32-bit run of a real guest program (Monkey Island, Dr. Brain) has been done. Limits: the screen buffer stays at
+  $E00000 and the 2/4/8/12 MB partitions stay in the low 16 MB, so extra RAM is usable only through an extended
+  partition (16 MB and up, 32-bit only; chosen by `OS999_GUEST_HEAP_MB` or a SIZE resource asking for more than 8 MB).
+  The Memory panel still offers only 2/4/8/12 MB partitions and has no addressing or machine-RAM control.
+  Headless evidence: `test_guest_memory`. Windowed and real-app 32-bit behaviour are unverified.
 - [ ] R02 Load CODE segments, establish application state and stack, implement
   trap dispatch, and report unsupported instructions/traps with guest addresses.
 - [ ] R03 Implement the needed Memory, Resource, File, Event, Window, Menu,
@@ -381,6 +404,15 @@ See [the preserved baseline](DEVELOPMENT-BASELINE.md). Newer acceptance evidence
   focused navigation checks. The signed Navigation Preview launched on a copied
   volume; a fresh window capture confirms rendering. Automated keyboard input
   was blocked by exact-window focus, so hands-on navigation acceptance is pending.
+  On 11 November, branch `desktop-menus` audited every Finder menu item (see
+  [desktop menus](DESKTOP-MENUS.md)). Tailscale, Quake III and Sleep were dimmed
+  with no reason or handler; terminal/note Paste and terminal Copy with nothing
+  to act on did nothing silently. Now each enabled item acts or shows a dialog,
+  each dimmed item has a reason (shown as a "Not Available" note when its key
+  equivalent is pressed in the Finder), and Cut, Encrypt, Eject and Erase Disk
+  stay dimmed by decision. `test_desktop_menus` sweeps 1011 item/context probes
+  headless; full `make test` passed. Nothing was seen in a real window, so
+  dialog wording, dimmed appearance and hands-on acceptance are pending.
 - [ ] V05 Connect original host startup/interface sounds, mute preference and
   bounded nonblocking playback. Judge them by listening; synthesized waveforms
   and a successful audio-device open do not establish sound quality.

@@ -3,6 +3,7 @@
 #include "finder_recent.h"
 #include "finder_labels.h"
 #include "desktop_commands.h"
+#include "desktop_menu_status.h"
 #include "desktop_finder.h"
 #include "appearance_panel.h"
 #include "draw.h"
@@ -44,7 +45,7 @@ static MenuItem k_file[] = {
 };
 static MenuItem k_edit[] = {
     KEY("Undo", CMD_UNDO, "Cmd-Z", 'z'), SEP,
-    {"Cut", CMD_NONE, MI_DISABLED, "Cmd-X", 0},
+    {"Cut", CMD_CUT, MI_DISABLED, "Cmd-X", 'x'},
     KEY("Copy Names", CMD_COPY, "Cmd-C", 'c'),
     KEY("Paste", CMD_PASTE, "Cmd-V", 'v'), ITEM("Clear", CMD_CLEAR),
     KEY("Select All", CMD_SELECT_ALL, "Cmd-A", 'a'), SEP,
@@ -136,7 +137,7 @@ static void update_items(Session *s, MenuItem *items, int count) {
         case CMD_CP_MONITORS: case CMD_CP_KEYBOARD: case CMD_CP_ENERGY:
         case CMD_CP_MEMORY: case CMD_CP_NETWORK: case CMD_CP_BLUETOOTH: case CMD_CP_EXTENSIONS:
         case CMD_APPEARANCE_DESKTOP: case CMD_FONT_BOOK: case CMD_INSTALL:
-        case CMD_QUIT: case CMD_SHUTDOWN: case CMD_STARTUP_PREVIEW:
+        case CMD_QUIT: case CMD_SHUTDOWN: case CMD_STARTUP_PREVIEW: case CMD_SLEEP:
         case CMD_HELP: case CMD_HELP_KEYS: case CMD_HELP_STATUS: yes = 1; break;
         case CMD_STARTUP_TOGGLE: yes = 1; checked = s->host_startup_enabled; break;
         case CMD_SOUND_TOGGLE: yes = 1; checked = sound_enabled; break;
@@ -145,6 +146,7 @@ static void update_items(Session *s, MenuItem *items, int count) {
         case CMD_CLOSE: yes = s->guest_focused || panel || (w && !w->desktop_surface); break;
         case CMD_CLOSE_ALL: yes = panel || s->nwin; break;
         case CMD_TERMINAL_SHELL: case CMD_TERMINAL_CONSOLE: case CMD_BROWSER:
+        case CMD_TAILSCALE: case CMD_QUAKE3: case CMD_QUAKE3_DEMO:
         case CMD_MEDIA_PLAYER: case CMD_SUPPORTED_FORMATS: yes = 1; break;
         case CMD_PASTE: yes = !panel && w && (w->kind == WIN_TERMINAL || w->note_editable); break;
         case CMD_SELECT_ALL: yes = !panel && ((w && w->note_editable) || desktop_command_enabled(s,item->cmd)); break;
@@ -152,6 +154,8 @@ static void update_items(Session *s, MenuItem *items, int count) {
             yes = w && w->kind == WIN_TERMINAL && !panel; break;
         case CMD_COPY:
             yes = !panel && ((w && w->kind == WIN_TERMINAL) || desktop_command_enabled(s, item->cmd)); break;
+        case CMD_AS_WINDOW: case CMD_AS_POPUP:
+            yes = finder_command_enabled(s, item->cmd); checked = yes && w->popup == (item->cmd == CMD_AS_POPUP); break;
         case CMD_GET_INFO:
             yes = !panel && desktop_command_enabled(s, item->cmd); break;
         case CMD_CLEANUP: yes = folder; break;
@@ -192,6 +196,7 @@ static void update_items(Session *s, MenuItem *items, int count) {
 #define COUNT(a) ((int)(sizeof(a) / sizeof((a)[0])))
 void menu_update(Session *s) {
     if (!s) return;
+    desktop_menu_track(s);
     snprintf(quit_guest, sizeof quit_guest, "Quit %s", s->guest_title[0] ? s->guest_title : "Application");
     for (int i = 0; i < 8; i++) k_labels[i].label = finder_label_name(i);
     update_items(s, k_pi, COUNT(k_pi)); update_items(s, k_file, COUNT(k_file));
@@ -462,11 +467,24 @@ int menu_item_at(int menu, int x, int y) {
 }
 
 int menu_cmd_for_key(int key) {
+    Session *s = desktop_menu_tracked();
+    if (s) menu_update(s);   /* flags may predate a click handled earlier in this frame */
     for (int m = 0; m < menu_count(); m++) {
         for (int i = 0; i < menu_nitems(m); i++) {
             const MenuItem *it = menu_at(m, i);
             if (it->key && it->key == key && !(it->flags & MI_DISABLED)) {
                 return it->cmd;
+            }
+        }
+    }
+    /* A disabled item with this key explains itself instead of staying silent. */
+    int finder_only = s && !s->dialog && !s->browser_active && !s->guest_active && !s->browser_focused && !s->guest_focused && !s->media_focused;   /* other apps own their keys */
+    for (int m = 0; finder_only && m < menu_count(); m++) {
+        for (int i = 0; i < menu_nitems(m); i++) {
+            const MenuItem *it = menu_at(m, i);
+            if (it->key && it->key == key && it->label && desktop_menu_reason(s, it->cmd)) {
+                desktop_menu_note_unavailable(it->cmd);
+                return CMD_MENU_UNAVAILABLE;
             }
         }
     }

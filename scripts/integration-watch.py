@@ -180,9 +180,9 @@ def watch_cycle(repo, state, gate):
             status.update(status='waiting', reason='Main is dirty, moved, or not checked out')
         elif not gate.is_file() or not os.access(gate, os.X_OK):
             status.update(status='waiting', reason='Executable validation gate unavailable')
-        elif not all(os.environ.get(name) for name in
-                     ('OS999_CEF_ROOT', 'OS999_QUAKE_REPOSITORY', 'OS999_QUAKE_REF')):
-            status.update(status='waiting', reason='Pinned CEF and Quake build inputs are not configured')
+        elif not os.environ.get('OS999_QUAKE_REPOSITORY'):
+            # Versions (CEF, Quake commit) come from each candidate's pins; only the repository location is local.
+            status.update(status='waiting', reason='Quake engine repository build input is not configured')
         else:
             write_json(state / 'worker.json', status)
             process(repo, state, gate)

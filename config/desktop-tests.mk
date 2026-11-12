@@ -252,7 +252,7 @@ test: test-system-icons
 
 build/test_quake_surface: src/control_panel_store.c include/native_settings.h include/control_panel_store.h $(STORAGE_A) src/application_probe.c include/application_probe.h tests/test_quake_surface.c src/quake_session.c src/native_launch.c src/runtime_bridge.c src/mac_resource.c src/quake_launch.c src/quake_data.c include/quake_data.h include/os999_quake_bridge.h include/native_launch.h
 	mkdir -p build
-	$(CC) $(CFLAGS) -Isrc -o $@ tests/test_quake_surface.c src/control_panel_store.c src/native_launch.c src/os999_private.c src/application_probe.c src/runtime_bridge.c src/mac_resource.c src/quake_launch.c src/quake_data.c $(STORAGE_LINK) -pthread
+	$(CC) $(CFLAGS) -Isrc -o $@ tests/test_quake_surface.c src/control_panel_store.c src/native_launch.c src/native_policy.c src/launch_profile.c src/app_classify.c src/app_classify_exec.c src/app_classify_json.c src/os999_private.c src/application_probe.c src/runtime_bridge.c src/mac_resource.c src/quake_launch.c src/quake_data.c $(STORAGE_LINK) -pthread
 .PHONY: test-quake-surface
 test-quake-surface: build/test_quake_surface
 	./build/test_quake_surface
@@ -417,3 +417,14 @@ test-display-modes: build/test_display_modes
 	./build/test_display_modes
 
 test: test-display-modes
+
+build/test_file_dialog: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_file_dialog.c $(HDRS)
+	@mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_file_dialog.c $(FT_LIBS) -lm $(NET_LIBS)
+
+test: build/test_file_dialog
+
+build/test_desktop_menus: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_desktop_menus.c $(HDRS)
+	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_desktop_menus.c $(FT_LIBS) -lm $(NET_LIBS)
+
+test: build/test_desktop_menus

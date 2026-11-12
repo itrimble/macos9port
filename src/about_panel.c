@@ -1,6 +1,7 @@
 #include "about_panel.h"
 
 #include "finder_apps.h"
+#include "guest_memory.h"
 #include "os999_startup_sprite.h"
 #include "text_system.h"
 
@@ -75,9 +76,12 @@ int about_panel_paint(Fb *fb, const Session *s, const Window *w, const Layout *l
     fb_text(fb, x, y + 16, C_BLACK, line);
     snprintf(line, sizeof line, "Application memory:  %d MB per program", s->guest_ram_mb ? s->guest_ram_mb : 8);
     fb_text(fb, x, y + 32, C_BLACK, line);
-    snprintf(line, sizeof line, "Letters:  %s", typeface_label());
+    GuestMemoryConfig gm = guest_memory_from_env(s->guest_machine_mb, s->guest_addr_bits);
+    snprintf(line, sizeof line, "Guest memory:  %u MB, %d-bit addressing", gm.ram_mb, gm.addr32 ? 32 : 24);
     fb_text(fb, x, y + 48, C_BLACK, line);
-    y += 68;
+    snprintf(line, sizeof line, "Letters:  %s", typeface_label());
+    fb_text(fb, x, y + 64, C_BLACK, line);
+    y += 84;
     fb_fill(fb, x, y, cw, 1, C_BLACK);
     fb_text(fb, x, y + 4, C_DISABLED, "Running now (bars compare sizes)");
     y += 22;

@@ -1,6 +1,9 @@
 #include "mac_runtime.h"
+#include "guest_memory.h"
 #include "ext_runtime.h"
 #include "mac_time.h"
+#include "mac_ppc.h"
+#include "mac_ppc_probe.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -55,6 +58,16 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--indexed")) indexed = 1;
         else if (!strcmp(argv[i], "--trace")) trace = 1;
         else if (!strcmp(argv[i], "--bridge") && i + 1 < argc) bridge_name = argv[++i];
+        else if (!strcmp(argv[i], "--ram-mb") && i + 1 < argc) {
+            /* Guest RAM in MiB (16..1024; above 16 implies 32-bit, 32-bit alone means 256). See guest_memory.h. */
+            if (!guest_memory_parse_mb(argv[++i])) { fprintf(stderr, "Invalid --ram-mb (a whole number of MiB).\n"); return 2; }
+            setenv("OS999_GUEST_RAM_MB", argv[i], 1);
+        } else if (!strcmp(argv[i], "--addressing") && i + 1 < argc) {
+            /* 24 (today's default machine, 16 MB) or 32. 24 is the mode for programs that keep flags in pointer high bytes. */
+            ++i;
+            if (strcmp(argv[i], "24") && strcmp(argv[i], "32")) { fprintf(stderr, "Invalid --addressing (24 or 32).\n"); return 2; }
+            setenv("OS999_GUEST_ADDRESSING", argv[i], 1);
+        }
         else if (!strcmp(argv[i], "--steps") && i + 1 < argc) {
             char *end;
             errno = 0;
@@ -73,7 +86,7 @@ int main(int argc, char **argv) {
     }
     if (interactive) budget = SIZE_MAX;
     if (!path) {
-        fprintf(stderr, "Usage: ospi-runtime [--inspect] [--window] [--indexed] [--trace] [--saves DIR] [--disk VOLUME] [--steps N | --interactive] resource-fork\n");
+        fprintf(stderr, "Usage: ospi-runtime [--inspect] [--window] [--indexed] [--trace] [--saves DIR] [--disk VOLUME] [--ram-mb N] [--addressing 24|32] [--steps N | --interactive] resource-fork\n");
         return 2;
     }
     size_t size;
@@ -91,10 +104,16 @@ int main(int argc, char **argv) {
             if (!mac_resource_at(&fork, i, &r))
                 printf("type=%08x id=%d bytes=%zu attributes=%02x\n", r.type, r.id, r.size, r.attributes);
         }
+        size_t imports;
+        const MacCfmHostImport *table = mac_ppc_imports(&imports);
+        mac_ppc_probe_imports(table, imports);
+        mac_ppc_inspect(&fork, path, stdout); /* reports a PowerPC fragment named by 'cfrg' 0, if any */
         free(bytes); return 0;
     }
     MacRuntime rt;
-    if (mac_runtime_init(&rt, &fork, error, sizeof error)) {
+    /* A PowerPC-only application (cfrg member, no CODE 0) starts on the same machine through the fragment loader. */
+    int powerpc = mac_ppc_runtime_open(&rt, &fork, path, error, sizeof error);
+    if (powerpc < 0 || (!powerpc && mac_runtime_init(&rt, &fork, error, sizeof error))) {
         fprintf(stderr, "Loader: %s\n", error); free(bytes); return 2;
     }
     rt.trace = trace;
@@ -179,6 +198,11 @@ int main(int argc, char **argv) {
         trace_bytes(rt.cpu, "a0", mac_cpu_get(rt.cpu, MAC_A0), 128);
     }
     if (!window) fprintf(stderr, "%s\n", mac_cpu_halted(rt.cpu) ? mac_cpu_error(rt.cpu) : "Instruction budget exhausted; gameplay unverified.");
+    if (rt.ppc) {
+        char line[400];
+        mac_ppc_report(&rt, line, sizeof line);
+        fprintf(stderr, "%s\n", line);
+    }
     mac_runtime_destroy(&rt);
     free(bytes);
     return result;

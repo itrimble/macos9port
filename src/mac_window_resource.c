@@ -10,7 +10,12 @@
  * the native chrome can show (public layout and part codes:
  * https://dev.os9.ca/techpubs/mac/Toolbox/Toolbox-295.html): 0 content background, 1 frame, 2 title text. Parts 3 and
  * 4 are documented as reserved and have no effect; parts 5-12 (title-bar stripes, dialog frame, tinge) are not
- * rendered, so a table using them halts instead of being silently drawn wrongly. */
+ * rendered, so a table using them halts instead of being silently drawn wrongly.
+ *
+ * NewWindow ($A913) and GetNewWindow ($A9BD) create the same window by the same path. The one difference from a real system is the port: the window record
+ * holds a colour port (CGrafPort) even though the program asked for a basic one, because this Window Manager keeps every window in the indexed display's
+ * colour port. QuickDraw calls, SetPort, the Window Manager fields and a window pointer passed as a CopyBits bitmap behave the same; a program that reads
+ * the portBits fields out of the record itself finds a PixMap handle and the port version there. GetNewWindow does not read a 'wctb'. */
 static uint16_t be16(const uint8_t *p){return (uint16_t)(p[0]*256u+p[1]);}
 static uint32_t be32(const uint8_t *p){return (uint32_t)be16(p)<<16|be16(p+2);}
 static void put16(uint8_t*p,uint16_t v){p[0]=(uint8_t)(v>>8);p[1]=(uint8_t)v;}
@@ -39,7 +44,7 @@ static const char *parse_colors(const MacResource *t,Colors *out) {
     return NULL; /* parts 3 and 4 are reserved by the public description: accepted, no effect */
 }
 int mac_window_resource_service(MacRuntime *rt,uint16_t opcode) {
-    if(opcode!=0xaa46)return 0;
+    if(opcode!=0xaa46 && opcode!=0xa9bd)return 0;
     if(!rt || !rt->cpu || mac_cpu_halted(rt->cpu))return -1;
     uint32_t sp=mac_cpu_get(rt->cpu,MAC_A7);
     if((sp&1) || !valid(rt,sp,14) || !valid(rt,0xa60,2))return fail(rt,"GetNewCWindow stack is invalid.");
@@ -72,7 +77,7 @@ int mac_window_resource_service(MacRuntime *rt,uint16_t opcode) {
      * they are ignored, positioning word included. That is my reading of the format, not something I verified against a real Mac. */
     if(size==aligned+2 && be16(data+aligned))return fail(rt,"WIND automatic positioning is unsupported.");
     Colors tint={0};
-    if(mac_resource_find(&rt->fork,UINT32_C(0x77637462),id,&colors)==0) {
+    if(opcode==0xaa46 && mac_resource_find(&rt->fork,UINT32_C(0x77637462),id,&colors)==0) {
         const char *why=parse_colors(&colors,&tint);
         if(why)return fail(rt,why);
     }

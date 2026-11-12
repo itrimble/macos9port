@@ -19,8 +19,7 @@
  * ^0 to ^3 in static text come from ParamText. Buttons, checkboxes and radio buttons act on mouse-up inside the item; a checkbox toggles; Return
  * and Enter hit item 1 when it is an enabled button; edit text takes printable keys and Backspace and a click selects it.
  * A dialog whose DLOG is not visible draws nothing until ShowWindow (HideWindow puts the screen back); FrontWindow ignores it.
- * Not supported, and halting by name: user items and SetDItem, control items, filter procedures (other than the one GetStdFilterProc
- * hands out), NewDialog, a dStorage that is not zeroable RAM, more than four open
+ * User items and SetDItem are in mac_dlguser.c. Not supported, and halting by name: NewDialog, a dStorage that is not zeroable RAM, more than four open
  * dialogs. Icons draw the application's ICON resource when it has one; PICT items are left blank. */
 static int fail(MacRuntime *rt, const char *why) { mac_cpu_halt(rt->cpu, why); return -1; }
 static int valid(MacRuntime *rt, uint32_t p, size_t n) { size_t z = mac_cpu_ram_size(rt->cpu); return p >= 0x400 && p <= z && n <= z - p; }
@@ -66,7 +65,7 @@ static void mirror(MacRuntime *rt, const Dlg *d, unsigned k) {
     if (block) { wr(rt, d->handle[k], 4, block); memset(mac_cpu_ram(rt->cpu) + block, 0, TEXT_CAP + 1); memcpy(mac_cpu_ram(rt->cpu) + block, d->text[k], d->length[k]); }
 }
 
-static void draw(MacRuntime *rt, Dlg *d) { d->update_due = 1; mac_dlg_draw(rt, d); d->last_hash = mac_dlg_state_hash(rt, d); if (d->port_window) { mac_dlgwin_shown(rt, d->port_window, !d->hidden); if (!d->hidden) d->ctl_pending = 1; } }
+static void draw(MacRuntime *rt, Dlg *d) { d->update_due = 1; d->user_due = 1; mac_dlg_draw(rt, d); d->last_hash = mac_dlg_state_hash(rt, d); if (d->port_window) { mac_dlgwin_shown(rt, d->port_window, !d->hidden); if (!d->hidden) d->ctl_pending = 1; } }
 /* The repaint of a dialog that is merely waiting: only when its state changed (a program that draws into the dialog itself, e.g. a house list, must not be wiped every step). */
 static void redraw_changed(MacRuntime *rt, Dlg *d) { if (!d->drawn || mac_dlg_state_hash(rt, d) != d->last_hash) draw(rt, d); }
 static int swallowing(MacRuntime *rt) { Dlg *pd = find(rt, M(rt)->port); return pd && !pd->port_window; }   /* only a dialog without a port window has its QuickDraw discarded */
@@ -76,6 +75,7 @@ static int screen_ok(MacRuntime *rt) {
 static int get_new_dialog(MacRuntime *rt, uint32_t sp) {
     if (!valid(rt, sp, 14)) return fail(rt, "GetNewDialog stack is invalid.");
     uint32_t behind = rd(rt, sp, 4), storage = rd(rt, sp + 4, 4); int16_t id = (int16_t)rd(rt, sp + 8, 2);
+    if (rt->trace) fprintf(stderr, "dialog DLOG %d\n", id);
     if (behind != 0xffffffffu && behind != 0) return fail(rt, "GetNewDialog behind a particular window is unsupported.");
     if (!screen_ok(rt)) return fail(rt, "Dialogs require the initialized 640x480 indexed display.");
     if (!rt->dlgmgr && !(rt->dlgmgr = calloc(1, sizeof(Mgr)))) return fail(rt, "The Dialog Manager could not allocate its state.");
@@ -218,6 +218,7 @@ static int modal_dialog(MacRuntime *rt, uint32_t sp, uint32_t pc) {
         if (!valid(rt, hit, 2)) return fail(rt, "ModalDialog itemHit pointer is invalid.");
         d->modal = 1; d->sp = sp; d->pc = pc; d->hit_ptr = hit; d->filter = filter; redraw_changed(rt, d);
     } else if (pc != d->pc || sp != d->sp) return fail(rt, "ModalDialog called again while a dialog is in progress.");
+    { int u = mac_dlg_user_start(rt, d, sp, pc); if (u) return u; }                                    /* user items drawn by the program, then this trap again */
     unsigned chosen = 0; MacEvent e; int before = d->pressed;
     if (d->filter) {                                                                                    /* one event (or a null event) per pass through the guest filter */
         int real = mac_dialog_next_event(rt, &e);
@@ -298,7 +299,7 @@ static int dlg_service(MacRuntime *rt, uint16_t opcode) {
     default: return 0;
     }
     if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1;
-    uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7), pc = (mac_cpu_get(rt->cpu, MAC_PC) - 2) & 0xffffff;
+    uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7), pc = (mac_cpu_get(rt->cpu, MAC_PC) - 2) & mac_cpu_addr_mask(rt->cpu);
     if ((sp & 1) || !valid(rt, sp, 4)) return fail(rt, "Dialog Manager call has an invalid stack.");
     int passthrough = opcode == 0xa924 || opcode == 0xa873 || opcode == 0xa915 || opcode == 0xa916 || opcode == 0xa91b || opcode == 0xa91f;   /* these act only on our dialogs and otherwise belong to other services */
     if (!passthrough && opcode != FILTER_OP && rt->last_trap_pc >= 0x2000 && rt->last_trap_pc < 0x2000 + 4096 * 8) return fail(rt, "A Dialog Manager call reached through a patched trap vector is unsupported.");
@@ -381,8 +382,9 @@ static int dlg_service(MacRuntime *rt, uint16_t opcode) {
         Dlg *d = find(rt, rd(rt, sp, 4));
         if (!d) return fail(rt, "The dialog call names a dialog that is not open.");
         if (d->modal && opcode != 0xa981) return fail(rt, "A dialog was closed while ModalDialog was running.");
-        if (opcode == 0xa981) { draw(rt, d); d->update_due = 0; } else dispose(rt, d, 1);   /* DrawDialog from a filter's update handling is the answer to the update event, not a reason for another */
+        if (opcode == 0xa981) { draw(rt, d); d->update_due = 0; int u = mac_dlg_user_start(rt, d, sp + 4, pc + 2); if (u) return u; } else dispose(rt, d, 1);   /* DrawDialog from a filter's update handling is the answer to the update event, not a reason for another */
         pop = 4; break; }
+    case 0xa98e: return mac_dlg_set_item(rt, find(rt, valid(rt, sp, 16) ? rd(rt, sp + 12, 4) : 0), sp);   /* SetDItem */
     case 0xa98d: {                                                                                   /* GetDItem(dlg, item, VAR type, VAR handle, VAR box) */
         if (!valid(rt, sp, 18)) return fail(rt, "GetDItem stack is invalid.");
         Dlg *d = find(rt, rd(rt, sp + 14, 4)); int item = (int16_t)rd(rt, sp + 12, 2);
@@ -391,7 +393,7 @@ static int dlg_service(MacRuntime *rt, uint16_t opcode) {
         if (!valid(rt, type_p, 2) || !valid(rt, handle_p, 4) || !valid(rt, box_p, 8)) return fail(rt, "GetDItem output pointer is invalid.");
         const MacDitlItem *it = &d->ditl.items[item - 1];
         wr(rt, type_p, 2, (unsigned)it->kind | (it->disabled ? 128u : 0));
-        wr(rt, handle_p, 4, d->handle[item - 1]);
+        wr(rt, handle_p, 4, it->kind == MAC_ITEM_USER ? d->user_proc[item - 1] : d->handle[item - 1]);
         int away = d->item_hidden[item - 1] ? 16384 : 0;
         wr(rt, box_p, 2, (uint16_t)it->top); wr(rt, box_p + 2, 2, (uint16_t)(it->left + away)); wr(rt, box_p + 4, 2, (uint16_t)it->bottom); wr(rt, box_p + 6, 2, (uint16_t)(it->right + away));
         pop = 18; break; }
@@ -460,6 +462,7 @@ static int dialog_update(MacRuntime *rt, uint16_t opcode) {
     return rc;
 }
 /* A program may name a dialog's port bits as the CopyBits destination (the DialogPtr is a GrafPtr). The dialog here is a native record, so its bits are the port window's. */
+int mac_dlgmgr_is_dialog(MacRuntime *rt, uint32_t ptr) { return find(rt, ptr) != NULL; }
 uint32_t mac_dlgmgr_redirect_bits(MacRuntime *rt, uint32_t bits) {
     if (!rt->dlgmgr || bits < 2) return bits;
     Dlg *d = find(rt, bits - 2);

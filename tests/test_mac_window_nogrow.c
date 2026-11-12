@@ -48,7 +48,17 @@ int main(void) {
     CHECK(mac_window_hit(&a,100,100)==3 && mac_window_hit(&a,100,27)==4 && mac_window_hit(&a,10,10)==0);
     mac_cpu_destroy(a.cpu);mac_cpu_destroy(z.cpu);
     /* Every other procID still halts with a named diagnostic. */
-    int unsupported[]={0,3,5,8,15,4096,5000};
+    /* The other standard definitions: documentProc and zoomDocProc have a grow part, the zoom forms a zoom box, altDBoxProc no title. */
+    int standard[]={0,3,5,8};
+    for(unsigned i=0;i<4;i++) {
+        MacRuntime r=fresh();new_args(&r,standard[i]);
+        CHECK(mac_window_service(&r,0xa913)==1 && !mac_cpu_halted(r.cpu) && r.window_count==1 && r.window.proc_id==standard[i]);
+        int grow=standard[i]==0||standard[i]==8,b=r.window.bounds[2],x=r.window.bounds[3];
+        CHECK(mac_window_hit(&r,x-3,b-3)==(grow?5:3) && mac_window_hit(&r,x-30,b-30)==3);
+        CHECK(mac_cpu_ram(r.cpu)[r.window.address+113]==(standard[i]==8));
+        mac_cpu_destroy(r.cpu);
+    }
+    int unsupported[]={6,7,9,15,4096,5000};
     for(unsigned i=0;i<sizeof unsupported/sizeof *unsupported;i++) {
         MacRuntime r=fresh();new_args(&r,unsupported[i]);
         CHECK(mac_window_service(&r,0xaa45)<0 && mac_cpu_halted(r.cpu) && r.window_count==0);

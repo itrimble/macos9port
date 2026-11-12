@@ -120,6 +120,8 @@ static void lookup_checks(void) {
     CHECK(mac_font_find(&f, -1, 10, 0, &s, &why) == -1);                                /* a negative family, although a FONT with that id exists */
     CHECK(mac_font_find(&f, 5, 256, 0, &s, &why) == -1 && mac_font_find(&f, 5, -3, 0, &s, &why) == -1);
     CHECK(mac_font_find(&f, -1, 10, 0, &s, &why) == -1 && mac_font_find(&f, 256, 10, 0, &s, &why) == -1);
+    CHECK(mac_font_find(&f, 32700, 10, 0, &s, &why) == -1 && why && strstr(why, "Font family 32700"));   /* a private family number is looked for, not refused as out of range */
+    CHECK(mac_font_find(&f, 32768, 10, 0, &s, &why) == -1 && why && strstr(why, "outside the supported range"));
     CHECK(mac_font_find(&f, 6, 7, 0, &s, &why) == -1 && why);                           /* present but malformed */
     CHECK(mac_font_find(NULL, 5, 10, 0, &s, &why) == -1);
 }

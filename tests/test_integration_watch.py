@@ -136,11 +136,11 @@ class QueueTests(unittest.TestCase):
 
     def test_watch_uses_source_build_inputs_without_prebuilt_browser(self):
         self.submit()
-        names = ('OS999_CEF_ROOT', 'OS999_QUAKE_REPOSITORY', 'OS999_QUAKE_REF')
+        names = ('OS999_QUAKE_REPOSITORY',)
         with patch.dict(os.environ, {name: '' for name in names}):
             status = watch.watch_cycle(self.repo, self.state, self.gate)
             self.assertEqual(status['status'], 'waiting')
-            self.assertIn('build inputs', status['reason'])
+            self.assertIn('build input', status['reason'])
             self.assertEqual(self.item()['attempts'], 0)
         with patch.dict(os.environ, {name: 'fixture' for name in names}):
             os.environ.pop('OS999_BROWSER_BUNDLE', None)

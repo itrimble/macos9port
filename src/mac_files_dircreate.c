@@ -12,6 +12,21 @@ uint32_t mac_files_folder_id(const char *name) {
     return FOLDER_ID_FIRST + h % (FOLDER_ID_LAST - FOLDER_ID_FIRST + 1);
 }
 
+/* The folder named `name` in the root: 0 and *id when DirCreate made it earlier; otherwise fnfErr (-43), or, with `create`, it is made now (-46 without a writable
+ * save overlay, like DirCreate). Used by FindFolder (mac_alias.c). */
+int mac_files_folder_find(MacRuntime *rt, const char *name, int create, uint32_t *id) {
+    FileState *s = rt->file_state;
+    if (!s) return -35;
+    *id = mac_files_folder_id(name);
+    char marker[FILE_NAME_MAX + 1]; snprintf(marker, sizeof marker, "d%u-.f", *id);
+    if (s->saves >= 0 && mac_files_classify(s, marker) != FILE_NONE) return 0;
+    if (!create) return -43;
+    if (s->saves < 0) return -46;
+    if (mac_files_classify(s, name) != FILE_NONE) return -48;
+    int made = mac_files_create_name(rt, marker);
+    return made == -48 ? 0 : made;
+}
+
 int mac_files_dir_create(MacRuntime *rt, uint32_t pb) {
     MacCpu *cpu = rt->cpu;
     FileState *s = rt->file_state;

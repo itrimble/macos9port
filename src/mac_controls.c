@@ -232,7 +232,7 @@ int mac_controls_service(MacRuntime *rt, uint16_t op) {
         int x = (int16_t)rd(rt, sp + 2, 2), y = (int16_t)rd(rt, sp, 2), t = (int16_t)rd(rt, p + CTL_RECT, 2), l = (int16_t)rd(rt, p + CTL_RECT + 2, 2);
         int b = (int16_t)rd(rt, p + CTL_RECT + 4, 2), r = (int16_t)rd(rt, p + CTL_RECT + 6, 2);
         if (op == 0xa959) { b = y + (b - t); r = x + (r - l); t = y; l = x; }
-        else { if (x < 1 || y < 1) return fail(rt, "SizeControl needs a positive width and height."); b = t + y; r = l + x; }
+        else { b = t + y; r = l + x; }                                                    /* the Control Manager does not validate: a zero or negative size leaves an empty rectangle, which draws and hit-tests as nothing (a pane still 0 wide asks for width - 15) */
         if (w->visible && rd(rt, p + CTL_VIS, 1)) mac_control_draw(rt, w, p, 1);
         wr(rt, p + CTL_RECT, 2, (uint16_t)t); wr(rt, p + CTL_RECT + 2, 2, (uint16_t)l); wr(rt, p + CTL_RECT + 4, 2, (uint16_t)b); wr(rt, p + CTL_RECT + 6, 2, (uint16_t)r);
         redraw(rt, h);

@@ -39,7 +39,7 @@ static int implemented(unsigned key) {
     case 0xa800:
     case 0xa801: case 0xa803: case 0xa804: case 0xa807:
     case 0xa9fa: case 0xa9fb: case 0xa9eb: case 0xa9ee: case 0xa830: case 0xa816: case 0xa9fc: case 0xa9fd: case 0xa9fe: case 0xa99b: case 0xa9e1: case 0xa9e3: case 0xa9ef: case 0xa9b1: case 0xa823: case 0xa904: case 0xa953: case 0xa954: case 0xa955: case 0xa956: case 0xa957: case 0xa958: case 0xa959: case 0xa95a: case 0xa95b: case 0xa95c: case 0xa95d: case 0xa95e: case 0xa95f: case 0xa960: case 0xa961: case 0xa962: case 0xa963: case 0xa964: case 0xa965: case 0xa966: case 0xa967: case 0xa968: case 0xa969: case 0xa96a: case 0xa96b: case 0xa96c: case 0xa9be:
-    case 0xa8f6:
+    case 0xa8f6: case 0xa826: case 0xa913: case 0xa9bd: case 0xa8ff: case 0xa900: case 0xa902: case 0xaa07: case 0xaa08: case 0xaa0c: case 0xaa0d: case 0xaa0e: case 0xaa0f: case 0xaa10:
     case 0xa9c4: case 0xa997: case 0xa994: case 0xa998: case 0xa99a: case 0xa9a4:
     case 0xaa52:
     case 0xa827: case 0xa828: case 0xa817: case 0xa8b0: case 0xa8b1: case 0xa8b2: case 0xa8b3: case 0xa8b4: case 0xa8b7: case 0xa8b8: case 0xa8b9: case 0xa8ba: case 0xa8bb: case 0xa004: case 0xa204: case 0xa404: case 0xa604: case 0xa97c: case 0xa991: case 0xa981: case 0xa982: case 0xa983: case 0xa98d: case 0xa990: case 0xa98f: case 0xa97e: case 0xa98c: case 0xaa68: case 0xa97d: case 0xa98e: case 0xa980: case 0xa97f: case 0xa984: case 0xa978: case 0xa979: case 0xa97a: case 0xa162: case 0xa05d: case 0xa858: case 0xa859: case 0xa85a: case 0xa85b: case 0xa85c: case 0xa85d: case 0xa85e: case 0xa85f: case 0xa86a: case 0xa86b: case 0xa861: case 0xa93d: case 0xa938: case 0xa93e: case 0xaa4e: case 0xaa97: case 0xaa98: case 0xa83d: case 0xa9ce: case 0xa9cb: case 0xa9cc: case 0xa9cd: case 0xa9cf: case 0xa9d1: case 0xa9d2: case 0xa9d3: case 0xa9d4: case 0xa9d8: case 0xa9d9: case 0xa9da: case 0xa9dc: case 0xa9df: case 0xa883: case 0xa884: case 0xa885: case 0xa886: case 0xa887: case 0xa888: case 0xa889: case 0xa88a: case 0xa88b: case 0xa88c: case 0xa88d: case 0xa88e: case 0xaa91: case 0xaa92: case 0xaa93: case 0xaa94: case 0xaa95: case 0xaa96: case 0xaa9a: case 0xaaa2:
@@ -49,7 +49,7 @@ static int implemented(unsigned key) {
     case 0xa985: case 0xa986: case 0xa987: case 0xa988: case 0xa9ea: case 0xa9f0: case 0xa9f1: case 0xa9f4: case 0xa9a0: case 0xa81f: case 0xa99d:
     case 0xa99c: case 0xa80d: case 0xa821: case 0xa9a5: case 0xa9a6: case 0xa9a8: case 0xa9af:
     case 0xa9a2: case 0xa9a3: case 0xa992: case 0xa970: case 0xa971:
-    case 0xa976: case 0xa860: case 0xa975: case 0xa972: case 0xa974: case 0xa86e: case 0xa870: case 0xa871: case 0xa878:
+    case 0xa976: case 0xa860: case 0xa975: case 0xa972: case 0xa974: case 0xa86e: case 0xa870: case 0xa871: case 0xa878: case 0xa876: case 0xa877:
     case 0xa86d: case 0xa86f: case 0xa873: case 0xa874: case 0xa875: case 0xa87d:
     case 0xa87e: case 0xa87f: case 0xa8aa: case 0xa8ab: case 0xa8a6: case 0xa880: case 0xa937: case 0xa8a8: case 0xa8a7: case 0xa850: case 0xa8fe: case 0xa912: case 0xa930:
     case 0xa97b: case 0xa910: case 0xa9b4:
@@ -65,8 +65,8 @@ static int implemented(unsigned key) {
     case 0xab1d: case 0xaa03: case 0xaa04: case 0xaa24:
     case 0xaa00: case 0xaa01: case 0xaa02: case 0xa8ec:
     case 0xaa14: case 0xaa15: case 0xaa33: case 0xaa34: case 0xaa19: case 0xaa1a: case 0xaa18: case 0xaa3e: case 0xaa40: case 0xaa3f:
-    case 0xaa29: case 0xaa2a: case 0xaa2b: case 0xaa2c: case 0xaa31: case 0xaa32:
-    case 0xaa1b: case 0xaa1c: case 0xaa1d: case 0xaa26: return 1;
+    case 0xaa27: case 0xaa29: case 0xaa2a: case 0xaa2b: case 0xaa2c: case 0xaa31: case 0xaa32:
+    case 0xaa1b: case 0xaa1c: case 0xaa1d: case 0xaa26: case 0xa8b5: return 1;
     default: return 0;
     }
 }
@@ -113,6 +113,16 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (opcode == 0xa9f0) { /* LoadSeg, direct or chained through a guest patch. */
         uint32_t sp = mac_cpu_get(cpu, MAC_A7);
         int16_t id = (int16_t)mac_cpu_read(cpu, sp, 2);
+        /* The same jump-table entry asking for the same segment again and again, with no other trap between: the code it reached put the entry back and
+         * re-entered it. A self-loading stub does that when it expects LoadSeg to fetch the segment through Resource Manager traps it patched; here the
+         * segment comes straight from the fork, so nothing would ever change. */
+        if (rt->loadseg.trap + 1 == rt->traps && rt->loadseg.pc == pc && rt->loadseg.id == id) rt->loadseg.repeats++; else rt->loadseg.repeats = 0;
+        rt->loadseg.trap = rt->traps; rt->loadseg.pc = pc; rt->loadseg.id = id;
+        if (rt->loadseg.repeats >= 64) {
+            char msg[200]; snprintf(msg, sizeof msg, "LoadSeg for CODE %d is re-entered from the same jump-table entry without progress (a self-loading stub that expects its patched Resource Manager traps to supply the segment; not supported).", id);
+            mac_cpu_halt(cpu, msg);
+            return -1;
+        }
         if (mac_runtime_load_segment(rt, id)) {
             mac_cpu_halt(cpu, "LoadSeg could not load the requested CODE resource.");
             return -1;
@@ -188,6 +198,10 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (menu) return menu > 0 ? 0 : -1;
     int menusel = mac_menuselect_service(rt, opcode);
     if (menusel) return menusel > 0 ? 0 : -1;
+    int gworld = mac_gworld_service(rt, opcode);
+    if (gworld) return gworld > 0 ? 0 : -1;
+    int script = mac_script_service(rt, opcode);
+    if (script) return script > 0 ? 0 : -1;
     int toolbox = mac_toolbox_service(rt, opcode);
     if (toolbox) return toolbox > 0 ? 0 : -1;
     int color_raster = mac_color_raster_service(rt, opcode);
@@ -262,6 +276,10 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (stdprocs) return stdprocs > 0 ? 0 : -1;
     int textedit = mac_textedit_service(rt, opcode);
     if (textedit) return textedit > 0 ? 0 : -1;
+    int pixpat = mac_pixpat_service(rt, opcode);
+    if (pixpat) return pixpat > 0 ? 0 : -1;
+    int fontnames = mac_fontnames_service(rt, opcode);
+    if (fontnames) return fontnames > 0 ? 0 : -1;
     if (opcode == 0xa9f4) {
         rt->exited = 1;
         mac_cpu_halt(cpu, "Guest called ExitToShell.");
@@ -282,6 +300,7 @@ int mac_runtime_trap(MacCpu *cpu, uint16_t opcode, uint32_t pc, void *user) {
     uint32_t stub = native_stub(key);
     uint32_t sp = mac_cpu_get(cpu, MAC_A7);
     if (rt->guest.active && pc == native_stub(0xfe) && opcode == 0xa0fe) return mac_guest_return(rt);
+    if (opcode == 0xaafe && rt->ppc) return mac_ppc_mixed_trap(rt, pc); /* a routine descriptor: switch to PowerPC */
     if (pc == stub) {
         /* A guest JMP/JSR to its predecessor handler has a real continuation
          * on the stack. Native services expose only Pascal arguments. */

@@ -459,8 +459,8 @@ static void paint_dialog(Fb *fb, const Session *s) {
     int ok_hot = s->dialog_down == 1 && rect_has(ok, s->mx, s->my);
     int cancel_hot = s->dialog_down == 2 && rect_has(cancel, s->mx, s->my);
     rbox(fb, ok, ok_hot);
-    int ow = fb_text_width("OK");
-    fb_text(fb, ok.x + (ok.w - ow) / 2, text_y(ok.y, ok.h), desktop_theme_color(THEME_FOREGROUND), "OK");
+    const char *ok_label = s->dialog_cmd == CMD_EXPAND_ARCHIVE_DO ? "Expand" : "OK";
+    fb_text(fb, ok.x + (ok.w - fb_text_width(ok_label)) / 2, text_y(ok.y, ok.h), desktop_theme_color(THEME_FOREGROUND), ok_label);
     if (cancel.w > 0) {
         rbox(fb, cancel, cancel_hot);
         int cw = fb_text_width("Cancel");

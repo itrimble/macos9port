@@ -33,8 +33,9 @@ class ProgressTests(unittest.TestCase):
         self.assertFalse((self.run / 'incorrect').exists())
         value = progress_for(self.run)
         self.assertEqual(value['status'], 'failed')
-        self.assertEqual(value['steps'][0]['status'], 'failed')
-        self.assertGreaterEqual(value['steps'][0]['duration'], 0)
+        step = next(item for item in value['steps'] if item['id'] == 'sdl')
+        self.assertEqual(step['status'], 'failed')
+        self.assertGreaterEqual(step['duration'], 0)
 
     def test_signal_marks_active_stage_interrupted(self):
         process = self.shell('progress_start sdl; sleep 30')
@@ -72,7 +73,7 @@ class ProgressTests(unittest.TestCase):
         value = progress_for(self.run)
         self.assertEqual(value['counts']['skipped'], 1)
         self.assertEqual(value['counts']['passed'], 1)
-        self.assertNotIn('duration', value['steps'][1])
+        self.assertNotIn('duration', next(item for item in value['steps'] if item['id'] == 'browser'))
         with self.assertRaises(ValueError): progress_for(self.run, 'wrong-tree')
 
     def test_stale_identity_not_silent_log_age(self):

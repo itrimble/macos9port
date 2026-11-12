@@ -30,6 +30,13 @@ static int cmp(MacRuntime *r, uint16_t op, const char *a, const char *b, unsigne
     mac_cpu_set(r->cpu, MAC_A0, 0x1000); mac_cpu_set(r->cpu, MAC_A1, 0x1100); mac_cpu_set(r->cpu, MAC_D0, la << 16 | lb);
     int rc = mac_cmpstring_service(r, op); return rc == 1 ? (int)mac_cpu_get(r->cpu, MAC_D0) : -9;
 }
+static int find(MacRuntime *r, unsigned vref, uint32_t type, int create) {
+    mac_cpu_set(r->cpu, MAC_A7, 0xf000); mac_cpu_set(r->cpu, MAC_D0, 0);
+    w(r, 0xf000, 4, 0x2100); w(r, 0xf004, 4, 0x2104); w(r, 0xf008, 2, create ? 0x0100 : 0); w(r, 0xf00a, 4, type); w(r, 0xf00e, 2, vref); w(r, 0xf010, 2, 0x4444);
+    w(r, 0x2100, 4, 0x77777777); w(r, 0x2104, 2, 0x7777);
+    CHECK(mac_alias_service(r, 0xa823) == 1);
+    return (int16_t)rd(r, 0xf010, 2);
+}
 int main(void) {
     char data[] = "/tmp/ospi-rf-data-XXXXXX", saves[] = "/tmp/ospi-rf-saves-XXXXXX";
     CHECK(mkdtemp(data) && mkdtemp(saves));
@@ -108,6 +115,21 @@ int main(void) {
     CHECK(mac_alias_service(&r, 0xa823) == 1 && rd(&r, 0xf00e, 2) == 0 && rd(&r, 0x2100, 1) == 0 && rd(&r, 0x2102, 1) == 0 && mac_cpu_get(r.cpu, MAC_A7) == 0xf00e);
     pstr(&r, 0x2006, "Missing"); mac_cpu_set(r.cpu, MAC_A7, 0xf000); w(&r, 0x2100, 1, 0x77); CHECK(mac_alias_service(&r, 0xa823) == 1 && (int16_t)rd(&r, 0xf00e, 2) == -43 && rd(&r, 0x2100, 1) == 0x77);
     mac_cpu_set(r.cpu, MAC_A7, 0xf000); mac_cpu_set(r.cpu, MAC_D0, 0x0003); CHECK(mac_alias_service(&r, 0xa823) == -1 && mac_cpu_halted(r.cpu));                      /* another selector */
+    mac_files_destroy(&r); mac_cpu_destroy(r.cpu);
+    /* FindFolder: fnfErr until the folder is made, made with createFolder on a writable overlay, then found; unknown types and volumes; no overlay */
+    r = (MacRuntime){0}; r.cpu = mac_cpu_create(RAM); r.heap_next = 0x3000; r.heap_limit = 0x8000; CHECK(mac_files_root(&r, data) == 0);
+    CHECK(find(&r, 0x8000, 0x70726566, 0) == -43 && rd(&r, 0x2100, 4) == 0x77777777 && mac_cpu_get(r.cpu, MAC_A7) == 0xf010);
+    CHECK(find(&r, 0x8000, 0x70726566, 1) == -46);                                            /* read-only volume */
+    CHECK(mac_files_writable(&r, saves, 8, 1 << 20) == 0);
+    CHECK(find(&r, 0x8000, 0x70726566, 0) == -43);
+    CHECK(find(&r, 0x8000, 0x70726566, 1) == 0 && rd(&r, 0x2104, 2) == 0xffff);
+    uint32_t prefs = rd(&r, 0x2100, 4); CHECK(prefs >= 3 && prefs <= 66);
+    CHECK(find(&r, 0, 0x70726566, 0) == 0 && rd(&r, 0x2100, 4) == prefs);                    /* found afterwards, on the default volume too */
+    CHECK(find(&r, 0x8000, 0x6374726c, 0) == -43);                                            /* another folder is still absent */
+    CHECK(find(&r, 0x8000, 0x3f3f3f3f, 1) == -43);                                            /* unknown folder type */
+    CHECK(find(&r, 5, 0x70726566, 0) == -35);                                                 /* unknown volume */
+    mac_cpu_set(r.cpu, MAC_A7, 0xf000); mac_cpu_set(r.cpu, MAC_D0, 0); w(&r, 0xf000, 4, 0);
+    CHECK(mac_alias_service(&r, 0xa823) == -1 && mac_cpu_halted(r.cpu));                      /* nil result pointer */
     mac_files_destroy(&r); mac_cpu_destroy(r.cpu);
     char cmd[700]; snprintf(cmd, sizeof cmd, "rm -rf '%s' '%s'", data, saves); (void)!system(cmd);
     if (!failures) puts("Resource fork sidecar, CreateResFile, HGetVol, CmpString and alias checks passed");

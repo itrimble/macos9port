@@ -103,6 +103,8 @@ static void test_sit_install(const char *root) {
         int idx = find_item(w, "Click.SIT");
         CHECK(idx >= 0 && session_is_sit(w->items[idx].name));
         if (idx >= 0) open_item(s, w, idx);
+        CHECK(s->dialog == 2 && find_win(s, "Click") < 0);   /* opening asks first */
+        dialog_accept(s);                                   /* Expand */
         CHECK(find_win(s, "Click") >= 0);
         session_destroy(s);
     }

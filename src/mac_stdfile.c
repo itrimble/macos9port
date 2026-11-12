@@ -258,7 +258,7 @@ static int step(MacRuntime *rt, MacSfState *s) {
 int mac_stdfile_service(MacRuntime *rt, uint16_t opcode) {
     if (opcode != 0xa9ea) return 0;
     if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1;
-    uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7), pc = (mac_cpu_get(rt->cpu, MAC_PC) - 2) & 0xffffff;
+    uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7), pc = (mac_cpu_get(rt->cpu, MAC_PC) - 2) & mac_cpu_addr_mask(rt->cpu);
     if ((sp & 1) || !valid(rt, sp, 2)) return fail(rt, "Invalid Pack3 stack.");
     unsigned selector = rd(rt, sp, 2);
     if (rt->last_trap_pc >= 0x2000 && rt->last_trap_pc < 0x2000 + 4096 * 8)

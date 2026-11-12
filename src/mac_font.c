@@ -65,7 +65,7 @@ int mac_font_find(const MacResourceFork *f, int family, int size, unsigned style
     *why = NULL;
     if (!f || !out) { *why = "No resource fork to find a font in."; return -1; }
     if (size <= 0 || size > 255) { *why = "Text size 0 (the default size) or an invalid size is unsupported."; return -1; }
-    if (family < 0 || family > 255) { *why = "Font family number is outside the supported range."; return -1; }
+    if (family < 0 || family > 32767) { *why = "Font family number is outside the supported range (0 to 32767)."; return -1; }
     int rc = (style == 0) ? load(f, family * 128 + size, out, why) : 1;       /* a FONT id carries no style */
     if (rc <= 0) return rc;
     MacResource fond;

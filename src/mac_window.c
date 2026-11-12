@@ -95,7 +95,7 @@ static int create_window(MacRuntime *rt,uint32_t sp) {
     if(rt->window_count>=8)return fail(rt,"Owned window registry capacity is exhausted.");
     if(visible && mac_window_front(rt) && behind!=UINT32_MAX)return fail(rt,"A visible window created behind another visible window needs compositing.");
     if(visible && rt->event_count>=64)return fail(rt,"NewCWindow cannot publish its activation event because the queue is full.");
-    if((proc!=12 && proc!=4 && proc!=2 && proc!=1 && !mac_window_custom_wdef(&proc)) || (behind!=0 && behind!=UINT32_MAX && !mac_window_find(rt,behind)))return fail(rt,(behind!=0 && behind!=UINT32_MAX && !mac_window_find(rt,behind))?"NewCWindow behind a window that is not registered here is unsupported.":"Only standard zoomNoGrow, noGrowDocProc, plainDBox and dBoxProc windows (and custom WDEF ids 1-255, shown with titled chrome) are supported.");
+    if((!mac_window_std_proc(proc) && !mac_window_custom_wdef(&proc)) || (behind!=0 && behind!=UINT32_MAX && !mac_window_find(rt,behind)))return fail(rt,(behind!=0 && behind!=UINT32_MAX && !mac_window_find(rt,behind))?"NewCWindow behind a window that is not registered here is unsupported.":"Only the standard window definition IDs 0, 1, 2, 3, 4, 5, 8 and 12 (and custom WDEF ids 1-255, shown with titled chrome) are supported.");
     if(!valid(rt,bounds,8,1) || !valid(rt,text,1,0) || !valid(rt,text,(size_t)rd(rt,text,1)+1,0) ||
        (storage && !valid(rt,storage,156,1)))return fail(rt,"NewCWindow rectangle, title, or storage exceeds guest RAM.");
     memcpy(title,mac_cpu_ram(rt->cpu)+text,(size_t)rd(rt,text,1)+1);
@@ -168,7 +168,7 @@ static int create_window(MacRuntime *rt,uint32_t sp) {
     rect(rt,region(rt,fresh.handles[8])+2,t-mac_window_top_extent(proc),l-frame,b+frame,r+frame);
     rect(rt,region(rt,fresh.handles[9])+2,t,l,b,r);
     uint32_t state=rd(rt,fresh.handles[12],4);rect(rt,state,t,l,b,r);rect(rt,state+8,20,0,480,640);
-    wr(rt,storage+108,2,8);wr(rt,storage+112,1,(unsigned)close);wr(rt,storage+113,1,(unsigned)(proc==12)); /* spareFlag: zoom box only on zoomNoGrow */
+    wr(rt,storage+108,2,8);wr(rt,storage+112,1,(unsigned)close);wr(rt,storage+113,1,(unsigned)mac_window_zoom(proc)); /* spareFlag: zoom box only on zoomNoGrow */
     for(unsigned i=0;i<3;i++)wr(rt,storage+114+i*4,4,fresh.handles[8+i]);
     /* windowDefProc remains NIL: native chrome is not a guest executable
      * WDEF handle. Direct WDEF invocation/custom WDEFs are unsupported.
@@ -391,7 +391,7 @@ int mac_window_service(MacRuntime *rt,uint16_t opcode) {
     unsigned args,result=0;
     switch(opcode) {
     case 0xa91b:case 0xa91d:args=10;break;
-    case 0xaa45:args=26;result=4;break;
+    case 0xaa45:case 0xa913:args=26;result=4;break;   /* NewCWindow and NewWindow: see mac_window_resource.c on the port NewWindow gets */
     case 0xa924:args=0;result=4;break;
     case 0xa922:case 0xa923:case 0xa915:case 0xa916:case 0xa91f:case 0xa920:
     case 0xa909:case 0xa92d:case 0xa914:args=4;break;
@@ -405,7 +405,7 @@ int mac_window_service(MacRuntime *rt,uint16_t opcode) {
     if(mac_cpu_halted(rt->cpu))return -1;
     uint32_t sp=mac_cpu_get(rt->cpu,MAC_A7);
     if(!valid(rt,sp,args+result,1))return fail(rt,"Window call stack is invalid.");
-    if(opcode==0xaa45)return create_window(rt,sp);
+    if(opcode==0xaa45 || opcode==0xa913)return create_window(rt,sp);
     if(opcode==0xa90d) {
         if(!rd(rt,sp+4,4)){mac_cpu_set(rt->cpu,MAC_A7,sp+8);return 1;}   /* PaintBehind(NIL, rgn): no window to start from, nothing to paint (as CalcVisBehind(NIL)) */
         if(!mac_window_select(rt,rd(rt,sp+4,4)))return fail(rt,"PaintBehind start window is not registered.");
@@ -424,6 +424,10 @@ int mac_window_service(MacRuntime *rt,uint16_t opcode) {
         wr(rt,out,4,hit?rt->window.address:0);wr(rt,sp+8,2,(unsigned)hit);mac_cpu_set(rt->cpu,MAC_A7,sp+8);return 1;
     }
     uint32_t address=rd(rt,sp+((opcode==0xa91d || opcode==0xa91b)?6:opcode==0xa918 || opcode==0xa919 || opcode==0xa91a || opcode==0xa90a?4:(opcode==0xa908||opcode==0xa91c)?2:0),4);
+    if((opcode==0xa917 || opcode==0xa918) && mac_dlgmgr_is_dialog(rt,address)){   /* a DialogPtr is a WindowRecord: its refCon is at +152 */
+        if(opcode==0xa917)wr(rt,sp+4,4,rd(rt,address+152,4));else wr(rt,address+152,4,rd(rt,sp,4));
+        mac_cpu_set(rt->cpu,MAC_A7,sp+args);return 1;
+    }
     if(opcode==0xa90a && !address){mac_cpu_set(rt->cpu,MAC_A7,sp+8);return 1;}   /* CalcVisBehind(NIL, rgn): no window to recalculate */
     if(!mac_window_select(rt,address) || !window_valid(rt))return fail(rt,"Window call requires the live registered window and valid owned records.");
     if(opcode==0xa91d)return size_window(rt,sp);

@@ -19,12 +19,16 @@ typedef struct {
     uint32_t port_window; int ctl_pending; unsigned last_hash;   /* last_hash: the state the native drawing last showed */
                          /* a hidden registered window that is the dialog's colour port (control items), and a redraw of its controls owed */
     int update_due;                                              /* the native drawing repainted the dialog: a ModalDialog filter procedure is owed an update event, so a program that draws its own items repaints them */
+    uint32_t user_proc[MAC_DITL_MAX_ITEMS];                      /* SetDItem: the procedure that draws a user item (mac_dlguser.c) */
+    int user_due, user_running, user_next; uint32_t user_sp, user_pc, user_prev_port, user_prev_current, user_prev_dlgport;
     int select_busy; uint32_t select_dlg_ptr;                    /* DialogSelect waiting for the mouse-up of a press */
 } Dlg;
 typedef struct MacDlgMgr { Dlg *open[MAX_OPEN]; uint32_t port; /* the dialog SetPort last named, 0 once any other port is set */ } Mgr;
 #define M(rt) ((Mgr *)(rt)->dlgmgr)
 
 
+int mac_dlg_set_item(MacRuntime *rt, Dlg *d, uint32_t sp);                            /* SetDItem (mac_dlguser.c) */
+int mac_dlg_user_start(MacRuntime *rt, Dlg *d, uint32_t sp, uint32_t pc);             /* call the owed user item procedures: 0 none, 1 under way, -1 halted */
 int mac_dlg_port_regions(MacRuntime *rt, Dlg *d);   /* the DialogPtr's GrafPort visRgn (+24, the dialog's rectangle in local coordinates) and clipRgn (+28, wide open): 1, 0 if out of memory (mac_dlgdraw.c) */
 int mac_dlg_edit_char(Dlg *d, unsigned k, unsigned ch);   /* typing / Backspace in an edit item, with SelIText selections (mac_dlgedit.c) */
 void mac_dlg_draw_pict(MacRuntime *rt, int l, int t, int r, int b, int16_t id);   /* a PICT item, scaled to its rectangle (mac_dlgpict.c) */

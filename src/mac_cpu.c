@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 
 struct MacCpu {
     uint8_t *ram;
@@ -18,6 +19,7 @@ struct MacCpu {
     int halted;
     int yielded;
     MacCpuModel model;
+    uint32_t amask;
     char error[192];
 };
 
@@ -26,8 +28,8 @@ static MacCpu *active;
 static void instruction_hook(unsigned int pc) {
     if (!active) return;
     if (active->count_instructions) active->instructions_in_slice++;
-    uint32_t address = pc & 0xffffff;
-    if (address + 2 > active->ram_size) {
+    uint32_t address = pc & active->amask;
+    if ((size_t)address + 2 > active->ram_size) {
         mac_cpu_halt(active, "Instruction fetch exceeds guest RAM.");
         return;
     }
@@ -57,16 +59,26 @@ void mac_cpu_yield(MacCpu *cpu) {
     if (active == cpu) m68k_end_timeslice();
 }
 
+/* A flag kept in a pointer's high byte works in 24-bit mode only. In 32-bit mode that address is far outside RAM; say
+ * what it probably is instead of leaving a bare fault. */
+static void halt_bad_access(MacCpu *cpu, const char *what, unsigned width, uint32_t address) {
+    char error[256];
+    snprintf(error, sizeof error, "invalid %u-byte memory %s at %08x (PC %08x)",
+             width, what, address, mac_cpu_get(cpu, MAC_PC));
+    if (cpu->amask == 0xffffffffu && (size_t)address >= cpu->ram_size && (address >> 24) &&
+        (address & 0xffffff) < cpu->ram_size)
+        snprintf(error + strlen(error), sizeof error - strlen(error),
+                 "; looks like a 24-bit-dirty address, try --addressing 24");
+    mac_cpu_halt(cpu, error);
+}
+
 static int valid_access(MacCpu *cpu, uint32_t address, unsigned width) {
     if (!cpu || cpu->halted) {
         return 0;
     }
     if ((width != 1 && width != 2 && width != 4) || address > cpu->ram_size ||
         width > cpu->ram_size - address || (width != 1 && (address & 1))) {
-        char error[160];
-        snprintf(error, sizeof error, "invalid %u-byte memory access at %08x (PC %08x)",
-                 width, address, mac_cpu_get(cpu, MAC_PC));
-        mac_cpu_halt(cpu, error);
+        halt_bad_access(cpu, "access", width, address);
         return 0;
     }
     return 1;
@@ -95,29 +107,30 @@ int mac_cpu_write(MacCpu *cpu, uint32_t address, unsigned width, uint32_t value)
 
 static uint32_t bus_read(uint32_t address, unsigned width) {
     if (!active) return 0;
-    address &= 0xffffff; /* Initial classic Macintosh addressing mode. */
+    address &= active->amask; /* 24-bit: the original Macintosh mode; 32-bit: the full 68020 bus */
     if (active->model == MAC_CPU_68000 && width > 1 && (address & 1))
         return mac_cpu_read(active, address, width); /* Checked alignment fault. */
     uint32_t value = 0;
     for (unsigned i = 0; i < width; i++)
-        value = (value << 8) | mac_cpu_read(active, (address + i) & 0xffffff, 1);
+        value = (value << 8) | mac_cpu_read(active, (address + i) & active->amask, 1);
     return value;
 }
 static void bus_write(uint32_t address, unsigned width, uint32_t value) {
     if (!active) return;
-    address &= 0xffffff;
+    uint32_t raw = address;
+    address &= active->amask;
     if (active->model == MAC_CPU_68000 && width > 1 && (address & 1)) {
         mac_cpu_write(active, address, width, value); return;
     }
     /* Check every translated byte before writing, including address-bus wrap.
      * A failed instruction must not leave a partially written guest word. */
     for (unsigned i = 0; i < width; i++) {
-        if (((address + i) & 0xffffff) >= active->ram_size) {
-            mac_cpu_halt(active, "CPU bus write exceeds guest RAM."); return;
+        if (((address + i) & active->amask) >= active->ram_size) {
+            halt_bad_access(active, "write", width, raw); return;
         }
     }
     for (unsigned i = 0; i < width; i++)
-        mac_cpu_write(active, (address + i) & 0xffffff, 1, value >> (8 * (width - i - 1)));
+        mac_cpu_write(active, (address + i) & active->amask, 1, value >> (8 * (width - i - 1)));
 }
 unsigned int m68k_read_memory_8(unsigned int address) { return bus_read(address, 1); }
 unsigned int m68k_read_memory_16(unsigned int address) { return bus_read(address, 2); }
@@ -134,7 +147,7 @@ void m68k_write_memory_32(unsigned int address, unsigned int value) {
 
 static int illegal_instruction(int opcode) {
     char error[128];
-    uint32_t pc = m68k_get_reg(NULL, M68K_REG_PPC) & 0xffffff;
+    uint32_t pc = m68k_get_reg(NULL, M68K_REG_PPC) & (active ? active->amask : 0xffffffu);
     if ((opcode & 0xf000) == 0xa000) {
         if (active && active->trap && active->trap(active, (uint16_t)opcode, pc,
                                                    active->trap_user) == 0)
@@ -158,20 +171,54 @@ MacCpu *mac_cpu_create(size_t ram_size) {
     return mac_cpu_create_model(ram_size, MAC_CPU_68000);
 }
 
+static char create_error[160];
+static int fail_next_alloc;
+const char *mac_cpu_create_error(void) { return create_error; }
+void mac_cpu_test_fail_next_alloc(int fail) { fail_next_alloc = fail; }
+MacAddrMode mac_cpu_addr_mode(const MacCpu *cpu) { return cpu && cpu->amask == 0xffffffffu ? MAC_ADDR_32 : MAC_ADDR_24; }
+uint32_t mac_cpu_addr_mask(const MacCpu *cpu) { return cpu ? cpu->amask : 0xffffffu; }
+
+/* Reserve zeroed guest RAM. Anonymous mappings are committed page by page on first touch, so 256 MB of guest RAM
+ * costs address space until the guest uses it. mmap, unlike a calloc of this size, reports failure cleanly. */
+static uint8_t *ram_reserve(size_t bytes) {
+    if (fail_next_alloc) { fail_next_alloc = 0; return NULL; }
+    void *p = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON
+#ifdef MAP_NORESERVE
+                   | MAP_NORESERVE
+#endif
+                   , -1, 0);
+    return p == MAP_FAILED ? NULL : (uint8_t *)p;
+}
+
 MacCpu *mac_cpu_create_model(size_t ram_size, MacCpuModel model) {
-    if (active || ram_size < 4096 || ram_size > 0x1000000 || (ram_size & 1) ||
-        (model != MAC_CPU_68000 && model != MAC_CPU_68020)) {
+    return mac_cpu_create_mode(ram_size, model, ram_size > MAC_CPU_RAM_24BIT_MAX ? MAC_ADDR_32 : MAC_ADDR_24);
+}
+
+MacCpu *mac_cpu_create_mode(size_t ram_size, MacCpuModel model, MacAddrMode mode) {
+    create_error[0] = 0;
+    if (active || ram_size < MAC_CPU_RAM_MIN || ram_size > MAC_CPU_RAM_MAX || (ram_size & 1) ||
+        (model != MAC_CPU_68000 && model != MAC_CPU_68020) ||
+        (mode != MAC_ADDR_24 && mode != MAC_ADDR_32) ||
+        (mode == MAC_ADDR_32 && model == MAC_CPU_68000) ||
+        (mode == MAC_ADDR_24 && ram_size > MAC_CPU_RAM_24BIT_MAX)) {
+        snprintf(create_error, sizeof create_error,
+                 "Unsupported guest memory configuration (%zu bytes, %s addressing).",
+                 ram_size, mode == MAC_ADDR_32 ? "32-bit" : "24-bit");
         return NULL;
     }
     MacCpu *cpu = calloc(1, sizeof *cpu);
     if (!cpu) {
+        snprintf(create_error, sizeof create_error, "Out of host memory creating the CPU.");
         return NULL;
     }
-    cpu->ram = calloc(ram_size, 1);
+    cpu->ram = ram_reserve(ram_size);
     cpu->context = calloc(1, m68k_context_size());
     cpu->ram_size = ram_size;
     cpu->model = model;
+    cpu->amask = mode == MAC_ADDR_32 ? 0xffffffffu : 0xffffffu;
     if (!cpu->ram || !cpu->context) {
+        snprintf(create_error, sizeof create_error,
+                 "Could not reserve %zu MB of guest memory from the host.", ram_size >> 20);
         mac_cpu_destroy(cpu);
         return NULL;
     }
@@ -197,7 +244,7 @@ MacCpu *mac_cpu_create_model(size_t ram_size, MacCpuModel model) {
 void mac_cpu_destroy(MacCpu *cpu) {
     if (cpu && active != cpu) {
         free(cpu->context);
-        free(cpu->ram);
+        if (cpu->ram) munmap(cpu->ram, cpu->ram_size);
         free(cpu);
     }
 }
@@ -241,7 +288,7 @@ size_t mac_cpu_run(MacCpu *cpu, size_t instruction_budget) {
     size_t attempted = 0;
     cpu->yielded = 0;
     while (attempted < instruction_budget && !cpu->halted && !cpu->yielded) {
-        uint32_t pc = mac_cpu_get(cpu, MAC_PC) & 0xffffff;
+        uint32_t pc = mac_cpu_get(cpu, MAC_PC) & cpu->amask;
         mac_cpu_set(cpu, MAC_PC, pc);
         uint16_t opcode = (uint16_t)mac_cpu_read(cpu, pc, 2);
         if (cpu->halted) {
@@ -249,7 +296,7 @@ size_t mac_cpu_run(MacCpu *cpu, size_t instruction_budget) {
         }
         attempted++;
         if ((opcode & 0xf000) == 0xa000) {
-            mac_cpu_set(cpu, MAC_PC, (pc + 2) & 0xffffff);
+            mac_cpu_set(cpu, MAC_PC, (pc + 2) & cpu->amask);
             if (!cpu->trap || cpu->trap(cpu, opcode, pc, cpu->trap_user) != 0) {
                 char error[128];
                 snprintf(error, sizeof error, "unhandled A-line trap %04x at %08x (D0 %08x)", opcode, pc, mac_cpu_get(cpu, MAC_D0));
@@ -267,7 +314,7 @@ size_t mac_cpu_run(MacCpu *cpu, size_t instruction_budget) {
             }
         }
     }
-    mac_cpu_set(cpu, MAC_PC, mac_cpu_get(cpu, MAC_PC) & 0xffffff);
+    mac_cpu_set(cpu, MAC_PC, mac_cpu_get(cpu, MAC_PC) & cpu->amask);
     m68k_get_context(cpu->context);
     active = NULL;
     return attempted;

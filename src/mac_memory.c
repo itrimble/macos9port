@@ -103,8 +103,29 @@ static int move_high(MacRuntime *rt, uint32_t address) {
     return 1;
 }
 
+/* A 24-bit Macintosh ignores the high byte of an address, so legacy programs keep flags there (lock and purge bits in
+ * handles they build themselves, a "locked" mark on a pointer) and pass the result to the Memory Manager. The CPU bus
+ * already drops those bits; this does the same for the pointer registers of the calls that take a pointer or a handle.
+ * Calls that take a code address or a plain number (SetGrowZone, SetApplLimit, StripAddress itself) are left alone.
+ * In 32-bit mode nothing is stripped: every bit is part of the address. */
+static void strip_pointer_args(MacRuntime *rt, unsigned call) {
+    uint32_t mask = mac_cpu_addr_mask(rt->cpu);
+    switch (call) {
+    case 0x2e: { /* BlockMove / BlockMoveData: source A0, destination A1 */
+        uint32_t a1 = mac_cpu_get(rt->cpu, MAC_A1);
+        mac_cpu_set(rt->cpu, MAC_A1, a1 & mask);
+    } /* fall through */
+    case 0x1f: case 0x21: case 0x23: case 0x25: case 0x24: case 0x28: case 0x29: case 0x2a:
+    case 0x49: case 0x4a: case 0x69: case 0x6a: case 0x64:
+        mac_cpu_set(rt->cpu, MAC_A0, mac_cpu_get(rt->cpu, MAC_A0) & mask);
+        break;
+    default: break;
+    }
+}
+
 int mac_memory_service(MacRuntime *rt, uint16_t opcode) {
     if (opcode >= 0xa800) return 0;
+    if (!rt->addr32) strip_pointer_args(rt, opcode & 0xff);
     if (rt->heap_bridge) { int served = mac_heap_service(rt, opcode); if (served) return served; }
     MacCpu *cpu = rt->cpu;
     uint32_t a0 = mac_cpu_get(cpu, MAC_A0), d0 = mac_cpu_get(cpu, MAC_D0);
@@ -142,8 +163,8 @@ int mac_memory_service(MacRuntime *rt, uint16_t opcode) {
         result(cpu, 0);
         return 1;
     }
-    if (call == 0x55) { /* StripAddress in our initial 24-bit guest mode. */
-        mac_cpu_set(cpu, MAC_A0, a0 & 0xffffffu);
+    if (call == 0x55) { /* StripAddress: clears the high byte in 24-bit mode, the identity in 32-bit mode. */
+        mac_cpu_set(cpu, MAC_A0, a0 & mac_cpu_addr_mask(cpu));
         return 1;
     }
     if (call == 0x2d) { /* SetApplLimit, reserving space below the A5 world. */

@@ -1,6 +1,9 @@
 #include "about_panel.h"
 #include "movie_picker.h"
 #include "movie_window.h"
+#include "file_dialog.h"
+#include "finder_edit.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,5 +62,33 @@ int main(void) {
     snprintf(win.rel, sizeof win.rel, ":other");
     CHECK(about_panel_paint(&fb, &s, &win, &lay) == 0);
     CHECK(about_panel_resident_bytes() > 0);
+    /* Choose Movie... opens the in-window browser (no macOS dialog): roots are the OS999 disk and the
+     * home Movies/Downloads/Desktop folders; a folder descends, a movie is copied into the volume and opened. */
+    char hh[] = "/tmp/os999-home-XXXXXX"; CHECK(mkdtemp(hh));
+    snprintf(p, sizeof p, "%s/Movies", hh); mkdir(p, 0755);
+    snprintf(p, sizeof p, "%s/Movies/Trips", hh); mkdir(p, 0755);
+    snprintf(p, sizeof p, "%s/Movies/Trips/beach.mp4", hh); touch(p, "data");
+    snprintf(p, sizeof p, "%s/Movies/readme.txt", hh); touch(p, "no");
+    setenv("HOME", hh, 1);
+    memset(&win, 0, sizeof win); win.kind = WIN_MOVIE; win.x = 10; win.y = 10; win.w = 360; win.h = 240;
+    window_layout(&win, &lay);
+    CHECK(!movie_picker_browsing());
+    CHECK(movie_picker_click(&s, &win, lay.content.x + 20, lay.content.y + 40) == 1);   /* Choose Movie... */
+    CHECK(movie_picker_browsing());
+    memset(px, 0, sizeof px); movie_window_paint(&fb, &win);
+    nonblack = 0; for (int i = 0; i < W * H; i++) if (px[i] != 0 && px[i] != C_BLACK) nonblack++;
+    CHECK(nonblack > 500);
+    CHECK(movie_picker_key(&s, &win, FINDER_KEY_DOWN, 0) == 1);                  /* selects Trips (folders first) */
+    CHECK(movie_picker_key(&s, &win, '\r', 0) == 1 && movie_picker_browsing());   /* Return descends */
+    CHECK(movie_picker_key(&s, &win, FINDER_KEY_DOWN, 0) == 1);                  /* beach.mp4 (readme.txt filtered out) */
+    CHECK(movie_picker_wheel(&win, 1) == 1);
+    CHECK(movie_picker_key(&s, &win, '\r', 0) == 1 && !movie_picker_browsing());  /* picked: copied and opened */
+    snprintf(p, sizeof p, "%s/Movies/beach.mp4", root);
+    CHECK(access(p, F_OK) == 0);
+    /* Escape closes the browser without importing; keys pass through when it is closed. */
+    memset(&win, 0, sizeof win); win.kind = WIN_MOVIE; win.x = 10; win.y = 10; win.w = 360; win.h = 240;
+    CHECK(movie_picker_click(&s, &win, lay.content.x + 20, lay.content.y + 40) == 1 && movie_picker_browsing());
+    CHECK(movie_picker_key(&s, &win, 27, 0) == 1 && !movie_picker_browsing());
+    CHECK(movie_picker_key(&s, &win, 27, 0) == 0);
     return failures ? 1 : 0;
 }

@@ -70,6 +70,12 @@ test-tailnet: build/os999-tailnet
 	python3 tests/test_tailnet.py
 
 
+.PHONY: test-gate-pins
+test-gate-pins:
+	python3 tests/test_gate_pins.py
+
+test: test-gate-pins
+
 build/test_quake_launch: src/quake_launch.c src/quake_data.c tests/test_quake_launch.c include/quake_launch.h include/quake_data.h
 	mkdir -p build
 	$(CC) $(CFLAGS) -o $@ src/quake_launch.c src/quake_data.c tests/test_quake_launch.c

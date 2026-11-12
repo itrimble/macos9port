@@ -24,7 +24,7 @@ int mac_delay_service(MacRuntime *rt, uint16_t opcode) {
     if (opcode != 0xa03b) return 0;
     if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1;
     MacCpu *cpu = rt->cpu;
-    uint32_t pc = (mac_cpu_get(cpu, MAC_PC) - 2) & 0xffffff, sp = mac_cpu_get(cpu, MAC_A7);
+    uint32_t pc = (mac_cpu_get(cpu, MAC_PC) - 2) & mac_cpu_addr_mask(cpu), sp = mac_cpu_get(cpu, MAC_A7);
     if (rt->last_trap_pc == DELAY_STUB) return fail(rt, "Delay reached through a patched trap vector is unsupported.");
     if (!rt->delay.active) {
         uint32_t count = mac_cpu_get(cpu, MAC_A0); /* 0 completes at once below: deadline == ticks */

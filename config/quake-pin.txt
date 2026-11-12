@@ -1,0 +1,9 @@
+# Pinned external Quake III engine commit (GPL repository, kept outside this tree).
+# The integration gate checks this exact commit out of the repository named by
+# OS999_QUAKE_REPOSITORY and requires its code/darwin/os999_bridge.h to be
+# byte-identical to include/os999_quake_bridge.h. Bump this line in the same
+# change as any bridge header change.
+QUAKE_COMMIT=06688bc56d3cea7a6ec1868bc4237067c0f94406
+# Optional identity check: space-separated root commit(s) of the repository
+# (git rev-list --max-parents=0 HEAD). Add the line once recorded:
+# QUAKE_ROOT_COMMITS=<40-hex> [<40-hex> ...]

@@ -57,13 +57,13 @@ static void draw(MacRuntime *rt, int clear_content,const int16_t clip[4]) {
         box(d,l-5,t-5,r+5,b+5,frame);box(d,l-4,t-4,r+4,b+4,frame);return;
     }
     /* plainDBox has no title, inner border, drag, grow or close control. */
-    if(w->proc_id==2){box(d,l-1,t-1,r+1,b+1,frame);return;}
+    if(w->proc_id==2 || w->proc_id==3){box(d,l-1,t-1,r+1,b+1,frame);return;}
     fill(d,l-1,t-20,r+1,t,(uint8_t)light);
     box(d,l-1,t-20,r+1,b+1,frame);
     fill(d,l,t-1,r,t,frame);
     if(w->active) {
         if(mac_cpu_ram(rt->cpu)[w->address+112])box(d,l+5,t-15,l+15,t-5,frame);
-        if(w->proc_id==12){box(d,r-15,t-15,r-5,t-5,frame);fill(d,r-14,t-13,r-6,t-12,frame);}
+        if(mac_window_zoom(w->proc_id)){box(d,r-15,t-15,r-5,t-5,frame);fill(d,r-14,t-13,r-6,t-12,frame);}
     }
     int max_chars=(r-l-48)/8,n=w->title[0];if(n>max_chars)n=max_chars;
     int x=l+(r-l-n*8)/2;
@@ -78,12 +78,13 @@ void mac_window_draw_clipped(MacRuntime *rt,const int16_t clip[4]){draw(rt,0,cli
 int mac_window_hit(MacRuntime *rt,int x,int y) {
     MacWindowState *w=&rt->window;if(!w->address || !w->visible)return 0;
     int t=w->bounds[0],l=w->bounds[1],b=w->bounds[2],r=w->bounds[3];
+    if(mac_window_grow(w->proc_id) && w->active && x>=r-15 && x<r && y>=b-15 && y<b)return 5; /* inGrow */
     if(x>=l && x<r && y>=t && y<b)return 3; /* inContent */
-    if(w->proc_id==1 || w->proc_id==2)return 0; /* Its frame has no interactive part. */
+    if(w->proc_id==1 || w->proc_id==2 || w->proc_id==3)return 0; /* Its frame has no interactive part. */
     if(x<l-1 || x>=r+1 || y<t-20 || y>=b+1)return 0;
     if(y<t && w->active) {
         if(mac_cpu_ram(rt->cpu)[w->address+112] && x>=l+5 && x<l+15 && y>=t-15 && y<t-5)return 6;
-        if(w->proc_id==12 && x>=r-15 && x<r-5 && y>=t-15 && y<t-5)return 8; /* inZoomIn */
+        if(mac_window_zoom(w->proc_id) && x>=r-15 && x<r-5 && y>=t-15 && y<t-5)return 8; /* inZoomIn */
     }
     return y<t ? 4 : 0; /* inDrag; frame sides are not content. */
 }

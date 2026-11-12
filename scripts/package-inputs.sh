@@ -1,9 +1,21 @@
 #!/bin/sh
-# Sourced by integration-gate.sh; all generated artifacts remain outside Git.
-: "${OS999_CEF_ROOT:?Pinned CEF distribution required}"
-: "${OS999_QUAKE_REPOSITORY:?External engine repository required}"
-: "${OS999_QUAKE_REF:?Immutable external engine commit required}"
+# Sourced by integration-gate.sh after the pins preflight; all generated artifacts
+# remain outside Git. CEF and Quake versions come from the candidate tree
+# (browser/cef-pin.txt, config/quake-pin.txt) via scripts/gate_pins.py, which
+# exported OS999_CEF_ROOT, OS999_QUAKE_REPOSITORY and OS999_QUAKE_REF from
+# $OS999_RECEIPT_DIR/pins.env. Nothing here trusts the launch-agent environment.
 mkdir -p "$OS999_RECEIPT_DIR"
+# Bootstrap: an older integration-gate.sh (the watcher runs main's copy) does not run
+# the pins stage, so the first candidate carrying this file must run it here.
+if [ ! -f "$OS999_RECEIPT_DIR/pins.env" ]; then
+    progress_start pins
+    python3 scripts/gate_pins.py preflight --repo "$repo" --out "$OS999_RECEIPT_DIR"
+    . "$OS999_RECEIPT_DIR/pins.env"
+    progress_pass pins
+fi
+: "${OS999_CEF_ROOT:?pins preflight did not run}"
+: "${OS999_QUAKE_REPOSITORY:?pins preflight did not run}"
+: "${OS999_QUAKE_REF:?pins preflight did not run}"
 progress_start sdl
 sh scripts/prepare-sdl2.sh
 OS999_SDL2_PREFIX=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["prefix"])' "$OS999_RECEIPT_DIR/sdl2-provenance.json")
@@ -12,20 +24,6 @@ export PKG_CONFIG_PATH="$OS999_SDL2_PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG
 export PATH="$OS999_SDL2_PREFIX/bin:$PATH"
 test "$(pkg-config --modversion sdl2)" = 2.32.10
 test "$(pkg-config --variable=prefix sdl2)" = "$OS999_SDL2_PREFIX"
-python3 - <<'PY'
-import os,pathlib,re,subprocess
-ref=os.environ['OS999_QUAKE_REF']
-if not re.fullmatch('[0-9a-f]{40}', ref):
-    raise SystemExit('Quake reference must be a full immutable commit')
-resolved=subprocess.check_output(['git','-C',os.environ['OS999_QUAKE_REPOSITORY'],
-                                 'rev-parse',ref+'^{commit}'],text=True).strip()
-if resolved != ref:
-    raise SystemExit('Quake commit did not resolve exactly')
-pin=dict(line.split('=',1) for line in pathlib.Path('browser/cef-pin.txt').read_text().splitlines()
-         if line and not line.startswith('#'))
-if (pathlib.Path(os.environ['OS999_CEF_ROOT'])/'.version').read_text().strip() != pin['CEF_VERSION']:
-    raise SystemExit('CEF distribution does not match candidate pin')
-PY
 progress_pass sdl
 progress_start browser
 cmake -S browser -B build/browser -G Ninja -DCMAKE_BUILD_TYPE=Release \

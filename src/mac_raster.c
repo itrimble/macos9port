@@ -187,7 +187,7 @@ int mac_raster_service(MacRuntime *rt,uint16_t opcode) {
     switch(opcode) {
         case 0xa862: case 0xa863: case 0xa87c: case 0xa879: case 0xa87a: case 0xa87b:
         case 0xa893: case 0xa891: case 0xa89b: case 0xa89d: case 0xa89a:
-        case 0xa8a1: case 0xa8a2: case 0xa8a3: case 0xa8a4: args=4;break;
+        case 0xa8a1: case 0xa8a2: case 0xa8a3: case 0xa8a4: case 0xa898: case 0xa899: args=4;break;
         case 0xa8a5: args=8;break;
         case 0xa89c: args=2;break;
         case 0xa896: case 0xa897: case 0xa89e: args=0;break;
@@ -243,6 +243,14 @@ int mac_raster_service(MacRuntime *rt,uint16_t opcode) {
     } else if(opcode==0xa89d || opcode==0xa87c) {
         if(!arg || range(rt,arg,8,0)<0)return -1;
         memmove(mac_cpu_ram(rt->cpu)+port+(opcode==0xa87c?32:58),mac_cpu_ram(rt->cpu)+arg,8);
+    } else if(opcode==0xa898 || opcode==0xa899) {         /* GetPenState / SetPenState: pnLoc, pnSize, pnMode, pnPat are the 18 bytes at port+48 in a basic port */
+        if(!arg || range(rt,arg,18,0)<0)return fail(rt,"Invalid PenState address.");
+        if(opcode==0xa899) {
+            uint32_t mode=rd(rt,arg+8,2);
+            if((int16_t)rd(rt,arg+4,2)<0 || (int16_t)rd(rt,arg+6,2)<0)return fail(rt,"Negative QuickDraw pen size.");
+            if(mode<8 || mode>15)return fail(rt,"Unsupported QuickDraw pattern transfer mode.");
+            memmove(mac_cpu_ram(rt->cpu)+port+48,mac_cpu_ram(rt->cpu)+arg,18);
+        } else memmove(mac_cpu_ram(rt->cpu)+arg,mac_cpu_ram(rt->cpu)+port+48,18);
     } else if(opcode==0xa89a) {
         if(!arg || range(rt,arg,4,1)<0)return -1;
         wr(rt,arg,4,rd(rt,port+48,4));

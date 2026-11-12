@@ -222,11 +222,6 @@ static int toolbox_trap(MacRuntime *rt, uint16_t opcode) {
     }
     case 0xa81a: pop(cpu, 12); put_result16(cpu, 0xffff); mac_cpu_write(cpu, RES_ERR, 2, (uint16_t)-43); return 1; /* HOpenResFile: no resource files besides the INIT's own */
     case 0xa81b: pop(cpu, 10); mac_cpu_write(cpu, RES_ERR, 2, (uint16_t)-43); return 1; /* HCreateResFile: ditto */
-    case 0xa823: /* FolderDispatch, selector 0 = FindFolder: no special folders on this volume */
-        if (mac_cpu_get(cpu, MAC_D0) != 0) return 0;
-        pop(cpu, 16);
-        put_result16(cpu, (uint16_t)-43);
-        return 1;
     case 0xaa1b: case 0xaa1e: pop(cpu, 2); put_result32(cpu, 0); mac_cpu_write(cpu, RES_ERR, 2, (uint16_t)-192); return 1; /* GetCCursor / GetCIcon: not found */
     case 0xaa1f: pop(cpu, 8); return 1;  /* PlotCIcon: no display at startup */
     case 0xaa25: pop(cpu, 4); return 1;  /* DisposeCIcon */

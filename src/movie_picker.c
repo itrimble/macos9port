@@ -1,4 +1,5 @@
 #include "movie_picker.h"
+#include "file_dialog.h"
 #include "movie_window.h"
 #include "session_int.h"
 
@@ -18,6 +19,8 @@
 static char g_rel[PICK_MAX][OSPI_PATH];
 static int g_count;
 static char g_root[OSPI_PATH];
+static FileDialog g_fd;   /* the in-window chooser; static because it holds a 512-entry listing */
+static int g_browse;
 
 int movie_picker_count(void) { return g_count; }
 const char *movie_picker_rel(int i) { return i >= 0 && i < g_count ? g_rel[i] : ""; }
@@ -61,6 +64,7 @@ static Rect row_rect(const Layout *lay, int i) {
 }
 
 void movie_picker_paint(Fb *fb, const Layout *lay) {
+    if (g_browse) { fd_paint(fb, &g_fd, lay->content); return; }
     fb_text(fb, lay->content.x + 12, lay->content.y + 10, C_WHITE, "Choose a movie to play.");
     Rect b = button_rect(lay);
     fb_fill(fb, b.x, b.y, b.w, b.h, C_MENU);
@@ -107,33 +111,67 @@ int movie_picker_import(const char *root, const char *host_path, char *rel, size
     return -1;
 }
 
-static int choose_host_file(char *out, size_t n) {
-#ifdef __APPLE__
-    FILE *p = popen("/usr/bin/osascript -e 'POSIX path of (choose file with prompt \"Choose a movie for OS999 Movie Player\" "
-                    "of type {\"public.movie\", \"public.mpeg-4\", \"com.apple.quicktime-movie\"})' 2>/dev/null", "r");
-    if (!p) return -1;
-    out[0] = 0;
-    if (!fgets(out, (int)n, p)) out[0] = 0;
-    pclose(p);
-    out[strcspn(out, "\r\n")] = 0;
-    return out[0] ? 0 : -1;
-#else
-    (void)out; (void)n; return -1;
-#endif
+static int movie_name_filter(const char *name) { return movie_is_name(name); }
+
+/* Roots the Movie chooser may browse: the OS999 disk, plus the three home media
+ * folders (the movie to play usually lives there). Not the whole home folder. */
+static int browse_open(Session *s) {
+    static char movies[OSPI_PATH], downloads[OSPI_PATH], desktop[OSPI_PATH];
+    const char *home = getenv("HOME");
+    FdRoot roots[4]; int n = 0;
+    roots[n++] = (FdRoot){"OS999 Disk", s->root};
+    if (home && *home) {
+        snprintf(movies, sizeof movies, "%s/Movies", home);
+        snprintf(downloads, sizeof downloads, "%s/Downloads", home);
+        snprintf(desktop, sizeof desktop, "%s/Desktop", home);
+        roots[n++] = (FdRoot){"Movies", movies};
+        roots[n++] = (FdRoot){"Downloads", downloads};
+        roots[n++] = (FdRoot){"Desktop", desktop};
+    }
+    if (fd_open(&g_fd, FD_OPEN, "Choose a Movie", roots, n, n > 1 ? movies : NULL, NULL) != 0) return -1;
+    fd_set_filter(&g_fd, movie_name_filter, "Movies");
+    g_browse = 1;
+    return 0;
 }
+
+/* The pick is outside the volume (or already on it); copy it into <volume>/Movies and play it. */
+static void browse_finish(Session *s) {
+    char rel[OSPI_PATH];
+    g_browse = 0;
+    if (g_fd.state != FD_ACCEPTED) return;
+    if (movie_picker_import(s->root, g_fd.result, rel, sizeof rel) != 0) {
+        dialog_info(s, "Movie Player", "OS999 could not copy that movie into its Movies folder.");
+        return;
+    }
+    movie_picker_scan(s);
+    movie_window_open(s, base_of(rel), rel);
+}
+
+int movie_picker_key(Session *s, Window *w, int key, int mods) {
+    if (!g_browse || !s || !w || w->kind != WIN_MOVIE || w->movie) return 0;
+    int used = fd_key(&g_fd, key, mods);
+    if (g_fd.state != FD_RUNNING) browse_finish(s);
+    return used;
+}
+
+int movie_picker_wheel(Window *w, int delta) {
+    if (!g_browse || !w || w->kind != WIN_MOVIE || w->movie) return 0;
+    fd_wheel(&g_fd, delta);
+    return 1;
+}
+
+int movie_picker_browsing(void) { return g_browse; }
 
 int movie_picker_click(Session *s, Window *w, int x, int y) {
     if (!s || !w || w->kind != WIN_MOVIE || w->movie) return 0;
     Layout lay; window_layout(w, &lay);
+    if (g_browse) {
+        (void)fd_click(&g_fd, lay.content, x, y);
+        if (g_fd.state != FD_RUNNING) browse_finish(s);
+        return 1;
+    }
     if (rect_has(button_rect(&lay), x, y)) {
-        char host[OSPI_PATH], rel[OSPI_PATH];
-        if (choose_host_file(host, sizeof host) != 0) return 1;
-        if (movie_picker_import(s->root, host, rel, sizeof rel) != 0) {
-            dialog_info(s, "Movie Player", "That file is not a movie OS999 can add (MOV, QT, MP4 or M4V).");
-            return 1;
-        }
-        movie_picker_scan(s);
-        movie_window_open(s, base_of(rel), rel);
+        if (browse_open(s) != 0) dialog_info(s, "Movie Player", "There is no folder OS999 can browse for movies.");
         return 1;
     }
     for (int i = 0; i < row_count(&lay); i++)

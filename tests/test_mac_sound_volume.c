@@ -27,6 +27,12 @@ int main(void) {
         CHECK(mac_sound_volume_service(&r, 0xa800) == 1 && rd(&r, SP + 4, 2) == 0 && mac_cpu_get(r.cpu, MAC_A7) == SP + 4 && rd(&r, 0x2000, 1) == 0xee && !mac_cpu_halted(r.cpu));
         mac_cpu_destroy(r.cpu);
     }
+    {   /* SndSoundManagerVersion: the NumVersion in the result slot, nothing popped; an odd stack halts */
+        MacRuntime r = fresh(); frame(&r, 0x000c0008u, 0x11111111u);
+        CHECK(mac_sound_volume_service(&r, 0xa800) == 1 && rd(&r, SP, 4) == 0x03008000u && rd(&r, SP + 4, 2) == 0x7777 && mac_cpu_get(r.cpu, MAC_A7) == SP && !mac_cpu_halted(r.cpu));
+        mac_cpu_set(r.cpu, MAC_A7, SP + 1); CHECK(mac_sound_volume_service(&r, 0xa800) == -1 && mac_cpu_halted(r.cpu));
+        mac_cpu_destroy(r.cpu);
+    }
     {   /* not ours: another selector, another trap, the neighbouring routines */
         static const uint32_t other[] = { 0x00200008u, 0x02240024u, 0x02280024u, 0x022c0000u, 0x012c0018u, 0x022c0019u, 0 };
         for (unsigned i = 0; i < sizeof other / sizeof *other; i++) {

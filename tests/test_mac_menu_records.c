@@ -80,8 +80,45 @@ static void raw_resource(void){
   wr(&r,SP,4,raw);CHECK(call(&r,0xa950)==1&&rd(&r,SP+4,2)==2);}
  mac_cpu_destroy(r.cpu);
 }
+/* InsertMenuItem(menu, string, afterItem): position, enable flags moving with their items, reverse order for several items, clamping. */
+static const char *item_text(MacRuntime*r,uint32_t h,int item){
+ static char out[64];wr(r,SP+6,4,h);wr(r,SP+4,2,(uint16_t)item);wr(r,SP,4,0x4800);CHECK(call(r,0xa946)==1);
+ unsigned n=rd(r,0x4800,1);memcpy(out,mac_cpu_ram(r->cpu)+0x4801,n);out[n]=0;return out;
+}
+static int insert(MacRuntime*r,uint32_t h,const char*s,int after){
+ str(r,s);wr(r,SP,2,(uint16_t)after);wr(r,SP+2,4,0x4000);wr(r,SP+6,4,h);int rc=call(r,0xa826);
+ if(rc==1)CHECK(mac_cpu_get(r->cpu,MAC_A7)==SP+10);
+ return rc;
+}
+static void insert_items(void){
+ MacRuntime r=fresh();uint32_t h=create(&r,130,"Menu");unsigned n;
+ str(&r,"One;(Two;Three");wr(&r,SP,4,0x4000);wr(&r,SP+4,4,h);CHECK(call(&r,0xa933)==1);
+ CHECK(insert(&r,h,"Zero",0)==1);MacHandle*m=mac_menu_record(&r,h,&n);CHECK(m&&n==4);
+ CHECK(!strcmp(item_text(&r,h,1),"Zero")&&!strcmp(item_text(&r,h,2),"One")&&!strcmp(item_text(&r,h,3),"Two")&&!strcmp(item_text(&r,h,4),"Three"));
+ CHECK((rd(&r,m->pointer+10,4)&0x1f)==0x17);                     /* menu, Zero, One enabled; Two disabled; Three enabled */
+ CHECK(insert(&r,h,"(Mid/M",2)==1);m=mac_menu_record(&r,h,&n);CHECK(m&&n==5);
+ CHECK(!strcmp(item_text(&r,h,3),"Mid")&&!strcmp(item_text(&r,h,4),"Two")&&!strcmp(item_text(&r,h,5),"Three"));
+ CHECK((rd(&r,m->pointer+10,4)&0x3f)==0x27);                     /* Mid and Two disabled */
+ CHECK(insert(&r,h,"A;B",99)==1);m=mac_menu_record(&r,h,&n);CHECK(m&&n==7);
+ CHECK(!strcmp(item_text(&r,h,6),"B")&&!strcmp(item_text(&r,h,7),"A"));   /* past the end: appended, in reverse order */
+ CHECK(insert(&r,h,"Neg",-5)==1&&!strcmp(item_text(&r,h,1),"Neg")&&!strcmp(item_text(&r,h,2),"Zero"));
+ CHECK(insert(&r,h,"",3)==1&&mac_menu_record(&r,h,&n)&&n==8);    /* an empty string adds nothing */
+ CHECK(insert(&r,0x12345678,"X",0)==-1&&mac_cpu_halted(r.cpu));
+ mac_cpu_destroy(r.cpu);
+}
+static void delete_items(void){
+ MacRuntime r=fresh();uint32_t h=create(&r,130,"Edit");
+ str(&r,"Cut;Copy;(Paste;Clear");wr(&r,SP,4,0x4000);wr(&r,SP+4,4,h);CHECK(call(&r,0xa933)==1);
+ unsigned n;MacHandle*m=mac_menu_record(&r,h,&n);CHECK(m&&n==4);uint32_t flags=rd(&r,m->pointer+10,4);CHECK(!(flags&(1u<<3))&&(flags&(1u<<2)));
+ #define DEL(i) (wr(&r,SP,2,(i)),wr(&r,SP+2,4,h),call(&r,0xa952)==1&&mac_cpu_get(r.cpu,MAC_A7)==SP+6)
+ CHECK(DEL(2));m=mac_menu_record(&r,h,&n);CHECK(m&&n==3&&rd(&r,m->pointer+15+rd(&r,m->pointer+14,1),1)==3);   /* "Copy" is gone: Cut, Paste, Clear */
+ flags=rd(&r,m->pointer+10,4);CHECK((flags&2)&&!(flags&4)&&(flags&8));                                          /* Paste (now item 2) is still the disabled one; Clear moved up with its bit */
+ CHECK(DEL(9)&&DEL(0)&&mac_menu_record(&r,h,&n)&&n==3);                                                         /* outside the menu: ignored */
+ CHECK(DEL(1)&&DEL(1)&&DEL(1)&&mac_menu_record(&r,h,&n)&&n==0);
+ wr(&r,SP,2,1);wr(&r,SP+2,4,0x4800);CHECK(call(&r,0xa952)==-1&&mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);   /* not a menu */
+}
 int main(void){
- raw_resource();
+ raw_resource();insert_items();
  MacRuntime r=fresh();uint32_t h=create(&r,128,"File"),h2=create(&r,129,"Edit");CHECK(h&&h2);
  unsigned n;MacHandle*m=mac_menu_record(&r,h,&n);CHECK(m&&n==0&&m->size==20);CHECK(rd(&r,m->pointer,2)==128&&rd(&r,m->pointer+6,4)==0&&rd(&r,m->pointer+10,4)==UINT32_MAX);
  str(&r,"Open/O;(-;Quit/Q;Bold<B");wr(&r,SP,4,0x4000);wr(&r,SP+4,4,h);CHECK(call(&r,0xa933)==1);
@@ -96,16 +133,16 @@ int main(void){
  CHECK(GET(0xa946,3,0x4800)&&rd(&r,0x4800,1)==4&&!memcmp(mac_cpu_ram(r.cpu)+0x4801,"Quit",4)&&rd(&r,0x4805,1)==0xee);
  CHECK(GET(0xa946,1,0x4800)&&rd(&r,0x4800,1)==4&&!memcmp(mac_cpu_ram(r.cpu)+0x4801,"Open",4));
  CHECK(GET(0xa946,9,0x4800)&&rd(&r,0x4800,1)==0&&GET(0xa946,0,0x4800)&&rd(&r,0x4800,1)==0);
- wr(&r,0x4800,1,0xee);CHECK(GET(0xa84e,3,0x4800)&&rd(&r,0x4800,1)=='Q'&&GET(0xa84e,1,0x4800)&&rd(&r,0x4800,1)=='O');
- CHECK(GET(0xa84e,9,0x4800)&&rd(&r,0x4800,1)=='O');
- CHECK(GET(0xa943,1,0x4800)&&rd(&r,0x4800,1)==0&&GET(0xa941,4,0x4800)&&rd(&r,0x4800,1)==1&&GET(0xa941,3,0x4800)&&rd(&r,0x4800,1)==0);
+ wr(&r,0x4800,1,0xee);CHECK(GET(0xa84e,3,0x4800)&&rd(&r,0x4800,2)=='Q'&&GET(0xa84e,1,0x4800)&&rd(&r,0x4800,2)=='O');
+ CHECK(GET(0xa84e,9,0x4800)&&rd(&r,0x4800,2)=='O');
+ CHECK(GET(0xa943,1,0x4800)&&rd(&r,0x4800,2)==0&&GET(0xa941,4,0x4800)&&rd(&r,0x4800,1)==1&&GET(0xa941,3,0x4800)&&rd(&r,0x4800,1)==0);
  wr(&r,0x4800,2,0xeeee);CHECK(GET(0xa93f,1,0x4800)&&rd(&r,0x4800,2)==0);
  wr(&r,0x4800,1,0xee);CHECK(GET(0xa941,0,0x4800)&&rd(&r,0x4800,1)==0xee&&GET(0xa941,5,0x4800)&&rd(&r,0x4800,1)==0xee);
  #define SET(op,item,word) (wr(&r,SP+4,4,h),wr(&r,SP+2,2,(item)),wr(&r,SP,2,(word)),call(&r,(op))==1&&mac_cpu_get(r.cpu,MAC_A7)==SP+8)
  /* SetItemStyle / SetItemMark / SetItemCmd / SetItemIcon (menu, item, byte in the high half of the pushed word); items outside the menu are ignored. */
  CHECK(SET(0xa942,3,0x0600)&&GET(0xa941,3,0x4800)&&rd(&r,0x4800,1)==6&&rd(&r,m->pointer+42,1)==6);   /* item 3's style byte */
- CHECK(SET(0xa944,3,0x4100)&&GET(0xa943,3,0x4800)&&rd(&r,0x4800,1)=='A');
- CHECK(SET(0xa84f,3,0x5a00)&&GET(0xa84e,3,0x4800)&&rd(&r,0x4800,1)=='Z');
+ CHECK(SET(0xa944,3,0x4100)&&GET(0xa943,3,0x4800)&&rd(&r,0x4800,2)=='A');
+ CHECK(SET(0xa84f,3,0x5a00)&&GET(0xa84e,3,0x4800)&&rd(&r,0x4800,2)=='Z');
  CHECK(SET(0xa940,3,0x0900)&&(wr(&r,0x4800,2,0xeeee),GET(0xa93f,3,0x4800))&&rd(&r,0x4800,2)==9&&SET(0xa940,3,0));   /* (an item icon makes CalcMenuSize refuse, so clear it again) */
  CHECK(GET(0xa946,3,0x4800)&&!memcmp(mac_cpu_ram(r.cpu)+0x4801,"Quit",4)&&GET(0xa941,1,0x4800)&&rd(&r,0x4800,1)==0&&GET(0xa941,4,0x4800)&&rd(&r,0x4800,1)==1);   /* neighbours and the text are untouched */
  {uint8_t*mem=mac_cpu_ram(r.cpu)+m->pointer;unsigned guard=0;for(unsigned k=0;k<5;k++){mem[m->size+k]=0x77;guard|=1u<<k;}(void)guard;
@@ -150,5 +187,5 @@ int main(void){
  r=fresh();CHECK(!mac_resource_open(&r.fork,fork,sizeof fork,NULL,0));h=create(&r,128,"System");
  wr(&r,SP,4,0x44525652);wr(&r,SP+4,4,h);
  CHECK(call(&r,0xa94d)==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
- locking_and_capacity();resources();puts("Menu records and titles: ok");return 0;
+ locking_and_capacity();resources();delete_items();puts("Menu records and titles: ok");return 0;
 }

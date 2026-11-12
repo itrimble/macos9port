@@ -14,6 +14,7 @@
 #include "finder_popup.h"
 #include "folder_view.h"
 #include "desktop_help.h"
+#include "desktop_menu_status.h"
 #include "desktop_theme.h"
 #include "appearance_panel.h"
 #include "control_panels.h"
@@ -227,9 +228,12 @@ void session_command(Session *s, int cmd) {
         return;
     }
     if (notes_active(s) && (cmd == CMD_SELECT_ALL || cmd == CMD_PASTE)) {
-        notes_key(s, cmd == CMD_PASTE ? 'v' : 'a', MOD_CMD); return;
+        if (cmd == CMD_PASTE && !session_clipboard_input(s)[0] && !s->clipboard_read_error)
+            dialog_info(s, "Paste", "The clipboard is empty. The note was not changed.");
+        else notes_key(s, cmd == CMD_PASTE ? 'v' : 'a', MOD_CMD);
+        return;
     }
-    if (finder_labels_command(s, cmd) || finder_apps_command(s, cmd) || finder_print_command(s, cmd) || finder_recent_command(s, cmd) || finder_settings_command(s, cmd) || finder_search_command(s, cmd) || finder_command(s, cmd) || desktop_command(s, cmd) || desktop_help_command(s, cmd)) return;
+    if (session_sit_command(s, cmd) || finder_labels_command(s, cmd) || finder_apps_command(s, cmd) || finder_print_command(s, cmd) || finder_recent_command(s, cmd) || finder_settings_command(s, cmd) || finder_search_command(s, cmd) || desktop_menu_command(s, cmd) || finder_command(s, cmd) || desktop_command(s, cmd) || desktop_help_command(s, cmd)) return;
     if (folder_view_command(s, cmd)) {
         Window *w = finder_current(s);
         if (w && w->desktop_surface && cmd != CMD_VIEW_ICONS && cmd != CMD_VIEW_LIST && cmd != CMD_VIEW_BUTTONS)
@@ -336,10 +340,12 @@ void session_command(Session *s, int cmd) {
         terminal_open(s, TERM_MODE_CONSOLE);
         break;
     case CMD_COPY:
-        if (terminal_front(s)) terminal_copy(s, terminal_front(s));
+        if (terminal_front(s) && terminal_copy(s, terminal_front(s)) < 0)
+            dialog_info(s, "Copy", "Select some text in the terminal first.");
         break;
     case CMD_PASTE:
-        if (terminal_front(s)) terminal_paste(s, terminal_front(s));
+        if (terminal_front(s) && terminal_paste(s, terminal_front(s)) < 0)
+            dialog_info(s, "Paste", "The clipboard is empty.");
         break;
     case CMD_TERM_CLEAR:
         if (terminal_front(s)) terminal_clear_scrollback(terminal_front(s));

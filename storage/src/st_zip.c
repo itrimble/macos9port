@@ -58,7 +58,7 @@ static int zip_name(const uint8_t *s, size_t len, int utf8, char *out, size_t ca
     }
     for (char *q = tmp; *q; q++) if (*q == '\\') *q = '/';
     const char *r = tmp;
-    while (*r == '/') r++;
+    if (*r == '/') return -1;   /* absolute paths are refused, not quietly made relative */
     while (!strncmp(r, "./", 2)) r += 2;
     if (strlen(r) >= cap) return -1;
     strcpy(out, r);

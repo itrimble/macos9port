@@ -58,7 +58,8 @@ int finder_command_enabled(const Session *s, int command) {
     case CMD_SHOW_CLIPBOARD: case CMD_PREFERENCES: case CMD_RESTART: return 1;
     case CMD_VIEW_OPTIONS: return folder;
     case CMD_AS_WINDOW: case CMD_AS_POPUP: return folder && !active->desktop_surface;
-    case CMD_RESET_COLUMNS: return folder && active->view_mode == VIEW_LIST;
+    case CMD_RESET_COLUMNS: return folder && active->view_mode == VIEW_LIST &&
+        (active->list_columns[0] || active->list_columns[1] || active->list_columns[2]);
     default: return 0;
     }
 }

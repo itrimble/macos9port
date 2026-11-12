@@ -93,6 +93,8 @@ enum { MENU_ARRANGE = 16, MENU_LABELS = 17, MENU_PANELS = 18, MENU_RECENT_APPS =
 enum { CMD_APP_MEDIA = 685, CMD_APP_BROWSER = 686, CMD_APP_SWITCHER = 687 };
 enum { BROWSER_ACTIVATE = 1, BROWSER_CLOSE, BROWSER_CLOSE_ALL, BROWSER_QUIT, BROWSER_NEW_WINDOW,
        BROWSER_COPY, BROWSER_PASTE, BROWSER_SELECT_ALL, BROWSER_UNDO };
+enum { CMD_EXPAND_ARCHIVE_DO = 710 };   /* the Expand button of the archive dialog */
+enum { CMD_MENU_UNAVAILABLE = 725, CMD_CUT = 726 };
 enum { CMD_MEDIA_PLAYER = 700, CMD_SUPPORTED_FORMATS = 701, CMD_FONT_BOOK = 703, CMD_TELEMETRY_TOGGLE = 704 };
 #define OS999_VERSION "1.1.0" /* keep equal to macos/Info.plist */
 enum { BROWSER_CAN_COPY = 1, BROWSER_CAN_PASTE = 2, BROWSER_CAN_SELECT = 4, BROWSER_CAN_UNDO = 8 };
@@ -292,6 +294,7 @@ struct Session {
     int energy_prevent_guest_sleep, energy_wake_on_net, guest_running;
     uint32_t last_activity_ms;
     int disk_cache_kb, guest_ram_mb, guest_guard_pages, ram_disk_mb, ram_disk_clear_on_quit;
+    int guest_machine_mb, guest_addr_bits; /* saved guest machine RAM (0 = unset) and addressing (0 unset, 24, 32); see guest_memory.h */
     int net_connect_via, net_https_only, net_allow_redirects, net_guest_isolated, net_timeout_sec;
     void *font_book_catalog;
 };
@@ -454,6 +457,7 @@ int garden_alt_url(const char *url, int which, char *out, size_t n);
 int install_garden(const char *root, const char *page_url, char *created_rel, size_t created_n,
                    char *err, size_t err_n);
 int install_archive_supported(const char *name);
+int install_archive_sniff(const char *full_path);   /* 1 if the first bytes are a StuffIt archive, whatever the name */
 int install_archive(const char *root, const char *archive_rel, char *created_rel, size_t created_n,
                     char *err, size_t err_n);
 int install_sit(const char *root, const char *archive_rel, char *created_rel, size_t created_n,

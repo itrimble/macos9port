@@ -8,11 +8,17 @@ repo=$1
 export BUILDFLEET_LOCAL=1
 cd "$repo"
 . scripts/progress-events.sh
+# Validate every external pin (from this candidate tree) in seconds, before SDL/browser builds.
+progress_start pins
+python3 scripts/gate_pins.py preflight --repo "$repo" --out "$OS999_RECEIPT_DIR"
+. "$OS999_RECEIPT_DIR/pins.env"
+progress_pass pins
 . scripts/package-inputs.sh
 progress_start provenance
 python3 scripts/verify-package-inputs.py
 progress_pass provenance
 progress_start package_tests
+python3 tests/test_gate_pins.py
 python3 tests/test_complete_package.py
 python3 tests/test_quake_package.py
 python3 -m unittest discover -s tests -p test_build_progress.py
@@ -69,7 +75,8 @@ receipt={'tree':os.environ['OS999_SOURCE_TREE'],'result':'pass','artifact':str(a
          'files':files,'scope':'Automated build/tests, signature and relocated seed; GUI acceptance pending'}
 receipt['relocation']=json.loads((pathlib.Path(os.environ['OS999_RECEIPT_DIR'])/'relocation.json').read_text())
 receipt['inputs']={'quake_profile':json.loads((pathlib.Path(os.environ['OS999_QUAKE_BUILD'])/'arena111-package.json').read_text()),
-                   'sdl2':json.loads((pathlib.Path(os.environ['OS999_RECEIPT_DIR'])/'sdl2-provenance.json').read_text()),'browser_manifest_sha256':hashlib.sha256(pathlib.Path(os.environ['OS999_BROWSER_PROVENANCE']).read_bytes()).hexdigest(),
+                   'sdl2':json.loads((pathlib.Path(os.environ['OS999_RECEIPT_DIR'])/'sdl2-provenance.json').read_text()),
+                   'pins':json.loads((pathlib.Path(os.environ['OS999_RECEIPT_DIR'])/'pins.json').read_text()),'browser_manifest_sha256':hashlib.sha256(pathlib.Path(os.environ['OS999_BROWSER_PROVENANCE']).read_bytes()).hexdigest(),
                    'quake_commit':os.environ['OS999_QUAKE_REF'], 'quake_prepackage_sha256':os.environ['OS999_QUAKE_SHA256'],
                    'quake_protocol_sha256':hashlib.sha256(pathlib.Path('include/os999_quake_bridge.h').read_bytes()).hexdigest()}
 path=pathlib.Path(os.environ['OS999_RECEIPT_DIR'])/'receipt.json'

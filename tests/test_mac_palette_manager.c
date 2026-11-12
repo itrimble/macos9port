@@ -103,6 +103,18 @@ static void palette_dispatch(void){
  CHECK(depth_call(&r,0x0a13,gd,8,2,0)==(uint16_t)-50 && rd(&r,ct,4)==seed+2);       /* undefined flag bits */
  CHECK(depth_call(&r,0x0a13,0,8,1,1)==(uint16_t)-50 && rd(&r,ct,4)==seed+2);
  CHECK(!mac_cpu_halted(r.cpu));
+ /* GetGray ($0C19): device, backGround pointer, foreGround pointer, then the Boolean result. Half way between the background and black (white for a dark background). */
+ for(unsigned k=0;k<3;k++){
+  unsigned bg[3][3]={{0xffff,0xffff,0xffff},{0,0,0},{0x8000,0x2000,0xc000}};
+  for(unsigned i=0;i<3;i++)wr(&r,0x9000+2*i,2,bg[k][i]);
+  wr(&r,0x8000,4,0x9010);wr(&r,0x8004,4,0x9000);wr(&r,0x8008,4,k==2?0:gd);wr(&r,0x800c,2,0xbeef);
+  mac_cpu_set(r.cpu,MAC_A7,0x8000);mac_cpu_set(r.cpu,MAC_D0,0x0c19);
+  CHECK(mac_palette_manager_service(&r,0xaaa2)==1 && mac_cpu_get(r.cpu,MAC_A7)==0x800c && rd(&r,0x800c,1)==1);
+  for(unsigned i=0;i<3;i++){unsigned luma=(bg[k][0]*30+bg[k][1]*59+bg[k][2]*11)/100;CHECK(rd(&r,0x9010+2*i,2)==(bg[k][i]+(luma>=0x8000?0u:0xffffu))/2);}
+ }
+ wr(&r,0x8008,4,gd+4);mac_cpu_set(r.cpu,MAC_A7,0x8000);mac_cpu_set(r.cpu,MAC_D0,0x0c19);
+ CHECK(mac_palette_manager_service(&r,0xaaa2)==-1 && mac_cpu_halted(r.cpu) && strstr(mac_cpu_error(r.cpu),"GetGray"));   /* a device we do not have */
+ mac_cpu_destroy(r.cpu);r=fresh();CHECK(mac_color_init(&r)==1);
  /* Unknown routines and malformed argument sizes halt naming the selector; nothing is fabricated. */
  mac_cpu_set(r.cpu,MAC_A7,0x8000);mac_cpu_set(r.cpu,MAC_D0,0x0415);
  CHECK(mac_palette_manager_service(&r,0xaaa2)==-1 && mac_cpu_halted(r.cpu));

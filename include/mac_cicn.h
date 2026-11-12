@@ -5,6 +5,8 @@
  * rectangles intersected). Defined in mac_color_raster.c. Returns 1, 0 when the port is not a colour port, -1 after halting (complex regions, other depths). */
 typedef struct { uint8_t *pixels; int row; int bt, bl, bb, br; int ct, cl, cb, cr; } MacColorTarget;
 int mac_color_target(MacRuntime *rt, uint32_t port, MacColorTarget *out);
+/* An expanded pixel pattern: w x h device indexes, repeated over the plane (mac_pixpat.c builds one from a PixPat handle). */
+typedef struct { int w, h; uint8_t px[64 * 64]; } MacPixTile;
 
 /* Colour icons ('cicn'): GetCIcon $AA1E, PlotCIcon $AA1F, DisposeCIcon $AA25 (mac_cicn.c). 1 handled, 0 not ours, -1 halted. */
 int mac_cicn_service(MacRuntime *rt, uint16_t opcode);

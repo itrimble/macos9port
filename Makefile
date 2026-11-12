@@ -61,7 +61,7 @@ TEXT_RENDER_SRC := src/text.c src/typeface.c src/typeface_discovery.c src/typefa
 	src/text_system.c src/text_layout.c src/text_layout_break.c
 
 include config/core-sources.mk
-HDRS := include/display_modes.h include/ext_ui.h include/ext_registry.h include/desktop_info.h include/notes.h src/volume_documents.h include/sound_preferences.h include/native_apps.h include/native_settings.h include/control_panel_store.h include/os999_cdev.h include/control_panels.h src/cdev_ui.h src/control_panels_int.h include/movie_host.h src/install_int.h include/application_probe.h include/quake_launch.h include/term_font.h include/tailnet.h include/finder_edit.h include/app_switcher.h include/desktop_gesture.h include/finder_apps.h include/finder_print.h include/finder_recent.h include/finder_batch.h include/finder_drag.h include/finder_selection.h include/finder_popup.h include/finder_state.h include/finder_settings.h include/finder_search.h include/finder_files.h include/desktop_finder.h include/modern_network.h include/folder_navigation.h include/desktop_commands.h include/desktop_help.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h include/term.h include/mac_movie.h include/movie_window.h include/font_book.h include/font_book_window.h include/text_layout.h include/text_system.h
+HDRS := include/display_modes.h include/ext_ui.h include/ext_registry.h include/desktop_info.h include/notes.h src/volume_documents.h include/sound_preferences.h include/native_apps.h include/native_settings.h include/control_panel_store.h include/os999_cdev.h include/control_panels.h src/cdev_ui.h src/control_panels_int.h include/movie_host.h src/install_int.h include/application_probe.h include/quake_launch.h include/term_font.h include/tailnet.h include/finder_edit.h include/app_switcher.h include/desktop_gesture.h include/finder_apps.h include/finder_print.h include/finder_recent.h include/finder_batch.h include/finder_drag.h include/finder_selection.h include/finder_popup.h include/finder_state.h include/finder_settings.h include/finder_search.h include/finder_files.h include/desktop_finder.h include/modern_network.h include/folder_navigation.h include/desktop_commands.h include/desktop_help.h include/desktop_menu_status.h include/menu_navigation.h include/folder_view.h include/desktop_theme.h include/appearance_panel.h include/desktop_context.h include/desktop_wallpaper.h src/desktop_wallpaper_catalog.h include/desktop_assets.h assets/icons/c/ospi_icon_set.h include/ospi.h include/draw.h src/session_int.h include/native_launch.h include/mac_resource.h include/archive_fs.h include/mac_icon.h include/runtime_bridge.h include/term.h include/mac_movie.h include/movie_window.h include/font_book.h include/font_book_window.h include/text_layout.h include/text_system.h
 
 PRINT_HOST := src/desktop_print_stub.c
 SHORTCUT_HOST := src/desktop_shortcuts_stub.c
@@ -139,6 +139,10 @@ build/test_archive_install: tests/install_network_stub.c $(CORE) $(STORAGE_A) $(
 	mkdir -p build
 	$(CC) $(CFLAGS) -o $@ $(filter-out src/modern_network.c,$(CORE) $(STORAGE_LINK)) $(STORAGE_LINK) tests/install_network_stub.c $(STARTUP_SRC) tests/test_archive_install.c $(FT_LIBS) -pthread $(if $(filter Darwin,$(shell uname -s)),,-ldl) -lm
 
+build/test_sit_expand: tests/install_network_stub.c $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_sit_expand.c $(HDRS) $(STARTUP_HDR)
+	mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $(filter-out src/modern_network.c,$(CORE) $(STORAGE_LINK)) $(STORAGE_LINK) tests/install_network_stub.c $(STARTUP_SRC) tests/test_sit_expand.c $(FT_LIBS) -pthread $(if $(filter Darwin,$(shell uname -s)),,-ldl) -lm
+
 # Independent classic runtime. Musashi supplies only CPU instruction execution.
 # Its pinned source and generated tables remain in ignored build/deps/.
 MUSASHI := build/deps/Musashi-313ebf1bd9f4d0d93341eb5ce21fd8a119e9dbdd
@@ -154,21 +158,30 @@ RUNTIME += src/mac_numconv.c src/mac_help.c src/mac_appleevents.c
 RUNTIME += src/mac_sound.c src/mac_sound_render.c
 RUNTIME += src/mac_sound_double.c
 RUNTIME += src/mac_sound_resample.c
-RUNTIME += src/mac_time.c src/mac_delay.c src/mac_guestcall.c src/mac_ditl.c src/mac_dlgdraw.c src/mac_dlgwindow.c src/mac_stdfile_list.c src/mac_window_inval.c src/mac_random.c src/mac_text_state.c src/mac_font.c src/mac_text.c src/mac_textedit.c src/mac_sysfont.c src/mac_dlgswallow.c src/mac_sound_volume.c src/mac_scrap.c src/mac_resload.c src/mac_handcopy.c src/mac_colorindex.c src/mac_window_title.c src/mac_files_rf.c src/mac_files_hvol.c src/mac_files_crf.c src/mac_cmpstring.c src/mac_alias.c src/mac_controls.c src/mac_cdef.c src/mac_cicn.c src/mac_control_draw.c src/mac_qdcolor.c src/mac_window_stack.c src/mac_menuselect.c src/mac_toolutil.c src/mac_stdprocs.c src/mac_rgn.c src/mac_appfork.c src/mac_dialog_draw.c src/mac_alert.c src/mac_stdput.c src/mac_dlgmgr.c src/mac_devmgr.c src/mac_shape.c src/mac_shapes.c src/mac_stdfile.c src/mac_stdfile_draw.c src/mac_init.c src/mac_env.c src/ext_init.c src/ext_runtime.c src/ext_scan.c src/ext_state.c
+RUNTIME += src/mac_time.c src/mac_delay.c src/mac_guestcall.c src/mac_ditl.c src/mac_dlgdraw.c src/mac_dlgwindow.c src/mac_stdfile_list.c src/mac_window_inval.c src/mac_random.c src/mac_text_state.c src/mac_font.c src/mac_text.c src/mac_textedit.c src/mac_sysfont.c src/mac_dlgswallow.c src/mac_sound_volume.c src/mac_scrap.c src/mac_resload.c src/mac_handcopy.c src/mac_colorindex.c src/mac_window_title.c src/mac_files_rf.c src/mac_files_hvol.c src/mac_files_crf.c src/mac_cmpstring.c src/mac_alias.c src/mac_controls.c src/mac_cdef.c src/mac_mdef.c src/mac_script.c src/mac_gworld.c src/mac_cicn.c src/mac_control_draw.c src/mac_qdcolor.c src/mac_window_stack.c src/mac_menuselect.c src/mac_toolutil.c src/mac_stdprocs.c src/mac_rgn.c src/mac_appfork.c src/mac_dialog_draw.c src/mac_alert.c src/mac_stdput.c src/mac_dlgmgr.c src/mac_devmgr.c src/mac_shape.c src/mac_shapes.c src/mac_stdfile.c src/mac_stdfile_draw.c src/mac_init.c src/mac_env.c src/ext_init.c src/ext_runtime.c src/ext_scan.c src/ext_state.c
 RUNTIME += src/mac_files_write.c src/mac_files_hidden.c src/mac_files_flush.c src/mac_files_volparms.c src/mac_sysbeep.c src/mac_textbox.c src/mac_dlgedit.c src/mac_partition.c src/mac_files_dircreate.c src/mac_dlgpict.c src/mac_files_info.c src/mac_fsspec.c
-RUNTIME_HDRS += include/mac_files_int.h include/volume_capacity.h
+RUNTIME_HDRS += include/mac_mdef.h include/mac_files_int.h include/volume_capacity.h
 RUNTIME += src/volume_capacity.c
 RUNTIME_HDRS += include/mac_time.h include/mac_init.h include/ext_init.h include/ext_registry.h include/ext_runtime.h
 RUNTIME_HDRS += include/mac_sound_double.h
 RUNTIME_HDRS += include/mac_sound.h include/mac_sound_int.h include/runtime_audio.h include/runtime_perf.h include/runtime_keys.h
 RUNTIME_HDRS += include/mac_pict.h
-RUNTIME_HDRS += include/mac_resource_chain.h include/mac_resource_chain_int.h
+RUNTIME_HDRS += include/mac_resource_chain.h include/mac_resource_chain_int.h include/mac_handles.h include/mac_pixpat.h
+
+include config/ppc-tests.mk
+# Toolbox calls added while taking real applications further (docs/REAL-APP-COMPATIBILITY.md).
+REALAPP_SRC := src/mac_fontnames.c src/mac_handles.c src/mac_pixpat.c src/mac_dlguser.c
+REALAPP_TESTS := test_mac_fontnames test_mac_loadseg_loop
+RUNTIME += $(REALAPP_SRC)
 
 # Compile shared runtime code once per revision, then link each independent test.
 # Header and recipe changes invalidate the objects; generated dependency files
 # also track nested headers. Keep CPU-only vendor objects in their existing path.
 RUNTIME_OBJ := $(patsubst src/%.c,build/runtime/%.o,$(RUNTIME))
 -include $(RUNTIME_OBJ:.o=.d)
+$(REALAPP_TESTS:%=build/%): build/%: tests/%.c tests/fork_builder.h $(RUNTIME_OBJ) $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) -Isrc $(RUNTIME_OBJ) $< $(CPUOBJ) -lm $(FT_LIBS) -o $@
+test: $(REALAPP_TESTS:%=build/%)
 
 build/runtime/%.o: src/%.c $(RUNTIME_HDRS) Makefile $(MUSASHI)/m68kops.c
 	mkdir -p build/runtime
@@ -178,6 +191,7 @@ build/test_mac_resource_chain: $(RUNTIME_OBJ) tests/test_mac_resource_chain.c $(
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_resource_chain.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 test: build/test_mac_resource_chain
+test: build/test_guest_memory
 
 build/test_mac_picture: $(RUNTIME_OBJ) tests/test_mac_picture.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_picture.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
@@ -321,6 +335,24 @@ build/test_os999_heap: src/os999_heap.c tests/test_os999_heap.c include/os999_he
 build/test_mac_heap_bridge: $(RUNTIME_OBJ) tests/test_mac_heap_bridge.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_heap_bridge.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
+build/test_guest_memory: $(RUNTIME_OBJ) tests/test_guest_memory.c include/guest_memory.h $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_guest_memory.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+# Classic application classification: pure byte analysis, so it links only the resource reader.
+APP_CLASSIFY_SRC := src/app_classify.c src/app_classify_exec.c src/app_classify_json.c src/mac_resource.c
+build/test_app_classify: $(APP_CLASSIFY_SRC) src/app_classify_int.h include/app_classify.h include/mac_resource.h tests/test_app_classify.c
+	$(CC) $(CFLAGS) tests/test_app_classify.c $(APP_CLASSIFY_SRC) -o $@
+build/os999-classify: $(APP_CLASSIFY_SRC) src/app_classify_tool.c src/app_classify_int.h include/app_classify.h include/mac_resource.h
+	$(CC) $(CFLAGS) src/app_classify_tool.c $(APP_CLASSIFY_SRC) -o $@
+test: build/test_app_classify
+LAUNCH_SRC := src/launch_profile.c src/native_policy.c $(APP_CLASSIFY_SRC)
+build/test_launch_profile: $(LAUNCH_SRC) include/launch_profile.h src/native_policy.h include/native_settings.h tests/test_launch_profile.c src/control_panel_store.c $(STORAGE_A)
+	$(CC) $(CFLAGS) -Isrc -pthread tests/test_launch_profile.c $(LAUNCH_SRC) src/control_panel_store.c src/os999_private.c $(STORAGE_LINK) -o $@
+test: build/test_launch_profile
+build/test_legacy_pointers: $(RUNTIME_OBJ) tests/test_legacy_pointers.c include/guest_memory.h $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_legacy_pointers.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+test: build/test_legacy_pointers
+
 # Bridge under ASan/UBSan: only the heap, bridge and test are instrumented; the rest of the runtime is the normal build.
 build/test_mac_heap_bridge_asan: $(RUNTIME_OBJ) src/os999_heap.c src/mac_heap_bridge.c tests/test_mac_heap_bridge.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -fno-sanitize-recover=undefined $(filter-out build/runtime/os999_heap.o build/runtime/mac_heap_bridge.o,$(RUNTIME_OBJ)) src/os999_heap.c src/mac_heap_bridge.c tests/test_mac_heap_bridge.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
@@ -358,8 +390,8 @@ build/test_mac_appfork: $(RUNTIME_OBJ) tests/test_mac_appfork.c $(RUNTIME_HDRS) 
 build/test_mac_unloadseg: $(RUNTIME_OBJ) tests/test_mac_unloadseg.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_unloadseg.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
-build/test_native_launch: src/control_panel_store.c include/native_settings.h include/control_panel_store.h $(STORAGE_A) src/application_probe.c include/application_probe.h src/native_launch.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c include/native_launch.h include/mac_resource.h include/runtime_bridge.h
-	$(CC) $(CFLAGS) -pthread src/control_panel_store.c src/native_launch.c src/os999_private.c src/application_probe.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c $(STORAGE_LINK) -o $@
+build/test_native_launch: src/control_panel_store.c include/native_settings.h include/control_panel_store.h $(STORAGE_A) src/application_probe.c include/application_probe.h src/native_launch.c src/native_policy.c src/launch_profile.c src/app_classify.c src/app_classify_exec.c src/app_classify_json.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c include/native_launch.h include/mac_resource.h include/runtime_bridge.h
+	$(CC) $(CFLAGS) -pthread src/control_panel_store.c src/native_launch.c src/native_policy.c src/launch_profile.c src/app_classify.c src/app_classify_exec.c src/app_classify_json.c src/os999_private.c src/application_probe.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c $(STORAGE_LINK) -o $@
 
 build/test_mac_events: $(RUNTIME_OBJ) tests/test_mac_events.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_events.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
@@ -449,6 +481,12 @@ build/test_mac_toolutil: $(RUNTIME_OBJ) tests/test_mac_toolutil.c $(RUNTIME_HDRS
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_toolutil.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 build/test_mac_menuselect: $(RUNTIME_OBJ) tests/test_mac_menuselect.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_menuselect.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_script: $(RUNTIME_OBJ) tests/test_mac_script.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_script.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_gworld: $(RUNTIME_OBJ) tests/test_mac_gworld.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_gworld.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_mdef: $(RUNTIME_OBJ) tests/test_mac_mdef.c tests/mdef_fixture.h tests/fork_builder.h $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_mdef.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 build/test_mac_controls: $(RUNTIME_OBJ) tests/test_mac_controls.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_controls.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
@@ -505,7 +543,7 @@ build/test_mac_system_volume: $(RUNTIME_OBJ) tests/test_mac_system_volume.c $(RU
 build/test_mac_regions: $(RUNTIME_OBJ) tests/test_mac_regions.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_regions.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
-test: build/test_mac_dlgedit build/test_mac_partition build/test_mac_sysbeep build/test_mac_files_flush build/test_mac_dlgwindow build/test_mac_cicn build/test_mac_cdef build/test_mac_controls build/test_mac_menu_records build/test_mac_multi_window build/test_mac_window_resource build/test_mac_paintbehind build/test_mac_menu build/test_mac_drive_queue build/test_mac_reservation build/test_mac_color_pen build/test_mac_system_volume build/test_mac_regions build/test_mac_window build/test_mac_window_nogrow build/test_mac_clock_globals build/test_mac_random build/test_mac_supervisor build/test_mac_text_state build/test_mac_text build/test_mac_sound_volume build/test_mac_scrap build/test_mac_handcopy build/test_mac_colorindex build/test_mac_files_rf build/test_mac_sysfont build/test_mac_textedit build/test_mac_rgn build/test_mac_stdprocs build/test_mac_shape build/test_mac_menu_color build/test_mac_devmgr build/test_mac_dlgmgr build/test_mac_stdput build/test_mac_menuselect build/test_mac_toolutil build/test_mac_window_inval build/test_mac_menu_setitem build/test_mac_volume build/test_mac_pixels build/test_mac_pixmap build/test_mac_vbl
+test: build/test_mac_dlgedit build/test_mac_partition build/test_mac_sysbeep build/test_mac_files_flush build/test_mac_dlgwindow build/test_mac_cicn build/test_mac_cdef build/test_mac_controls build/test_mac_menu_records build/test_mac_multi_window build/test_mac_window_resource build/test_mac_paintbehind build/test_mac_menu build/test_mac_drive_queue build/test_mac_reservation build/test_mac_color_pen build/test_mac_system_volume build/test_mac_regions build/test_mac_window build/test_mac_window_nogrow build/test_mac_clock_globals build/test_mac_random build/test_mac_supervisor build/test_mac_text_state build/test_mac_text build/test_mac_sound_volume build/test_mac_scrap build/test_mac_handcopy build/test_mac_colorindex build/test_mac_files_rf build/test_mac_sysfont build/test_mac_textedit build/test_mac_rgn build/test_mac_stdprocs build/test_mac_shape build/test_mac_menu_color build/test_mac_devmgr build/test_mac_dlgmgr build/test_mac_stdput build/test_mac_menuselect build/test_mac_mdef build/test_mac_gworld build/test_mac_script build/test_mac_toolutil build/test_mac_window_inval build/test_mac_menu_setitem build/test_mac_volume build/test_mac_pixels build/test_mac_pixmap build/test_mac_vbl
 
 build/test_mac_video_config: $(RUNTIME_OBJ) tests/test_mac_video_config.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_video_config.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
@@ -580,7 +618,7 @@ build/test_mac_system: $(RUNTIME_OBJ) tests/test_mac_system.c $(RUNTIME_HDRS) $(
 build/test_mac_raster: $(RUNTIME_OBJ) tests/test_mac_raster.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_raster.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
-test: build/test_os999_startup build/test_os999_startup_bar build/test_ospi build/test_archive_install build/test_mac_icon build/test_runtime_bridge build/test_mac_resource build/test_mac_cpu build/test_mac_runtime build/test_mac_resource_services build/test_mac_memory build/test_os999_heap build/test_mac_heap_bridge build/test_mac_resource_edits build/test_mac_menubar build/test_mac_traps build/test_mac_unloadseg build/test_mac_guestcall build/test_mac_ditl build/test_mac_files_entries build/test_mac_stdfile_list build/test_mac_stdfile build/test_mac_alert build/test_mac_appfork build/test_native_launch build/test_mac_events build/test_mac_quickdraw build/test_runtime_video build/test_runtime_perf build/test_runtime_keys build/test_mac_raster build/test_mac_system build/test_mac_geometry build/test_mac_files build/test_mac_cursor build/test_mac_ccursor build/test_mac_color build/test_mac_dialog build/test_runtime_cursor build/test_mac_color_port build/test_mac_copybits build/test_mac_palette build/test_mac_color_raster build/test_mac_movie build/test_movie_window build/test_mac_files_write
+test: build/test_os999_startup build/test_os999_startup_bar build/test_ospi build/test_archive_install build/test_sit_expand build/test_mac_icon build/test_runtime_bridge build/test_mac_resource build/test_mac_cpu build/test_mac_runtime build/test_mac_resource_services build/test_mac_memory build/test_os999_heap build/test_mac_heap_bridge build/test_mac_resource_edits build/test_mac_menubar build/test_mac_traps build/test_mac_unloadseg build/test_mac_guestcall build/test_mac_ditl build/test_mac_files_entries build/test_mac_stdfile_list build/test_mac_stdfile build/test_mac_alert build/test_mac_appfork build/test_native_launch build/test_mac_events build/test_mac_quickdraw build/test_runtime_video build/test_runtime_perf build/test_runtime_keys build/test_mac_raster build/test_mac_system build/test_mac_geometry build/test_mac_files build/test_mac_cursor build/test_mac_ccursor build/test_mac_color build/test_mac_dialog build/test_runtime_cursor build/test_mac_color_port build/test_mac_copybits build/test_mac_palette build/test_mac_color_raster build/test_mac_movie build/test_movie_window build/test_mac_files_write
 	./build/test_desktop_assets assets/icons/ospi-icons.icl8
 	./build/test_appearance
 	./build/test_appearance_panel
@@ -600,16 +638,19 @@ test: build/test_os999_startup build/test_os999_startup_bar build/test_ospi buil
 	./build/test_menu_navigation
 	./build/test_folder_view
 	./build/test_menu_integration
+	./build/test_desktop_menus
 	./build/test_terminal
 	./build/test_terminal_history
 	./build/test_telemetry
 	./build/test_movie_picker
+	./build/test_file_dialog
 	./build/test_audio_engine assets/sounds/classic9
 	./build/test_os999_startup
 	./build/test_os999_startup_bar
 	./build/test_modern_network
 	./build/test_ospi
 	./build/test_archive_install
+	./build/test_sit_expand
 	./build/test_mac_icon
 	./build/test_runtime_bridge
 	./build/test_mac_resource
@@ -639,6 +680,10 @@ test: build/test_os999_startup build/test_os999_startup_bar build/test_ospi buil
 	./build/test_mac_memory
 	./build/test_os999_heap
 	./build/test_mac_heap_bridge
+	./build/test_guest_memory
+	./build/test_app_classify
+	./build/test_launch_profile
+	./build/test_legacy_pointers
 	./build/test_mac_resource_edits
 	./build/test_mac_menubar
 	./build/test_mac_traps
@@ -699,6 +744,9 @@ test: build/test_os999_startup build/test_os999_startup_bar build/test_ospi buil
 	./build/test_mac_dlgmgr
 	./build/test_mac_stdput
 	./build/test_mac_menuselect
+	./build/test_mac_mdef
+	./build/test_mac_gworld
+	./build/test_mac_script
 	./build/test_mac_toolutil
 	./build/test_mac_window_inval
 	./build/test_mac_controls
@@ -737,6 +785,17 @@ test: build/test_os999_startup build/test_os999_startup_bar build/test_ospi buil
 	./build/test_browser_stage
 	./build/test_mac_network_policy
 	./build/test_mac_pef_cfm
+	./build/test_ppc_cpu
+	./build/test_ppc_fp
+	./build/test_mac_pef
+	./build/test_mac_cfm_reloc
+	./build/test_mac_cfm
+	./build/test_mac_ppc_probe
+	./build/test_mac_ppc_bridge
+	./build/test_mac_ppc_mdef
+	./build/test_mac_ppc_gworld
+	./build/test_mac_ppc_libs
+	for t in $(REALAPP_TESTS); do ./build/$$t || exit 1; done
 	./build/test_mac_perf_audio_gates
 	./build/test_browser_media_gateway
 	./build/test_mac_fuzz_soak

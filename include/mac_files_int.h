@@ -17,6 +17,7 @@ static inline int mac_files_in_folder(const char *n) {
 enum { FOLDER_ID_FIRST = 3, FOLDER_ID_LAST = 66 };
 uint32_t mac_files_folder_id(const char *name);          /* the ID a folder of that name gets */
 int mac_files_dir_create(MacRuntime *rt, uint32_t pb);   /* PBDirCreate; the OSErr */
+int mac_files_folder_find(MacRuntime *rt, const char *name, int create, uint32_t *id);   /* a made root folder by name, optionally making it; the OSErr */
 uint32_t mac_files_wd_folder(int vref);                  /* the folder ID a working-directory reference stands for, or 0 */
 int mac_files_wd_ours(const MacRuntime *rt, unsigned selector, uint32_t dir_id, int vref);
 int mac_files_wd(MacRuntime *rt, uint32_t pb, unsigned selector);   /* PBOpenWD (1), PBCloseWD (2), PBGetWDInfo (7) of a made folder */

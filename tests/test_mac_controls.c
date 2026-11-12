@@ -102,6 +102,12 @@ int main(void) {
     CHECK(h_only(&rt,0xa957,b1,4)==1 && raw(&rt,p1+CTL_VIS,1)==1);
     CHECK(h_two(&rt,0xa959,b1,200,150)==1 && (int16_t)raw(&rt,p1+CTL_RECT,2)==150 && (int16_t)raw(&rt,p1+CTL_RECT+2,2)==200 && (int16_t)raw(&rt,p1+CTL_RECT+4,2)==170 && (int16_t)raw(&rt,p1+CTL_RECT+6,2)==300);
     CHECK(h_two(&rt,0xa95c,b1,50,30)==1 && (int16_t)raw(&rt,p1+CTL_RECT+4,2)==180 && (int16_t)raw(&rt,p1+CTL_RECT+6,2)==250);
+    /* SizeControl does no validation: a zero or negative size (a pane that is still 0 wide asks for width - 15) leaves an empty rectangle that
+     * hit-tests as nothing and can be sized again; the call itself succeeds. */
+    CHECK(h_two(&rt,0xa95c,b1,-15,16)==1 && !mac_cpu_halted(rt.cpu) && (int16_t)raw(&rt,p1+CTL_RECT,2)==150 && (int16_t)raw(&rt,p1+CTL_RECT+4,2)==166 && (int16_t)raw(&rt,p1+CTL_RECT+2,2)==200 && (int16_t)raw(&rt,p1+CTL_RECT+6,2)==185);
+    CHECK(part_at(&rt,b1,155,240)==0 && part_at(&rt,b1,155,190)==0 && part_at(&rt,b1,155,200)==0);
+    CHECK(h_two(&rt,0xa95c,b1,0,0)==1 && (int16_t)raw(&rt,p1+CTL_RECT+4,2)==150 && (int16_t)raw(&rt,p1+CTL_RECT+6,2)==200 && part_at(&rt,b1,150,200)==0);
+    CHECK(h_two(&rt,0xa95c,b1,50,30)==1 && (int16_t)raw(&rt,p1+CTL_RECT+4,2)==180 && (int16_t)raw(&rt,p1+CTL_RECT+6,2)==250);
     /* Drawing changes the screen inside the window and nothing outside it. */
     uint8_t *m=mac_cpu_ram(rt.cpu);int out=screen_sum(&rt,460,40,520,300);
     for(int y=190;y<220;y++)memset(m+rt.screen_base+(size_t)y*rt.screen_row_bytes+250,0x55,50);             /* paint over the button, then redraw */
@@ -150,7 +156,7 @@ int main(void) {
         case 10:mac_cpu_set(r.cpu,MAC_A7,(uint32_t)mac_cpu_ram_size(r.cpu)-2);rc=mac_controls_service(&r,0xa960);break;   /* the stack does not fit */
         case 11:rc=h_long(&r,0xa95e,h,0xfffffff0);break;                                                     /* GetCTitle destination beyond RAM */
         case 12:rc=h_long(&r,0xa95f,h,0xfffffff0);break;                                                     /* SetCTitle source beyond RAM */
-        case 13:rc=h_two(&r,0xa95c,h,0,10);break;                                                            /* SizeControl to nothing */
+        case 13:rc=h_two(&r,0xa95c,0,10,10);break;                                                           /* SizeControl of a nil handle */
         case 14:wr(&r,SP+8,4,((uint32_t)5<<16)|5);wr(&r,SP+4,4,STORAGE);wr(&r,SP,4,0xfffffffc);rc=call(&r,0xa96c,12);break;   /* FindControl result pointer beyond RAM */
         default:wr(&r,p+CTL_NEXT,4,h);wr(&r,SP,4,STORAGE);rc=call(&r,0xa969,4);break;}                          /* a cycle in the control list must not loop forever: it halts */
         CHECK(rc==-1 && mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);

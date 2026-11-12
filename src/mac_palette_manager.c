@@ -149,6 +149,19 @@ static int palette_dispatch(MacRuntime *r){
         r->palette_active=0;
         mac_cpu_set(r->cpu,MAC_A7,sp+4);return 1;
     }
+    if(sel==0x0c19){   /* GetGray(device, backGround: pointer to RGBColor, VAR foreGround: pointer to RGBColor): Boolean. From memory of the call's description, not checked against
+                        * a real Macintosh: the gray to use for dimmed drawing on that background is half way between the background and black (or white when the
+                        * background is dark); the answer is TRUE on a colour or gray device with more than one bit of depth. */
+        if(!valid(r,sp,14))return fail(r,"GetGray stack exceeds guest RAM.");
+        uint32_t fore=rd(r,sp,4),back=rd(r,sp+4,4),gd=rd(r,sp+8,4);
+        if(gd && gd!=r->main_device)return fail(r,"GetGray names a device this runtime does not have.");
+        if(!valid(r,back,6)||!valid(r,fore,6))return fail(r,"GetGray color pointers exceed guest RAM.");
+        unsigned c[3];for(unsigned i=0;i<3;i++)c[i]=rd(r,back+2*i,2);
+        unsigned luma=(c[0]*30+c[1]*59+c[2]*11)/100,end=luma>=0x8000?0:0xffff;
+        for(unsigned i=0;i<3;i++)wr(r,fore+2*i,2,(c[i]+end)/2);
+        wr(r,sp+12,2,r->screen_depth>1?0x0100:0);
+        mac_cpu_set(r->cpu,MAC_A7,sp+12);return 1;
+    }
     if((routine!=0x13 && routine!=0x14) || args!=10){
         static char message[80];
         snprintf(message,sizeof message,"PaletteDispatch selector 0x%04x is unsupported.",(unsigned)sel);

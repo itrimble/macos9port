@@ -1,9 +1,14 @@
 #ifndef MAC_WINDOW_INT_H
 #define MAC_WINDOW_INT_H
 #include "mac_runtime.h"
-/* Native chrome geometry (procIDs 1 dBoxProc, 2 plainDBox, 4 noGrowDocProc, 12 zoomNoGrow).
- * Titled windows carry a 20px title bar; dBoxProc a 7px frame; the rest a 1px rule. */
-static inline int mac_window_titled(int proc){return proc==4||proc==12;}
+/* Native chrome geometry for the standard window definition IDs: 0 documentProc, 1 dBoxProc, 2 plainDBox, 3 altDBoxProc, 4 noGrowDocProc, 5 movableDBoxProc,
+ * 8 zoomDocProc, 12 zoomNoGrow. Titled windows carry a 20px title bar; dBoxProc a 7px frame; the rest a 1px rule. Differences from the real definitions:
+ * altDBoxProc has no drop shadow and movableDBoxProc is drawn as a titled document window without a close box rule of its own; documentProc and
+ * zoomDocProc have a 15 x 15 grow part at the content's bottom right (FindWindow reports inGrow there). */
+static inline int mac_window_std_proc(int proc){return proc==0||proc==1||proc==2||proc==3||proc==4||proc==5||proc==8||proc==12;}
+static inline int mac_window_titled(int proc){return proc==0||proc==4||proc==5||proc==8||proc==12;}
+static inline int mac_window_zoom(int proc){return proc==8||proc==12;}
+static inline int mac_window_grow(int proc){return proc==0||proc==8;}
 static inline int mac_window_frame(int proc){return proc==1?7:1;}
 static inline int mac_window_top_extent(int proc){return mac_window_titled(proc)?20:mac_window_frame(proc);}
 void mac_window_draw(MacRuntime *rt, int clear_content);

@@ -15,6 +15,10 @@ int finder_apps_media_running(const Session *s) { (void)s; return 0; }
 int finder_command_enabled(const Session *s, int command) { (void)s; (void)command; return 0; }
 int appearance_panel_active(void) { return 0; }
 int appearance_panel_can_open(void) { return 0; }
+void desktop_menu_track(Session *s) { (void)s; }
+Session *desktop_menu_tracked(void) { return NULL; }
+void desktop_menu_note_unavailable(int c) { (void)c; }
+const char *desktop_menu_reason(const Session *s, int c) { (void)s; (void)c; return NULL; }
 int desktop_command_enabled(Session *s, int command) { (void)s; (void)command; return 0; }
 int session_overlay_active(const Session *s) { return s->dialog || s->menu >= 0 || overlay; }
 static int selected(Window *w) {

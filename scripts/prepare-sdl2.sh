@@ -3,7 +3,9 @@
 set -eu
 version=2.32.10
 digest=5f5993c530f084535c65a6879e9b26ad441169b3e25d789d83287040a9ca5165
-cache=$(pwd)/build/deps
+# Hash-checked archive cache: the versioned store when the gate provides one, else this tree.
+cache=${OS999_DEPS_STORE:+$OS999_DEPS_STORE/archives}
+cache=${cache:-$(pwd)/build/deps}
 mkdir -p "$cache"
 root=$(mktemp -d /tmp/os999-sdl2.XXXXXX)
 archive="$cache/SDL2-$version.tar.gz"

@@ -113,7 +113,7 @@ int mac_color_service(MacRuntime *rt, uint16_t opcode) {
     unsigned args, result;
     switch (opcode) {
         case 0xaa29: case 0xaa2a: case 0xaa32: args = 0; result = 4; break;
-        case 0xaa2b: args = 4; result = 4; break;
+        case 0xaa2b: case 0xaa27: args = 4; result = 4; break;
         case 0xaa2c: args = 6; result = 2; break;
         case 0xaa31: args = 4; result = 0; break;
         default: return 0;
@@ -125,7 +125,17 @@ int mac_color_service(MacRuntime *rt, uint16_t opcode) {
         mac_cpu_halt(rt->cpu, "Indexed display has not been initialized."); return -1;
     }
     uint32_t p = 0, h = 0, answer = rt->main_device;
-    if (args) {
+    if (opcode == 0xaa27) { /* GetMaxDevice(globalRect: Rect): GDHandle. The deepest device the rectangle touches: with one screen, that screen or nil. */
+        uint32_t r = rd(rt, sp, 4), gd = rd(rt, rt->main_device, 4);
+        if (!r || !valid(rt, r, 8)) { mac_cpu_halt(rt->cpu, "GetMaxDevice rectangle pointer is invalid."); return -1; }
+        int t = (int16_t)rd(rt, r, 2), l = (int16_t)rd(rt, r + 2, 2), b = (int16_t)rd(rt, r + 4, 2), rr = (int16_t)rd(rt, r + 6, 2);
+        int dt = (int16_t)rd(rt, gd + 34, 2), dl = (int16_t)rd(rt, gd + 36, 2), db = (int16_t)rd(rt, gd + 38, 2), dr = (int16_t)rd(rt, gd + 40, 2);
+        if (t < dt) t = dt;
+        if (l < dl) l = dl;
+        if (b > db) b = db;
+        if (rr > dr) rr = dr;
+        if (t >= b || l >= rr) answer = 0;
+    } else if (args) {
         h = rd(rt, sp + (opcode == 0xaa2c ? 2 : 0), 4);
         if (!device(rt, h, &p)) {
             mac_cpu_halt(rt->cpu, "Invalid graphics device handle."); return -1;
