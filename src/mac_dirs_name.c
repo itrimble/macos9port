@@ -1,4 +1,5 @@
 #include "mac_files_int.h"
+#include "macroman.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -11,8 +12,10 @@
  * reference, a directory ID and a name. A name with a leading colon, or one that contains a colon and does not start with this volume's name, is a
  * partial path from that directory ("::" goes up one level); "OS999 HD:a:b" is a full path; a name with no colon is an entry of the directory. The
  * directory is ioDirID when it is not 0, else the directory an open working-directory reference stands for, else the default directory.
- * Components are matched against the host without regard to case (HFS is case-insensitive) and take the host's own spelling when they exist.
- * Components that cannot be host names (non-ASCII, longer than 31, leading dot, a slash or backslash) are bdNamErr. */
+ * A guest name is Mac Roman bytes (macroman.h): a component is matched against the host's names without regard to case (HFS is case-insensitive;
+ * ASCII plus the accented Latin letters) and in either Unicode normalisation, and takes the host's own spelling (UTF-8) when it exists; otherwise
+ * it is stored as precomposed UTF-8. The result path is host UTF-8. Components that cannot be names (longer than 31 Mac Roman bytes, a control
+ * byte, a leading dot, a slash or backslash) are bdNamErr. */
 enum { COMPONENT_MAX = 31 };
 
 static int ci_equal(const char *a, const char *b) {
@@ -32,27 +35,42 @@ int mac_dirs_is_dir(const FileState *s, const char *rel) {
     return !mac_dirs_stat(s->directory, rel, &st) && S_ISDIR(st.st_mode);
 }
 
-/* The host's spelling of `comp` inside directory `dir`, when an entry matches without regard to case (the overlay's spelling wins). */
-static int canonical(const FileState *s, const char *dir, const char *comp, char *out) {
+/* The host's spelling of the guest component `mr` inside directory `dir`, when an entry matches without regard to case (the overlay's spelling wins;
+ * an exact match is preferred to a case-only one). Host names the guest cannot see are never candidates. */
+static int canonical(const FileState *s, const char *dir, const uint8_t *mr, size_t n, char *out) {
+    char exact[MR_HOST_MAX];
+    if (mr_component_to_host(mr, n, exact, sizeof exact) < 0) return 0;
     for (int pass = 0; pass < 2; pass++) {
         int root = pass == 0 ? s->saves : s->directory;
         if (root < 0) continue;
         DIR *d = mac_dirs_opendir(root, dir);
         if (!d) continue;
-        struct dirent *e; unsigned scanned = 0;
-        while ((e = readdir(d)) && ++scanned <= 4096)
-            if (ci_equal(e->d_name, comp)) { snprintf(out, COMPONENT_MAX + 1, "%s", e->d_name); closedir(d); return 1; }
+        struct dirent *e; unsigned scanned = 0; int found = 0;
+        while ((e = readdir(d)) && ++scanned <= 4096) {
+            uint8_t host[MR_NAME_MAX];
+            int hn = mr_component_from_host(e->d_name, host, sizeof host);
+            if (hn < 0 || !mr_equal_fold(host, (size_t)hn, mr, n)) continue;
+            if (!found || !strcmp(e->d_name, exact)) snprintf(out, MR_HOST_MAX, "%s", e->d_name);
+            found = 1;
+            if (!strcmp(e->d_name, exact)) break;
+        }
         closedir(d);
+        if (found) return 1;
     }
+    return 0;
+}
+
+/* The host spelling of a guest leaf name (Mac Roman bytes) in directory `dir`: an existing entry's own spelling, else the precomposed UTF-8 form.
+ * 0, or -37 for a name that cannot be one. */
+int mac_dirs_leaf_to_host(const FileState *s, const char *dir, const uint8_t *mr, size_t n, char out[MR_HOST_MAX]) {
+    if (mr_component_to_host(mr, n, out, MR_HOST_MAX) < 0) return -37;
+    canonical(s, dir, mr, n, out);
     return 0;
 }
 
 static int component_ok(const char *c, size_t n) {
     if (!n || n > COMPONENT_MAX || c[0] == '.') return 0;
-    for (size_t i = 0; i < n; i++) {
-        unsigned char ch = (unsigned char)c[i];
-        if (ch < 32 || ch >= 127 || ch == '/' || ch == '\\') return 0;
-    }
+    for (size_t i = 0; i < n; i++) if (!mr_name_byte_ok((uint8_t)c[i])) return 0;
     return 1;
 }
 
@@ -87,12 +105,11 @@ int mac_dirs_resolve(MacRuntime *rt, int vref, uint32_t dir_id, const char *name
         if (dir_id && !mac_dirs_is_dir(s, path)) return -120;
         if (n && rest[0] != ':') {   /* "a:b" starts with a volume name; when no such volume is mounted a folder of that name in the directory is taken instead */
             const char *colon = memchr(rest, ':', n);
-            char first[COMPONENT_MAX + 1], spelled[COMPONENT_MAX + 1], probe[DIRS_PATH_MAX];
+            char first[MR_HOST_MAX], probe[DIRS_PATH_MAX];
             if (colon) {
                 size_t length = (size_t)(colon - rest);
                 if (!component_ok(rest, length)) return -37;
-                memcpy(first, rest, length); first[length] = 0;
-                if (canonical(s, path, first, spelled)) memcpy(first, spelled, strlen(spelled) + 1);
+                if (mac_dirs_leaf_to_host(s, path, (const uint8_t *)rest, length, first)) return -37;
                 snprintf(probe, sizeof probe, "%s%s%s", path, path[0] ? "/" : "", first);
                 if (!mac_dirs_is_dir(s, probe)) return -35;   /* nsvErr: neither this volume nor a folder here */
             }
@@ -113,11 +130,9 @@ int mac_dirs_resolve(MacRuntime *rt, int vref, uint32_t dir_id, const char *name
     while (n) {
         const char *colon = memchr(rest, ':', n);
         size_t length = colon ? (size_t)(colon - rest) : n;
-        char comp[COMPONENT_MAX + 1];
+        char comp[MR_HOST_MAX];
         if (!component_ok(rest, length)) return -37;
-        memcpy(comp, rest, length); comp[length] = 0;
-        char spelled[COMPONENT_MAX + 1];
-        if (canonical(s, path, comp, spelled)) memcpy(comp, spelled, strlen(spelled) + 1);
+        if (mac_dirs_leaf_to_host(s, path, (const uint8_t *)rest, length, comp)) return -37;
         size_t have = strlen(path);
         if (have + (have ? 1 : 0) + strlen(comp) >= DIRS_PATH_MAX) return -37;
         if (have) path[have++] = '/';

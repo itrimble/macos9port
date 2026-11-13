@@ -13,7 +13,7 @@
 int mac_files_open_rf_path(MacRuntime *rt, const char *name, unsigned permission, int *ref) {
     const char *leaf = strrchr(name, '/');
     leaf = leaf ? leaf + 1 : name;
-    if (strlen(leaf) + 5 > FILE_NAME_MAX || strlen(name) + 6 > DIRS_PATH_MAX) return -50;
+    if (!mr_sidecar_ok(leaf) || strlen(name) + 6 > DIRS_PATH_MAX) return -50;
     char sidecar[DIRS_PATH_MAX];
     snprintf(sidecar, sizeof sidecar, "%s.rsrc", name);
     FileState *s = rt->file_state;

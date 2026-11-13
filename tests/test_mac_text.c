@@ -239,6 +239,36 @@ static void default_size(const MacResourceFork *f) {   /* TextSize(0) asks for t
     CHECK(string_width("ab") > 0 && !mac_cpu_halted(rt.cpu));   /* no 12 point strike: the nearest size of the family is used */
     rig(f); wrw(PORT + 74, 2, 10); CHECK(string_width("ab") > 0);
 }
+#ifdef OSPI_FREETYPE
+/* Guest strings are Mac Roman. The stand-in system face maps each byte to its own glyph (curly quotes, trade mark, accented letters), draws with it and
+ * measures with the same table, so the width of a string is the sum of its characters' widths and a high byte never draws as "?". */
+static void snapshot(uint8_t *out) { memcpy(out, mac_cpu_ram(rt.cpu) + PIX, W * H); }
+static void mac_roman_text(const MacResourceFork *f) {
+    mac_sysfont_set_path("fonts/ChicagoFLF.ttf");
+    static uint8_t quote[W * H], mark[W * H], curly[W * H], tm[W * H], acute[W * H], plain[W * H];
+    const unsigned drawn[] = { '?', 0xD2, 0xAA, 0x8E, 'e' };
+    uint8_t *shots[] = { mark, curly, tm, acute, plain };
+    for (unsigned i = 0; i < 5; i++) {
+        rig(f); wrw(PORT + 68, 2, 0); wrw(PORT + 74, 2, 12); wrw(PORT + 48, 2, 13); wrw(PORT + 72, 2, 1);
+        CHECK(draw_char(drawn[i]) == 1 && !mac_cpu_halted(rt.cpu));
+        snapshot(shots[i]);
+        if (i == 4) { rig(f); wrw(PORT + 68, 2, 0); wrw(PORT + 74, 2, 12); wrw(PORT + 48, 2, 13); draw_string("\xD2\xD3"); snapshot(quote); }
+        mac_cpu_destroy(rt.cpu);
+    }
+    CHECK(memcmp(curly, mark, sizeof curly) != 0 && memcmp(tm, mark, sizeof tm) != 0 && memcmp(acute, mark, sizeof acute) != 0);   /* not the "?" any more */
+    CHECK(memcmp(curly, tm, sizeof curly) != 0 && memcmp(acute, plain, sizeof acute) != 0);                                           /* and not each other */
+    CHECK(memcmp(quote, curly, sizeof quote) != 0);   /* the second quote is drawn after the first */
+    rig(f); wrw(PORT + 68, 2, 0); wrw(PORT + 74, 2, 12);
+    int a = char_width(0xD2), b = char_width('Q'), c = char_width(0xD3), d = char_width(0x8E), e = char_width('e');
+    CHECK(a > 0 && b > 0 && c > 0 && d == e);
+    CHECK(string_width("\xD2Q\xD3") == a + b + c);                                  /* StringWidth, CharWidth and TextWidth agree */
+    CHECK(text_op(0xa886, "x\xD2Q\xD3", 1, 3) == 1 && (int)rdw(SPT + 8, 2) == a + b + c);
+    CHECK(string_width("Caf\x8E") == char_width('C') + char_width('a') + char_width('f') + d);
+    mac_cpu_destroy(rt.cpu);
+    (void)quote;
+    mac_sysfont_set_path(NULL);
+}
+#endif
 static void refusal_checks(const MacResourceFork *f) {
     for (unsigned k = 0; k < 22; k++) {
         rig(f); unsigned op = 0xa884; int draw = 1; uint32_t sp = SPT;
@@ -333,7 +363,11 @@ int main(void) {
     parse_checks(); lookup_checks();
     { size_t sn = make_strike(), fn = make_fond(); Res list[] = {{FONT_T, 5 * 128 + 10, strike, sn}, {NFNT_T, 2000, strike, sn}, {FOND_T, 5, fond, fn}};
       static uint8_t img2[4096]; MacResourceFork f; char err[200]; size_t total = build_fork(img2, list, 3);
-      CHECK(mac_resource_open(&f, img2, total, err, sizeof err) == 0); service_checks(&f); refusal_checks(&f); default_size(&f); textbox_checks(&f); }
+      CHECK(mac_resource_open(&f, img2, total, err, sizeof err) == 0); service_checks(&f); refusal_checks(&f); default_size(&f); textbox_checks(&f);
+#ifdef OSPI_FREETYPE
+      mac_roman_text(&f);
+#endif
+    }
     if (!fails) puts("Font engine checks passed");
     return fails ? 1 : 0;
 }

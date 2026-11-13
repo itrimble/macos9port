@@ -35,10 +35,9 @@ void mac_files_set_app(MacRuntime *rt, const char *name) {
     snprintf(s->app_name, sizeof s->app_name, "%s", name);
     /* ApName ($910, Str31): the running application's file name. Installer engines open their own file by building an
      * FSSpec from the default volume and this name; with it empty the spec names nothing and the open fails with paramErr. */
-    uint8_t length = (uint8_t)strlen(s->app_name);
-    if (length > 31) length = 31;
-    mac_cpu_write(rt->cpu, 0x910, 1, length);
-    for (unsigned i = 0; i < length; i++) mac_cpu_write(rt->cpu, 0x911 + i, 1, (uint8_t)s->app_name[i]);
+    uint8_t pascal[MR_NAME_MAX + 1];
+    mr_put_pstring(pascal, MR_NAME_MAX, s->app_name);   /* Mac Roman; an unrepresentable host name leaves it empty */
+    for (unsigned i = 0; i <= pascal[0]; i++) mac_cpu_write(rt->cpu, 0x910 + i, 1, pascal[i]);
 }
 
 void mac_files_set_app_path(MacRuntime *rt, const char *path) {
@@ -82,9 +81,7 @@ int mac_files_fcb_info(MacRuntime *rt, uint32_t pb) {
     mac_cpu_write(cpu, pb + 54, 4, 512);
     mac_cpu_write(cpu, pb + 58, 4, mac_dirs_id(&s->dirs, parent));
     if (name_ptr) {
-        size_t n = strlen(leaf) > FILE_NAME_MAX ? FILE_NAME_MAX : strlen(leaf);
-        mac_cpu_ram(cpu)[name_ptr] = (uint8_t)n;
-        for (size_t i = 0; i < n; i++) { unsigned char c = (unsigned char)leaf[i]; mac_cpu_ram(cpu)[name_ptr + 1 + i] = c >= 32 && c < 127 ? c : '?'; }
+        mr_put_pstring(mac_cpu_ram(cpu) + name_ptr, FILE_NAME_MAX, leaf);   /* host UTF-8 back to Mac Roman */
     }
     return 0;
 }

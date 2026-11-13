@@ -227,7 +227,8 @@ int main(void) {
     CHECK(open_name(&rt,"../escape",1)==-50);
     CHECK(open_name(&rt,"..",1)==-50);
     CHECK(open_name(&rt,":Game Data",1)==0);CHECK(call(&rt,0xa001)==0);   /* a leading colon is a partial path from the default directory */
-    CHECK(open_name(&rt,"\200",1)==-50);
+    CHECK(open_name(&rt,"\200",1)==-43);   /* $80 is a Mac Roman letter now: a name that is not there (it was paramErr while names were ASCII only) */
+    CHECK(open_name(&rt,"a\001b",1)==-50); CHECK(open_name(&rt,"a\177",1)==-50);   /* control bytes stay refused */
     CHECK(open_name(&rt,"alias",1)==-54);
     CHECK(open_name(&rt,"fifo",1)==-50);
     CHECK(open_name(&rt,"Game Data",1)==0);

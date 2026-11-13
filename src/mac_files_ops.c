@@ -92,7 +92,13 @@ int mac_files_rename_names(MacRuntime *rt, const char *from, const char *to) {
         if (mac_files_open_by_name(s, from)) return -47;
     }
     if (!mac_files_save_name_ok(to)) return -50;
-    if (mac_files_classify(s, to) != FILE_NONE || mac_dirs_is_dir(s, to)) return -48;
+    if (mac_files_classify(s, to) != FILE_NONE || mac_dirs_is_dir(s, to)) {
+        /* The name is taken, unless `to` is the very same entry spelled in another case (HFS names ignore case): then it is a case-only rename. */
+        struct stat a, b;
+        int same = !mac_dirs_stat(s->saves, from, &a) && !mac_dirs_stat(s->saves, to, &b) && a.st_dev == b.st_dev && a.st_ino == b.st_ino &&
+                   mr_host_equal_fold(from, to);
+        if (!same) return -48;
+    }
     char parent[DIRS_PATH_MAX]; const char *leaf;
     mac_dirs_parent(to, parent, &leaf);
     int error = parent[0] ? mac_dirs_ensure_overlay(s, parent) : 0;
@@ -113,9 +119,9 @@ int mac_files_rename(MacRuntime *rt, uint32_t pb) {
     if (!new_ptr || !mac_files_valid(cpu, new_ptr, 1)) return -50;
     unsigned n = mac_cpu_read(cpu, new_ptr, 1);
     if (!n || n > FILE_NAME_MAX || !mac_files_valid(cpu, new_ptr + 1, n)) return -50;
-    char leaf_name[FILE_NAME_MAX + 1];
-    memcpy(leaf_name, mac_cpu_ram(cpu) + new_ptr + 1, n); leaf_name[n] = 0;
-    for (unsigned i = 0; i < n; i++) if (leaf_name[i] == ':' || leaf_name[i] == '/') return -50;   /* the new name is a bare name */
+    char leaf_name[MR_HOST_MAX];
+    /* the new name is a bare Mac Roman name (no ':' or '/'), kept in exactly the spelling given so a case-only rename works */
+    if (mr_component_to_host(mac_cpu_ram(cpu) + new_ptr + 1, n, leaf_name, sizeof leaf_name) < 0) return -50;
     char parent[DIRS_PATH_MAX]; const char *leaf;
     mac_dirs_parent(from, parent, &leaf);
     if (snprintf(to, sizeof to, "%s%s%s", parent, parent[0] ? "/" : "", leaf_name) >= (int)sizeof to) return -37;

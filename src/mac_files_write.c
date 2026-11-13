@@ -57,33 +57,28 @@ int mac_files_read_name(MacCpu *cpu, uint32_t pointer, char *out, size_t capacit
     if (!mac_files_valid(cpu, pointer, 1)) return -50;
     unsigned length = mac_cpu_read(cpu, pointer, 1);
     if (!length || length >= capacity || !mac_files_valid(cpu, pointer + 1, length)) return -50;
-    memcpy(out, mac_cpu_ram(cpu) + pointer + 1, length);
-    out[length] = 0;
-    unsigned skip = mac_files_volume_prefix(out, length);
-    if (skip) { memmove(out, out + skip, length - skip + 1); length -= skip; }
-    for (unsigned i = 0; i < length; i++)
-        if ((unsigned char)out[i] < 32 || (unsigned char)out[i] >= 127 ||
-            out[i] == '/' || out[i] == ':' || out[i] == '\\') return -50;
-    if (!strcmp(out, ".") || !strcmp(out, "..")) return -50;
+    uint8_t mr[256];
+    memcpy(mr, mac_cpu_ram(cpu) + pointer + 1, length);
+    unsigned skip = mac_files_volume_prefix((const char *)mr, length);
+    /* The guest's Mac Roman bytes become precomposed UTF-8; a refused byte (':', '/', '\\', a control byte), a leading dot ("." and "..") or
+     * more than 31 Mac Roman bytes is paramErr. */
+    if (mr_component_to_host(mr + skip, length - skip, out, capacity) < 0) return -50;
     return 0;
 }
 
-/* A name the overlay will hold: a '/'-separated host-relative path (mac_dirs.h) whose components are plain ASCII, at most 31 characters, none starting with a dot. */
+/* A name the overlay will hold: a '/'-separated host-relative path (mac_dirs.h) whose components the guest can name: UTF-8 that maps to at most 31
+ * Mac Roman bytes (macroman.h), none starting with a dot. */
 int mac_files_save_name_ok(const char *name) {
     if (!mac_dirs_path_ok(name) || !name[0]) return 0;
-    size_t run = 0;
-    for (const char *p = name;; p++) {
-        if (*p == '/' || !*p) {
-            if (!run || run > FILE_NAME_MAX) return 0;
-            run = 0;
-            if (!*p) break;
-            if (p[1] == '.') return 0;
-            continue;
-        }
-        if (run == 0 && *p == '.') return 0;
-        unsigned char c = (unsigned char)*p;
-        if (c < 32 || c >= 127 || c == ':' || c == '\\') return 0;
-        run++;
+    for (const char *p = name;;) {
+        const char *slash = strchr(p, '/');
+        size_t run = slash ? (size_t)(slash - p) : strlen(p);
+        char part[MR_HOST_MAX];
+        if (!run || run >= sizeof part) return 0;
+        memcpy(part, p, run); part[run] = 0;
+        if (mr_host_length(part) < 0) return 0;   /* not Mac Roman, ':' or '\\', a leading dot, or over 31 Mac Roman bytes */
+        if (!slash) break;
+        p = slash + 1;
     }
     return 1;
 }

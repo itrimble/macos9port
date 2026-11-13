@@ -44,10 +44,7 @@ int mac_files_listing_dir(const FileState *s, const char *dirpath, int with_dirs
             if (++scanned > ENTRY_LIMIT || *count >= LIST_LIMIT) { error = -50; break; }
             size_t length = strlen(e->d_name);
             if (!length || length > 254 || e->d_name[0] == '.') continue;   /* hidden names stay hidden */
-            int supported = 1;
-            for (size_t i = 0; i < length; i++)
-                if ((unsigned char)e->d_name[i] < 32 || (unsigned char)e->d_name[i] >= 127 ||
-                    e->d_name[i] == ':' || e->d_name[i] == '\\') supported = 0;
+            int supported = mr_host_length(e->d_name) >= 0;   /* a name the guest cannot see (not Mac Roman, a ':', over 31 Mac Roman bytes) stays hidden */
             char child[DIRS_PATH_MAX];
             if (!supported || snprintf(child, sizeof child, "%s%s%s", dirpath, dirpath[0] ? "/" : "", e->d_name) >= (int)sizeof child) continue;
             struct stat st;
@@ -91,7 +88,8 @@ int mac_files_entries(MacRuntime *rt, MacFileEntry *out, unsigned max, unsigned 
         mac_files_finder_get(fd, info);
         close(fd);
         MacFileEntry *e = &out[*count];
-        memcpy(e->name, names[i], sizeof e->name);
+        memset(e->name, 0, sizeof e->name);   /* the guest's spelling: Mac Roman bytes (the dialog draws and replies with them) */
+        if (mr_component_from_host(names[i], (uint8_t *)e->name, sizeof e->name - 1) < 0) continue;
         e->type = (uint32_t)info[0] << 24 | (uint32_t)info[1] << 16 | (uint32_t)info[2] << 8 | info[3];
         e->creator = (uint32_t)info[4] << 24 | (uint32_t)info[5] << 16 | (uint32_t)info[6] << 8 | info[7];
         e->flags = (uint16_t)(info[8] << 8 | info[9]);
@@ -163,7 +161,7 @@ int mac_files_get_info(MacRuntime *rt, uint32_t pb) {
         if ((unsigned)index > count) { free(names); return -43; }
         snprintf(shown, sizeof shown, "%s", names[index - 1]);
         free(names);
-        if (name_ptr && !mac_files_valid(cpu, name_ptr, (uint32_t)strlen(shown) + 1)) return -50;
+        if (name_ptr && !mac_files_valid(cpu, name_ptr, (uint32_t)mr_host_length(shown) + 1)) return -50;
         size_t have = strlen(path);
         if (have + strlen(shown) + 2 >= sizeof path) return -37;
         snprintf(path + have, sizeof path - have, "%s%s", have ? "/" : "", shown);
@@ -172,8 +170,7 @@ int mac_files_get_info(MacRuntime *rt, uint32_t pb) {
     if (kind != FILE_SAVE && kind != FILE_DATA) return -43;
     if ((error = mac_files_fill_info(rt, pb, path, kind))) return error;
     if (index > 0 && name_ptr) {   /* All host work succeeded; now publish the name. */
-        mac_cpu_ram(cpu)[name_ptr] = (uint8_t)strlen(shown);
-        memcpy(mac_cpu_ram(cpu) + name_ptr + 1, shown, strlen(shown));
+        mr_put_pstring(mac_cpu_ram(cpu) + name_ptr, MR_NAME_MAX, shown);   /* host UTF-8 back to Mac Roman */
     }
     return 0;
 }

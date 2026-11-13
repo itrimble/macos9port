@@ -1,5 +1,6 @@
 #include "mac_menu_int.h"
 #include "mac_mdef.h"
+#include "mac_chrome.h"
 #include <stdlib.h>
 #include <string.h>
 extern const uint8_t font8x8_basic[128][8];
@@ -106,7 +107,8 @@ static void invert(const Scr *s, int l, int t, int r, int b) {
         if (x >= 0 && y >= 0 && (unsigned)x < s->w && (unsigned)y < s->h) { uint8_t *p = &s->base[(size_t)y * s->row + (unsigned)x]; if (*p == s->light) *p = (uint8_t)s->dark; else if (*p == s->dark) *p = (uint8_t)s->light; }
 }
 static void glyph(const Scr *s, int x, int y, unsigned ch, int dim) {
-    const uint8_t *g = ch == 0x14 ? font8x8_pi : (ch < 128 ? font8x8_basic[ch] : font8x8_basic['?']);
+    uint8_t scratch[8];
+    const uint8_t *g = ch == 0x14 ? font8x8_pi : mac_chrome_glyph(ch, scratch);
     for (int gy = 0; gy < 8; gy++) for (int gx = 0; gx < 8; gx++) if ((g[gy] & (1u << gx)) && !(dim && ((x + gx + y + gy) & 1))) put(s, x + gx, y + gy, s->dark);
 }
 static void hilite_title(MacRuntime *r, unsigned index) {

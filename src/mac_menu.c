@@ -1,4 +1,5 @@
 #include "mac_menu_int.h"
+#include "mac_chrome.h"
 extern const uint8_t font8x8_basic[128][8];
 extern const uint8_t font8x8_pi[8];
 #include <string.h>
@@ -66,7 +67,8 @@ int mac_menu_service(MacRuntime *r,uint16_t opcode){
     for(unsigned i=0;i<count;i++){
         for(unsigned k=0;k<titles[i][0];k++){
             unsigned ch=titles[i][k+1];
-            const uint8_t *glyph=ch==0x14?font8x8_pi:font8x8_basic[ch];
+            uint8_t scratch[8];
+            const uint8_t *glyph=ch==0x14?font8x8_pi:mac_chrome_glyph(ch,scratch);
             for(unsigned y=0;y<8 && top+y+1<height;y++)for(unsigned x=0;x<8;x++){
                 unsigned px=left+k*8+x,py=top+y;
                 if(!(glyph[y]&(1u<<x)) || (!enabled[i] && ((px+py)&1)))continue;

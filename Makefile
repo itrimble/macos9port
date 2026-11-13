@@ -170,8 +170,9 @@ RUNTIME_HDRS += include/mac_resource_chain.h include/mac_resource_chain_int.h in
 
 include config/ppc-tests.mk
 # Toolbox calls added while taking real applications further (docs/REAL-APP-COMPATIBILITY.md).
-REALAPP_SRC := src/mac_fontnames.c src/mac_handles.c src/mac_pixpat.c src/mac_dlguser.c src/mac_dlgtitle.c src/mac_list.c src/mac_list_ui.c src/mac_testyle.c src/mac_intl.c
-REALAPP_TESTS := test_mac_fontnames test_mac_loadseg_loop
+REALAPP_SRC := src/macroman.c src/mac_chrome_glyph.c src/mac_fontnames.c src/mac_handles.c src/mac_pixpat.c src/mac_dlguser.c src/mac_dlgtitle.c src/mac_list.c src/mac_list_ui.c src/mac_testyle.c src/mac_intl.c
+REALAPP_TESTS := test_mac_fontnames test_mac_loadseg_loop test_macroman test_mac_names
+RUNTIME_HDRS += include/macroman.h src/macroman_table.h include/mac_chrome.h
 RUNTIME += $(REALAPP_SRC)
 
 # Compile shared runtime code once per revision, then link each independent test.

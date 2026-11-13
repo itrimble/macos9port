@@ -2,6 +2,7 @@
 #define MAC_FILES_INT_H
 /* Private state shared by the read-only File Manager service (mac_files.c)
  * and the writable save overlay (mac_files_write.c). Not a public API. */
+#include "macroman.h"
 #include "mac_runtime.h"
 #include "volume_capacity.h"
 #include <dirent.h>
@@ -42,10 +43,13 @@ typedef struct {
     uint64_t max_bytes;
     VolumeBudget disk;     /* internal-disk capacity budget (active after mac_files_disk) */
     int hfs_call;          /* the call being served is an HFS (H-prefixed) flavour: ioDirID at +48 is an input (mac_files.c) */
-    char app_name[FILE_NAME_MAX + 1];   /* the application file the runtime was started from (for PBGetFCBInfo on its resource file) */
+    char app_name[MR_HOST_MAX];   /* the application file the runtime was started from (for PBGetFCBInfo on its resource file) */
     DirTable dirs;         /* directory IDs, working directories and the default directory (mac_dirs.h) */
     GuestFile files[FILE_LIMIT];
 } FileState;
+
+/* The host (UTF-8) spelling of a guest leaf name given as Mac Roman bytes, in directory `dir`: an existing entry's own spelling, else precomposed UTF-8. 0 or -37. */
+int mac_dirs_leaf_to_host(const FileState *s, const char *dir, const uint8_t *mr, size_t n, char out[MR_HOST_MAX]);
 
 /* Classification of a name across the single guest namespace. */
 enum { FILE_NONE = 0, FILE_SAVE = 1, FILE_DATA = 2, FILE_SAVE_UNSUPPORTED = 3, FILE_DATA_UNSUPPORTED = 4 };

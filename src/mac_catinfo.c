@@ -21,11 +21,9 @@ static int mac_date(time_t unix_time, uint32_t *out) {
 }
 
 static int put_name(MacCpu *cpu, uint32_t ptr, const char *name) {
-    size_t n = strlen(name);
-    if (n > 255 || !mac_files_valid(cpu, ptr, (uint32_t)n + 1)) return -50;
-    mac_cpu_ram(cpu)[ptr] = (uint8_t)n;
-    memcpy(mac_cpu_ram(cpu) + ptr + 1, name, n);
-    return 0;
+    int n = mr_host_length(name);   /* the name goes out in Mac Roman */
+    if (n < 0 || !mac_files_valid(cpu, ptr, (uint32_t)n + 1)) return -50;
+    return mr_put_pstring(mac_cpu_ram(cpu) + ptr, MR_NAME_MAX, name);
 }
 
 static int directory_record(MacRuntime *rt, uint32_t pb, const char *path) {

@@ -22,7 +22,7 @@ enum { SPEC_BYTES = 70, SPEC_NAME_MAX = 63, ROOT_PARENT_ID = 1, ROOT_DIR_ID = 2 
 
 typedef struct {
     int root;                       /* the spec names the volume's root directory itself */
-    char name[SPEC_NAME_MAX + 1];   /* entry name when !root */
+    char name[MR_HOST_MAX];         /* entry name when !root, as host UTF-8 (the spec itself carries Mac Roman bytes) */
     uint32_t dir;                   /* the directory it is in */
     char host[DIRS_PATH_MAX];       /* host-relative path of the entry ("" for the root) */
 } Spec;
@@ -54,8 +54,7 @@ static void write_spec(MacCpu *cpu, uint32_t p, int root, const char *name, uint
     memset(mac_cpu_ram(cpu) + p, 0, SPEC_BYTES); /* zero padding so specs compare equal bytewise */
     mac_cpu_write(cpu, p, 2, 0xffff);
     mac_cpu_write(cpu, p + 2, 4, root ? ROOT_PARENT_ID : dir);
-    mac_cpu_ram(cpu)[p + 6] = (uint8_t)strlen(shown);
-    memcpy(mac_cpu_ram(cpu) + p + 7, shown, strlen(shown));
+    mr_put_pstring(mac_cpu_ram(cpu) + p + 6, MR_NAME_MAX, shown);   /* host UTF-8 back to Mac Roman */
 }
 
 /* The volumes a spec may name: the default volume (0), the startup volume (-1), the System volume (-2) when the runtime has one, and an open working directory. */
@@ -74,18 +73,14 @@ static int read_spec(MacRuntime *rt, uint32_t p, Spec *out) {
     if (!vol_ok(rt, vref)) return -35; /* nsvErr */
     if (n > SPEC_NAME_MAX) return -37;
     const char *name = (const char *)mac_cpu_ram(cpu) + p + 7;
-    memcpy(out->name, name, n);
-    out->name[n] = 0;
     out->root = parent == ROOT_PARENT_ID;
     if (out->root) return volume_name_eq(name, n) ? 0 : -35;
     char dirpath[DIRS_PATH_MAX];
     if (mac_dirs_path(&s->dirs, parent, dirpath)) return -120; /* dirNFErr */
-    if (!n || n > FILE_NAME_MAX || name[0] == '.') return -37;   /* bdNamErr */
-    for (size_t i = 0; i < n; i++) {
-        unsigned char c = (unsigned char)name[i];
-        if (c < 32 || c >= 127 || c == ':' || c == '/' || c == '\\') return -37;
-    }
-    if (strlen(dirpath) + n + 2 >= DIRS_PATH_MAX) return -37;
+    /* The spec's name is Mac Roman: at most 31 bytes, no control byte, ':' '/' or '\\', no leading dot (bdNamErr); it maps to the host's own spelling of an
+     * existing entry (any case, either normalisation) or to precomposed UTF-8. */
+    if (mac_dirs_leaf_to_host(s, dirpath, (const uint8_t *)name, n, out->name)) return -37;
+    if (strlen(dirpath) + strlen(out->name) + 2 >= DIRS_PATH_MAX) return -37;
     snprintf(out->host, sizeof out->host, "%s%s%s", dirpath, dirpath[0] ? "/" : "", out->name);
     out->dir = parent;
     return 0;
@@ -227,11 +222,9 @@ static int rename_file(MacRuntime *rt, uint32_t sp) {
     int error = read_spec(rt, mac_cpu_read(cpu, sp + 4, 4), &spec);
     if (error) return error;
     if (spec.root) return -46; /* the volume name is fixed */
-    char to[DIRS_PATH_MAX], parent[DIRS_PATH_MAX], leaf_name[SPEC_NAME_MAX + 1];
+    char to[DIRS_PATH_MAX], parent[DIRS_PATH_MAX], leaf_name[MR_HOST_MAX];
     const char *leaf;
-    if (n > FILE_NAME_MAX) return -37;
-    memcpy(leaf_name, mac_cpu_ram(cpu) + to_ptr + 1, n); leaf_name[n] = 0;
-    for (size_t i = 0; i < n; i++) if (leaf_name[i] == ':' || leaf_name[i] == '/') return -37;
+    if (n > FILE_NAME_MAX || mr_component_to_host(mac_cpu_ram(cpu) + to_ptr + 1, n, leaf_name, sizeof leaf_name) < 0) return -37;   /* Mac Roman bytes, exact spelling */
     mac_dirs_parent(spec.host, parent, &leaf);
     if (snprintf(to, sizeof to, "%s%s%s", parent, parent[0] ? "/" : "", leaf_name) >= (int)sizeof to || !mac_files_save_name_ok(to)) return -37;
     return mac_files_rename_names(rt, spec.host, to);

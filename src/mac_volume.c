@@ -38,11 +38,7 @@ static void put32(uint8_t *p, uint32_t v) { put16(p, (uint16_t)(v >> 16)); put16
 static int name_supported(const char *name) {
     size_t n = strlen(name);
     if (!n || n > 255 || !strcmp(name, ".") || !strcmp(name, "..")) return 0;
-    for (size_t i = 0; i < n; i++) {
-        unsigned char c = (unsigned char)name[i];
-        if (c < 32 || c >= 127 || c == ':' || c == '/' || c == '\\') return 0;
-    }
-    return 1;
+    return mr_host_representable(name);   /* Mac Roman only (macroman.h); a name with ':' or a stray byte is not counted */
 }
 static int volume_matches(const uint8_t *name) {
     size_t n = name[0], expected = sizeof(volume_name) - 1;

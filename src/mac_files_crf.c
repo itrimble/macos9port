@@ -30,7 +30,7 @@ static int create_fork(MacRuntime *rt, const char *name) {
     FileState *s = rt->file_state;
     if (!s) return -35;
     if (s->saves < 0) return -46;
-    if (strlen(name) + 5 >= DIRS_PATH_MAX || strlen(strrchr(name, '/') ? strrchr(name, '/') + 1 : name) + 5 > FILE_NAME_MAX) return -50;
+    if (strlen(name) + 5 >= DIRS_PATH_MAX || !mr_sidecar_ok(strrchr(name, '/') ? strrchr(name, '/') + 1 : name)) return -50;
     int kind = mac_files_classify(s, name);
     if (kind == FILE_DATA || kind == FILE_DATA_UNSUPPORTED || kind == FILE_SAVE_UNSUPPORTED) return -54;
     int error;

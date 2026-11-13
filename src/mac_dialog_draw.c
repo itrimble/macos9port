@@ -1,7 +1,7 @@
 #include "mac_dialog_draw.h"
+#include "mac_chrome.h"
 #include <string.h>
 
-extern const uint8_t font8x8_basic[128][8]; /* existing public-domain font */
 
 void mac_pen_init(MacPen *pen, MacRuntime *rt, int left, int top, int width, int height) {
     pen->rt = rt; pen->left = left; pen->top = top; pen->width = width; pen->height = height;
@@ -32,10 +32,11 @@ void mac_pen_box(const MacPen *p, int l, int t, int r, int b, uint8_t ink) {
 }
 void mac_pen_text(const MacPen *p, int x, int y, const char *s, unsigned n, uint8_t ink, int dim) {
     for (unsigned i = 0; i < n; i++) {
-        unsigned c = (unsigned char)s[i]; if (c >= 128) c = '?';
+        uint8_t scratch[8];
+        const uint8_t *glyph = mac_chrome_glyph((unsigned char)s[i], scratch);   /* Mac Roman bytes $80-$FF have glyphs too (mac_chrome.h) */
         for (int row = 0; row < 8; row++)
             for (int bit = 0; bit < 8; bit++)
-                if ((font8x8_basic[c][row] & (1u << bit)) && !(dim && ((bit + row) & 1)))
+                if ((glyph[row] & (1u << bit)) && !(dim && ((bit + row) & 1)))
                     mac_pen_fill(p, x + (int)i * 8 + bit, y + row, x + (int)i * 8 + bit + 1, y + row + 1, ink);
     }
 }

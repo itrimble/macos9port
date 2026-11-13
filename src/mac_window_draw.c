@@ -1,4 +1,5 @@
 #include "mac_window_int.h"
+#include "mac_chrome.h"
 
 extern const uint8_t font8x8_basic[128][8]; /* Existing public-domain font. */
 /* Independently authored one-window chrome. This is not Apple's WDEF or art.
@@ -68,9 +69,9 @@ static void draw(MacRuntime *rt, int clear_content,const int16_t clip[4]) {
     int max_chars=(r-l-48)/8,n=w->title[0];if(n>max_chars)n=max_chars;
     int x=l+(r-l-n*8)/2;
     for(int i=0;i<n;i++) {
-        unsigned c=w->title[i+1];if(c>=128)c='?';
+        uint8_t scratch[8];const uint8_t *glyph=mac_chrome_glyph(w->title[i+1],scratch);   /* Mac Roman: $80-$FF draw as themselves */
         for(int y=0;y<8;y++)for(int bit=0;bit<8;bit++)
-            if(font8x8_basic[c][y]&(1u<<bit))fill(d,x+i*8+bit,t-14+y,x+i*8+bit+1,t-13+y,ink);
+            if(glyph[y]&(1u<<bit))fill(d,x+i*8+bit,t-14+y,x+i*8+bit+1,t-13+y,ink);
     }
 }
 void mac_window_draw(MacRuntime *rt,int clear_content){draw(rt,clear_content,NULL);}

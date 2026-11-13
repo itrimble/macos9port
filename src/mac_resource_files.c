@@ -20,15 +20,7 @@ enum { FORK_BYTE_LIMIT=16*1024*1024, DIRECTORY_LIMIT=4096, RESOURCE_LIMIT=4096 }
 static int valid(MacCpu *c,uint32_t p,size_t n) {
     return p<=mac_cpu_ram_size(c) && n<=mac_cpu_ram_size(c)-p;
 }
-static int equal(const char *a,const char *b) {
-    while(*a&&*b) {
-        unsigned x=(unsigned char)*a++,y=(unsigned char)*b++;
-        if(x>='A'&&x<='Z')x+=32;
-        if(y>='A'&&y<='Z')y+=32;
-        if(x!=y)return 0;
-    }
-    return !*a&&!*b;
-}
+static int equal(const char *a,const char *b) { return mr_host_equal_fold(a,b); }   /* Mac Roman case folding, either Unicode normalisation (macroman.h) */
 /* name is a host-relative path ("dir/leaf"); the export is "<leaf>.rsrc" in the same directory, matched without regard to case. On success path is the
  * export's relative path. */
 static int resolve(int root,const char *name,char path[256]) {
@@ -63,7 +55,7 @@ static int read_fork(MacRuntime *rt,const char *name,MacOpenResource *out) {
     /* A resource fork on the save overlay ("<name>.rsrc", see mac_files_rf.c) shadows the application volume's export and is writable. */
     const FileState *fs=rt->file_state;out->writable=0;
     const char *leaf=strrchr(name,'/');leaf=leaf?leaf+1:name;
-    if(fs && fs->saves>=0 && strlen(leaf)+5<=FILE_NAME_MAX && strlen(name)+6<=sizeof path) {
+    if(fs && fs->saves>=0 && mr_sidecar_ok(leaf) && strlen(name)+6<=sizeof path) {
         snprintf(path,sizeof path,"%s.rsrc",name);
         fd=mac_dirs_openat(fs->saves,path,O_RDONLY|O_NONBLOCK,0);
         if(fd>=0){out->writable=1;snprintf(out->sidecar,sizeof out->sidecar,"%s",path);}
