@@ -315,6 +315,19 @@ int main(void) {
         mac_cpu_set(rt.cpu, MAC_A7, SP); wr(&rt, SP, 4, 0x4320); wr(&rt, SP + 4, 4, d); wr(&rt, SP + 8, 4, 0x0046009bu); wr(&rt, SP + 12, 2, 0x5555);   /* (v 70, h 155): inside */
         CHECK(mac_controls_service(&rt, 0xa96c) == 1 && raw(&rt, SP + 12, 2) == 10 && raw(&rt, 0x4320, 4) == h);
         mac_cpu_destroy(rt.cpu); }
+    /* MoveControl on a button item handle moves the item's box (size kept); SizeWindow on a dialog resizes it, and its port window with it. */
+    {   MacRuntime rt = fresh(); CHECK(get_new(&rt, 304) == 1); uint32_t d = raw(&rt, SP + 10, 4), type, ok;
+        CHECK(get_ditem(&rt, d, 1, &type, &ok) == 1); uint32_t w0 = raw(&rt, 0x4008 + 6, 2) - raw(&rt, 0x4008 + 2, 2);
+        mac_cpu_set(rt.cpu, MAC_A7, SP); wr(&rt, SP, 2, 30); wr(&rt, SP + 2, 2, 20); wr(&rt, SP + 4, 4, ok); CHECK(mac_controls_service(&rt, 0xa959) == 1 && a7(&rt) == SP + 8);
+        CHECK(get_ditem(&rt, d, 1, &type, &ok) == 1 && raw(&rt, 0x4008, 2) == 30 && raw(&rt, 0x4008 + 2, 2) == 20 && raw(&rt, 0x4008 + 6, 2) - raw(&rt, 0x4008 + 2, 2) == w0);
+        wr(&rt, SP, 2, 0); wr(&rt, SP + 2, 2, 90); wr(&rt, SP + 4, 2, 200); wr(&rt, SP + 6, 4, d); CHECK(trap(&rt, 0xa91d, SP) == 1 && a7(&rt) == SP + 10);
+        wr(&rt, SP, 2, 0); wr(&rt, SP + 2, 2, 90); wr(&rt, SP + 4, 2, 600); wr(&rt, SP + 6, 4, 0x6000); CHECK(trap(&rt, 0xa91d, SP) == 0);   /* not a dialog: the window service's */
+        mac_cpu_destroy(rt.cpu); }
+    {   MacRuntime rt = fresh(); CHECK(get_new(&rt, 304) == 1); uint32_t d = raw(&rt, SP + 10, 4);
+        wr(&rt, SP, 4, d); CHECK(trap(&rt, 0xa873, SP) == 1 && rt.window_count == 1); uint32_t port = mac_dlgwin_of_dialog(&rt, d);
+        wr(&rt, SP, 2, 0); wr(&rt, SP + 2, 2, 90); wr(&rt, SP + 4, 2, 200); wr(&rt, SP + 6, 4, d); CHECK(trap(&rt, 0xa91d, SP) == 1 && a7(&rt) == SP + 10);
+        MacWindowState *w = mac_window_find(&rt, port); CHECK(w && w->bounds[3] - w->bounds[1] == 200 && w->bounds[2] - w->bounds[0] == 90);
+        mac_cpu_destroy(rt.cpu); }
     /* Refusals: a missing CNTL, an item that names none, a CDEF the program lacks. Each halts and registers no window. */
     for (unsigned k = 0; k < 3; k++) {
         MacRuntime rt = fresh(); int rc = get_new(&rt, k == 0 ? 302 : k == 1 ? 303 : 305);

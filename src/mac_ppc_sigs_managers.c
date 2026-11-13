@@ -4,6 +4,7 @@
  * of the public API; see include/mac_ppc.h for the grammar. */
 #define FSP(name, sig, selector) {name, 0xaa52, sig "/d" selector}
 #define AE(name, sig, selector) {name, 0xa816, sig "/d" selector}
+#define LM(name, sig, selector) {name, 0xa9e7, sig "/w" selector}
 #define SF(name, sig, selector) {name, 0xa9ea, sig "/w" selector}
 
 static const MacPpcSig sigs[] = {
@@ -40,6 +41,13 @@ static const MacPpcSig sigs[] = {
     AE("AEDisposeDesc", "w:l", "0204"), AE("AECreateDesc", "w:llll", "0825"),
     SF("SFPutFile", "-:lllll", "0001"), SF("SFGetFile", "-:lllwlll", "0002"),
     SF("StandardPutFile", "-:lll", "0005"), SF("StandardGetFile", "-:lwll", "0006"),
+    /* List Manager (Pack0, mac_list.c): selector numbers as documented there, not verified against a reference. A Cell is a Point, passed in one register. */
+    LM("LActivate", "-:bl", "0000"), LM("LAddColumn", "w:wwl", "0004"), LM("LAddRow", "w:wwl", "0008"), LM("LAddToCell", "-:lwll", "000C"), LM("LAutoScroll", "-:l", "0010"),
+    LM("LCellSize", "-:ll", "0014"), LM("LClick", "b:lwl", "0018"), LM("LClrCell", "-:ll", "001C"), LM("LDelColumn", "-:wwl", "0020"), LM("LDelRow", "-:wwl", "0024"),
+    LM("LDispose", "-:l", "0028"), LM("LDoDraw", "-:bl", "002C"), LM("LDraw", "-:ll", "0030"), LM("LFind", "-:llll", "0034"), LM("LGetCell", "-:llll", "0038"),
+    LM("LGetSelect", "b:bll", "003C"), LM("LLastClick", "l:l", "0040"), LM("LNew", "l:lllwlbbbb", "0044"), LM("LNextCell", "b:bbll", "0048"), LM("LRect", "-:lll", "004C"),
+    LM("LScroll", "-:wwl", "0050"), LM("LSearch", "b:lwlll", "0054"), LM("LSetCell", "-:lwll", "0058"), LM("LSetSelect", "-:bll", "005C"), LM("LSize", "-:wwl", "0060"),
+    LM("LUpdate", "-:ll", "0064"),
     {"HMGetBalloons", 0xa830, "b:/w0003"},
 };
 

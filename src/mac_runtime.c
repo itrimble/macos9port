@@ -293,6 +293,7 @@ void mac_runtime_destroy(MacRuntime *rt) {
     mac_alert_destroy(rt);
     mac_cdef_destroy(rt);
     mac_mdef_destroy(rt);
+    mac_list_destroy(rt);
     mac_rescomp_destroy(rt);
     mac_gworld_destroy(rt);
     mac_scrap_destroy(rt);

@@ -74,3 +74,15 @@ has been drawn; the frame at the stop is blank apart from the menu bar rule. Not
 
 **Regression check.** Monkey Island (`Monkey Island.rsrc`) and Monkey Island 2 (`LeChuck's Revenge.rsrc`), probe copies in `~/os999-guest-software/from-mbp-20261111/`, 12 seconds of guest time each, before and
 after: identical instruction counts (32,611,248 and 37,422,033) and byte-identical frames at 0, 3, 6, 9 and 12 seconds. That is a headless probe comparison, not play.
+
+## The List Manager, and where each installer stops now
+
+The List Manager exists now (see the fourth run in `docs/QUICKTIME-RUNTIME-TRACES.md` for what it covers, its limits and what is unverified). Headless results from `ospi-runtime-probe`, scratch copies, nothing committed:
+
+| Installer | Before | After |
+| --- | --- | --- |
+| QuickTime 4.0.3 Installer | halt on `Pack0` `LNew` | draws the Welcome to QuickTime 4 window and waits for input; after a scripted Continue it halts on trap `$A83E` (`TEStyleNew`, styled TextEdit) |
+| WordPerfect 3.5e installer | halt on `Pack0` `LNew` | halts at 633 ms of guest time: `Font family 3 size 9 style 0 is not in the guest application's resources (no scaling or system font is provided)`. Family 3 is the system file's small UI face, which this runtime does not ship; the installer's own fork does not carry it. After `LNew` it also needed `SizeWindow` on a dialog (added) |
+
+For WordPerfect the stop is a font policy question, not a missing manager: the runtime refuses to substitute a face, and the faces it may bundle are limited by the clean-room rules. Nothing was drawn (the frame is blank).
+"Easy Install" / "Custom Install" were not reached in either installer. MI1 and MI2 are unchanged: identical instruction counts (32,611,248 and 37,422,033) and byte-identical frames at 0, 3, 6, 9 and 12 seconds against a build of the commit before the List Manager.

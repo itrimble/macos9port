@@ -12,6 +12,12 @@ void mac_controls_release(MacRuntime *rt, uint32_t win);
 int mac_dlgmgr_item_control(MacRuntime *rt, uint16_t op, uint32_t handle, uint32_t sp, unsigned args);
 uint32_t mac_control_record(MacRuntime *rt, uint32_t handle);    /* the record address of a live control handle, or 0 after halting */
 int mac_control_part(MacRuntime *rt, uint32_t p, int v, int h);   /* a local point -> part code, 0 for none (invisible, inactive or outside) */
+/* Entry points for the List Manager's scroll bars (mac_controls.c): the window that owns the controls of a window or open dialog pointer, a standard control made without a trap, its
+ * value/range/activation/rectangle set with a native redraw, and its removal. */
+MacWindowState *mac_controls_window(MacRuntime *rt, uint32_t ptr);
+int64_t mac_control_create(MacRuntime *rt, uint32_t win, const int16_t rect[4], unsigned proc, int16_t value, int16_t lo, int16_t hi);
+int mac_control_update(MacRuntime *rt, uint32_t h, const int16_t *rect, int16_t value, int16_t lo, int16_t hi, int hilite);
+void mac_control_destroy(MacRuntime *rt, uint32_t h);
 /* ControlRecord offsets (from my memory of Inside Macintosh: nextControl 0, contrlOwner 4, contrlRect 8, contrlVis 16, contrlHilite 17, contrlValue 18, contrlMin
  * 20, contrlMax 22, contrlDefProc 24, contrlData 28, contrlAction 32, contrlRfCon 36, contrlTitle 40 (Str255)). */
 enum { CTL_NEXT = 0, CTL_OWNER = 4, CTL_RECT = 8, CTL_VIS = 16, CTL_HILITE = 17, CTL_VALUE = 18, CTL_MIN = 20, CTL_MAX = 22, CTL_DEFPROC = 24, CTL_DATA = 28,

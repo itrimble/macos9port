@@ -292,3 +292,30 @@ int mac_controls_service(MacRuntime *rt, uint16_t op) {
     if (mac_cpu_halted(rt->cpu)) return -1;
     return mac_cdef_start(rt);
 }
+
+/* ---- entry points for the List Manager (mac_list_ui.c): standard scroll bars made, set and removed without a trap ---- */
+MacWindowState *mac_controls_window(MacRuntime *rt, uint32_t ptr) { return ctl_window(rt, ptr); }
+static int fin_none(MacRuntime *rt, MacCdefJob *j) { (void)rt; (void)j; return 0; }
+/* A standard control (procID 0, 1, 2 or 16) owned by `win` (a window or an open dialog) with a Pascal-empty title. rect is top, left, bottom, right. Returns the handle,
+ * 0 for no memory, -1 after halting. */
+int64_t mac_control_create(MacRuntime *rt, uint32_t win, const int16_t rect[4], unsigned proc, int16_t value, int16_t lo, int16_t hi) {
+    uint8_t r[8], title[2] = {0, 0};
+    for (int i = 0; i < 4; i++) { r[2 * i] = (uint8_t)((uint16_t)rect[i] >> 8); r[2 * i + 1] = (uint8_t)rect[i]; }
+    if (mac_cdef_job_new(rt, mac_cpu_get(rt->cpu, MAC_A7), 0, fin_none) < 0) return -1;
+    int64_t h = make_control(rt, win, r, title, 1, value, lo, hi, proc, 0);
+    if (h < 0) return -1;
+    return mac_cdef_start(rt) < 0 ? -1 : h;
+}
+/* Direct update of a standard control's value, range, activation (hilite 0 or 255) and rectangle, followed by a native redraw. 1, or 0 for a handle that is not live. */
+int mac_control_update(MacRuntime *rt, uint32_t h, const int16_t *rect, int16_t value, int16_t lo, int16_t hi, int hilite) {
+    uint32_t p = record(rt, h); if (!p) return 0;
+    MacWindowState *w = owner_of(rt, p); if (!w) return 0;
+    int draw = (w->visible || w->port_only == 2) && rd(rt, p + CTL_VIS, 1);
+    if (draw) mac_control_draw(rt, w, p, 1);
+    if (rect) for (int i = 0; i < 4; i++) wr(rt, p + CTL_RECT + 2u * (unsigned)i, 2, (uint16_t)rect[i]);
+    if (value < lo) value = lo; if (value > hi) value = hi;
+    wr(rt, p + CTL_VALUE, 2, (uint16_t)value); wr(rt, p + CTL_MIN, 2, (uint16_t)lo); wr(rt, p + CTL_MAX, 2, (uint16_t)hi); wr(rt, p + CTL_HILITE, 1, (uint32_t)hilite);
+    if (draw) mac_control_draw(rt, w, p, 0);
+    return 1;
+}
+void mac_control_destroy(MacRuntime *rt, uint32_t h) { if (record(rt, h)) dispose(rt, h); }

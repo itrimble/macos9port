@@ -9,6 +9,7 @@ uint32_t mac_dlgwin_create(MacRuntime *rt, int top, int left, int height, int wi
 int mac_dlgwin_available(const MacRuntime *rt);
 uint32_t mac_dlgwin_ensure(MacRuntime *rt, Dlg *d);
 uint32_t mac_dlgwin_of_dialog(MacRuntime *rt, uint32_t dialog);   /* the port window of an open dialog named by its DialogPtr, created on first need; 0 when it is not an open dialog (or after halting) */
+int mac_dlgwin_size(MacRuntime *rt, uint32_t window, int width, int height);   /* the dialog was resized: its port window follows; 1, or 0 after halting */
 void mac_dlgwin_shown(MacRuntime *rt, uint32_t window, int shown);   /* the dialog was shown or hidden: whether its controls draw */
 void mac_dlgwin_destroy(MacRuntime *rt, uint32_t window);
 int mac_dlgwin_owe_redraw(MacRuntime *rt, uint32_t window);   /* defer a control redraw requested inside a guest call; 1 if the window is a dialog's */

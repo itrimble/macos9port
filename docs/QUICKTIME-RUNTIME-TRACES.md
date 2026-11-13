@@ -148,3 +148,34 @@ engine ships its own `LDEF` resources, so a real one has to call guest list defi
 **Not verified.** No installer window was drawn: a frame at 1 s of guest time shows only the menu bar rule. `LNew` is the stop, so "Easy Install" / "Custom Install" were never seen
 and nothing was clicked. The meaning of the engine's globals comes from its code and from the public names of the low-memory variables; I did not decompile it. One `Read` returns `rfNumErr` (-51)
 just before the volume walk, which I did not explain. The title of a dialog is stored but not shown.
+
+## Fourth run — the List Manager, and the Welcome window — branch `qt/installer-volumes`
+
+The stop of the third run was `Pack0` `LNew`. The runtime now has a List Manager (`src/mac_list.c`, `src/mac_list_ui.c`, `src/mac_list_int.h`), written from the public interface in this project's own
+words: a ListHandle is a guest handle to an 88-byte ListRec in the public layout; the selectors (LNew, LDispose, LAddRow/LAddColumn/LDelRow/LDelColumn, LSetCell/LGetCell/LAddToCell/LClrCell,
+LSetSelect/LGetSelect, LDraw/LUpdate/LDoDraw, LClick, LScroll/LAutoScroll, LActivate, LSize, LCellSize, LSearch, LNextCell, LRect, LLastClick, LFind) are real; any other selector halts naming itself.
+The standard definition draws natively (this project's own look); a custom `LDEF` runs as guest 68K code through `mac_guest_call` (messages init, draw, hilite, close), with `lDataOffset` and
+`lDataLen` indexing a guest `cells` handle that is rebuilt after every change. Scroll bars are standard Control Manager controls outside the view rectangle. `tests/test_mac_list.c` drives all of this
+headless, including a hand-assembled LDEF, and checks the PowerPC bridge rows for every `L*` name against the 68K argument sizes.
+
+Stated differences and limits: the cell data is a host table (the ListRec's `cellArray` offset table does not exist, so a program that reads it directly is unsupported); the default cell height is 12 pixels when the
+program passes 0; scrolling redraws the visible cells instead of copying pixels; `LClick` handles one press (no drag selection, no scroll-bar thumb tracking, which halts by name; arrows and page areas step once);
+`LSearch` with the program's own search procedure halts, and the default match is exact bytes; `LActivate` toggles the scroll bars but does not change how selected cells look. The selector numbers other than
+`LNew` ($44, seen in a real call) follow an alphabetical stride of four from memory and are **not verified against a reference**; the argument orders likewise.
+
+Three more things the engine asked for after `LNew`, each with a test: `MoveControl` on a dialog's button, check box or radio button item (`src/mac_dlgtitle.c`, the item's rectangle moves like `SetDItem`);
+`SizeWindow` on a dialog (backdrop replaced, regions reset, the port window follows); and the earlier `NewControl`-on-a-dialog route now carries the list's scroll bar.
+
+**Result (headless, `ospi-runtime-probe`, QuickTime Installer from the MBP copy).** The engine now gets through its start-up, builds its main dialog with its custom list definition (`LDEF` 1040, init message run as guest code),
+and waits in `ModalDialog` (about 3.89 million instructions). The frame at 6 s of guest time (640 by 480, from `--frames`, not committed) shows the **Welcome to QuickTime 4** window: the engine's own styled
+heading and body text, a lavender panel, a bordered frame with a **Continue** button, a second (empty, rounded) button and a line of text in the small bitmap font, "This installation was created with Installer VISE from MindVision Software".
+It is not clean: a white rectangle covers part of the first line of the body text, and the empty rounded button has no label. A scripted click on Continue (`2.0 click 510 385`) loads the next dialog (`DLOG` 1021) and the run halts
+at **trap `$A83E` (`TEStyleNew`)**: styled TextEdit, the next missing subsystem (no style table, no `TEStyleInsert`/`TESetStyle`, no per-run fonts in the TextEdit service). "Easy Install" / "Custom Install" has not been
+reached, and was not seen.
+
+| | Before | After |
+| --- | --- | --- |
+| Stop | halt on `Pack0` `LNew` at 3,855,480 instructions | waits in `ModalDialog` on the Welcome window; after Continue, halt on `TEStyleNew` at about 3.89 million |
+| Drawn | menu bar rule only | the Welcome dialog (see above) |
+
+**Not verified.** The visual defects above are as seen in one headless frame, not explained. The Continue click is a scripted press through the probe, not a real mouse. Nothing past the Welcome screen has run.

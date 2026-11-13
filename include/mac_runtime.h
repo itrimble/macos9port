@@ -132,6 +132,7 @@ typedef struct {
     struct MacAlertState *alert; /* native alert dialog (mac_alert.c) */
     struct MacCdefJob *cdef;     /* control definition calls in flight (mac_cdef.c) */
     struct MacRescomp *rescomp;  /* compressed-resource expansion and load hooks in flight (mac_rescomp.c) */
+    struct MacLists *lists;      /* List Manager lists and the job in flight (mac_list.c) */
     struct MacMdef *mdef;        /* menu definition calls in flight (mac_mdef.c) */
     struct MacGWorlds *gworlds;  /* offscreen graphics worlds (mac_gworld.c) */
     struct MacRgnRec *rgn_rec;   /* OpenRgn..CloseRgn recording in progress (mac_regions.c) */
@@ -238,6 +239,8 @@ int mac_alert_service(MacRuntime *rt, uint16_t opcode); /* Alert, StopAlert, Not
 void mac_alert_destroy(MacRuntime *rt);
 void mac_cdef_destroy(MacRuntime *rt);
 void mac_mdef_destroy(MacRuntime *rt);
+int mac_list_service(MacRuntime *rt, uint16_t opcode);   /* List Manager, Pack0 $A9E7 (mac_list.c, mac_list_ui.c) */
+void mac_list_destroy(MacRuntime *rt);
 void mac_gworld_destroy(MacRuntime *rt);
 int mac_gworld_service(MacRuntime *rt, uint16_t opcode); /* QDOffscreen ($AB1D), mac_gworld.c */
 int mac_sysbeep_service(MacRuntime *rt, uint16_t opcode); /* SysBeep (mac_sysbeep.c) */

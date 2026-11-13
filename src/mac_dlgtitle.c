@@ -1,5 +1,7 @@
 #include "mac_dlg_int.h"
 #include "mac_handles.h"
+#include "mac_dlgwindow.h"
+#include <stdlib.h>
 #include <string.h>
 
 /* SetWTitle(theWindow, title: Str255) ($A91A) on a dialog. Our dialogs are drawn from their DITLs inside a plain box, with no title bar, so the text
@@ -19,4 +21,33 @@ int mac_dlg_set_title(MacRuntime *rt, Dlg *d, uint32_t src) {
     mac_cpu_write(rt->cpu, d->ptr + 138, 2, n * 8u);
     if (old) mac_handle_dispose(rt, old);
     return 1;
+}
+
+/* MoveControl(ctl, h, v) on the handle GetDItem gave for a button, check box or radio button item: the item's rectangle moves so its top left is (h, v) in the dialog's local
+ * coordinates, size unchanged, like SetDItem the next repaint of the dialog shows it (the dialog's state hash includes the box). A hidden item keeps its off-screen offset. */
+int mac_dlg_move_item(MacRuntime *rt, Dlg *d, unsigned k, int h, int v) {
+    MacDitlItem *it = &d->ditl.items[k];
+    int w = it->right - it->left, ht = it->bottom - it->top;
+    if (d->item_hidden[k] && h >= 8192) h -= 16384;
+    if (h < -16000 || h > 16000 || v < -16000 || v > 16000) { mac_cpu_halt(rt->cpu, "MoveControl moves a dialog item out of range."); return -1; }
+    it->left = (int16_t)h; it->top = (int16_t)v; it->right = (int16_t)(h + w); it->bottom = (int16_t)(v + ht);
+    return 0;
+}
+
+/* SizeWindow(theDialog, w, h, fUpdate) on a dialog: the box takes the new size (kept on the screen), the saved backdrop is replaced and the dialog is repainted at its next pass.
+ * A dialog's port window (the owner of its controls) is resized with it. */
+int mac_dlg_size(MacRuntime *rt, Dlg *d, int w, int h) {
+    if (d->modal || d->select_busy) { mac_cpu_halt(rt->cpu, "A dialog was resized while it was being used."); return -1; }
+    if (w < 1 || h < 1 || w > 640 || h > 480) { mac_cpu_halt(rt->cpu, "SizeWindow gives a dialog a size that does not fit the screen."); return -1; }
+    uint8_t *nb = malloc((size_t)w * (size_t)h);
+    if (!nb) { mac_cpu_halt(rt->cpu, "No memory for the resized dialog's backdrop."); return -1; }
+    MacPen pen; mac_pen_init(&pen, rt, d->left, d->top, d->width, d->height);
+    if (d->drawn) mac_pen_restore(&pen, d->backdrop);
+    free(d->backdrop); d->backdrop = nb; d->drawn = 0;
+    d->width = w; d->height = h;
+    if (d->top + h > 480) d->top = 480 - h;
+    if (d->left + w > 640) d->left = 640 - w;
+    mac_dlg_set_region(rt, d->region[0], d->top - 1, d->left - 1, d->top + h + 1, d->left + w + 1);
+    mac_dlg_set_region(rt, d->region[1], d->top, d->left, d->top + h, d->left + w);
+    return !d->port_window || mac_dlgwin_size(rt, d->port_window, w, h) ? 0 : -1;
 }

@@ -295,13 +295,13 @@ static int dlg_service(MacRuntime *rt, uint16_t opcode) {
     }
     switch (opcode) {
     case 0xa97c: case 0xa991: case 0xa981: case 0xa982: case 0xa983: case 0xa98d: case 0xa990: case 0xa98f: case 0xa97e: case 0xa98c: case 0xaa68:
-    case 0xa97d: case 0xa98e: case 0xa980: case 0xa97f: case 0xa984: case 0xa978: case 0xa979: case 0xa97a: case 0xa924: case 0xa873: case 0xabf1: case 0xa915: case 0xa916: case 0xa91b: case 0xa91f: case 0xa91a: case 0xa827: case 0xa828: break;
+    case 0xa97d: case 0xa98e: case 0xa980: case 0xa97f: case 0xa984: case 0xa978: case 0xa979: case 0xa97a: case 0xa924: case 0xa873: case 0xabf1: case 0xa915: case 0xa916: case 0xa91b: case 0xa91f: case 0xa91a: case 0xa91d: case 0xa827: case 0xa828: break;
     default: return 0;
     }
     if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1;
     uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7), pc = (mac_cpu_get(rt->cpu, MAC_PC) - 2) & mac_cpu_addr_mask(rt->cpu);
     if ((sp & 1) || !valid(rt, sp, 4)) return fail(rt, "Dialog Manager call has an invalid stack.");
-    int passthrough = opcode == 0xa924 || opcode == 0xa873 || opcode == 0xa915 || opcode == 0xa916 || opcode == 0xa91b || opcode == 0xa91f || opcode == 0xa91a;   /* these act only on our dialogs and otherwise belong to other services */
+    int passthrough = opcode == 0xa924 || opcode == 0xa873 || opcode == 0xa915 || opcode == 0xa916 || opcode == 0xa91b || opcode == 0xa91f || opcode == 0xa91a || opcode == 0xa91d;   /* these act only on our dialogs and otherwise belong to other services */
     if (!passthrough && opcode != FILTER_OP && rt->last_trap_pc >= 0x2000 && rt->last_trap_pc < 0x2000 + 4096 * 8) return fail(rt, "A Dialog Manager call reached through a patched trap vector is unsupported.");
     unsigned pop = 0;
     if (rt->dlgmgr && M(rt)->port && !find(rt, M(rt)->port)) M(rt)->port = 0;                       /* the dialog went away */
@@ -363,6 +363,7 @@ static int dlg_service(MacRuntime *rt, uint16_t opcode) {
         if (!d) return 0;
         if (mac_dlg_set_title(rt, d, rd(rt, sp, 4)) < 0) return -1;
         pop = 8; break; }
+    case 0xa91d: { if (!valid(rt, sp, 10)) return fail(rt, "SizeWindow stack is invalid."); Dlg *d = find(rt, rd(rt, sp + 6, 4)); if (!d) return 0; if (mac_dlg_size(rt, d, (int16_t)rd(rt, sp + 4, 2), (int16_t)rd(rt, sp + 2, 2)) < 0) return -1; pop = 10; break; }   /* SizeWindow(window, w, h, fUpdate) on a dialog */
     case 0xa91f: {                                    /* SelectWindow on a dialog: it is already the only active window, so this only marks it hilited */
         Dlg *d = find(rt, rd(rt, sp, 4));
         if (!d) return 0;
@@ -455,7 +456,6 @@ static int dlg_service(MacRuntime *rt, uint16_t opcode) {
     return 1;
 }
 
-/* The entry point: a call that completed may have repainted a dialog over its controls, so they are redrawn (see mac_dlgwin_flush). */
 /* BeginUpdate / EndUpdate(theDialog): a dialog pointer is not a window here, its port window is. The dialog's whole rectangle is its visible region, so the update
  * region is not consulted: the pair only brackets the program's drawing. Anything that is not an open dialog with a port window is left to the window service. */
 static int dialog_update(MacRuntime *rt, uint16_t opcode) {
@@ -491,7 +491,7 @@ int mac_dlgmgr_item_control(MacRuntime *rt, uint16_t op, uint32_t h, uint32_t sp
     int toggle = it->kind == MAC_ITEM_CHECK || it->kind == MAC_ITEM_RADIO;
     if (op == 0xa963 && toggle) d->value[k] = (int16_t)rd(rt, sp, 2) != 0;
     else if (op == 0xa960 && toggle) wr(rt, sp + args, 2, (uint16_t)d->value[k]);
-    else if (op == 0xa95d && (toggle || it->kind == MAC_ITEM_BUTTON)) it->disabled = (rd(rt, sp, 2) & 0xff) == 255;
+    else if (op == 0xa95d && (toggle || it->kind == MAC_ITEM_BUTTON)) it->disabled = (rd(rt, sp, 2) & 0xff) == 255; else if (op == 0xa959 && (toggle || it->kind == MAC_ITEM_BUTTON)) { if (mac_dlg_move_item(rt, d, k, (int16_t)rd(rt, sp + 2, 2), (int16_t)rd(rt, sp, 2)) < 0) return -1; }
     else { char m[112]; snprintf(m, sizeof m, "Control trap $%04x on a dialog item handle is unsupported.", op); return fail(rt, m); }
     mac_cpu_set(rt->cpu, MAC_A7, sp + args);
     if (op != 0xa960 && d->drawn) draw(rt, d);

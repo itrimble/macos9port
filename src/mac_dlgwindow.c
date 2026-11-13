@@ -118,3 +118,19 @@ int mac_dlgwin_owe_redraw(MacRuntime *rt, uint32_t window) {
     }
     return 0;
 }
+
+/* The dialog was resized: its port window follows (SizeWindow through the window service) and its visible region is the whole new content again. 1, or 0 after halting. */
+int mac_dlgwin_size(MacRuntime *rt, uint32_t window, int width, int height) {
+    uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7), f = scratch_frame(rt, sp, 0x10);
+    if (!f) return fail(rt, "A dialog window has no stack room to be resized."), 0;
+    wr(rt, f, 2, 0); wr(rt, f + 2, 2, (uint16_t)height); wr(rt, f + 4, 2, (uint16_t)width); wr(rt, f + 6, 4, window);
+    mac_cpu_set(rt->cpu, MAC_A7, f);
+    int rc = mac_window_service(rt, 0xa91d);
+    mac_cpu_set(rt->cpu, MAC_A7, sp);
+    if (rc < 0 || mac_cpu_halted(rt->cpu) || !mac_window_select(rt, window)) return 0;
+    uint32_t vis = rd(rt, rt->window.handles[2], 4);
+    size_t z = mac_cpu_ram_size(rt->cpu);
+    if (vis < 0x400 || vis + 10 > z) { fail(rt, "A dialog window's visible region is invalid."); return 0; }
+    wr(rt, vis, 2, 10); wr(rt, vis + 2, 2, 0); wr(rt, vis + 4, 2, 0); wr(rt, vis + 6, 2, (uint16_t)height); wr(rt, vis + 8, 2, (uint16_t)width);
+    return 1;
+}
