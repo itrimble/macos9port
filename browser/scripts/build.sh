@@ -5,8 +5,9 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 sh "$ROOT/browser/scripts/fetch-cef.sh"
 cmake -S "$ROOT/browser" -B "$ROOT/build/browser" -G Ninja -DCMAKE_BUILD_TYPE=Release -DPROJECT_ARCH=arm64
-cmake --build "$ROOT/build/browser" --target OS999Browser version_policy_test
+cmake --build "$ROOT/build/browser" --target OS999Browser version_policy_test decode_diag_test
 "$(find "$ROOT/build/browser" -name version_policy_test -type f -perm -u+x | head -1)"  # B06 policy tests
+"$(find "$ROOT/build/browser" -name decode_diag_test -type f -perm -u+x | head -1)"  # decoder diagnostics tests
 APP="$(find "$ROOT/build/browser" -name 'OS999Browser.app' -maxdepth 3 -type d | head -1)"
 # Sign with a stable identity when one exists. macOS keys privacy approvals
 # (Local Network access) to the signer; ad-hoc signatures change on every

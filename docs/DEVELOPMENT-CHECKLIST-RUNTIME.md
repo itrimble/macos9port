@@ -78,6 +78,11 @@ Add QuickDraw 3D/RAVE/OpenGL gates when an identified target requires them.
   playback alone is insufficient. Software decode fails this acceleration gate.
   Record codec/profile-specific support; do not infer support for every codec
   or resolution from one successful stream.
+  *Note, 12 November 2026 (no box ticked):* the standalone helper on Mac17,5 / macOS 27.2 /
+  CEF 156.0.26 reported `VideoToolboxVideoDecoder` with `kIsPlatformVideoDecoder true` for VP9 and
+  AV1 at 1920x1080, and chrome://gpu `Video Decode: Hardware accelerated`
+  ([record](DEMO-YOUTUBE-HWDECODE.md)). Not shown: playback inside the OS999 desktop window, GPU
+  composition into the desktop, audio heard, H.264, load/sync figures, other hosts.
 
 ### Classic QuickTime playback
 

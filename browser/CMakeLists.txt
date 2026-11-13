@@ -36,6 +36,12 @@ add_executable(version_policy_test tests/version_policy_test.cc src/version_poli
 target_include_directories(version_policy_test PRIVATE src)
 target_compile_features(version_policy_test PRIVATE cxx_std_17)
 
+# Decoder diagnostics parser/log tests (no CEF): run build/browser/decode_diag_test.
+add_executable(decode_diag_test tests/decode_diag_test.cc src/decode_diag.cc)
+target_include_directories(decode_diag_test PRIVATE src)
+target_compile_features(decode_diag_test PRIVATE cxx_std_17)
+target_compile_options(decode_diag_test PRIVATE -UNDEBUG)
+
 if(OS_LINUX)
   # Linux / Raspberry Pi: one executable (CEF sub-processes reuse it), CPU
   # frames through the desktop's shared-memory bridge.
@@ -46,7 +52,7 @@ if(OS_LINUX)
   set_source_files_properties(${OS999B_BRIDGE} PROPERTIES
     COMPILE_DEFINITIONS _DEFAULT_SOURCE COMPILE_OPTIONS "-std=c11;-Wno-error")
   add_executable(${CEF_TARGET}
-    src/os999_browser_linux.cc src/browser_app.cc src/browser_stats.cc
+    src/os999_browser_linux.cc src/browser_app.cc src/browser_stats.cc src/decode_diag.cc
     src/embed/embed_browser.cc src/embed/embed_host.cc src/embed/embed_frames_linux.cc
     src/version_guard.cc src/version_policy.cc src/web_apps.cc ${WEB_RESOURCES_CC}
     ${OS999B_BRIDGE})
@@ -81,6 +87,8 @@ set(OS999B_SRCS
   src/chrome_bar.mm
   src/browser_stats.h
   src/browser_stats.cc
+  src/decode_diag.cc
+  src/decode_diag_host.mm
   src/embed/embed_browser.cc
   src/embed/embed_browser.h
   src/embed/embed_frames.h

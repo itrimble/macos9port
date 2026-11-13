@@ -1,4 +1,5 @@
 #include "browser_app.h"
+#include "decode_diag.h"
 #include "web_apps.h"
 
 void BrowserApp::OnBeforeCommandLineProcessing(
@@ -21,8 +22,18 @@ void BrowserApp::OnBeforeCommandLineProcessing(
   if (!command_line->HasSwitch("use-mock-keychain"))
     command_line->AppendSwitch("use-mock-keychain");
 #endif
+  if (decode_diag::Enabled() && !command_line->HasSwitch("vmodule")) {
+    // Opt-in decoder diagnostics (OS999_DECODE_DIAG=1): verbose logging for the
+    // video decoder selection code only. Security switches are untouched.
+    // Sandboxed children cannot open the log file but inherit stderr.
+    if (!command_line->HasSwitch("enable-logging"))
+      command_line->AppendSwitchWithValue("enable-logging", "stderr");
+    command_line->AppendSwitchWithValue(
+        "vmodule", "*video_decoder*=2,*vt_video*=2,*video_toolbox*=2,*decoder_selector*=2,"
+                   "*gpu_video*=2,*media_log*=1,*video_decode*=2,*stream_parser*=1");
+  }
 #ifdef OS999_ENABLE_TEST_HOOKS
-  if (test_autoplay_ && !command_line->HasSwitch("autoplay-policy")) {
+  if (test_autoplay_&& !command_line->HasSwitch("autoplay-policy")) {
     // Measurement runs only (--os999-test): lets a scripted YouTube load start
     // audible playback without a click. Normal launches keep Chromium policy.
     command_line->AppendSwitchWithValue("autoplay-policy",

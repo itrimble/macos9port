@@ -11,6 +11,8 @@
 
 #include "browser_app.h"
 #include "browser_stats.h"
+#include "decode_diag.h"
+#import "decode_diag_host.h"
 #include "version_guard.h"
 #import "browser_view.h"
 #import "chrome_bar.h"
@@ -45,6 +47,7 @@ static id<NSObject> gActivity;
 }
 - (void)terminate:(id)sender {
   gQuitting = YES;
+  DecodeDiagFinish();  // before teardown: Chromium's shutdown watchdog can kill the process
   if (gWindows.count == 0) CefQuitMessageLoop();
   for (id w in [gWindows copy]) [w performSelector:@selector(chromeClose)];
 }
@@ -248,8 +251,8 @@ static id<NSObject> gActivity;
   [self layout];
 }
 - (void)browserConsole:(NSString*)msg {
-  if ([msg hasPrefix:@"OS999MEDIA "]) {
-    BrowserStats::Get().Log(std::string("media ") + msg.UTF8String);
+  if ([msg hasPrefix:@"OS999MEDIA "] || [msg hasPrefix:@"OS999GPU "]) {
+    DecodeDiagConsole(msg);
     return;
   }
   if (![msg hasPrefix:@"OS999VIDEO "]) return;
@@ -297,15 +300,8 @@ static id<NSObject> gActivity;
     if (_securityError.length) _status.text = _securityError;
     BrowserStats::Get().Log(std::string("frame ") + line.UTF8String);
   }
+  if (DecodeDiagWantsScrape()) [_view runScript:DecodeDiagScript()];
 #ifdef OS999_ENABLE_TEST_HOOKS
-  [_view runScript:
-      @"if(location.href.indexOf('chrome://media-internals')==0){"
-       "var ls=[].slice.call(document.querySelectorAll('*')).filter(function(e){"
-       "return e.children.length==0&&/^blob:/.test(e.textContent.trim());}),out=[];"
-       "ls.forEach(function(e){e.click();if(e.parentElement)e.parentElement.click();"
-       "var t=document.body.innerText,i=t.search(/kVideoDecoderName/);"
-       "out.push(i<0?'no-decoder-row':t.substring(Math.max(0,i-1500),i+1500));});"
-       "console.log('OS999MEDIA n='+ls.length+' '+out.join(' ||| ').replace(/\\n/g,' | '));}"];
   // Read the page's own <video> statistics (no page changes besides quality).
   // --os999-quality=hd2160,hd1440,... cycles every --os999-quality-step secs.
   NSArray* qs = gOpt.quality.empty() ? @[]
@@ -473,7 +469,10 @@ int main(int argc, char* argv[]) {
             if (gOpt.report_at > 0)
               dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)gOpt.report_at * NSEC_PER_SEC),
                              dispatch_get_main_queue(), ^{
-                               [[(OS999AppDelegate*)NSApp.delegate front]
+                               if (decode_diag::Enabled()) {  // keep the playing window alive
+                                 (void)[[OS999BrowserWindow alloc] initWithURL:@"chrome://media-internals"];
+                                 (void)[[OS999BrowserWindow alloc] initWithURL:@"chrome://gpu"];
+                               } else [[(OS999AppDelegate*)NSApp.delegate front]
                                    openDiagnostics:@"chrome://media-internals"];
                              });
             if (gOpt.exit_after > 0)
@@ -482,6 +481,7 @@ int main(int argc, char* argv[]) {
           });
         },
         gOpt.test));
+    DecodeDiagStart(support);
     if (!CefInitialize(args, settings, app.get(), nullptr)) return CefGetExitCode();
     if (gOpt.embed_fd >= 0) {
       // Embedded: no Dock icon, menu bar or windows; OS999 owns all of those.
