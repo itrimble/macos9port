@@ -30,18 +30,18 @@ static int create_fork(MacRuntime *rt, const char *name) {
     FileState *s = rt->file_state;
     if (!s) return -35;
     if (s->saves < 0) return -46;
-    if (strlen(name) + 5 > FILE_NAME_MAX) return -50;
+    if (strlen(name) + 5 >= DIRS_PATH_MAX || strlen(strrchr(name, '/') ? strrchr(name, '/') + 1 : name) + 5 > FILE_NAME_MAX) return -50;
     int kind = mac_files_classify(s, name);
     if (kind == FILE_DATA || kind == FILE_DATA_UNSUPPORTED || kind == FILE_SAVE_UNSUPPORTED) return -54;
     int error;
     if (kind == FILE_NONE && (error = mac_files_create_name(rt, name))) return error;
-    char sidecar[FILE_NAME_MAX + 1];
+    char sidecar[DIRS_PATH_MAX];
     snprintf(sidecar, sizeof sidecar, "%s.rsrc", name);
     int sk = mac_files_classify(s, sidecar);
     if (sk == FILE_NONE && (error = mac_files_create_name(rt, sidecar))) return error;
     if (sk != FILE_NONE && sk != FILE_SAVE) return -54;
     if (mac_files_open_by_name(s, sidecar)) return -49;                      /* already open: opWrErr */
-    int fd = openat(s->saves, sidecar, O_RDWR | O_NOFOLLOW | O_CLOEXEC);
+    int fd = mac_dirs_openat(s->saves, sidecar, O_RDWR, 0);
     if (fd < 0) return -36;
     struct stat st;
     if (fstat(fd, &st) || !S_ISREG(st.st_mode)) { close(fd); return -36; }
@@ -60,7 +60,8 @@ int mac_files_crf_service(MacRuntime *rt, uint16_t opcode) {
     uint32_t sp = mac_cpu_get(cpu, MAC_A7);
     if ((sp & 1) || !mac_files_valid(cpu, sp, 4)) { mac_cpu_halt(cpu, "CreateResFile stack is invalid."); return -1; }
     char name[256];
-    int error = mac_files_read_name(cpu, mac_cpu_read(cpu, sp, 4), name, sizeof name);
+    int error = mac_files_ptr_path(rt, mac_cpu_read(cpu, sp, 4), 0, 0, name);
+    if (!error && !name[0]) error = -50;
     if (!error) error = create_fork(rt, name);
     mac_cpu_write(cpu, 0xa60, 2, (uint16_t)(error == -48 ? -49 : error));    /* ResErr */
     mac_cpu_set(cpu, MAC_A7, sp + 4);

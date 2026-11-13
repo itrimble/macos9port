@@ -16,4 +16,5 @@ void mac_resource_chain_destroy(MacRuntime *rt);
 int mac_files_directory_fd(const MacRuntime *rt);
 /* Opens the resource file named by the Pascal string at guest `pointer` (the overlay's writable sidecar first, else the application volume's export). */
 int mac_resource_open_by_pointer(MacRuntime *rt,uint32_t pointer,int16_t *ref);
+int mac_resource_open_path(MacRuntime *rt,const char *path,int16_t *ref);   /* OpenResFile of a host-relative path ("dir/name") */
 #endif

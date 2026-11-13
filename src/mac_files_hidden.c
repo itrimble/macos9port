@@ -25,20 +25,20 @@ int mac_files_overlay_put_hidden(MacRuntime *rt, const char *name, const uint8_t
     if (!s || s->saves < 0) return 1;
     if (!hidden_name_ok(name)) return -50;
     if (size > s->max_bytes / 4 || volume_budget_spend(&s->disk, size)) return -34;
-    char stage[64];
+    char stage[DIRS_PATH_MAX + 16];
     if (mac_files_stage_name(name, stage, sizeof stage)) return -50;
-    int fd = openat(s->saves, stage, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
-    if (fd < 0 && errno == EEXIST && !unlinkat(s->saves, stage, 0))
-        fd = openat(s->saves, stage, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+    int fd = mac_dirs_openat(s->saves, stage, O_WRONLY | O_CREAT | O_EXCL, 0600);
+    if (fd < 0 && errno == EEXIST && !mac_dirs_unlink(s->saves, stage))
+        fd = mac_dirs_openat(s->saves, stage, O_WRONLY | O_CREAT | O_EXCL, 0600);
     if (fd < 0) return -36;
     size_t done = 0;
     while (done < size) {
         ssize_t put = write(fd, data + done, size - done);
         if (put < 0 && errno == EINTR) continue;
-        if (put <= 0) { close(fd); unlinkat(s->saves, stage, 0); return -36; }
+        if (put <= 0) { close(fd); mac_dirs_unlink(s->saves, stage); return -36; }
         done += (size_t)put;
     }
-    if (fsync(fd) || close(fd) || renameat(s->saves, stage, s->saves, name)) { unlinkat(s->saves, stage, 0); return -36; }
+    if (fsync(fd) || close(fd) || mac_dirs_rename(s->saves, stage, name)) { mac_dirs_unlink(s->saves, stage); return -36; }
     fsync(s->saves);
     return 0;
 }

@@ -59,7 +59,7 @@ enum {
     CMD_PASTE, /* CMD_COPY is the shared 422 id below; the terminal handles it when front. */
     CMD_TERM_CLEAR,
     CMD_TERM_THEME,
-    CMD_TERM_PASTE_DO, CMD_TAILSCALE, CMD_QUAKE3, CMD_QUAKE3_DEMO
+    CMD_TERM_PASTE_DO, CMD_TAILSCALE, CMD_QUAKE3, CMD_QUAKE3_DEMO, CMD_QUAKE_CHOOSE
 };
 /* Theme commands are separate from desktop picture commands. */
 enum { CMD_THEME_BASE = 200, CMD_THEME_LAST = 215, CMD_THEME_NEXT = 216 };

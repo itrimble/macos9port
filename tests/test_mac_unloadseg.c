@@ -54,7 +54,24 @@ static uint32_t odd(const MacRuntime *r) { return r->jump_table + 3; }
 static uint32_t off_by_entry(const MacRuntime *r) { return r->jump_table + 6; }
 static uint32_t past_end(const MacRuntime *r) { return r->jump_table + 18; }
 static uint32_t before_table(const MacRuntime *r) { return r->jump_table - 6; }
+/* A program may leave a jump-table entry unloaded but pointing somewhere else than CODE 0 said (a self-decompressing stub does, then re-enters the entry): LoadSeg
+ * works from the entry as it stands. Here entry 0 is made to name CODE 2 at offset 0 (`MOVEQ #11,D0; RTS`) and is then called. */
+static void redirected_entry(void) {
+    uint8_t b[TOTAL]; MacResourceFork fork; char err[240]; MacRuntime rt;
+    fixture(b);
+    CHECK(mac_resource_open(&fork, b, TOTAL, err, sizeof err) == 0 && mac_runtime_init(&rt, &fork, err, sizeof err) == 0);
+    MacCpu *c = rt.cpu;
+    mac_cpu_write(c, rt.jump_table, 2, 0); mac_cpu_write(c, rt.jump_table + 2, 2, 0x3f3c);
+    mac_cpu_write(c, rt.jump_table + 4, 2, 2); mac_cpu_write(c, rt.jump_table + 6, 2, 0xa9f0);   /* entry 0 now means segment 2, offset 0 */
+    uint32_t p = SETUP;
+    p = emit16(c, p, 0x4eb9); p = emit32(c, p, rt.jump_table + 2); emit16(c, p, 0xa9f4);   /* JSR entry0+2; ExitToShell */
+    mac_cpu_set(c, MAC_PC, SETUP);
+    mac_runtime_run(&rt, 200);
+    CHECK(rt.exited && (mac_cpu_get(c, MAC_D0) & 0xff) == 11);   /* the code of segment 2 ran (an ExitToShell then ended the run), where the old loader looped on the entry */
+    mac_runtime_destroy(&rt);
+}
 int main(void) {
+    redirected_entry();
     uint32_t d0, a, z; int halted, exited;
     uint32_t (*good[])(const MacRuntime *) = { entry0, entry1 };
     for (unsigned i = 0; i < 2; i++) {

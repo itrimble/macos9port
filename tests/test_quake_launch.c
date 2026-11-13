@@ -103,6 +103,41 @@ int main(int argc, char **args) {
         setenv("HOME", home, 1);                                    /* keep the legacy carry-over away from the real Mac home */
         CHECK(quake_data_import_demo(home, vol) == -1);
     }
+    { /* The MBP layout: a private .os999 home, the demo in the host's Downloads (one folder down) or Documents. */
+        static const char body[] = "os999 quake data fixture";
+        static const char sha[] = "475815b56dc74d836c50d50e2752a29de9f90be76eaa8ecbfc474dbd34553445";
+        off_t size = (off_t)(sizeof body - 1);
+        char host[512], vol[512], priv[512], inst[512], q3[512];
+        snprintf(host, sizeof host, "%s/mbp-home", root); mkdir(host, 0755);
+        snprintf(vol, sizeof vol, "%s/mbp-volume", root); mkdir(vol, 0755);
+        snprintf(priv, sizeof priv, "%s/.os999", vol); mkdir(priv, 0700);
+        const char *const sub[] = {"Downloads", "Documents", "Desktop"};
+        for (int i = 0; i < 3; i++) { snprintf(p, sizeof p, "%s/%s", host, sub[i]); mkdir(p, 0755); }
+        QuakeDirs d;
+        CHECK(quake_data_search_dirs(vol, host, &d) == 6);          /* volume Downloads, Documents, top + host x3 */
+        int saw_dl = 0, saw_docs = 0, saw_desk = 0;
+        for (int i = 0; i < d.n; i++) {
+            snprintf(p, sizeof p, "%s/Downloads", host); saw_dl |= !strcmp(d.p[i], p);
+            snprintf(p, sizeof p, "%s/Documents", host); saw_docs |= !strcmp(d.p[i], p);
+            snprintf(p, sizeof p, "%s/Desktop", host); saw_desk |= !strcmp(d.p[i], p);
+        }
+        CHECK(saw_dl && saw_docs && saw_desk);
+        snprintf(p, sizeof p, "%s/Downloads/Quake III Demo", host); mkdir(p, 0755);
+        snprintf(q3, sizeof q3, "%s/demoq3", p); mkdir(q3, 0755);
+        snprintf(p, sizeof p, "%s/pak0.pk3", q3); FILE *f = fopen(p, "wb"); fwrite(body, 1, size, f); fclose(f);
+        const char *ptr[QUAKE_DIRS_MAX + 1];
+        for (int i = 0; i < d.n; i++) ptr[i] = d.p[i];
+        snprintf(inst, sizeof inst, "%s/Library/Application Support/OS999/Quake3/demoq3/pak0.pk3", priv);
+        CHECK(quake_data_import(priv, ptr, d.n, size, sha) == 0);   /* found two levels down, installed in .os999 */
+        CHECK(quake_data_check(inst, size, sha));
+        unlink(inst);
+        snprintf(p, sizeof p, "%s/Downloads/Quake III Demo/demoq3/pak0.pk3", host); unlink(p);
+        snprintf(p, sizeof p, "%s/Documents/pak0.pk3", host); f = fopen(p, "wb"); fwrite(body, 1, size, f); fclose(f);
+        CHECK(quake_data_import(priv, ptr, d.n, size, sha) == 0);   /* host Documents */
+        unlink(inst);
+        setenv("HOME", host, 1);
+        CHECK(quake_data_import_demo(priv, vol) == -1);             /* real hash: the fixture is rejected via the same paths */
+    }
     { /* The full retail set: nine paks in the real table; here a two-file synthetic table with injected hashes. */
         static const char b0[] = "retail fixture pak0", b1[] = "retail fixture pak1 longer";
         const QuakePak fake[] = {

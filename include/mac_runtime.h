@@ -38,6 +38,7 @@ typedef struct {
     uint8_t state;
     uint8_t loaded_code; /* Execution addresses are published; never relocate/dispose. */
     uint8_t resource_changed;
+    uint8_t hooked; /* the load hooks (compressed-resource expansion, a program's OS trap $A0FC patch) have run for this load: mac_rescomp.c */
 } MacHandle;
 
 typedef struct {
@@ -130,6 +131,7 @@ typedef struct {
     uint32_t appfork_mark; /* file mark of the application resource fork opened for direct reads (mac_appfork.c) */
     struct MacAlertState *alert; /* native alert dialog (mac_alert.c) */
     struct MacCdefJob *cdef;     /* control definition calls in flight (mac_cdef.c) */
+    struct MacRescomp *rescomp;  /* compressed-resource expansion and load hooks in flight (mac_rescomp.c) */
     struct MacMdef *mdef;        /* menu definition calls in flight (mac_mdef.c) */
     struct MacGWorlds *gworlds;  /* offscreen graphics worlds (mac_gworld.c) */
     struct MacRgnRec *rgn_rec;   /* OpenRgn..CloseRgn recording in progress (mac_regions.c) */
@@ -289,12 +291,14 @@ int mac_files_disk(MacRuntime *rt, const char *volume_root);
 typedef struct { char name[256]; uint32_t type, creator; uint16_t flags; } MacFileEntry;
 /* Fill up to `max` entries and set *count. Returns 0, or a File Manager error (-35 no volume, -36 I/O, -50 too many). */
 int mac_files_entries(MacRuntime *rt, MacFileEntry *out, unsigned max, unsigned *count);
+void mac_files_set_app(MacRuntime *rt, const char *name);   /* the application file the runtime was started from, reported by PBGetFCBInfo for its resource file */
 void mac_files_destroy(MacRuntime *rt);
 /* Mount a distinct writable save directory as an overlay on the data volume,
  * bounded by file-count and byte quotas. Without it the volume is read-only. */
 int mac_files_writable(MacRuntime *rt, const char *directory, unsigned max_files, uint64_t max_bytes);
 int mac_volume_blocks(int directory_fd, uint32_t *blocks);
 int mac_random_service(MacRuntime *rt, uint16_t opcode);
+int mac_process_service(MacRuntime *rt, uint16_t opcode); /* OSDispatch $A88F: a one-process Process Manager (mac_process.c) */
 int mac_text_state_service(MacRuntime *rt, uint16_t opcode);
 int mac_text_service(MacRuntime *rt, uint16_t opcode);
 int mac_stdprocs_service(MacRuntime *rt, uint16_t opcode);

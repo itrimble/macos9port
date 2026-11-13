@@ -263,15 +263,20 @@ static int garden_network_allowed(const char *url, void *context) {
 static const atomic_bool *g_fetch_cancel;   /* set by the Install Classic Apps worker; one install at a time */
 void install_fetch_set_cancel(const atomic_bool *cancel) { g_fetch_cancel = cancel; }
 
-static int secure_fetch(const char *url, const char *dest, size_t limit, long timeout, const char *referer) {
+static void (*g_fetch_progress)(void *, uint64_t, uint64_t);
+static void *g_fetch_progress_ctx;
+void install_fetch_set_progress(void (*cb)(void *, uint64_t, uint64_t), void *ctx) { g_fetch_progress = cb; g_fetch_progress_ctx = ctx; }
+
+static int secure_fetch(const char *url, const char *dest, size_t limit, long timeout, const char *referer, int report) {
     NetPolicy policy = {.max_bytes = limit, .timeout_ms = timeout,
-                        .allow_url = garden_network_allowed, .referer = referer, .cancel = g_fetch_cancel};
+                        .allow_url = garden_network_allowed, .referer = referer, .cancel = g_fetch_cancel,
+                        .progress = report ? g_fetch_progress : NULL, .progress_ctx = g_fetch_progress_ctx};
     if (net_init() != 0) return -1;
     return net_download(url, dest, &policy).status == NET_OK ? 0 : -1;
 }
 
 static int curl_archive(const char *page, const char *url, const char *dest) {
-    return secure_fetch(url, dest, 200000000, 180000, page);
+    return secure_fetch(url, dest, 200000000, 180000, page, 1);
 }
 
 static int fetch_archive(const char *page, const char *file_url, const char *dest) {
@@ -289,7 +294,7 @@ static int fetch_archive(const char *page, const char *file_url, const char *des
 }
 
 int install_fetch_page(const char *url, const char *dest, long timeout_ms) {
-    return secure_fetch(url, dest, 2000000, timeout_ms, NULL);
+    return secure_fetch(url, dest, 2000000, timeout_ms, NULL, 0);
 }
 int install_fetch_archive(const char *page, const char *file_url, const char *dest) {
     return fetch_archive(page, file_url, dest);
@@ -355,7 +360,7 @@ int install_garden(const char *root, const char *page_url, char *created_rel, si
     }
     close(pfd);
     long page_timeout = cfg.timeout_sec > 0 ? (long)cfg.timeout_sec * 1000L : 60000L;
-    if (secure_fetch(page_url, page_tmp, 2000000, page_timeout, NULL) != 0) {
+    if (secure_fetch(page_url, page_tmp, 2000000, page_timeout, NULL, 0) != 0) {
         unlink(page_tmp);
         set_err(err, err_n, "Could not open that Macintosh Garden page.");
         return -1;

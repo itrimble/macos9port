@@ -1,130 +1,282 @@
-/* Folders in the FSSpec calls: vRefNum -2 (the System volume), Mac Roman folder names, FSpDirCreate handing out a folder ID derived from the name, and files whose
- * parent is such an ID living under a "d<id>-" prefix in the one flat save namespace, apart from a root file of the same name. Headless; no SDL. */
+/* The hierarchical File Manager over real host directories: directory IDs, PBGetCatInfo enumeration, DirCreate, partial paths, working directories, HFS file
+ * calls with directory IDs, moves and renames, sidecars per directory, containment (traversal, symbolic links) and the overlay quotas. Headless; no SDL.
+ * Runs against a data tree (read-only, "Textures/Wood", "Textures/Stone", ...) and a save overlay in temporary directories. */
 #include "fsspec_test.h"
 #include "mac_files_int.h"
 
-static int dir_create(MacRuntime *rt, uint32_t spec, uint32_t out) { w32(rt, S, out); w16(rt, S + 4, 0); w32(rt, S + 6, spec); return dispatch(rt, 5, 10); }
-static int save_bytes(MacRuntime *rt, int ref, const char *bytes, uint32_t count) { memcpy(mac_cpu_ram(rt->cpu) + DATA, bytes, count); return pb_call(rt, 0xa003, ref, 1, 0, count); }
+enum { NAMEA = 0x1a00, NAMEB = 0x1b00 };
+static void clear_pb(MacRuntime *rt) { memset(mac_cpu_ram(rt->cpu) + PB, 0, 128); mac_cpu_set(rt->cpu, MAC_A0, PB); }
+static int pbcall(MacRuntime *rt, uint16_t op, unsigned selector) {
+    mac_cpu_set(rt->cpu, MAC_A0, PB); mac_cpu_set(rt->cpu, MAC_D0, selector);
+    CHECK(mac_file_service(rt, op) == 1);
+    return (int16_t)mac_cpu_read(rt->cpu, PB + 16, 2);
+}
+/* An HFS call with a name, volume and directory ID. */
+static int hcall(MacRuntime *rt, uint16_t op, unsigned selector, const char *name, int vref, uint32_t dir) {
+    clear_pb(rt);
+    if (name) { pstr(rt, NAMEA, name); w32(rt, PB + 18, NAMEA); }
+    w16(rt, PB + 22, (uint16_t)vref); w32(rt, PB + 48, dir);
+    return pbcall(rt, op, selector);
+}
+static int catinfo(MacRuntime *rt, const char *name, int vref, uint32_t dir, int index) {
+    clear_pb(rt);
+    memset(mac_cpu_ram(rt->cpu) + NAMEA, 0, 48);
+    if (name) pstr(rt, NAMEA, name);
+    w32(rt, PB + 18, NAMEA); w16(rt, PB + 22, (uint16_t)vref); w16(rt, PB + 28, (uint16_t)index); w32(rt, PB + 48, dir);
+    int e_ = pbcall(rt, 0xa260, 9); if (getenv("DBG")) fprintf(stderr, "catinfo(%s,%d,%u,%d)=%d\n", name ? name : "(nil)", vref, dir, index, e_); return e_;
+}
+static int is_dir_record(MacRuntime *rt) { return (mac_cpu_ram(rt->cpu)[PB + 30] & 0x10) != 0; }
+static int out_name_is(MacRuntime *rt, const char *name) {
+    const uint8_t *p = mac_cpu_ram(rt->cpu) + NAMEA;
+    return p[0] == strlen(name) && !memcmp(p + 1, name, strlen(name));
+}
+static int dir_create(MacRuntime *rt, const char *name, int vref, uint32_t parent, uint32_t *id) {
+    int e = hcall(rt, 0xa260, 6, name, vref, parent);
+    *id = mac_cpu_read(rt->cpu, PB + 48, 4);
+    return e;
+}
+static int hopen(MacRuntime *rt, const char *name, uint32_t dir, int perm) {
+    clear_pb(rt); pstr(rt, NAMEA, name); w32(rt, PB + 18, NAMEA); w16(rt, PB + 22, 0); mac_cpu_ram(rt->cpu)[PB + 27] = (uint8_t)perm; w32(rt, PB + 48, dir);
+    int e = pbcall(rt, 0xa200, 0);
+    return e ? e : (int16_t)mac_cpu_read(rt->cpu, PB + 24, 2);
+}
+static int write_close(MacRuntime *rt, int ref, const char *bytes) {
+    memcpy(mac_cpu_ram(rt->cpu) + DATA, bytes, strlen(bytes));
+    int e = pb_call(rt, 0xa003, ref, 1, 0, (uint32_t)strlen(bytes));
+    int c = pb_call(rt, 0xa001, ref, 0, 0, 0);
+    return e ? e : c;
+}
+static void mkdirs(const char *root, const char *rel) {
+    char path[1024], cmd[1100];
+    snprintf(path, sizeof path, "%s/%s", root, rel);
+    snprintf(cmd, sizeof cmd, "mkdir -p '%s'", path);
+    CHECK(system(cmd) == 0);
+}
+static int cat_find(MacRuntime *rt, uint32_t dir, const char *wanted) {   /* index of `wanted` in the directory's enumeration, or 0 */
+    for (int i = 1; i < 200; i++) {
+        if (catinfo(rt, NULL, 0, dir, i) != 0) return 0;
+        if (out_name_is(rt, wanted)) return i;
+    }
+    return 0;
+}
+
+static char g_outside[1024];
+static void session(const char *data, const char *saves, uint32_t *tex_id, uint32_t *wood_id) {
+    MacRuntime rt = fresh();
+    CHECK(mac_files_root(&rt, data) == 0 && mac_files_writable(&rt, saves, 6, 4096) == 0);
+
+    /* The root: directory 2, parent 1, volume name; index < 0 names the directory itself. */
+    CHECK(catinfo(&rt, NULL, 0, 2, -1) == 0 && is_dir_record(&rt) && mac_cpu_read(rt.cpu, PB + 48, 4) == 2 && mac_cpu_read(rt.cpu, PB + 100, 4) == 1 && out_name_is(&rt, "OS999 HD"));
+    CHECK(mac_cpu_read(rt.cpu, PB + 52, 2) == 4);   /* Textures, Hostile, readme, Game Data: sidecar readme.rsrc is a fork, not an entry */
+
+    /* A subfolder beside the application is visible: by name, with its directory ID, valence and parent. */
+    CHECK(catinfo(&rt, "Textures", 0, 2, 0) == 0 && is_dir_record(&rt));
+    *tex_id = mac_cpu_read(rt.cpu, PB + 48, 4);
+    CHECK(*tex_id > 2 && mac_cpu_read(rt.cpu, PB + 100, 4) == 2 && mac_cpu_read(rt.cpu, PB + 52, 2) == 4);
+    CHECK(catinfo(&rt, "textures", 0, 2, 0) == 0 && mac_cpu_read(rt.cpu, PB + 48, 4) == *tex_id);   /* HFS names ignore case; the host spelling wins */
+    CHECK(catinfo(&rt, NULL, 0, *tex_id, -1) == 0 && out_name_is(&rt, "Textures") && mac_cpu_read(rt.cpu, PB + 100, 4) == 2);
+
+    /* Index enumeration, files and directories alike, in name order; past the end is fnfErr. */
+    CHECK(catinfo(&rt, NULL, 0, *tex_id, 1) == 0 && out_name_is(&rt, "Marble.pct") && !is_dir_record(&rt) && mac_cpu_read(rt.cpu, PB + 54, 4) == 6);
+    CHECK(mac_cpu_read(rt.cpu, PB + 100, 4) == *tex_id);   /* a file's ioFlParID is its directory */
+    CHECK(catinfo(&rt, NULL, 0, *tex_id, 2) == 0 && out_name_is(&rt, "Oak.pct"));
+    CHECK(catinfo(&rt, NULL, 0, *tex_id, 3) == 0 && out_name_is(&rt, "Stone") && is_dir_record(&rt));
+    CHECK(catinfo(&rt, NULL, 0, *tex_id, 4) == 0 && out_name_is(&rt, "Wood") && is_dir_record(&rt));
+    *wood_id = mac_cpu_read(rt.cpu, PB + 48, 4);
+    CHECK(catinfo(&rt, NULL, 0, *tex_id, 5) == -43);
+    CHECK(catinfo(&rt, NULL, 0, 99999, 1) == -120);                     /* an ID never handed out */
+    CHECK(cat_find(&rt, 2, "readme.rsrc") == 0 && cat_find(&rt, 2, "readme") != 0);   /* the sidecar is not an entry of its own */
+
+    /* Nested: a second level. Partial paths with colons, from the root and from a directory; "::" goes up. */
+    CHECK(catinfo(&rt, ":Textures:Wood:Birch.pct", 0, 2, 0) == 0 && !is_dir_record(&rt) && mac_cpu_read(rt.cpu, PB + 54, 4) == 5 && mac_cpu_read(rt.cpu, PB + 100, 4) == *wood_id);
+    CHECK(catinfo(&rt, "Wood:Birch.pct", 0, *tex_id, 0) == 0 && mac_cpu_read(rt.cpu, PB + 54, 4) == 5);
+    CHECK(catinfo(&rt, "OS999 HD:Textures:Wood", 77, 2, 0) == 0 && mac_cpu_read(rt.cpu, PB + 48, 4) == *wood_id);
+    CHECK(catinfo(&rt, "::Oak.pct", 0, *wood_id, 0) == 0 && mac_cpu_read(rt.cpu, PB + 54, 4) == 3);
+    CHECK(catinfo(&rt, ":Nope:x", 0, 2, 0) == -120 && catinfo(&rt, ":Textures:Nope", 0, 2, 0) == -43);
+    CHECK(catinfo(&rt, "Elsewhere:x", 0, 2, 0) == -35);               /* neither this volume nor a folder here */
+    CHECK(catinfo(&rt, ":Textures:Oak.pct:", 0, 2, 0) == -120);       /* a trailing colon asks for a directory */
+
+    /* HGetFInfo and HOpen take the directory ID; plain GetFInfo index counts files only. */
+    CHECK(hcall(&rt, 0xa20c, 0, "Birch.pct", 0, *wood_id) == 0 && mac_cpu_read(rt.cpu, PB + 54, 4) == 5);
+    CHECK(hcall(&rt, 0xa20c, 0, "Birch.pct", 0, *tex_id) == -43);
+    clear_pb(&rt); w32(&rt, PB + 18, NAMEA); mac_cpu_ram(rt.cpu)[NAMEA] = 0; w16(&rt, PB + 28, 2); w32(&rt, PB + 48, *tex_id);
+    CHECK(pbcall(&rt, 0xa20c, 0) == 0 && out_name_is(&rt, "Oak.pct"));
+    clear_pb(&rt); w16(&rt, PB + 28, 3); w32(&rt, PB + 18, NAMEA); w32(&rt, PB + 48, *tex_id);
+    CHECK(pbcall(&rt, 0xa20c, 0) == -43);                              /* only two files here: Stone and Wood are directories */
+    int r = hopen(&rt, "Birch.pct", *wood_id, 0);
+    CHECK(r >= 128);
+    /* PBGetFCBInfo: the name and the parent directory ID of an open file, by reference and by index; the application's own resource file is the file it started from. */
+    clear_pb(&rt); memset(mac_cpu_ram(rt.cpu) + NAMEA, 0, 48); w32(&rt, PB + 18, NAMEA); w16(&rt, PB + 24, (uint16_t)r);
+    CHECK(pbcall(&rt, 0xa260, 8) == 0 && out_name_is(&rt, "Birch.pct") && mac_cpu_read(rt.cpu, PB + 58, 4) == *wood_id && mac_cpu_read(rt.cpu, PB + 40, 4) == 5);
+    clear_pb(&rt); memset(mac_cpu_ram(rt.cpu) + NAMEA, 0, 48); w32(&rt, PB + 18, NAMEA); w16(&rt, PB + 28, 1);
+    CHECK(pbcall(&rt, 0xa260, 8) == 0 && (int16_t)mac_cpu_read(rt.cpu, PB + 24, 2) == r && out_name_is(&rt, "Birch.pct"));
+    mac_files_set_app(&rt, "Some App");
+    clear_pb(&rt); memset(mac_cpu_ram(rt.cpu) + NAMEA, 0, 48); w32(&rt, PB + 18, NAMEA); w16(&rt, PB + 24, 1);
+    CHECK(pbcall(&rt, 0xa260, 8) == 0 && out_name_is(&rt, "Some App") && mac_cpu_read(rt.cpu, PB + 58, 4) == 2);
+    memset(mac_cpu_ram(rt.cpu) + DATA, 0, 8);
+    CHECK(pb_call(&rt, 0xa002, r, 1, 0, 5) == 0 && !memcmp(mac_cpu_ram(rt.cpu) + DATA, "birch", 5));
+    CHECK(pb_call(&rt, 0xa001, r, 0, 0, 0) == 0);
+    CHECK(hopen(&rt, "Birch.pct", *tex_id, 0) == -43);
+    CHECK(hopen(&rt, "Wood", *tex_id, 0) == -50);                      /* a directory is not a file */
+    CHECK(hopen(&rt, "Birch.pct", 424242, 0) == -120);
+
+    /* Per-directory sidecars: HOpenRF opens Name.rsrc beside the file, here in a subfolder. */
+    clear_pb(&rt); pstr(&rt, NAMEA, "Oak.pct"); w32(&rt, PB + 18, NAMEA); w32(&rt, PB + 48, *tex_id);
+    CHECK(pbcall(&rt, 0xa20a, 0) == 0);
+    int fork = (int16_t)mac_cpu_read(rt.cpu, PB + 24, 2);
+    memset(mac_cpu_ram(rt.cpu) + DATA, 0, 4);
+    CHECK(pb_call(&rt, 0xa002, fork, 1, 0, 4) == 0 && !memcmp(mac_cpu_ram(rt.cpu) + DATA, "FORK", 4));
+    CHECK(pb_call(&rt, 0xa001, fork, 0, 0, 0) == 0);
+
+    /* Create, write, delete in a data-backed subfolder: the overlay grows the folder next to the read-only one. */
+    CHECK(hcall(&rt, 0xa208, 0, "New.txt", 0, *wood_id) == 0);
+    r = hopen(&rt, "New.txt", *wood_id, 2);
+    CHECK(r >= 128 && write_close(&rt, r, "hello") == 0);
+    CHECK(host_size(saves, "Textures/Wood/New.txt") == 5 && host_size(data, "Textures/Wood/New.txt") < 0);
+    CHECK(cat_find(&rt, *wood_id, "Birch.pct") == 1 && cat_find(&rt, *wood_id, "New.txt") == 2);   /* merged view of data and overlay */
+    CHECK(hcall(&rt, 0xa208, 0, "New.txt", 0, *wood_id) == -48);
+    CHECK(hcall(&rt, 0xa209, 0, "Birch.pct", 0, *wood_id) == -45);      /* application data is locked */
+    CHECK(hcall(&rt, 0xa209, 0, "New.txt", 0, *wood_id) == 0 && host_size(saves, "Textures/Wood/New.txt") < 0);
+
+    /* DirCreate: nested, with IDs; duplicates; a missing parent; a name taken by a file. */
+    uint32_t mine, inner;
+    CHECK(dir_create(&rt, "Mine", 0, 2, &mine) == 0 && mine > 2);
+    CHECK(dir_create(&rt, "Inner", 0, mine, &inner) == 0 && inner != mine && host_size(saves, "Mine/Inner") >= 0);
+    CHECK(dir_create(&rt, "Mine", 0, 2, &inner) == -48 && dir_create(&rt, "readme", 0, 2, &inner) == -48);
+    CHECK(dir_create(&rt, "X", 0, 31337, &inner) == -120);
+    CHECK(dir_create(&rt, ":Mine:Inner:Deep", 0, 2, &inner) == 0);      /* a partial path as the name */
+    CHECK(dir_create(&rt, ":Textures:Wood:Burl", 0, 2, &inner) == 0 && host_size(saves, "Textures/Wood/Burl") >= 0);   /* a folder that exists only in the data */
+    CHECK(hcall(&rt, 0xa208, 0, "Deep.txt", 0, inner) == 0 && host_size(saves, "Textures/Wood/Burl/Deep.txt") == 0);
+    CHECK(hcall(&rt, 0xa209, 0, ":Textures:Wood:Burl", 0, 2) == -47);   /* not empty */
+    CHECK(hcall(&rt, 0xa209, 0, ":Textures:Wood:Burl:Deep.txt", 0, 2) == 0);
+    CHECK(hcall(&rt, 0xa209, 0, ":Textures:Wood:Burl", 0, 2) == 0 && host_size(saves, "Textures/Wood/Burl") < 0);
+    CHECK(hcall(&rt, 0xa209, 0, "Textures", 0, 2) == -47);              /* a folder that holds anything cannot go */
+
+    /* Working directories and the default directory. */
+    CHECK(hcall(&rt, 0xa260, 1, NULL, 0, *wood_id) == 0);
+    int wd = (int16_t)mac_cpu_read(rt.cpu, PB + 22, 2);
+    CHECK(wd <= -100 && wd > -200);
+    CHECK(catinfo(&rt, "Birch.pct", wd, 0, 0) == 0 && mac_cpu_read(rt.cpu, PB + 54, 4) == 5);   /* a bare name in the working directory */
+    clear_pb(&rt); w16(&rt, PB + 22, (uint16_t)wd); CHECK(pbcall(&rt, 0xa260, 7) == 0 && mac_cpu_read(rt.cpu, PB + 48, 4) == *wood_id);
+    CHECK(hcall(&rt, 0xa260, 2, NULL, wd, 0) == 0);
+    CHECK(catinfo(&rt, "Birch.pct", wd, 0, 0) == -35);                   /* closed */
+    CHECK(hcall(&rt, 0xa260, 1, NULL, 0, 31337) == -120);
+    CHECK(hcall(&rt, 0xa215, 0, NULL, 0, *tex_id) == 0);                 /* PBHSetVol: bare names now mean the Textures folder */
+    clear_pb(&rt); CHECK(pbcall(&rt, 0xa214, 0) == 0 && mac_cpu_read(rt.cpu, PB + 48, 4) == *tex_id);
+    clear_pb(&rt); pstr(&rt, NAMEA, "Oak.pct"); w32(&rt, PB + 18, NAMEA); w16(&rt, PB + 28, 0);
+    CHECK(pbcall(&rt, 0xa00c, 0) == 0 && mac_cpu_read(rt.cpu, PB + 54, 4) == 3);   /* plain PBGetFInfo uses the default directory */
+    CHECK(hcall(&rt, 0xa215, 0, NULL, 0, 2) == 0);
+
+    /* Rename and move inside the overlay; the application data cannot move. */
+    CHECK(hcall(&rt, 0xa208, 0, "Note", 0, mine) == 0);
+    clear_pb(&rt); pstr(&rt, NAMEA, "Note"); pstr(&rt, NAMEB, "Memo"); w32(&rt, PB + 18, NAMEA); w32(&rt, PB + 28, NAMEB); w32(&rt, PB + 48, mine);
+    CHECK(pbcall(&rt, 0xa20b, 0) == 0 && host_size(saves, "Mine/Memo") == 0 && host_size(saves, "Mine/Note") < 0);
+    clear_pb(&rt); pstr(&rt, NAMEA, "Memo"); pstr(&rt, NAMEB, "Inner"); w32(&rt, PB + 18, NAMEA); w32(&rt, PB + 28, NAMEB); w32(&rt, PB + 36, mine); w32(&rt, PB + 48, mine);
+    CHECK(pbcall(&rt, 0xa260, 5) == 0 && host_size(saves, "Mine/Inner/Memo") == 0 && host_size(saves, "Mine/Memo") < 0);   /* CatMove into a sub-directory by name */
+    clear_pb(&rt); pstr(&rt, NAMEA, "Oak.pct"); pstr(&rt, NAMEB, "Mine"); w32(&rt, PB + 18, NAMEA); w32(&rt, PB + 28, NAMEB); w32(&rt, PB + 36, 2); w32(&rt, PB + 48, *tex_id);
+    CHECK(pbcall(&rt, 0xa260, 5) == -45);
+    clear_pb(&rt); pstr(&rt, NAMEA, "Mine"); pstr(&rt, NAMEB, "Inner"); w32(&rt, PB + 18, NAMEA); w32(&rt, PB + 28, NAMEB); w32(&rt, PB + 36, mine); w32(&rt, PB + 48, 2);
+    CHECK(pbcall(&rt, 0xa260, 5) == -48);                                // a directory cannot move into itself
+
+    /* Containment: no spelling gets out of the volume. */
+    static const char *hostile[] = {":..:x", "::..:x", "..", "../x", ":Textures:..:..:x", "a/b", ":Textures/Wood:x", "\\x", ":Textures:Wood:.hidden", ":.:x"};
+    for (unsigned i = 0; i < sizeof hostile / sizeof *hostile; i++) {
+        int e = catinfo(&rt, hostile[i], 0, 2, 0);
+        CHECK(e == -50 || e == -37 || e == -120 || e == -43 || e == -35);
+        e = hcall(&rt, 0xa208, 0, hostile[i], 0, 2);
+        CHECK(e != 0);
+        e = hcall(&rt, 0xa260, 6, hostile[i], 0, 2);
+        CHECK(e != 0);
+    }
+    CHECK(catinfo(&rt, "::x", 0, 2, 0) == -120);                       /* above the root */
+
+    /* Symbolic links never lead out: not as a middle component, not as the last one, in the data or in the overlay. */
+    char outside_file[1100];
+    CHECK(catinfo(&rt, ":Hostile:EscDir:secret", 0, 2, 0) != 0);
+    CHECK(catinfo(&rt, ":Hostile:EscDir", 0, 2, 0) == -43);           // a link is neither file nor directory
+    CHECK(catinfo(&rt, ":Hostile:EscFile", 0, 2, 0) == -43);
+    CHECK(hopen(&rt, ":Hostile:EscFile", 2, 0) < 0 && hopen(&rt, ":Hostile:EscDir:secret", 2, 0) < 0);
+    CHECK(hcall(&rt, 0xa208, 0, ":Hostile:EscDir:evil", 0, 2) != 0);
+    CHECK(hcall(&rt, 0xa260, 6, ":Hostile:EscDir:evil", 0, 2) != 0);
+    CHECK(hcall(&rt, 0xa209, 0, ":Hostile:EscDir:secret", 0, 2) != 0);
+    CHECK(hcall(&rt, 0xa209, 0, ":Hostile:EscFile", 0, 2) != 0);
+    snprintf(outside_file, sizeof outside_file, "%s/secret", g_outside);
+    CHECK(host_size(g_outside, "secret") == 6 && host_size(g_outside, "evil") < 0);
+    {   char link[1100]; snprintf(link, sizeof link, "%s/OverlayEsc", saves); CHECK(symlink(g_outside, link) == 0);
+        CHECK(catinfo(&rt, ":OverlayEsc:secret", 0, 2, 0) != 0);
+        CHECK(hcall(&rt, 0xa208, 0, ":OverlayEsc:evil", 0, 2) != 0 && hcall(&rt, 0xa260, 6, ":OverlayEsc:evil", 0, 2) != 0);
+        CHECK(hcall(&rt, 0xa209, 0, ":OverlayEsc:secret", 0, 2) != 0);
+        CHECK(host_size(g_outside, "evil") < 0 && host_size(g_outside, "secret") == 6);
+        CHECK(hcall(&rt, 0xa208, 0, "Fresh", 0, 2) == 0);   // the overlay itself still works
+        unlink(link); }
+    CHECK(host_size(data, "../escape") < 0);
+    mac_files_destroy(&rt);
+    mac_cpu_destroy(rt.cpu);
+}
+
+/* Capacity: the file quota and the byte quota still answer dskFulErr (-34) inside subfolders. */
+static void quotas(const char *data) {
+    char saves[] = "/tmp/ospi-fold-quota-XXXXXX";
+    CHECK(mkdtemp(saves) != NULL);
+    MacRuntime rt = fresh();
+    CHECK(mac_files_root(&rt, data) == 0 && mac_files_writable(&rt, saves, 3, 64) == 0);
+    uint32_t sub, inner;
+    CHECK(dir_create(&rt, "Sub", 0, 2, &sub) == 0 && dir_create(&rt, "Deeper", 0, sub, &inner) == 0);
+    CHECK(hcall(&rt, 0xa208, 0, "a", 0, sub) == 0 && hcall(&rt, 0xa208, 0, "b", 0, inner) == 0 && hcall(&rt, 0xa208, 0, "c", 0, sub) == 0);
+    CHECK(hcall(&rt, 0xa208, 0, "d", 0, inner) == -34);                  // three files in the whole tree
+    int r = hopen(&rt, "a", sub, 2);
+    char big[100]; memset(big, 'z', sizeof big);
+    memcpy(mac_cpu_ram(rt.cpu) + DATA, big, sizeof big);
+    CHECK(r >= 128 && pb_call(&rt, 0xa003, r, 1, 0, 100) == -34);        // 64 bytes in total
+    CHECK(pb_call(&rt, 0xa003, r, 1, 0, 40) == 0 && pb_call(&rt, 0xa001, r, 0, 0, 0) == 0);
+    int r2 = hopen(&rt, "b", inner, 2);
+    CHECK(r2 >= 128 && pb_call(&rt, 0xa003, r2, 1, 0, 30) == -34 && pb_call(&rt, 0xa001, r2, 0, 0, 0) == 0);   // 40 + 30 > 64, across directories
+    CHECK(host_size(saves, "Sub/a") == 40 && host_size(saves, "Sub/Deeper/b") == 0);
+    mac_files_destroy(&rt);
+    mac_cpu_destroy(rt.cpu);
+    char cmd[1100]; snprintf(cmd, sizeof cmd, "rm -rf '%s'", saves); CHECK(system(cmd) == 0);
+}
 
 int main(void) {
-    char data[] = "/tmp/ospi-fold-data-XXXXXX", saves[] = "/tmp/ospi-fold-saves-XXXXXX";
-    CHECK(mkdtemp(data) && mkdtemp(saves));
+    char data[] = "/tmp/ospi-fold-data-XXXXXX", saves[] = "/tmp/ospi-fold-saves-XXXXXX", saves2[] = "/tmp/ospi-fold-saves2-XXXXXX", outside[] = "/tmp/ospi-fold-out-XXXXXX";
+    CHECK(mkdtemp(data) && mkdtemp(saves) && mkdtemp(saves2) && mkdtemp(outside));
+    snprintf(g_outside, sizeof g_outside, "%s", outside);
+    host_write(outside, "secret", "secret");
     host_write(data, "Game Data", "abcdef");
-    int sysvol;
-    MacRuntime rt = fresh(); rt.system_volume = (struct MacSystemVolume *)&sysvol;
-    CHECK(mac_files_root(&rt, data) == 0 && mac_files_writable(&rt, saves, 8, 65536) == 0);
-    /* vRefNum -2 names the same flat namespace; without a System volume it is still nsvErr. */
-    CHECK(make(&rt, -2, 2, "Game Data", SPEC) == 0 && spec_is(&rt, SPEC, -1, 2, "Game Data"));
-    CHECK(make(&rt, -2, 2, "Missing", SPEC) == -43);
-    { MacRuntime bare = fresh(); CHECK(mac_files_root(&bare, data) == 0); CHECK(make(&bare, -2, 2, "Game Data", SPEC) == -35); mac_cpu_destroy(bare.cpu); }
-    /* A folder name with a Mac Roman character ("G-PRO Scores " + 0xC4) is carried through a spec but never a host name. */
-    const char folder[] = "G-PRO Scores \xc4";
-    CHECK(make(&rt, -2, 2, folder, SPEC) == -43 && spec_is(&rt, SPEC, -1, 2, folder));
-    CHECK(make(&rt, -2, 2, "bad\xff", SPEC) == -37 && make(&rt, -2, 2, "bad\x01", SPEC) == -37 && make(&rt, -2, 2, "bad\x7f", SPEC) == -37);
-    spec_of(&rt, SPEC, -1, 2, folder);
-    CHECK(open_df(&rt, SPEC, 1) == -37);                                     /* anything that would touch the host refuses such a name */
-    /* FSpDirCreate: a folder ID in 3..66, the same every time for a name, different names mostly different, never the root, not over a file, not nested. */
-    w32(&rt, REFBUF, 0xdeadbeef);
-    CHECK(dir_create(&rt, SPEC, REFBUF) == 0);
-    uint32_t id = mac_cpu_read(rt.cpu, REFBUF, 4); CHECK(id >= 3 && id <= 66);
-    w32(&rt, REFBUF, 0); CHECK(dir_create(&rt, SPEC, REFBUF) == 0 && mac_cpu_read(rt.cpu, REFBUF, 4) == id);
-    spec_of(&rt, SPEC2, -1, 2, "Another folder"); CHECK(dir_create(&rt, SPEC2, REFBUF) == 0 && mac_cpu_read(rt.cpu, REFBUF, 4) >= 3 && mac_cpu_read(rt.cpu, REFBUF, 4) != id);   /* a different name, a different ID */
-    spec_of(&rt, SPEC2, -1, 2, "Game Data"); w32(&rt, REFBUF, 0x77); CHECK(dir_create(&rt, SPEC2, REFBUF) == -48 && mac_cpu_read(rt.cpu, REFBUF, 4) == 0x77);   /* a file has the name */
-    spec_of(&rt, SPEC2, -1, 1, "OS999 HD"); CHECK(dir_create(&rt, SPEC2, REFBUF) == -48);                                                                     /* the volume */
-    spec_of(&rt, SPEC2, -1, id, "inner"); CHECK(dir_create(&rt, SPEC2, REFBUF) == -120);                                                                         /* no nesting */
-    spec_of(&rt, SPEC2, -1, 2, "x"); CHECK(dir_create(&rt, SPEC2, 0x1000000 - 2) == -50 && dir_create(&rt, SPEC2, REFBUF + 1) == -50);                         /* a bad result pointer */
-    /* Files in the folder: separate from a root file of the same name, listed by the host with the prefix, found again through FSMakeFSSpec. */
-    spec_of(&rt, SPEC, -1, id, "Slumberland"); spec_of(&rt, SPEC2, -1, 2, "Slumberland");
-    CHECK(create(&rt, SPEC, 0x6f7a6d35, 0x676c6948) == 0 && create(&rt, SPEC2, 0x6f7a6d35, 0x676c6948) == 0);   /* two files, one name, two parents */
-    char host[32]; snprintf(host, sizeof host, "d%u-Slumberland", id);
-    CHECK(host_size(saves, host) == 0 && host_size(saves, "Slumberland") == 0);
-    int in = open_df(&rt, SPEC, 2), out = open_df(&rt, SPEC2, 2); CHECK(in >= 128 && out >= 128 && in != out);
-    CHECK(save_bytes(&rt, in, "inside", 6) == 0 && save_bytes(&rt, out, "root!", 5) == 0);
-    CHECK(pb_call(&rt, 0xa001, in, 0, 0, 0) == 0 && pb_call(&rt, 0xa001, out, 0, 0, 0) == 0);
-    CHECK(host_size(saves, host) == 6 && host_size(saves, "Slumberland") == 5);
-    CHECK(make(&rt, -2, id, "Slumberland", SPEC) == 0 && spec_is(&rt, SPEC, -1, id, "Slumberland"));            /* the spec keeps the folder */
-    CHECK(make(&rt, -2, id, "Nothing", SPEC) == -43 && spec_is(&rt, SPEC, -1, id, "Nothing"));
-    CHECK(make(&rt, -2, 100, "Slumberland", SPEC) == -120 && make(&rt, -2, 67, "Slumberland", SPEC) == -120);   /* IDs outside 3..66 are no directory */
-    CHECK(make(&rt, -1, 2, "d3-x", SPEC) == -43);                                                              /* the prefix is only ever added, never read from a name */
-    /* Rename and delete act inside the folder. */
-    spec_of(&rt, SPEC, -1, id, "Slumberland"); pstr(&rt, NAME2, "Renamed");
-    CHECK(rename_to(&rt, SPEC, NAME2) == 0);
-    snprintf(host, sizeof host, "d%u-Renamed", id); CHECK(host_size(saves, host) == 6 && host_size(saves, "Slumberland") == 5);
-    spec_of(&rt, SPEC, -1, id, "Renamed"); CHECK(one_spec(&rt, 6, SPEC) == 0 && host_size(saves, host) < 0 && host_size(saves, "Slumberland") == 5);
-    /* The 31 character limit counts the host name, prefix included: "d<id>-" leaves less room in a folder. */
-    size_t room = 31 - strlen(host) + strlen("Renamed");   /* host is "d<id>-Renamed": the prefix is its length minus 7 */
-    char longname[40]; memset(longname, 'n', room); longname[room] = 0;
-    spec_of(&rt, SPEC, -1, id, longname); CHECK(create(&rt, SPEC, 0x74747874, 0x54455854) == 0);
-    memset(longname, 'n', room + 1); longname[room + 1] = 0; spec_of(&rt, SPEC, -1, id, longname); CHECK(create(&rt, SPEC, 0x74747874, 0x54455854) == -37);
-    /* Folder files are not listed as root files: the indexed catalog lists the two root files and nothing else, however many folder files exist. */
-    {   unsigned seen = 0; int found_root = 0, found_folder = 0;
-        for (int index = 1; index < 20; index++) {
-            memset(mac_cpu_ram(rt.cpu) + PB, 0, 128); w32(&rt, PB + 18, NAMEBUF); w16(&rt, PB + 22, 0xffff); w16(&rt, PB + 28, (uint16_t)index);
-            mac_cpu_set(rt.cpu, MAC_A0, PB); mac_cpu_set(rt.cpu, MAC_D0, 9); CHECK(mac_file_service(&rt, 0xa260) == 1);
-            if ((int16_t)mac_cpu_read(rt.cpu, PB + 16, 2) != 0) break;
-            const uint8_t *nm = mac_cpu_ram(rt.cpu) + NAMEBUF; seen++;
-            if (nm[0] == 11 && !memcmp(nm + 1, "Slumberland", 11)) found_root = 1;
-            if (nm[1] == 'd' && nm[2] >= '0' && nm[2] <= '9') found_folder = 1;
-        }
-        CHECK(seen >= 2 && found_root && !found_folder); }
-    CHECK(mac_files_in_folder("d3-x") && mac_files_in_folder("d66-x") && !mac_files_in_folder("d-x") && !mac_files_in_folder("d123-x") && !mac_files_in_folder("dx3-x") && !mac_files_in_folder("data"));
-    snprintf(host, sizeof host, "d%u-%s", id, "Slumberland"); CHECK(host_size(saves, host) < 0);
-    /* PBDirCreate (HFSDispatch 6): the same folders. ioNamePtr +18, ioVRefNum +22, ioDirID +48 in (parent) and out (the new folder's ID). */
-    {   const char *nm = "Preferences"; pstr(&rt, NAMEBUF, nm);
-        #define DIRCREATE(vref, parent, ptr) (memset(mac_cpu_ram(rt.cpu) + PB, 0, 128), w32(&rt, PB + 18, (ptr)), w16(&rt, PB + 22, (uint16_t)(vref)), w32(&rt, PB + 48, (parent)), \
-            mac_cpu_set(rt.cpu, MAC_A0, PB), mac_cpu_set(rt.cpu, MAC_D0, 6), mac_file_service(&rt, 0xa260), (int16_t)mac_cpu_read(rt.cpu, PB + 16, 2))
-        CHECK(DIRCREATE(-2, 2, NAMEBUF) == 0 && mac_cpu_read(rt.cpu, PB + 48, 4) == mac_files_folder_id("Preferences") && mac_cpu_read(rt.cpu, PB + 48, 4) >= 3 && mac_cpu_read(rt.cpu, PB + 48, 4) <= 66);
-        uint32_t pid = mac_cpu_read(rt.cpu, PB + 48, 4);
-        CHECK(DIRCREATE(0, 0, NAMEBUF) == 0 && mac_cpu_read(rt.cpu, PB + 48, 4) == pid);                       /* default volume, parent 0 = root; same ID again */
-        spec_of(&rt, SPEC, -1, pid, "Prefs file"); CHECK(create(&rt, SPEC, 0x74747874, 0x54455854) == 0 && make(&rt, -1, pid, "Prefs file", SPEC2) == 0);   /* the ID is usable as a parent */
-        CHECK(DIRCREATE(5, 2, NAMEBUF) == -35 && DIRCREATE(-2, 3, NAMEBUF) == -120 && DIRCREATE(-2, 99, NAMEBUF) == -120);
-        pstr(&rt, NAMEBUF, "Game Data"); CHECK(DIRCREATE(-1, 2, NAMEBUF) == -48);                                  /* a file holds the name */
-        pstr(&rt, NAMEBUF, "bad:name"); CHECK(DIRCREATE(-1, 2, NAMEBUF) == -37);
-        pstr(&rt, NAMEBUF, "a/b"); CHECK(DIRCREATE(-1, 2, NAMEBUF) == -37);
-        pstr(&rt, NAMEBUF, ""); CHECK(DIRCREATE(-1, 2, NAMEBUF) == -37);
-        pstr(&rt, NAMEBUF, "this folder name is far too long!"); CHECK(DIRCREATE(-1, 2, NAMEBUF) == -37);
-        pstr(&rt, NAMEBUF, "G-PRO Scores \xc4"); CHECK(DIRCREATE(-2, 2, NAMEBUF) == 0);                          /* Mac Roman characters are fine in a folder name */
-        CHECK(DIRCREATE(-1, 2, 0) == -50 && DIRCREATE(-1, 2, 0x1000000 - 2) == -50);                              /* bad name pointers */
-        mac_cpu_ram(rt.cpu)[NAMEBUF] = 200; CHECK(DIRCREATE(-1, 2, NAMEBUF) == -37 || DIRCREATE(-1, 2, NAMEBUF) == -50);   /* a length byte that is no name */
-        MacRuntime bare = fresh(); bare.system_volume = NULL; CHECK(mac_files_root(&bare, data) == 0); pstr(&bare, NAMEBUF, "x"); w32(&bare, PB + 18, NAMEBUF);
-        mac_cpu_set(bare.cpu, MAC_A0, PB); mac_cpu_set(bare.cpu, MAC_D0, 6); w16(&bare, PB + 22, 0xfffe); CHECK(mac_file_service(&bare, 0xa260) == 1 && (int16_t)mac_cpu_read(bare.cpu, PB + 16, 2) == -46);   /* no overlay */
-        mac_cpu_destroy(bare.cpu);
-        /* PBGetCatInfo by name of a made folder: a directory record; a file of the name wins; an unmade folder is not found. */
-        #define PBCALL(op, sel, vref, parent, ptr) (memset(mac_cpu_ram(rt.cpu) + PB, 0, 128), w32(&rt, PB + 18, (ptr)), w16(&rt, PB + 22, (uint16_t)(vref)), w32(&rt, PB + 48, (parent)), \
-            mac_cpu_set(rt.cpu, MAC_A0, PB), mac_cpu_set(rt.cpu, MAC_D0, (sel)), mac_file_service(&rt, (op)), (int16_t)mac_cpu_read(rt.cpu, PB + 16, 2))
-        pstr(&rt, NAMEBUF, "Preferences");
-        CHECK(PBCALL(0xa260, 9, -2, 0, NAMEBUF) == 0 && mac_cpu_read(rt.cpu, PB + 30, 1) == 0x10 && mac_cpu_read(rt.cpu, PB + 48, 4) == pid && mac_cpu_read(rt.cpu, PB + 100, 4) == 2);
-        CHECK(PBCALL(0xa260, 9, -1, 2, NAMEBUF) == 0 && mac_cpu_read(rt.cpu, PB + 30, 1) == 0x10);
-        pstr(&rt, NAMEBUF, "Never made"); CHECK(PBCALL(0xa260, 9, -2, 0, NAMEBUF) == -43);
-        pstr(&rt, NAMEBUF, "Game Data"); CHECK(PBCALL(0xa260, 9, -2, 0, NAMEBUF) == 0 && mac_cpu_read(rt.cpu, PB + 30, 1) != 0x10);   /* a file */
-        pstr(&rt, NAMEBUF, "Preferences"); CHECK(PBCALL(0xa260, 9, -2, 33, NAMEBUF) != 0 || mac_cpu_read(rt.cpu, PB + 30, 1) != 0x10);   /* another parent: not this folder */
-        pstr(&rt, NAMEBUF, "Both"); CHECK(DIRCREATE(-2, 2, NAMEBUF) == 0 && PBCALL(0xa260, 9, -2, 0, NAMEBUF) == 0 && mac_cpu_read(rt.cpu, PB + 30, 1) == 0x10);
-        CHECK(PBCALL(0xa008, 0, 0, 0, NAMEBUF) == 0 && PBCALL(0xa260, 9, -2, 0, NAMEBUF) == 0 && mac_cpu_read(rt.cpu, PB + 30, 1) != 0x10);   /* a file made later with the folder's name wins the lookup */
-        /* Working directories: PBOpenWD (1) gives -(100 + id), PBGetWDInfo (7) and PBCloseWD (2) take it back; unmade folders and bad IDs are refused. */
-        w32(&rt, PB + 28, 0);
-        CHECK(PBCALL(0xa260, 1, -2, pid, 0) == 0 && (int16_t)mac_cpu_read(rt.cpu, PB + 22, 2) == -(int)(100 + pid));
-        int wdref = (int16_t)mac_cpu_read(rt.cpu, PB + 22, 2);
-        CHECK(PBCALL(0xa260, 7, wdref, 0, 0) == 0 && mac_cpu_read(rt.cpu, PB + 48, 4) == pid);
-        CHECK(PBCALL(0xa260, 2, wdref, 0, 0) == 0);
-        { uint32_t other = pid == 3 ? 4 : 3; CHECK(PBCALL(0xa260, 1, -2, other, 0) == -120 && PBCALL(0xa260, 7, -(int)(100 + other), 0, 0) == -51); }
-                CHECK(PBCALL(0xa260, 1, 5, pid, 0) == -35);
-        PBCALL(0xa260, 1, -2, 100, 0); mac_cpu_set(rt.cpu, MAC_A0, PB); mac_cpu_set(rt.cpu, MAC_D0, 1); CHECK(mac_file_service(&rt, 0xa260) == 0);   /* an ID that is no folder is not ours: another service answers */
-        /* Files through the WD reference: created, found, opened in the folder (host name d<id>-name), not in the root; an unmade WD is an unknown volume. */
-        pstr(&rt, NAMEBUF, "Glider Prefs");
-        CHECK(PBCALL(0xa008, 0, wdref, 0, NAMEBUF) == 0);
-        char hn[48]; snprintf(hn, sizeof hn, "d%u-Glider Prefs", pid);
-        CHECK(host_size(saves, hn) == 0 && host_size(saves, "Glider Prefs") < 0);
-        CHECK(PBCALL(0xa000, 0, wdref, 0, NAMEBUF) == 0 && (int16_t)mac_cpu_read(rt.cpu, PB + 24, 2) >= 128);
-        int wref = (int16_t)mac_cpu_read(rt.cpu, PB + 24, 2); CHECK(pb_call(&rt, 0xa001, wref, 0, 0, 0) == 0);
-        CHECK(PBCALL(0xa000, 0, 0, 0, NAMEBUF) == -43);                                                         /* not in the root */
-        CHECK(PBCALL(0xa008, 0, -(int)(100 + (pid == 3 ? 4 : 3)), 0, NAMEBUF) == -35);                           /* a WD that was never opened */
-        CHECK(make(&rt, wdref, 0, "Glider Prefs", SPEC) == 0 && spec_is(&rt, SPEC, -1, pid, "Glider Prefs"));       /* FSMakeFSSpec with the WD reference: the name is in the folder */
-        CHECK(make(&rt, -(int)(100 + (pid == 3 ? 4 : 3)), 0, "Glider Prefs", SPEC) == -43);   /* a WD range value of an unmade folder: just not found */
-        CHECK(PBCALL(0xa009, 0, wdref, 0, NAMEBUF) == 0 && host_size(saves, hn) < 0);                           /* delete inside the folder */
-        #undef PBCALL
-        #undef DIRCREATE
-    }
-    mac_cpu_destroy(rt.cpu);
-    printf("FSSpec folders: %s\n", failures ? "FAILED" : "ok");
+    host_write(data, "readme", "hello");
+    host_write(data, "readme.rsrc", "FORKFORKFORKFORKFORK");
+    mkdirs(data, "Textures/Wood"); mkdirs(data, "Textures/Stone"); mkdirs(data, "Hostile");
+    host_write(data, "Textures/Marble.pct", "marble");
+    host_write(data, "Textures/Oak.pct", "oak");
+    host_write(data, "Textures/Oak.pct.rsrc", "FORKFORKFORKFORKFORK");
+    host_write(data, "Textures/Wood/Birch.pct", "birch");
+    host_write(data, "Textures/Stone/Slate.pct", "slate");
+    char path[1200], link[1200];
+    snprintf(path, sizeof path, "%s/Hostile/EscDir", data); CHECK(symlink(outside, path) == 0);
+    snprintf(path, sizeof path, "%s/Hostile/EscFile", data); snprintf(link, sizeof link, "%s/secret", outside); CHECK(symlink(link, path) == 0);
+
+    uint32_t tex1 = 0, wood1 = 0, tex2 = 0, wood2 = 0;
+    session(data, saves, &tex1, &wood1);
+    /* Directory IDs are stable: a new session on a fresh overlay looks the same directories up and gets the same numbers. */
+    {   MacRuntime rt = fresh();
+        CHECK(mac_files_root(&rt, data) == 0 && mac_files_writable(&rt, saves2, 8, 65536) == 0);
+        CHECK(catinfo(&rt, ":Textures", 0, 2, 0) == 0); tex2 = mac_cpu_read(rt.cpu, PB + 48, 4);
+        CHECK(catinfo(&rt, ":Textures:Wood", 0, 2, 0) == 0); wood2 = mac_cpu_read(rt.cpu, PB + 48, 4);
+        CHECK(tex2 == tex1 && wood2 == wood1 && tex2 != wood2);
+        CHECK(catinfo(&rt, NULL, 0, tex2 + 1, 1) == -120);        // an ID nobody handed out
+        /* Read-only volume semantics survive: no overlay, no writes. */
+        mac_files_destroy(&rt); mac_cpu_destroy(rt.cpu); }
+    {   MacRuntime rt = fresh();
+        uint32_t id;
+        CHECK(mac_files_root(&rt, data) == 0);
+        CHECK(catinfo(&rt, ":Textures:Wood", 0, 2, 0) == 0);
+        CHECK(dir_create(&rt, "X", 0, 2, &id) == -46 && hcall(&rt, 0xa208, 0, ":Textures:New", 0, 2) == -46);
+        mac_files_destroy(&rt); mac_cpu_destroy(rt.cpu); }
+    quotas(data);
+
+    char cmd[1200];
+    snprintf(cmd, sizeof cmd, "rm -rf '%s' '%s' '%s' '%s'", data, saves, saves2, outside);
+    CHECK(system(cmd) == 0);
+    printf("Hierarchical File Manager: %s\n", failures ? "FAILED" : "ok");
     return failures != 0;
 }

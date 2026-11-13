@@ -28,7 +28,7 @@ static void trap_path(MacRuntime *rt) {
 
 static void halting_selectors(const char *data, const char *saves) {
     static const struct { unsigned selector; const char *name; } cases[] = {
-        {9, "FSpSetFLock"}, {10, "FSpRstFLock"}, {12, "FSpCatMove"}, {15, "FSpExchangeFiles"},
+        {9, "FSpSetFLock"}, {10, "FSpRstFLock"}, {15, "FSpExchangeFiles"},
     };
     for (unsigned i = 0; i < sizeof cases / sizeof *cases; i++) {
         MacRuntime rt = fresh();

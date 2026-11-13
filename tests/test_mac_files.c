@@ -34,7 +34,7 @@ static int open_df(MacRuntime *rt, const char *name, int permission) {
     size_t n = strlen(name);
     mac_cpu_ram(rt->cpu)[NAME] = (uint8_t)n;
     memcpy(mac_cpu_ram(rt->cpu)+NAME+1,name,n);
-    put(rt,18,4,NAME); put(rt,22,2,0); put(rt,27,1,permission);
+    put(rt,18,4,NAME); put(rt,22,2,0); put(rt,27,1,permission); put(rt,48,4,0);   /* ioDirID: 0 is the default directory */
     mac_cpu_set(rt->cpu,MAC_D0,0x1a);
     return call(rt,0xa060);
 }
@@ -144,7 +144,7 @@ int main(void) {
     put(&rt,52,2,1234);put(&rt,100,4,12345678);
     CHECK(cat(&rt,0,-1,2,4090)==-50);
     CHECK(mac_cpu_read(rt.cpu,PB+52,2)==1234 && mac_cpu_read(rt.cpu,PB+100,4)==12345678);
-    CHECK(cat(&rt,0,0,2,0)==-50);                                                  /* by name with no name */
+    CHECK(cat(&rt,0,0,2,0)==0 && (mac_cpu_read(rt.cpu,PB+30,1)&0x10) && mac_cpu_read(rt.cpu,PB+48,4)==2);   /* by name with no name: the directory itself */
     /* PBGetCatInfo of a file: by index (1..n over the files of the one directory, as PBHGetFInfo lists them) or by name; ioFlParID (offset 100) is the root, 2. */
     memset(mac_cpu_ram(rt.cpu)+PB+96,0xee,12);
     CHECK(cat(&rt,0,1,2,NAME)==0 && mac_cpu_ram(rt.cpu)[NAME]>0 && !(mac_cpu_read(rt.cpu,PB+30,1)&0x10) && mac_cpu_read(rt.cpu,PB+100,4)==2);
@@ -226,7 +226,7 @@ int main(void) {
     CHECK(open_name(&rt,"missing",1)==-43);
     CHECK(open_name(&rt,"../escape",1)==-50);
     CHECK(open_name(&rt,"..",1)==-50);
-    CHECK(open_name(&rt,":Game Data",1)==-50);
+    CHECK(open_name(&rt,":Game Data",1)==0);CHECK(call(&rt,0xa001)==0);   /* a leading colon is a partial path from the default directory */
     CHECK(open_name(&rt,"\200",1)==-50);
     CHECK(open_name(&rt,"alias",1)==-54);
     CHECK(open_name(&rt,"fifo",1)==-50);
@@ -237,10 +237,10 @@ int main(void) {
     CHECK(open_name(&rt,"os999 hd:Game Data",1)==0);CHECK(call(&rt,0xa001)==0);
     CHECK(open_name(&rt,"OS999 HD:missing",1)==-43);
     CHECK(open_name(&rt,"OS999 HD:",1)==-50 && open_name(&rt,"OS999 HD",1)==-43);   /* no file name; plain name is just a missing file */
-    CHECK(open_name(&rt,"OS999 HD:sub:Game Data",1)==-50 && open_name(&rt,"OS999 HD:../escape",1)==-50);
-    CHECK(open_name(&rt,"Other Disk:Game Data",1)==-50 && open_name(&rt,"OS999 HD::Game Data",1)==-50);
-    CHECK(open_name(&rt,"OS999 H:Game Data",1)==-50 && open_name(&rt,"XOS999 HD:Game Data",1)==-50);
-    CHECK(open_name(&rt,"OS999 HD:OS999 HD:Game Data",1)==-50);                      /* only one prefix is removed */
+    CHECK(open_name(&rt,"OS999 HD:sub:Game Data",1)==-120 && open_name(&rt,"OS999 HD:../escape",1)==-50);
+    CHECK(open_name(&rt,"Other Disk:Game Data",1)==-35 && open_name(&rt,"OS999 HD::Game Data",1)==-50);   /* no such volume; an empty component */
+    CHECK(open_name(&rt,"OS999 H:Game Data",1)==-35 && open_name(&rt,"XOS999 HD:Game Data",1)==-35);
+    CHECK(open_name(&rt,"OS999 HD:OS999 HD:Game Data",1)==-120);                     /* only one prefix is removed; the rest is a folder that is not there */
     /* PBOpenDF opens the same file as PBOpen and returns a usable reference; it fails exactly like PBOpen. */
     CHECK(open_df(&rt,"Game Data",1)==0);
     uint32_t df_ref=mac_cpu_read(rt.cpu,PB+24,2);CHECK(df_ref>=128);

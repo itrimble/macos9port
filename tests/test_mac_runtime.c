@@ -106,7 +106,11 @@ int main(void) {
 
     fixture(b); put32(b + DATA, 23); reject(b); /* Truncated CODE0. */
     fixture(b); put32(b + ZERO + 8, 7); reject(b); /* Non-entry length. */
-    fixture(b); put32(b + ZERO + 8, 16); reject(b); /* Beyond payload. */
+    /* A table declared longer than CODE 0 stores is accepted when a whole entry is stored (an installer engine's CODE 0 is shaped so); the rest is zero. */
+    fixture(b); put32(b + ZERO + 8, 16);
+    {   MacRuntime longer; char e2[240];
+        CHECK(load(&longer, b, e2, sizeof e2) == 0 && longer.jump_size == 16 && mac_cpu_ram(longer.cpu)[longer.jump_table + 8] == 0);
+        mac_runtime_destroy(&longer); }
     fixture(b); put32(b + ZERO + 12, 0x101); reject(b); /* Beyond A5 area. */
     fixture(b); put32(b + ZERO + 12, 0xff); reject(b); /* Range overruns A5 area. */
     fixture(b); put32(b + ZERO + 12, 33); reject(b); /* Odd executable address. */

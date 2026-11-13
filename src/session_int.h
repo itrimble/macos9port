@@ -25,5 +25,7 @@ void open_item(Session *s, Window *w, int index);
 void select_only(Window *w, int index);
 void toggle_shade(Window *w);
 void toggle_zoom(Session *s, Window *w);
+int session_window_wheel(Window *w, int eff);
+int session_window_key(Session *s, Window *w, int key, int mods);
 
 #endif

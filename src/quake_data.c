@@ -78,6 +78,23 @@ static int copy_file(const char *from, const char *to) {
 }
 #endif
 
+#ifdef __APPLE__
+/* Try <base>/pak0.pk3 and <base>/demoq3/pak0.pk3; a verified copy is installed at dest. 0 installed, -1 none, -2 copy failed. */
+static int try_demo_base(const char *base, const char *dest, const char *part, off_t size, const char *sha) {
+    static const char *const sub[] = {"", "/demoq3"};
+    for (int j = 0; j < 2; j++) {
+        char src[1400];
+        if (snprintf(src, sizeof src, "%s%s/pak0.pk3", base, sub[j]) >= (int)sizeof src) continue;
+        if (!quake_data_check(src, size, sha)) continue;
+        /* Copy beside the destination, re-verify, then rename: a half copy is never used. */
+        if (copy_file(src, part) || !quake_data_check(part, size, sha)) { unlink(part); return -2; }
+        if (rename(part, dest)) { unlink(part); return -2; }
+        return 0;
+    }
+    return -1;
+}
+#endif
+
 int quake_data_import(const char *home, const char *const dirs[], int ndirs, off_t size, const char *sha256_hex) {
 #ifdef __APPLE__
     char dir[1100], dest[1200], part[1210];
@@ -85,18 +102,23 @@ int quake_data_import(const char *home, const char *const dirs[], int ndirs, off
         snprintf(dest, sizeof dest, "%s/pak0.pk3", dir) >= (int)sizeof dest) return -1;
     if (quake_data_check(dest, size, sha256_hex)) return 1;
     snprintf(part, sizeof part, "%s.part", dest);
-    static const char *const sub[] = {"", "/demoq3"};
     for (int i = 0; i < ndirs; i++) {
         if (!dirs[i] || !dirs[i][0]) continue;
-        for (int j = 0; j < 2; j++) {
-            char src[1200];
-            if (snprintf(src, sizeof src, "%s%s/pak0.pk3", dirs[i], sub[j]) >= (int)sizeof src) continue;
-            if (!quake_data_check(src, size, sha256_hex)) continue;
-            /* Copy beside the destination, re-verify, then rename: a half copy is never used. */
-            if (copy_file(src, part) || !quake_data_check(part, size, sha256_hex)) { unlink(part); return -1; }
-            if (rename(part, dest)) { unlink(part); return -1; }
-            return 0;
+        int r = try_demo_base(dirs[i], dest, part, size, sha256_hex);
+        if (r != -1) return r == 0 ? 0 : -1;
+        /* One level of subfolders too (a download unpacked into its own folder). */
+        DIR *d = opendir(dirs[i]);
+        if (!d) continue;
+        struct dirent *e;
+        for (int seen = 0; seen < 64 && (e = readdir(d)); ) {
+            if (e->d_name[0] == '.' || e->d_type == DT_LNK || (e->d_type != DT_DIR && e->d_type != DT_UNKNOWN)) continue;
+            seen++;
+            char sub[1300];
+            if (snprintf(sub, sizeof sub, "%s/%s", dirs[i], e->d_name) >= (int)sizeof sub) continue;
+            r = try_demo_base(sub, dest, part, size, sha256_hex);
+            if (r != -1) { closedir(d); return r == 0 ? 0 : -1; }
         }
+        closedir(d);
     }
 #else
     (void)home; (void)dirs; (void)ndirs; (void)size; (void)sha256_hex;
@@ -104,17 +126,33 @@ int quake_data_import(const char *home, const char *const dirs[], int ndirs, off
     return -1;
 }
 
+int quake_data_search_dirs(const char *volume, const char *host_home, QuakeDirs *out) {
+    static const char *const vol[] = {"/Downloads", "/Documents", ""};
+    static const char *const host[] = {"/Downloads", "/Documents", "/Desktop"};
+    if (!out) return 0;
+    out->n = 0;
+    const char *env = getenv("OS999_QUAKE3_IMPORT"); /* a folder the user points at */
+    if (env && env[0]) snprintf(out->p[out->n++], sizeof out->p[0], "%s", env);
+    for (int i = 0; volume && volume[0] && i < 3; i++) snprintf(out->p[out->n++], sizeof out->p[0], "%s%s", volume, vol[i]);
+    for (int i = 0; host_home && host_home[0] && i < 3; i++) snprintf(out->p[out->n++], sizeof out->p[0], "%s%s", host_home, host[i]);
+    return out->n;
+}
+
+static void dir_ptrs(const QuakeDirs *d, const char *ptr[], const char *extra) {
+    int n = 0;
+    for (; n < d->n; n++) ptr[n] = d->p[n];
+    if (extra) ptr[n++] = extra;
+    ptr[n] = NULL;
+}
+
 int quake_data_import_demo(const char *home, const char *volume) {
-    char dl[1100], docs[1100], hdl[1100], desk[1100];
-    snprintf(dl, sizeof dl, "%s/Downloads", volume ? volume : "");
-    snprintf(docs, sizeof docs, "%s/Documents", volume ? volume : "");
-    snprintf(hdl, sizeof hdl, "%s/Downloads", home ? home : "");
-    snprintf(desk, sizeof desk, "%s/Desktop", home ? home : "");
+    QuakeDirs d; const char *host = getenv("HOME"), *ptr[QUAKE_DIRS_MAX + 2];
+    quake_data_search_dirs(volume, host, &d);
     /* One-time carry-over from builds that kept the data in the Mac's Library. */
-    char old[1100]; const char *mac = getenv("HOME");
-    snprintf(old, sizeof old, "%s/Library/Application Support/OS999/Quake3/demoq3", mac ? mac : "");
-    const char *const dirs[] = {dl, docs, volume, hdl, desk, old};
-    return quake_data_import(home, dirs, 6, DEMO_SIZE, DEMO_SHA);
+    char old[1100];
+    snprintf(old, sizeof old, "%s/Library/Application Support/OS999/Quake3/demoq3", host ? host : "");
+    dir_ptrs(&d, ptr, old);
+    return quake_data_import(home, ptr, d.n + 1, DEMO_SIZE, DEMO_SHA);
 }
 
 /* Retail baseq3 point-release set, measured from the user-supplied files. The same size + SHA-256 rule as the
@@ -209,13 +247,22 @@ int quake_data_import_set(const char *home, const char *const dirs[], int ndirs,
 }
 
 int quake_data_import_retail(const char *home, const char *volume) {
-    char dl[1100], docs[1100], hdl[1100], desk[1100];
-    snprintf(dl, sizeof dl, "%s/Downloads", volume ? volume : "");
-    snprintf(docs, sizeof docs, "%s/Documents", volume ? volume : "");
-    snprintf(hdl, sizeof hdl, "%s/Downloads", home ? home : "");
-    snprintf(desk, sizeof desk, "%s/Desktop", home ? home : "");
-    const char *env = getenv("OS999_QUAKE3_IMPORT"); /* a folder the user points at */
-    const char *const dirs[] = {env && env[0] ? env : "", dl, docs, volume, hdl, desk};
+    QuakeDirs d; const char *ptr[QUAKE_DIRS_MAX + 2];
+    quake_data_search_dirs(volume, getenv("HOME"), &d);
+    dir_ptrs(&d, ptr, NULL);
     int n; const QuakePak *t = quake_data_retail_table(&n);
-    return quake_data_import_set(home, dirs, 6, t, n);
+    return quake_data_import_set(home, ptr, d.n, t, n);
+}
+
+int quake_data_import_folder(const char *home, const char *folder, const QuakePak *t, int n, off_t demo_size, const char *demo_sha) {
+    const char *one[1] = {folder};
+    if (!home || !folder || !folder[0]) return -1;
+    if (n > 0 && quake_data_import_set(home, one, 1, t, n) >= 0) return 1;
+    if (demo_sha && quake_data_import(home, one, 1, demo_size, demo_sha) >= 0) return 2;
+    return -1;
+}
+
+int quake_data_import_folder_real(const char *home, const char *folder) {
+    int n; const QuakePak *t = quake_data_retail_table(&n);
+    return quake_data_import_folder(home, folder, t, n, DEMO_SIZE, DEMO_SHA);
 }

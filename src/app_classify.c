@@ -1,5 +1,6 @@
 #include "app_classify_int.h"
 #include "mac_resource.h"
+#include "mac_codefmt.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -22,10 +23,7 @@ static void note(char *dst, const char *fmt, ...) {
 /* Same structural limits the 68K runtime enforces on CODE 0 (mac_runtime_init). Kept here so that a program the
  * classifier accepts as loadable is not one the loader then refuses for layout. */
 static int code0_ok(const MacResource *z) {
-    if (z->size < 24) return 0;
-    uint32_t above = be32(z->data), below = be32(z->data + 4), length = be32(z->data + 8), offset = be32(z->data + 12);
-    return !(below > 0x100000 || above > 0x100000 || length < 8 || length % 8 || (offset & 1) ||
-             length > z->size - 16 || offset > above || length > above - offset);
+    return mac_code0_parse(z->data, z->size, NULL) == 0;
 }
 
 static void read_resources(const void *bytes, size_t size, AppClassification *c, uint64_t *code_hash, int *damaged) {
@@ -44,7 +42,12 @@ static void read_resources(const void *bytes, size_t size, AppClassification *c,
         if (r.type == T('C', 'O', 'D', 'E')) {
             c->code_resources++;
             *code_hash ^= app_hash_resource(r.type, r.id, r.data, r.size);
-            if (r.id == 0) { c->has_code0 = 1; c->code0_layout_ok = code0_ok(&r); }
+            if (r.id == 0) {
+                MacCode0 z0;
+                c->has_code0 = 1; c->code0_layout_ok = code0_ok(&r);
+                if (c->code0_layout_ok && mac_code0_parse(r.data, r.size, &z0) == 0 && z0.truncated)
+                    note(c->uncertainty, "CODE 0 stores %u of the %u jump-table bytes it declares (a self-loading installer fills in the rest)", z0.present, z0.length);
+            }
         } else if (r.type == T('c', 'f', 'r', 'g')) {
             *code_hash ^= app_hash_resource(r.type, r.id, r.data, r.size);
             if (!c->has_cfrg) {

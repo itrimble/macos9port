@@ -121,7 +121,8 @@ int main(void) {
     /* Name policy: traversal, separators, hidden and overlong names are paramErr. */
     CHECK(named(&rt, 0xa008, "../escape") == -50);
     CHECK(named(&rt, 0xa008, "a/b") == -50);
-    CHECK(named(&rt, 0xa008, ":Save1") == -50);
+    CHECK(named(&rt, 0xa008, "no:such:Save1") == -35);   /* a colon separates path components: "no" is neither this volume nor a folder here */
+    CHECK(named(&rt, 0xa008, ":no:Save1") == -120);   /* a leading colon makes it a partial path; the folder "no" is not there */
     CHECK(named(&rt, 0xa008, ".hidden") == -50);
     CHECK(named(&rt, 0xa008, "ThisNameIsDefinitelyOverThirtyOneChars") == -50);
     CHECK(named(&rt, 0xa008, "") == -50);

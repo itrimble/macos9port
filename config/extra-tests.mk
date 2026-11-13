@@ -81,4 +81,10 @@ build/test_quake_launch: src/quake_launch.c src/quake_data.c tests/test_quake_la
 	$(CC) $(CFLAGS) -o $@ src/quake_launch.c src/quake_data.c tests/test_quake_launch.c
 
 test: build/test_quake_launch
+
+build/test_quake_pick: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_quake_pick.c $(HDRS)
+	@mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_quake_pick.c $(FT_LIBS) -lm $(NET_LIBS)
+
+test: build/test_quake_pick
 include config/extensions-tests.mk

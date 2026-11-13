@@ -5,6 +5,7 @@
 #include "mac_scrap.h"
 #include "mac_time.h"
 #include "mac_system_volume.h"
+#include "mac_rescomp.h"
 
 #include <stdio.h>
 
@@ -31,7 +32,7 @@ static int implemented(unsigned key) {
         case 0x23: case 0x24: case 0x25: case 0x29: case 0x2a: case 0x2d: case 0x2e: case 0x2f:
         case 0x32: case 0x3b: case 0x40: case 0x46: case 0x47: case 0x49: case 0x4a:
         case 0x4c: case 0x4d: case 0x55: case 0x60: case 0x61: case 0x63: case 0x64: case 0x69: case 0x6a:
-        case 0x80: case 0x90: case 0xad: case 0xbd: return 1;
+        case 0x80: case 0x90: case 0xad: case 0xbd: case 0xfc: return 1;
         default: return 0;
         }
     }
@@ -66,7 +67,7 @@ static int implemented(unsigned key) {
     case 0xaa00: case 0xaa01: case 0xaa02: case 0xa8ec:
     case 0xaa14: case 0xaa15: case 0xaa33: case 0xaa34: case 0xaa19: case 0xaa1a: case 0xaa18: case 0xaa3e: case 0xaa40: case 0xaa3f:
     case 0xaa27: case 0xaa29: case 0xaa2a: case 0xaa2b: case 0xaa2c: case 0xaa31: case 0xaa32:
-    case 0xaa1b: case 0xaa1c: case 0xaa1d: case 0xaa26: case 0xa8b5: case 0xa8fd: return 1;
+    case 0xaa1b: case 0xaa1c: case 0xaa1d: case 0xaa26: case 0xa8b5: case 0xa8fd: case 0xa88f: return 1;
     default: return 0;
     }
 }
@@ -81,6 +82,26 @@ void mac_traps_init(MacRuntime *rt) {
         rt->trap_addresses[key] = native_stub(key);
     }
 }
+
+/* LoadSeg, finished: the segment is runnable (any load hook has run), so the jump-table entries are rewritten and the call is retried. */
+static struct { uint32_t sp, pc, continuation; int16_t id; } loadseg;
+static int loadseg_finish(MacRuntime *rt, int error) {
+    MacCpu *cpu = rt->cpu;
+    if (error) {
+        char msg[400];
+        snprintf(msg, sizeof msg, "LoadSeg could not expand CODE %d: %s", loadseg.id, mac_rescomp_why(rt)[0] ? mac_rescomp_why(rt) : "the load hook failed.");
+        mac_cpu_halt(cpu, msg);
+        return -1;
+    }
+    if (mac_runtime_load_segment(rt, loadseg.id)) {
+        mac_cpu_halt(cpu, "LoadSeg could not load the requested CODE resource.");
+        return -1;
+    }
+    mac_cpu_set(cpu, MAC_A7, loadseg.sp + 2);
+    mac_cpu_set(cpu, MAC_PC, loadseg.continuation ? loadseg.continuation - 6 : loadseg.pc - 4);
+    return 0;
+}
+static int loadseg_done(MacRuntime *rt, void *ctx, int error) { (void)ctx; return loadseg_finish(rt, error); }
 
 static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t continuation) {
     MacCpu *cpu = rt->cpu;
@@ -104,6 +125,10 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
             return -1;
         }
         rt->trap_addresses[key] = address;
+        if (key == 0xfc && address != native_stub(0xfc)) {
+            int pre = mac_rescomp_prepass(rt);   /* the program just installed a resource load hook: run it over the marked resources now */
+            if (pre < 0) return -1;
+        }
         return 0;
     }
     if (opcode == 0xa9f0 && rt->init_guard) { /* Segments belong to the host, not to an INIT. */
@@ -123,13 +148,14 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
             mac_cpu_halt(cpu, msg);
             return -1;
         }
-        if (mac_runtime_load_segment(rt, id)) {
-            mac_cpu_halt(cpu, "LoadSeg could not load the requested CODE resource.");
-            return -1;
+        /* The segment's resource may need guest code before it is runnable (a compressed CODE resource, a program's own load hook). */
+        uint32_t seg = mac_runtime_resource(rt, MAC_CODE_TYPE, id);
+        if (seg) {
+            loadseg.sp = sp; loadseg.pc = pc; loadseg.continuation = continuation; loadseg.id = id;
+            int started = mac_rescomp_begin(rt, seg, loadseg_done, NULL);
+            if (started) return started < 0 ? -1 : 0;
         }
-        mac_cpu_set(cpu, MAC_A7, sp + 2);
-        mac_cpu_set(cpu, MAC_PC, continuation ? continuation - 6 : pc - 4);
-        return 0;
+        return loadseg_finish(rt, 0);
     }
     if (opcode == 0xa9f1) { /* UnloadSeg(routineAddr): a purgeability hint. Segments here stay resident, which the
                              * contract allows; a later call through the jump table keeps working unchanged. */
@@ -168,6 +194,8 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (colorindex) return colorindex > 0 ? 0 : -1;
     int handcopy = mac_handcopy_service(rt, opcode);
     if (handcopy) return handcopy > 0 ? 0 : -1;
+    int rescomp = mac_rescomp_service(rt, opcode);
+    if (rescomp) return rescomp > 0 ? 0 : -1;
     int resload = mac_resload_service(rt, opcode);
     if (resload) return resload > 0 ? 0 : -1;
     int scrap = mac_scrap_service(rt, opcode);
@@ -262,6 +290,8 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (vbl) return vbl > 0 ? 0 : -1;
     int env = mac_env_service(rt, opcode);
     if (env) return env > 0 ? 0 : -1;
+    int process = mac_process_service(rt, opcode);
+    if (process) return process > 0 ? 0 : -1;
     int random = mac_random_service(rt, opcode);
     if (random) return random > 0 ? 0 : -1;
     int text_state = mac_text_state_service(rt, opcode);
@@ -308,8 +338,9 @@ int mac_runtime_trap(MacCpu *cpu, uint16_t opcode, uint32_t pc, void *user) {
          * on the stack. Native services expose only Pascal arguments. */
         uint32_t continuation = mac_cpu_read(cpu, sp, 4);
         mac_cpu_set(cpu, MAC_A7, sp + 4);
+        int inside_guest_call = rt->guest.active;   /* a patch running as a guest call may chain to a native stub: that returns to its caller as usual */
         int rc = dispatch(rt, opcode, pc, continuation);
-        if (!rc && !mac_cpu_halted(cpu) && opcode != 0xa9f0 && !rt->guest.active)
+        if (!rc && !mac_cpu_halted(cpu) && opcode != 0xa9f0 && (inside_guest_call || !rt->guest.active))
             mac_cpu_set(cpu, MAC_PC, continuation);
         return rc;
     }
@@ -319,5 +350,7 @@ int mac_runtime_trap(MacCpu *cpu, uint16_t opcode, uint32_t pc, void *user) {
         mac_cpu_set(cpu, MAC_PC, rt->trap_addresses[key]);
         return 0;
     }
-    return dispatch(rt, opcode, pc, 0);
+    int rc = dispatch(rt, opcode, pc, 0);
+    if (rt->trace && opcode < 0xa800 && !rt->guest.active) fprintf(stderr, "  result d0=%d\n", (int32_t)mac_cpu_get(cpu, MAC_D0));   /* an OS trap's error code */
+    return rc;
 }

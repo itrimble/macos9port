@@ -2,6 +2,7 @@
  * to install from a folder or archive the user already has (the in-OS999 file dialog), and a worker thread
  * so the desktop stays alive while a download runs. Mouse and keyboard only; nothing here runs software. */
 #include "classic_apps.h"
+#include "classic_progress.h"
 #include "file_dialog.h"
 #include "session_int.h"
 #include "volume_capacity.h"
@@ -13,12 +14,16 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-enum { ROW_H = 34, BTN_H = 22, WIN_W = 540, WIN_H = 400, ST_NONE = 0, ST_DONE, ST_FAILED, ST_SKIPPED };
+enum { ROW_H = 46, BTN_H = 22, WIN_W = 540, WIN_H = 440, ST_NONE = 0, ST_DONE, ST_FAILED, ST_SKIPPED, ROW_BAR_W = 190, BOTTOM_H = 84 };
 enum { RUN_IDLE = 0, RUN_BUSY = 1 };
 
 static ClassicCatalog g_cat;
 static int g_loaded, g_tick[CLASSIC_MAX_APPS], g_status[CLASSIC_MAX_APPS];
 static char g_root[OSPI_PATH], g_item_msg[CLASSIC_MAX_APPS][140], g_stage[96], g_summary[300];
+static ClassicRunProg g_prog;           /* guarded by g_lock */
+static int g_pos[CLASSIC_MAX_APPS];     /* catalogue index -> slot in g_prog, or -1 */
+static char g_local_err[240];
+static int g_cur;                       /* slot the worker is on */
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 static atomic_int g_run;
 static atomic_bool g_cancel;
@@ -30,36 +35,52 @@ static int g_browse;
 typedef struct { int idx[CLASSIC_MAX_APPS]; int n; char local[OSPI_PATH]; } Job;
 static Job g_job;
 
-static void set_stage(void *ctx, const char *stage) {
+static void note_local(void) {   /* a local job has no row, so its stage text goes on the status line */
+    if (g_job.local[0] && g_cur < g_prog.n) classic_stage_label(&g_prog.it[g_cur], g_stage, sizeof g_stage);
+}
+static void on_stage(void *ctx, ClassicStage st) {
     (void)ctx;
     pthread_mutex_lock(&g_lock);
-    snprintf(g_stage, sizeof g_stage, "%s", stage);
+    classic_prog_stage(&g_prog, g_cur, st);
+    note_local();
+    pthread_mutex_unlock(&g_lock);
+}
+static void on_bytes(void *ctx, uint64_t got, uint64_t total) {
+    (void)ctx;
+    pthread_mutex_lock(&g_lock);
+    classic_prog_bytes(&g_prog, g_cur, got, total);
+    note_local();
     pthread_mutex_unlock(&g_lock);
 }
 
 static void *worker(void *arg) {
     Job *job = arg;
-    ClassicHooks hooks = {.progress = set_stage, .cancel = &g_cancel};
+    ClassicHooks hooks = {.stage = on_stage, .bytes = on_bytes, .cancel = &g_cancel};
     char rel[OSPI_PATH], err[240];
-    int ok = 0, bad = 0;
     for (int k = 0; k < (job->local[0] ? 1 : job->n); k++) {
         int i = job->local[0] ? -1 : job->idx[k];
+        pthread_mutex_lock(&g_lock);
+        g_cur = k;
+        pthread_mutex_unlock(&g_lock);
         err[0] = 0;
         ClassicResult r = job->local[0] ? classic_install_local(g_root, job->local, &hooks, rel, sizeof rel, err, sizeof err)
                                         : classic_install(g_root, &g_cat.app[i], &hooks, rel, sizeof rel, err, sizeof err);
         pthread_mutex_lock(&g_lock);
+        if (r == CA_OK || r == CA_ALREADY) classic_prog_stage(&g_prog, k, CS_DONE);
+        else if (r == CA_CANCELLED) classic_prog_stage(&g_prog, k, CS_STOPPED);
+        else classic_prog_fail(&g_prog, k, err);
         if (i >= 0) {
             g_status[i] = r == CA_OK || r == CA_ALREADY ? ST_DONE : ST_FAILED;
-            snprintf(g_item_msg[i], sizeof g_item_msg[i], "%s", r == CA_OK ? "Installed." : err);
+            snprintf(g_item_msg[i], sizeof g_item_msg[i], "%s", r == CA_FAILED || r == CA_NO_SOURCE || r == CA_HASH || r == CA_FULL ? err : "");
         }
-        if (r == CA_OK) ok++; else if (r != CA_ALREADY) bad++;
-        if (r == CA_OK && !job->local[0]) snprintf(g_stage, sizeof g_stage, "Installed into %.60s", rel);
-        if (r != CA_OK) snprintf(g_summary, sizeof g_summary, "%s", err);
+        if (job->local[0] && r != CA_OK && r != CA_CANCELLED) snprintf(g_local_err, sizeof g_local_err, "%s", err);
         pthread_mutex_unlock(&g_lock);
         if (r == CA_CANCELLED) break;
     }
     pthread_mutex_lock(&g_lock);
-    if (!bad) snprintf(g_summary, sizeof g_summary, "%s", ok ? "Done. The files are in your volume and were not run." : "Nothing new to install.");
+    classic_prog_stop_rest(&g_prog);
+    classic_summary(&g_prog, g_summary, sizeof g_summary);
+    if (job->local[0] && g_prog.it[0].stage == CS_FAILED && g_local_err[0]) snprintf(g_summary, sizeof g_summary, "%s", g_local_err);
     g_stage[0] = 0;
     pthread_mutex_unlock(&g_lock);
     volume_space_invalidate();
@@ -73,7 +94,17 @@ static void start_job(void) {
     atomic_store(&g_run, RUN_BUSY);
     pthread_mutex_lock(&g_lock);
     g_summary[0] = 0;
-    snprintf(g_stage, sizeof g_stage, "Starting");
+    g_stage[0] = 0;
+    g_cur = 0;
+    g_local_err[0] = 0;
+    classic_prog_init(&g_prog);
+    for (int i = 0; i < CLASSIC_MAX_APPS; i++) { g_pos[i] = -1; g_item_msg[i][0] = 0; }
+    if (g_job.local[0]) {
+        struct stat st;
+        classic_prog_add(&g_prog, !stat(g_job.local, &st) && S_ISREG(st.st_mode) ? (uint64_t)st.st_size : 0);
+    } else {
+        for (int k = 0; k < g_job.n; k++) g_pos[g_job.idx[k]] = classic_prog_add(&g_prog, classic_item_weight(&g_cat.app[g_job.idx[k]]));
+    }
     pthread_mutex_unlock(&g_lock);
     if (pthread_create(&g_thread, NULL, worker, &g_job) != 0) {
         atomic_store(&g_run, RUN_IDLE);
@@ -98,7 +129,8 @@ int classic_apps_open(Session *s) {
             g_loaded = 1;
         }
         memset(g_tick, 0, sizeof g_tick);
-        for (int i = 0; i < g_cat.n; i++) { g_tick[i] = g_cat.app[i].default_on && g_cat.app[i].page[0]; g_item_msg[i][0] = 0; g_status[i] = ST_NONE; }
+        classic_prog_init(&g_prog);
+        for (int i = 0; i < g_cat.n; i++) { g_tick[i] = g_cat.app[i].default_on && g_cat.app[i].page[0]; g_item_msg[i][0] = 0; g_status[i] = ST_NONE; g_pos[i] = -1; }
         refresh_installed();
         g_browse = 0;
         g_summary[0] = 0;
@@ -143,6 +175,8 @@ static Rect folder_btn(const Layout *l) { return rrect(l, 12, l->content.h - 28,
 static Rect browse_cancel_btn(const Layout *l) { return rrect(l, 170, l->content.h - 28, 80); }
 static Rect fd_area(const Layout *l) { return (Rect){l->content.x, l->content.y, l->content.w, l->content.h - 34}; }
 static Rect row_box(const Layout *l, int i) { return (Rect){l->content.x + 10, l->content.y + 74 + i * ROW_H, l->content.w - 20, ROW_H - 2}; }
+Rect classic_apps_panel_row_bar(const Layout *l, int i) { Rect r = row_box(l, i); return (Rect){r.x + 20, r.y + 17, ROW_BAR_W, 11}; }
+Rect classic_apps_panel_total_bar(const Layout *l) { return (Rect){l->content.x + 12, l->content.y + l->content.h - 66, l->content.w - 24, 12}; }
 
 static void button(Fb *fb, Rect r, const char *label, int enabled) {
     fb_fill(fb, r.x, r.y, r.w, r.h, enabled ? C_MENU : 0xFFD8D8D8u);
@@ -178,7 +212,7 @@ int classic_apps_panel_paint(Fb *fb, const Window *w, const Layout *lay) {
     for (int i = 0; i < g_cat.n; i++) {
         const ClassicApp *a = &g_cat.app[i];
         Rect r = row_box(lay, i);
-        if (r.y + r.h > lay->content.y + lay->content.h - 64) break;
+        if (r.y + r.h > lay->content.y + lay->content.h - BOTTOM_H) break;
         int can = a->page[0] && g_status[i] != ST_DONE;
         fb_frame(fb, r.x, r.y + 2, 12, 12, can ? C_BLACK : C_GRAY);
         if (g_tick[i] && can) { fb_fill(fb, r.x + 3, r.y + 5, 6, 6, C_BLACK); }
@@ -186,13 +220,34 @@ int classic_apps_panel_paint(Fb *fb, const Window *w, const Layout *lay) {
         if (a->size_mb[0]) snprintf(head, sizeof head, "%s   %s MB", a->name, a->size_mb);
         else snprintf(head, sizeof head, "%s%s", a->name, a->page[0] ? "" : "   (from a folder or archive)");
         text_fit(fb, r.x + 20, r.y + 2, r.w - 20, can ? C_BLACK : 0xFF606060u, head);
-        const char *line = g_item_msg[i][0] ? g_item_msg[i] : g_status[i] == ST_DONE ? "Installed." : a->note;
-        uint32_t col = g_status[i] == ST_FAILED ? 0xFF9C1C1Cu : 0xFF505050u;
-        text_fit(fb, r.x + 20, r.y + 16, r.w - 20, col, line);
+        const ClassicItemProg *ip = g_pos[i] >= 0 && g_pos[i] < g_prog.n ? &g_prog.it[g_pos[i]] : NULL;
+        if (ip) {
+            Rect b = classic_apps_panel_row_bar(lay, i);
+            char label[120];
+            classic_stage_label(ip, label, sizeof label);
+            classic_bar_paint(fb, b.x, b.y, b.w, b.h, classic_item_permille(ip));
+            text_fit(fb, b.x + b.w + 8, r.y + 16, r.x + r.w - (b.x + b.w + 8), ip->stage == CS_FAILED ? 0xFF9C1C1Cu : C_BLACK, label);
+            if (ip->stage == CS_FAILED && g_item_msg[i][0]) {
+                ClassicLine ln[1];
+                if (classic_wrap(g_item_msg[i], r.w - 20, fb_text_width_n, ln, 1)) fb_text(fb, r.x + 20, r.y + 31, 0xFF9C1C1Cu, ln[0].t);
+            }
+            continue;
+        }
+        const char *line = g_status[i] == ST_DONE ? "Installed." : a->note;
+        ClassicLine ln[2];
+        int nl = classic_wrap(line, r.w - 20, fb_text_width_n, ln, 2);
+        for (int k = 0; k < nl; k++) fb_text(fb, r.x + 20, r.y + 16 + k * 13, 0xFF505050u, ln[k].t);
     }
-    int by = lay->content.h - 52;
-    if (busy) text_fit(fb, x, lay->content.y + by, tw, C_BLACK, g_stage);
-    else if (g_summary[0]) text_fit(fb, x, lay->content.y + by, tw, C_BLACK, g_summary);
+    if (g_prog.n) {
+        char tl[80];
+        Rect tb = classic_apps_panel_total_bar(lay);
+        classic_total_label(&g_prog, tl, sizeof tl);
+        fb_text(fb, tb.x, tb.y - 14, C_BLACK, tl);
+        classic_bar_paint(fb, tb.x, tb.y, tb.w, tb.h, classic_total_permille(&g_prog));
+    }
+    int by = lay->content.h - 48;
+    if (busy && g_stage[0]) text_fit(fb, x, lay->content.y + by, tw, C_BLACK, g_stage);
+    else if (!busy && g_summary[0]) text_fit(fb, x, lay->content.y + by, tw, C_BLACK, g_summary);
     pthread_mutex_unlock(&g_lock);
     button(fb, install_btn(lay), busy ? "Stop" : "Install Selected", 1);
     button(fb, local_btn(lay), "From Folder or Archive...", !busy);
@@ -275,4 +330,16 @@ int classic_apps_panel_wheel(Window *w, int delta) {
     if (!is_panel(w) || !g_browse) return 0;
     fd_wheel(&g_fd, delta);
     return 1;
+}
+
+/* Test seam: load the catalogue and show a run in a given state without starting a worker. */
+void classic_apps_panel_test_seed(const struct ClassicRunProg *p, const int *cat_idx, int n, int busy) {
+    if (!g_loaded) { classic_catalog_default(&g_cat); g_loaded = 1; }
+    pthread_mutex_lock(&g_lock);
+    g_prog = *p;
+    for (int i = 0; i < CLASSIC_MAX_APPS; i++) { g_pos[i] = -1; g_status[i] = ST_NONE; g_item_msg[i][0] = 0; }
+    for (int k = 0; k < n; k++) g_pos[cat_idx[k]] = k;
+    g_summary[0] = 0;
+    atomic_store(&g_run, busy ? RUN_BUSY : RUN_IDLE);
+    pthread_mutex_unlock(&g_lock);
 }

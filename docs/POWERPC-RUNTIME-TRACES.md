@@ -286,3 +286,28 @@ every selector, records untouched, refusals), `build/test_mac_ppc_libs` (PowerPC
 `EqualString` and `num2dec`), a low-depth drawing case in `build/test_mac_gworld`. `HGetFInfo`, `HSetFInfo`, `HCreate`, `HDelete`,
 `IUEqualString`, `GetIndPattern`, `DateToSeconds`, the `ParamText` NIL rule and `DisposeGWorld(NIL)` have no test of their own; only the real
 application ran them.
+
+## Sixth real-file run: the folder is found — 12 November 2026
+
+Branch `qt/filemanager` (hierarchical File Manager, commits `5c62cb5` and `666dfac`) on top of `ppc/printing`. Same application, run from a full copy of its
+folder (Textures folder of 231 entries and the other sample folders beside it), `--saves` pointing at an empty scratch directory,
+`OS999_PPC_TRACE=1 ospi-runtime --indexed --steps 60000000 <app>.rsrc`, headless.
+
+| Run | Imports | PowerPC instructions | Stops at |
+| --- | --- | --- | --- |
+| Fifth run, full folder copy | 2,597 | 1,017,487 | the `NoteAlert` for the missing Textures folder |
+| Sixth run, full folder copy | 82,641 | 17,748,937 | `Toolbox trap $A921 behind PowerPC import SendBehind is not implemented.` |
+
+What changed, in the order the application asked for it. It first calls `PBGetFCBInfoSync` on its own resource file to learn where it lives (a parent
+directory ID and a volume). That call had no handler for the data volume, so the answer was an error and the application went on to `PBDirCreateSync`, made an
+empty "Textures" and failed to read its materials. `PBGetFCBInfo` (selector 8) now answers for the application's resource file (reference 1, reported as
+the file the runtime was started from, in the root directory) and for any file the service holds open, with the directory ID of its folder. With that, the
+trace shows `HGetFInfo` with a large directory ID (a table ID, not the root's 2), then 272 `PBGetCatInfoSync` calls (the enumeration of the Textures folder
+by index), 34 `PBReadSync`, one `PBOpenSync`/`PBGetEOFSync`/`PBCloseSync` and no alert. The save directory stayed empty: nothing was created.
+
+The stop is the Window Manager: `SendBehind` (`$A921`) is not implemented. That is outside this change and is the next blocker, not a File Manager one.
+
+Not verified: no window was shown and no frame looked at; the application's use of the textures after enumerating them is not checked (only that it read
+34 blocks and carried on). `PBGetFCBInfo`'s flag bits are not claimed (only "resource fork" and "writable" are set, on a guess from the System volume's
+implementation). The `PBGetFCBInfo` layout is the one `mac_system_volume.c` already used; the trace did not dump the block the application built, so the
+input fields (reference number, index) were taken on trust from that layout, and the result is that the application proceeded, not a byte-level check.

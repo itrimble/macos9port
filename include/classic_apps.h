@@ -38,9 +38,21 @@ typedef int (*ClassicFetch)(const ClassicApp *app, const char *dest, const atomi
                             void *ctx, char *err, size_t err_n);
 typedef void (*ClassicProgress)(void *ctx, const char *stage);
 
+/* Where one install is. Reported through ClassicHooks.stage from the worker thread. COPYING is a local
+ * archive being read in; DOWNLOADING is the network. DONE/FAILED/STOPPED are set by the caller, not by
+ * classic_install. */
+typedef enum {
+    CS_WAITING = 0, CS_DOWNLOADING, CS_COPYING, CS_VERIFYING, CS_UNPACKING, CS_DONE, CS_FAILED, CS_STOPPED
+} ClassicStage;
+typedef void (*ClassicStageFn)(void *ctx, ClassicStage stage);
+/* Bytes moved so far out of the expected total (0: unknown). Called from the worker thread. */
+typedef void (*ClassicBytesFn)(void *ctx, uint64_t got, uint64_t total);
+
 typedef struct {
     ClassicFetch fetch;              /* NULL: Macintosh Garden through the secure network layer */
     ClassicProgress progress;        /* may be NULL */
+    ClassicStageFn stage;            /* may be NULL */
+    ClassicBytesFn bytes;            /* may be NULL */
     void *ctx;
     const atomic_bool *cancel;       /* may be NULL; checked before each step */
 } ClassicHooks;
@@ -79,4 +91,8 @@ int classic_apps_panel_paint(Fb *fb, const Window *w, const Layout *lay);   /* 1
 int classic_apps_panel_click(Session *s, Window *w, int x, int y);          /* 1 when handled */
 int classic_apps_panel_key(Session *s, Window *w, int key, int mods);       /* 1 when used */
 int classic_apps_panel_wheel(Window *w, int delta);                          /* 1 when used */
+struct ClassicRunProg;
+Rect classic_apps_panel_row_bar(const Layout *lay, int row);   /* where row `row`'s bar is painted */
+Rect classic_apps_panel_total_bar(const Layout *lay);
+void classic_apps_panel_test_seed(const struct ClassicRunProg *p, const int *cat_idx, int n, int busy);   /* tests only */
 #endif

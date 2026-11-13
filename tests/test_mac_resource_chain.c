@@ -65,15 +65,15 @@ int main(void) {
     int second=open_res(&r,"Second");CHECK(second>first && current(&r)==second);
     uint32_t sh=get(&r,0xa81f,128);CHECK(sh!=fh && sh!=ah);bytes_are(&r,sh,"BBB!");
     CHECK(open_res(&r,"FIRST")==first && current(&r)==second);
-    /* A full pathname that starts with the volume's own name is the same file; any other colon is still refused. */
+    /* A full pathname that starts with the volume's own name is the same file; a colon otherwise separates folders (dirNFErr / nsvErr when they are not there). */
     CHECK(open_res(&r,"OS999 HD:First")==first && err(&r)==0);
     CHECK(open_res(&r,"os999 hd:FIRST")==first && err(&r)==0);
     CHECK(open_perm(&r,"fIrSt",0,1)==first && err(&r)==0 && open_perm(&r,"First",-1,3)==first);   /* the same fork, any volume word and permission */
     CHECK(open_perm(&r,"Missing",0,1)==-1 && err(&r)==-43 && current(&r)==second);               /* a missing one: -1 and fnfErr, the current file unchanged */
-    CHECK(open_perm(&r,"OS999 HD:sub:First",0,1)==-1 && err(&r)==-37);
+    CHECK(open_perm(&r,"OS999 HD:sub:First",0,1)==-1 && err(&r)==-120);   /* a folder that is not there: dirNFErr */
     CHECK(open_res(&r,"OS999 HD:Missing")==-1 && err(&r)==-43);
-    CHECK(open_res(&r,"OS999 HD:")==-1 && err(&r)==-37 && open_res(&r,"Other Disk:First")==-1 && err(&r)==-37);
-    CHECK(open_res(&r,"OS999 HD:sub:First")==-1 && err(&r)==-37 && open_res(&r,"OS999 HD:../First")==-1 && err(&r)==-37);
+    CHECK(open_res(&r,"OS999 HD:")==-1 && err(&r)==-37 && open_res(&r,"Other Disk:First")==-1 && err(&r)==-35);   /* neither this volume nor a folder here: nsvErr */
+    CHECK(open_res(&r,"OS999 HD:sub:First")==-1 && err(&r)==-120 && open_res(&r,"OS999 HD:../First")==-1 && err(&r)==-37);
     CHECK(current(&r)==second);
     use(&r,first);CHECK(err(&r)==0 && get(&r,0xa9a0,128)==fh);
     CHECK(get(&r,0xa99d,1)==sh);CHECK(get(&r,0xa99d,2)==fh);CHECK(get(&r,0xa99d,3)==ah);

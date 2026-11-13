@@ -107,6 +107,13 @@ static const NativeSurfaceBackend backend = {
     quake_read, quake_input, quake_state, quake_close, "Quake III Arena"
 };
 
+/* Explain what is missing and offer the in-OS999 folder chooser (OK reads "Choose Folder...", Cancel closes). */
+static void quake_need_data(Session *s, const char *title, const char *body) {
+    dialog_info(s, title, body);
+    s->dialog = 2;
+    s->dialog_cmd = CMD_QUAKE_CHOOSE;
+}
+
 /* OS999 > Quake III Arena: start the separately built, GPL-2 engine as its own
  * process. Nothing from Quake links into OS999. */
 /* mode 0: full game. 1: Arena demo. 2: Applications icon: the full game when its data is installed,
@@ -149,12 +156,16 @@ static int open_quake(Session *s, int mode) {
         return -1;
     }
     if (ready == -3) {
+#ifdef __APPLE__
+        quake_need_data(s, "Quake III Arena Demo", "OS999 needs the original Quake III Arena demo (pak0.pk3, version 1.11), or the full game's baseq3 folder (pak0.pk3 to pak8.pk3). Choose the folder that holds it. OS999 checks every file and rejects anything modified.");
+#else
         dialog_info(s, "Quake III Arena Demo", "Put the original Arena 1.11 demo pak0.pk3 in this volume's Downloads or Documents folder and open Quake again. OS999 checks and installs it. Local play only; modified data is rejected.");
+#endif
         return -1;
     }
     if (ready == -2) {
 #ifdef __APPLE__
-        dialog_info(s, "Quake III Arena", "Put the original Quake III Arena baseq3 folder (pak0.pk3 to pak8.pk3, unmodified) in this disk's Downloads or Documents folder and open Quake again. OS999 checks every file and rejects anything else.");
+        quake_need_data(s, "Quake III Arena", "OS999 needs the original Quake III Arena game (the baseq3 folder, pak0.pk3 to pak8.pk3, unmodified) or the 1.11 demo (pak0.pk3). Choose the folder that holds them, in this disk, Downloads, Desktop or Documents. OS999 checks every file and rejects anything modified.");
 #else
         dialog_info(s, "Quake III Arena", "Copy pak0.pk3 into ~/.local/share/os999/quake3/baseq3 (or demota for the demo).");
 #endif

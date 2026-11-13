@@ -111,91 +111,6 @@ static int working_directory(MacRuntime *rt, uint32_t pb) {
     return 0;
 }
 
-static int mac_date(time_t unix_time, uint32_t *out) {
-    int64_t value = (int64_t)unix_time + INT64_C(2082844800);
-    if (value < 0 || value > UINT32_MAX) return -50;
-    *out = (uint32_t)value;
-    return 0;
-}
-
-/* Count representable direct children, never traversing links. The directory
- * descriptor pins the mounted root even if its original pathname is renamed. */
-static int root_count(FileState *s, unsigned *count) {
-    int fd = openat(s->directory, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-    if (fd < 0) return -36;
-    DIR *dir = fdopendir(fd);
-    if (!dir) { close(fd); return -36; }
-    unsigned scanned = 0;
-    int error = 0;
-    *count = 0;
-    for (;;) {
-        errno = 0;
-        struct dirent *e = readdir(dir);
-        if (!e) { if (errno) error = -36; break; }
-        if (++scanned > 4096) { error = -50; break; }
-        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
-        size_t length = strlen(e->d_name);
-        int supported = length > 0 && length <= 255;
-        for (size_t i = 0; i < length; i++)
-            if ((unsigned char)e->d_name[i] < 32 || (unsigned char)e->d_name[i] >= 127 ||
-                e->d_name[i] == ':' || e->d_name[i] == '\\') supported = 0;
-        if (!supported) continue;
-        struct stat st;
-        if (fstatat(fd, e->d_name, &st, AT_SYMLINK_NOFOLLOW)) { error = -36; break; }
-        if (S_ISREG(st.st_mode) || S_ISDIR(st.st_mode)) (*count)++;
-    }
-    closedir(dir);
-    return error;
-}
-
-/* Root-only PBGetCatInfo, documented directory variant offsets, Files 2-295.
- * Unknown Finder and backup metadata is absent (zero), never synthesized from
- * application names. Named entries and indexed catalog enumeration unsupported. */
-static int root_info(MacRuntime *rt, uint32_t pb) {
-    MacCpu *cpu = rt->cpu;
-    FileState *s = rt->file_state;
-    if (!s) return -35;
-    int volume = (int16_t)mac_cpu_read(cpu,pb+22,2);
-    if (volume != 0 && volume != -1 && !(volume == -2 && rt->system_volume && (int16_t)mac_cpu_read(cpu,pb+28,2) >= 0)) return -35;   /* -2: the System volume's folders are this flat namespace too */
-    if ((int16_t)mac_cpu_read(cpu,pb+28,2) == 0 && mac_files_folder_info(rt,pb)) return 0;   /* a folder made by DirCreate */
-    if ((int16_t)mac_cpu_read(cpu,pb+28,2) >= 0) {   /* PBGetCatInfo by index (1..n) or by name: the files of the single directory, as PBHGetFInfo lists them */
-        int found = mac_files_hget_info(rt,pb);
-        if (!found) mac_cpu_write(cpu,pb+100,4,2);   /* ioFlParID: every file's parent is the volume root (directory ID 2); Glider hands it to FSMakeFSSpec */
-        return found;
-    }
-    if (mac_cpu_read(cpu,pb+48,4) != 2) return -120;
-    uint32_t name = mac_cpu_read(cpu,pb+18,4);
-    if (name && !valid(cpu,name,11)) return -50;
-    struct stat st;
-    if (fstat(s->directory,&st)) return -36;
-    uint32_t created = 0, modified;
-    if (mac_date(st.st_mtime,&modified)) return -50;
-#if defined(__APPLE__)
-    if (mac_date(st.st_birthtimespec.tv_sec,&created)) return -50;
-#endif
-    unsigned count, overlay;
-    int error = root_count(s,&count);
-    if (!error) error = mac_files_overlay_count(s,&overlay);
-    if (error) return error;
-    count += overlay;
-    /* All input, host operations and output bounds checked before guest writes. */
-    if (name) {
-        mac_cpu_ram(cpu)[name] = 8;
-        memcpy(mac_cpu_ram(cpu)+name+1,"OS999 HD",8);
-    }
-    mac_cpu_write(cpu,pb+30,1,0x10); /* Directory, no fabricated Finder lock. */
-    mac_cpu_write(cpu,pb+31,1,0); /* Non-AFP access-rights field. */
-    memset(mac_cpu_ram(cpu)+pb+32,0,16);
-    mac_cpu_write(cpu,pb+48,4,2);
-    mac_cpu_write(cpu,pb+52,2,count);
-    mac_cpu_write(cpu,pb+72,4,created);
-    mac_cpu_write(cpu,pb+76,4,modified);
-    mac_cpu_write(cpu,pb+80,4,0);
-    memset(mac_cpu_ram(cpu)+pb+84,0,16);
-    mac_cpu_write(cpu,pb+100,4,1); /* Virtual parent of volume root. */
-    return 0;
-}
-
 /* Shared by PBOpen and FSpOpenDF: opens the named regular file into a free slot and returns its reference. */
 int mac_files_open_name(MacRuntime *rt, const char *name, unsigned permission, int *ref) {
     FileState *s = rt->file_state;
@@ -215,7 +130,7 @@ int mac_files_open_name(MacRuntime *rt, const char *name, unsigned permission, i
     if (permission > 1) return -54; /* permErr: application data is read-only */
     /* No symlink traversal, including within the root. The directory descriptor
      * pins the selected directory; pathname races cannot redirect this open. */
-    int fd = openat(s->directory, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+    int fd = mac_dirs_openat(s->directory, name, O_RDONLY | O_NONBLOCK, 0);
     if (fd < 0) {
         int error = errno == ENOENT ? -43 : errno == ELOOP || errno == EACCES ? -54 : -36;
         if (rt->trace) fprintf(stderr, "file-open-result name=%s error=%d\n", name, error);
@@ -226,7 +141,7 @@ int mac_files_open_name(MacRuntime *rt, const char *name, unsigned permission, i
         close(fd); return -50;
     }
     s->files[index] = (GuestFile){fd, 0, 0, {0}, 0};
-    memcpy(s->files[index].name, name, strlen(name) < FILE_NAME_MAX ? strlen(name) + 1 : 0);
+    snprintf(s->files[index].name, sizeof s->files[index].name, "%s", name);
     *ref = REF_BASE + index;
     if (rt->trace) fprintf(stderr, "file-open-result name=%s ref=%d bytes=%lld\n", name, *ref, (long long)st.st_size);
     return 0;
@@ -236,10 +151,15 @@ static int open_file(MacRuntime *rt, uint32_t pb) {
     MacCpu *cpu = rt->cpu;
     int volume = (int16_t)mac_cpu_read(cpu, pb + 22, 2);
     unsigned permission = mac_cpu_read(cpu, pb + 27, 1);
-    char name[256];
-    int error = mac_files_pb_name(rt, pb, mac_cpu_read(cpu, pb + 18, 4), name, sizeof name);
-    if (error) return error;
+    char name[DIRS_PATH_MAX];
     if (!rt->file_state || (volume != 0 && volume != -1 && mac_files_volume_ok_rt(rt, pb))) return -35; /* nsvErr */
+    int error = mac_files_pb_path(rt, pb, mac_cpu_read(cpu, pb + 18, 4), name, 0);
+    if (rt->trace) {
+        uint32_t np = mac_cpu_read(cpu, pb + 18, 4); char shown[80] = "";
+        if (np && valid(cpu, np, 1)) { unsigned n = mac_cpu_read(cpu, np, 1); for (unsigned i = 0; i < n && i < 70 && valid(cpu, np + 1 + i, 1); i++) shown[i] = (char)mac_cpu_read(cpu, np + 1 + i, 1); }
+        fprintf(stderr, "open vref=%d dirid=%u perm=%u name='%s' path-error=%d\n", volume, mac_cpu_read(cpu, pb + 48, 4), permission, shown, error);
+    }
+    if (error) return error;
     int ref;
     if ((error = mac_files_open_name(rt, name, permission, &ref))) return error;
     mac_cpu_write(cpu, pb + 24, 2, (uint16_t)ref);
@@ -354,7 +274,7 @@ static unsigned block_size(unsigned base, int wd, unsigned selector) {
     case 0xa007: return 64;
     case 0xa209: case 0xa214: case 0xa215: case 0xa00a: case 0xa20a: return 52;
     case 0xa207: return 122;
-    case 0xa260: return wd && selector == 9 ? 104 : 52;
+    case 0xa260: return wd && selector == 9 ? 104 : wd && selector == 8 ? 62 : 52;
     default: return PB_BYTES;
     }
 }
@@ -362,12 +282,15 @@ static unsigned block_size(unsigned base, int wd, unsigned selector) {
 static int file_service(MacRuntime *rt, uint16_t opcode) {
     if (opcode == 0xaa52) return mac_fsspec_service(rt, opcode); /* HighLevelFSDispatch */
     unsigned base = opcode & ~0x400u;
+    int hfs_flavour = (base & 0xff00) == 0xa200 || base == 0xa060;   /* H-prefixed calls and FSDispatch carry ioDirID at +48 */
+    if (rt && rt->file_state) ((FileState *)rt->file_state)->hfs_call = hfs_flavour;
     /* HFS flavours (HParamBlockRec) share the leading layout of the classic
      * calls we implement; ioDirID is not consulted, so they act on the mounted
      * data directory. HOpenRF has no resource-fork handle support here. */
     switch (base) {
     case 0xa200: base = 0xa000; break;
     case 0xa208: base = 0xa008; break;
+    case 0xa20b: base = 0xa00b; break;
     case 0xa20d: base = 0xa00d; break;
     default: break;
     }
@@ -386,9 +309,10 @@ static int file_service(MacRuntime *rt, uint16_t opcode) {
         uint32_t q = mac_cpu_get(cpu, MAC_A0);
         if (!(q & 1) && valid(cpu, q, 52)) return result(cpu, q, mac_files_dir_create(rt, q));
     }
-    if (wd && selector != 1 && selector != 2 && selector != 7 && selector != 9 && selector != 0x30) return 0;
+    if (wd && selector != 1 && selector != 2 && selector != 5 && selector != 7 && selector != 8 && selector != 9 && selector != 0x30) return 0;
     if (wd && (selector == 1 || selector == 2) && !mac_files_wd_ours(rt, selector, mac_cpu_read(cpu, mac_cpu_get(cpu, MAC_A0) + 48, 4), (int16_t)mac_cpu_read(cpu, mac_cpu_get(cpu, MAC_A0) + 22, 2))) return 0;   /* not one of ours: another service's */
     if (base == 0xa060 && selector != 0x1a) return 0; /* _FSDispatch: only PBOpenDF so far */
+    if (wd && selector == 8 && !mac_files_fcb_ours(rt)) return 0;   /* PBGetFCBInfo of a reference that is not ours: another service's */
     uint32_t pb = mac_cpu_get(cpu, MAC_A0);
     if ((pb & 1) || !valid(cpu, pb, block_size(base, wd, selector))) {
         mac_cpu_halt(cpu, "Invalid File Manager parameter block."); return -1;
@@ -400,7 +324,8 @@ static int file_service(MacRuntime *rt, uint16_t opcode) {
     case 0xa007: return result(cpu, pb, mac_volume_info_basic(rt, pb, state ? state->directory : -1));
     case 0xa207: return result(cpu, pb, mac_volume_info(rt, pb, state ? state->directory : -1));
     case 0xa260: {
-        int error = selector == 0x30 ? mac_files_get_volparms(rt,pb) : selector == 9 ? root_info(rt,pb) : selector == 1 || selector == 2 || (selector == 7 && mac_files_wd_folder((int16_t)mac_cpu_read(cpu,pb+22,2))) ? mac_files_wd(rt,pb,selector) : working_directory(rt,pb);
+        if (wd && state) state->hfs_call = 1;
+        int error = selector == 0x30 ? mac_files_get_volparms(rt,pb) : selector == 9 ? mac_files_cat_info(rt,pb) : selector == 5 ? mac_files_cat_move(rt,pb) : selector == 8 ? mac_files_fcb_info(rt,pb) : selector == 1 || selector == 2 || (selector == 7 && mac_files_wd_folder(rt,(int16_t)mac_cpu_read(cpu,pb+22,2))) ? mac_files_wd(rt,pb,selector) : working_directory(rt,pb);
         if (rt->trace) fprintf(stderr, "hfs-dispatch selector=%u volume=%d index=%d dirid=%u name-ptr=%08x error=%d\n",
                                selector, (int16_t)mac_cpu_read(cpu,pb+22,2), (int16_t)mac_cpu_read(cpu,pb+28,2),
                                mac_cpu_read(cpu,pb+48,4), mac_cpu_read(cpu,pb+18,4), error);
@@ -436,7 +361,13 @@ static int file_service(MacRuntime *rt, uint16_t opcode) {
 
 /* The File Manager entry point; with tracing on, every handled call reports its trap and result. */
 int mac_file_service(MacRuntime *rt, uint16_t opcode) {
+    uint32_t pb = rt && rt->cpu ? mac_cpu_get(rt->cpu, MAC_A0) : 0;
+    int16_t vref = 0, index = 0; uint32_t name = 0;
+    if (rt && rt->trace && (opcode & ~0x400u) == 0xa207 && pb && !(pb & 1) && pb < mac_cpu_ram_size(rt->cpu) - 40) {   /* PBHGetVInfo: which volume it was asked about */
+        name = mac_cpu_read(rt->cpu, pb + 18, 4); vref = (int16_t)mac_cpu_read(rt->cpu, pb + 22, 2); index = (int16_t)mac_cpu_read(rt->cpu, pb + 28, 2);
+    }
     int handled = file_service(rt, opcode);
     if (handled > 0 && rt && rt->trace) fprintf(stderr, "file-call op=%04x result=%d\n", opcode, (int32_t)mac_cpu_get(rt->cpu, MAC_D0));
+    if (handled > 0 && rt && rt->trace && (opcode & ~0x400u) == 0xa207) fprintf(stderr, "  get-vinfo vref=%d index=%d name-ptr=%08x\n", vref, index, name);
     return handled;
 }

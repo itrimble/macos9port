@@ -1,6 +1,7 @@
 #include "desktop_info.h"
 #include "classic_apps.h"
 #include "session_int.h"
+#include "quake_pick.h"
 #include "desktop_theme.h"
 #include "font_book_window.h"
 #include <fcntl.h>
@@ -104,7 +105,7 @@ static Rect about_link(const Layout *lay) {
 }
 
 int desktop_info_click(Session *s, Window *w, int x, int y) {
-    if (classic_apps_panel_click(s, w, x, y)) return 1;
+    if (classic_apps_panel_click(s, w, x, y) || quake_pick_panel_click(s, w, x, y)) return 1;
     if (w->kind != WIN_TEXT || strcmp(w->rel, ":about")) return 0;
     Layout lay; window_layout(w, &lay);
     if (!rect_has(about_link(&lay), x, y)) return 0;
@@ -115,7 +116,7 @@ int desktop_info_click(Session *s, Window *w, int x, int y) {
 }
 
 int desktop_info_paint(Fb *fb, const Window *w, const Layout *lay) {
-    if (classic_apps_panel_paint(fb, w, lay)) return 1;
+    if (classic_apps_panel_paint(fb, w, lay) || quake_pick_panel_paint(fb, w, lay)) return 1;
     if (!strcmp(w->rel, ":about")) {
         text_draw(fb, lay->content.x + 8, lay->content.y + 6 - w->scroll,
                   lay->content.w - 12, desktop_theme_color(THEME_FOREGROUND), window_text(w));

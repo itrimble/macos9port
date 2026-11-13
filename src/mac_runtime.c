@@ -1,4 +1,6 @@
 #include "mac_runtime.h"
+#include "mac_codefmt.h"
+#include "mac_rescomp.h"
 #include "guest_memory.h"
 #include "mac_sound.h"
 #include "mac_time.h"
@@ -29,9 +31,6 @@ void mac_runtime_set_machine_policy(int ram_mb, int addr_bits) {
  * This first loader supports classic near-model jump tables, not CFM or PPC.
  */
 static uint16_t be16(const uint8_t *p) { return (uint16_t)((p[0] << 8) | p[1]); }
-static uint32_t be32(const uint8_t *p) {
-    return ((uint32_t)be16(p) << 16) | be16(p + 2);
-}
 
 static int fail(MacRuntime *rt, char *err, size_t n, const char *message) {
     if (err && n) snprintf(err, n, "%s", message);
@@ -170,6 +169,9 @@ static int machine_finish(MacRuntime *rt, uint32_t below, uint32_t pc, uint32_t 
     mac_cpu_write(rt->cpu, 0x934, 2, jt_offset); /* CurJTOffset */
     mac_cpu_write(rt->cpu, 0x15a, 2, MAC_PROFILE_SYSTEM_VERSION); /* Guest compatibility profile, not host OS. */
     mac_cpu_write(rt->cpu, 0x12f, 1, 2); /* 68020 */
+    /* $6F4: the vector start-up code of MPW-built programs calls (on anything above a 68000) to flush the instruction cache after moving code. It is
+     * compared with the unimplemented-trap address, and equal means "nothing to flush"; zero here sent such a program to address 0. */
+    mac_cpu_write(rt->cpu, 0x6f4, 4, mac_native_stub(0x89f));
     mac_cpu_write(rt->cpu, 0x108, 4, rt->ram_reported); /* MemTop: top of RAM (32-bit: the machine's RAM; 24-bit: the legacy partition top) */
     mac_cpu_write(rt->cpu, 0x130, 4, appl_limit); /* ApplLimit: the partition's heap top, before the bump/protected split */
     rt->system_volume = mac_system_volume_create(rt);
@@ -188,21 +190,21 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
     MacResource zero;
     if (mac_resource_find(fork, MAC_CODE_TYPE, 0, &zero) != 0 || zero.size < 24)
         return fail(rt, err, n, "Missing or truncated CODE 0 jump table.");
-    uint32_t above = be32(zero.data), below = be32(zero.data + 4);
-    uint32_t length = be32(zero.data + 8), offset = be32(zero.data + 12);
-    if (below > 0x100000 || above > 0x100000 || length < 8 || length % 8 || (offset & 1) ||
-        length > zero.size - 16 || offset > above || length > above - offset)
-        return fail(rt, err, n, "Unsupported or invalid CODE 0 layout.");
+    MacCode0 z0;
+    if (mac_code0_parse(zero.data, zero.size, &z0)) return fail(rt, err, n, "Unsupported or invalid CODE 0 layout.");
+    uint32_t below = z0.below, length = z0.length, offset = z0.offset, above = z0.above;
+    (void)above;
     uint32_t appl_limit;
     if (machine_begin(rt, fork, below, &appl_limit, err, n)) return -1;
     rt->jump_table = rt->a5 + offset;
     rt->jump_size = length;
     uint8_t *ram = mac_cpu_ram(rt->cpu);
-    memcpy(ram + rt->jump_table, zero.data + 16, length);
+    memcpy(ram + rt->jump_table, zero.data + 16, z0.present); /* a table stored shorter than declared is zero-filled beyond what is stored */
     /* Validate every referenced segment, but leave non-startup entries lazy:
      * applications may patch LoadSeg to relocate their own code resources. */
-    for (uint32_t i = 0; i < length; i += 8) {
+    for (uint32_t i = 0; i < z0.present; i += 8) {
         const uint8_t *entry = zero.data + 16 + i;
+        if (i && be16(entry) == 0xa89f) break; /* the rest of the table is an installer engine's packed payload; its startup stub expands it */
         if (be16(entry + 2) != 0x3f3c || be16(entry + 6) != 0xa9f0)
             return fail(rt, err, n, "Unsupported jump-table entry (not near-model LoadSeg).");
         int16_t id = (int16_t)be16(entry + 4);
@@ -210,10 +212,15 @@ int mac_runtime_init(MacRuntime *rt, const MacResourceFork *fork, char *err, siz
         if (id <= 0 || mac_resource_find(fork, MAC_CODE_TYPE, id, &segment) != 0 || segment.size < 4)
             return fail(rt, err, n, "Jump table refers to a missing CODE segment.");
         uint32_t target_offset = be16(entry);
-        if (segment.size < 6 || target_offset > segment.size - 6 || (target_offset & 1))
+        size_t seg_size = mac_comp_size(segment.data, segment.size); /* a compressed segment is checked at the size it will have once expanded */
+        if (seg_size < 6 || target_offset > seg_size - 6 || (target_offset & 1))
             return fail(rt, err, n, "CODE entry point is outside its segment.");
     }
-    if (mac_runtime_load_segment(rt, (int16_t)be16(zero.data + 20)))
+    /* A startup segment stored compressed cannot be expanded before the CPU runs: its jump-table entry stays an unloaded LoadSeg stub, and the first call
+     * through it loads (and expands) the segment like any other. */
+    MacResource startup; MacComp packed;
+    int deferred = mac_resource_find(fork, MAC_CODE_TYPE, (int16_t)be16(zero.data + 20), &startup) == 0 && mac_comp_parse(startup.data, startup.size, &packed) != 0;
+    if (!deferred && mac_runtime_load_segment(rt, (int16_t)be16(zero.data + 20)))
         return fail(rt, err, n, "Could not load startup CODE segment.");
     return machine_finish(rt, below, rt->jump_table + 2, offset, appl_limit, err, n);
 }
@@ -245,12 +252,24 @@ int mac_runtime_load_segment(MacRuntime *rt, int16_t id) {
         mac_resource_find(&rt->fork, MAC_CODE_TYPE, id, &segment)) return -1;
     /* The jump table was validated against the application's CODE 0; never trust
      * whichever fork is current to still be that one. */
-    if (zero.size < 16 || rt->jump_size > zero.size - 16) return -1;
+    if (zero.size < 16) return -1;
+    uint32_t stored = (uint32_t)((zero.size - 16) & ~(size_t)7); /* entries CODE 0 actually holds; a table may be declared longer than it is stored */
+    /* The segment as it is in memory now: a self-decompressing stub (the first CODE of an installer engine) replaces the contents of its own handle and
+     * then re-enters its jump-table entry with a new offset word, so the size comes from the live handle and the offset from the entry as the program left it. */
+    uint32_t live_size = (uint32_t)mac_comp_size(segment.data, segment.size);
+    for (size_t i = 0; i < rt->handle_count; i++)
+        if (rt->handles[i].handle == handle && rt->handles[i].size >= 6) live_size = rt->handles[i].size;
     for (uint32_t i = 0; i < rt->jump_size; i += 8) {
-        const uint8_t *entry = zero.data + 16 + i;
-        if ((int16_t)be16(entry + 4) != id) continue;
-        uint32_t offset = be16(entry);
-        if (segment.size < 6 || offset > segment.size - 6 || (offset & 1)) return -1;
+        const uint8_t *entry = i < stored ? zero.data + 16 + i : NULL;
+        uint32_t at = rt->jump_table + i, offset = entry ? be16(entry) : 0;
+        /* An entry the program left unloaded (offset, MOVE.W #id,-(SP), _LoadSeg) names its own segment and offset, whatever CODE 0 said: that is what the
+         * Segment Loader reads. Entries still in CODE 0's form are matched by CODE 0's id as before. */
+        int unloaded = mac_cpu_read(rt->cpu, at + 2, 2) == 0x3f3c && mac_cpu_read(rt->cpu, at + 6, 2) == 0xa9f0;
+        if (unloaded) {
+            if ((int16_t)mac_cpu_read(rt->cpu, at + 4, 2) != id) continue;
+            offset = mac_cpu_read(rt->cpu, at, 2);
+        } else if (!entry || (int16_t)be16(entry + 4) != id) continue;
+        if (live_size < 6 || offset > live_size - 6 || (offset & 1)) return -1;
         mac_cpu_write(rt->cpu, rt->jump_table + i, 2, (uint16_t)id);
         mac_cpu_write(rt->cpu, rt->jump_table + i + 2, 2, 0x4ef9);
         mac_cpu_write(rt->cpu, rt->jump_table + i + 4, 4, pointer + 4 + offset);
@@ -274,6 +293,7 @@ void mac_runtime_destroy(MacRuntime *rt) {
     mac_alert_destroy(rt);
     mac_cdef_destroy(rt);
     mac_mdef_destroy(rt);
+    mac_rescomp_destroy(rt);
     mac_gworld_destroy(rt);
     mac_scrap_destroy(rt);
     mac_rgn_record_destroy(rt);

@@ -3,6 +3,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -23,9 +24,9 @@ static int mac_date(time_t unix_time, uint32_t *out) {
 
 static int compare_names(const void *a, const void *b) { return strcmp(a, b); }
 
-/* Sorted merged listing of regular files: data volume first, then saves that
- * do not shadow a data name. Bounded; deterministic for indexed PBGetFInfo. */
-static int listing(const FileState *s, char (**out)[256], unsigned *count) {
+/* Sorted merged listing of a directory: the data volume first, then saves that do not shadow a data name. Bounded; deterministic for indexed calls.
+ * Files only unless with_dirs (a directory's name then ends in '/'); a ".rsrc" sidecar is left out when hide_sidecars and its file is there too. */
+int mac_files_listing_dir(const FileState *s, const char *dirpath, int with_dirs, int hide_sidecars, char (**out)[256], unsigned *count) {
     char (*names)[256] = calloc(LIST_LIMIT, sizeof *names);
     if (!names) return -108;
     *count = 0;
@@ -33,8 +34,8 @@ static int listing(const FileState *s, char (**out)[256], unsigned *count) {
     for (int pass = 0; pass < 2 && !error; pass++) {
         int directory = pass ? s->saves : s->directory;
         if (directory < 0) continue;
-        DIR *dir = mac_files_open_listing(directory);
-        if (!dir) { error = -36; break; }
+        DIR *dir = mac_dirs_opendir(directory, dirpath);
+        if (!dir) { if (errno == ENOENT || errno == ENOTDIR) continue; error = -36; break; }
         unsigned scanned = 0;
         for (;;) {
             errno = 0;
@@ -42,16 +43,25 @@ static int listing(const FileState *s, char (**out)[256], unsigned *count) {
             if (!e) { if (errno) error = -36; break; }
             if (++scanned > ENTRY_LIMIT || *count >= LIST_LIMIT) { error = -50; break; }
             size_t length = strlen(e->d_name);
-            if (!length || length > 255 || !strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
-            if (pass && (!mac_files_save_name_ok(e->d_name) || mac_files_in_folder(e->d_name))) continue;
+            if (!length || length > 254 || e->d_name[0] == '.') continue;   /* hidden names stay hidden */
             int supported = 1;
             for (size_t i = 0; i < length; i++)
                 if ((unsigned char)e->d_name[i] < 32 || (unsigned char)e->d_name[i] >= 127 ||
                     e->d_name[i] == ':' || e->d_name[i] == '\\') supported = 0;
+            char child[DIRS_PATH_MAX];
+            if (!supported || snprintf(child, sizeof child, "%s%s%s", dirpath, dirpath[0] ? "/" : "", e->d_name) >= (int)sizeof child) continue;
             struct stat st;
-            if (!supported || fstatat(directory, e->d_name, &st, AT_SYMLINK_NOFOLLOW) || !S_ISREG(st.st_mode)) continue;
-            if (pass && !fstatat(s->directory, e->d_name, &st, AT_SYMLINK_NOFOLLOW)) continue;
-            memcpy(names[(*count)++], e->d_name, length + 1);
+            if (mac_dirs_stat(directory, child, &st)) continue;
+            int is_dir = S_ISDIR(st.st_mode);
+            if (!(S_ISREG(st.st_mode) || (is_dir && with_dirs))) continue;
+            if (pass && !mac_dirs_stat(s->directory, child, &st)) continue;   /* shadows (or is) the data volume's entry */
+            if (hide_sidecars && !is_dir && length > 5 && !strcmp(e->d_name + length - 5, ".rsrc")) {
+                char base[DIRS_PATH_MAX]; snprintf(base, sizeof base, "%s", child); base[strlen(base) - 5] = 0;
+                if (mac_files_classify(s, base) != FILE_NONE) continue;
+            }
+            memcpy(names[*count], e->d_name, length + 1);
+            if (is_dir) { names[*count][length] = '/'; names[*count][length + 1] = 0; }
+            (*count)++;
         }
         closedir(dir);
     }
@@ -60,6 +70,7 @@ static int listing(const FileState *s, char (**out)[256], unsigned *count) {
     *out = names;
     return 0;
 }
+static int listing(const FileState *s, char (**out)[256], unsigned *count) { return mac_files_listing_dir(s, "", 0, 1, out, count); }
 
 int mac_files_entries(MacRuntime *rt, MacFileEntry *out, unsigned max, unsigned *count) {
     FileState *s = rt->file_state;
@@ -90,40 +101,21 @@ int mac_files_entries(MacRuntime *rt, MacFileEntry *out, unsigned max, unsigned 
     return 0;
 }
 
-/* PBHGetFInfo ($A20C): the same lookup and indexed listing as PBGetFInfo on this single-directory volume. Only the volume
- * root can be named, either as directory ID 2 or as 0 (the default directory); ioDirID (offset 48) is an input and is left
- * as the caller set it, where PBGetFInfo would store a file number there. */
+/* PBHGetFInfo ($A20C): the same lookup and indexed listing as PBGetFInfo, in the directory ioDirID (offset 48, an input that is left as the caller set it,
+ * where PBGetFInfo would store a file number there). The index counts files only (PBGetCatInfo counts directories too). */
 int mac_files_hget_info(MacRuntime *rt, uint32_t pb) {
     uint32_t dir = mac_cpu_read(rt->cpu, pb + 48, 4);
-    if (dir != 0 && dir != 2) return -120; /* dirNFErr */
     int error = mac_files_get_info(rt, pb);
     mac_cpu_write(rt->cpu, pb + 48, 4, dir);
     return error;
 }
 
-int mac_files_get_info(MacRuntime *rt, uint32_t pb) {
+/* The file record shared by PBGetFInfo and PBGetCatInfo: bytes 30..79 of the parameter block for the regular file at `path` (kind FILE_SAVE or FILE_DATA). */
+int mac_files_fill_info(MacRuntime *rt, uint32_t pb, const char *path, int kind) {
     MacCpu *cpu = rt->cpu;
     FileState *s = rt->file_state;
-    if (!s) return -35;
-    mac_files_flush_staged(s);                                  /* what an open file has written is visible to a lookup */
-    int error = mac_files_volume_ok_rt(rt, pb);
-    if (error) return error;
-    int index = (int16_t)mac_cpu_read(cpu, pb + 28, 2);
-    uint32_t name_ptr = mac_cpu_read(cpu, pb + 18, 4);
-    char name[256];
-    if (index > 0) {
-        char (*names)[256];
-        unsigned count;
-        if ((error = listing(s, &names, &count))) return error;
-        if ((unsigned)index > count) { free(names); return -43; }
-        memcpy(name, names[index - 1], strlen(names[index - 1]) + 1);
-        free(names);
-        if (name_ptr && !mac_files_valid(cpu, name_ptr, (uint32_t)strlen(name) + 1)) return -50;
-    } else if ((error = mac_files_pb_name(rt, pb, name_ptr, name, sizeof name))) return error;
-    int kind = mac_files_classify(s, name);
-    if (kind != FILE_SAVE && kind != FILE_DATA) return -43;
     int directory = kind == FILE_SAVE ? s->saves : s->directory;
-    int fd = mac_files_open_regular(directory, name, O_RDONLY);
+    int fd = mac_files_open_regular(directory, path, O_RDONLY);
     if (fd < 0) return fd == -43 ? -43 : -36;
     struct stat st;
     uint8_t info[16] = {0};
@@ -137,11 +129,6 @@ int mac_files_get_info(MacRuntime *rt, uint32_t pb) {
     mac_files_finder_get(fd, info);
     close(fd);
     uint32_t length = (uint32_t)st.st_size, physical = (length + 511u) & ~511u;
-    /* All host work succeeded; now publish to the guest block. */
-    if (index > 0 && name_ptr) {
-        mac_cpu_ram(cpu)[name_ptr] = (uint8_t)strlen(name);
-        memcpy(mac_cpu_ram(cpu) + name_ptr + 1, name, strlen(name));
-    }
     mac_cpu_write(cpu, pb + 30, 1, kind == FILE_DATA ? 0x01 : 0x00); /* Data files are locked. */
     mac_cpu_write(cpu, pb + 31, 1, 0);
     memcpy(mac_cpu_ram(cpu) + pb + 32, info, 16);
@@ -157,12 +144,46 @@ int mac_files_get_info(MacRuntime *rt, uint32_t pb) {
     return 0;
 }
 
+int mac_files_get_info(MacRuntime *rt, uint32_t pb) {
+    MacCpu *cpu = rt->cpu;
+    FileState *s = rt->file_state;
+    if (!s) return -35;
+    mac_files_flush_staged(s);                                  /* what an open file has written is visible to a lookup */
+    int error = mac_files_volume_ok_rt(rt, pb);
+    if (error) return error;
+    int index = (int16_t)mac_cpu_read(cpu, pb + 28, 2);
+    uint32_t name_ptr = mac_cpu_read(cpu, pb + 18, 4);
+    char path[DIRS_PATH_MAX], shown[256] = "";
+    if (index > 0) {   /* the index-th file of the directory; ioNamePtr is an output */
+        char (*names)[256];
+        unsigned count;
+        if ((error = mac_files_pb_path(rt, pb, 0, path, 1))) return error;
+        if (!mac_dirs_is_dir(s, path)) return -120;
+        if ((error = mac_files_listing_dir(s, path, 0, 1, &names, &count))) return error;
+        if ((unsigned)index > count) { free(names); return -43; }
+        snprintf(shown, sizeof shown, "%s", names[index - 1]);
+        free(names);
+        if (name_ptr && !mac_files_valid(cpu, name_ptr, (uint32_t)strlen(shown) + 1)) return -50;
+        size_t have = strlen(path);
+        if (have + strlen(shown) + 2 >= sizeof path) return -37;
+        snprintf(path + have, sizeof path - have, "%s%s", have ? "/" : "", shown);
+    } else if ((error = mac_files_pb_path(rt, pb, name_ptr, path, 0))) return error;
+    int kind = mac_files_classify(s, path);
+    if (kind != FILE_SAVE && kind != FILE_DATA) return -43;
+    if ((error = mac_files_fill_info(rt, pb, path, kind))) return error;
+    if (index > 0 && name_ptr) {   /* All host work succeeded; now publish the name. */
+        mac_cpu_ram(cpu)[name_ptr] = (uint8_t)strlen(shown);
+        memcpy(mac_cpu_ram(cpu) + name_ptr + 1, shown, strlen(shown));
+    }
+    return 0;
+}
+
 /* PBSetFInfo stores the 16-byte Finder info on the committed save. Dates in
  * the block are accepted but not applied to the host file. */
 int mac_files_set_info(MacRuntime *rt, uint32_t pb) {
     FileState *s = rt->file_state;
-    char name[256];
-    int error = mac_files_pb_name(rt, pb, mac_cpu_read(rt->cpu, pb + 18, 4), name, sizeof name);
+    char name[DIRS_PATH_MAX];
+    int error = mac_files_pb_path(rt, pb, mac_cpu_read(rt->cpu, pb + 18, 4), name, 0);
     if (error) return error;
     if (!s) return -35;
     if ((error = mac_files_volume_ok_rt(rt, pb))) return error;
@@ -198,5 +219,5 @@ int mac_files_set_vol(MacRuntime *rt, uint32_t pb) {
             return 0;
         }
     }
-    return mac_files_volume_ok(cpu, pb);
+    return mac_files_volume_ok_rt(rt, pb);
 }

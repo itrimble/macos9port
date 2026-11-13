@@ -78,8 +78,9 @@ static size_t write_body(char *data, size_t size, size_t count, void *context) {
 }
 
 static int progress(void *context, curl_off_t a, curl_off_t b, curl_off_t c, curl_off_t d) {
-    (void)a; (void)b; (void)c; (void)d;
+    (void)c; (void)d;
     Transfer *t = context;
+    if (t->policy->progress) t->policy->progress(t->policy->progress_ctx, b > 0 ? (uint64_t)b : 0, a > 0 ? (uint64_t)a : 0);
     if (t->policy->cancel && atomic_load(t->policy->cancel)) {
         t->result.status = NET_CANCELLED;
         return 1;

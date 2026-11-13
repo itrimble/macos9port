@@ -68,20 +68,32 @@ int mac_files_read_name(MacCpu *cpu, uint32_t pointer, char *out, size_t capacit
     return 0;
 }
 
+/* A name the overlay will hold: a '/'-separated host-relative path (mac_dirs.h) whose components are plain ASCII, at most 31 characters, none starting with a dot. */
 int mac_files_save_name_ok(const char *name) {
-    size_t length = strlen(name);
-    if (!length || length > FILE_NAME_MAX || name[0] == '.') return 0;
-    for (size_t i = 0; i < length; i++)
-        if ((unsigned char)name[i] < 32 || (unsigned char)name[i] >= 127 ||
-            name[i] == '/' || name[i] == ':' || name[i] == '\\') return 0;
+    if (!mac_dirs_path_ok(name) || !name[0]) return 0;
+    size_t run = 0;
+    for (const char *p = name;; p++) {
+        if (*p == '/' || !*p) {
+            if (!run || run > FILE_NAME_MAX) return 0;
+            run = 0;
+            if (!*p) break;
+            if (p[1] == '.') return 0;
+            continue;
+        }
+        if (run == 0 && *p == '.') return 0;
+        unsigned char c = (unsigned char)*p;
+        if (c < 32 || c >= 127 || c == ':' || c == '\\') return 0;
+        run++;
+    }
     return 1;
 }
 
 int mac_files_classify(const FileState *s, const char *name) {
     struct stat st;
-    if (s->saves >= 0 && name[0] != '.' && !fstatat(s->saves, name, &st, AT_SYMLINK_NOFOLLOW))
+    if (!mac_dirs_path_ok(name) || !name[0]) return FILE_NONE;
+    if (s->saves >= 0 && name[0] != '.' && !mac_dirs_stat(s->saves, name, &st))
         return S_ISREG(st.st_mode) ? FILE_SAVE : FILE_SAVE_UNSUPPORTED;
-    if (!fstatat(s->directory, name, &st, AT_SYMLINK_NOFOLLOW))
+    if (!mac_dirs_stat(s->directory, name, &st))
         return S_ISREG(st.st_mode) ? FILE_DATA : FILE_DATA_UNSUPPORTED;
     return FILE_NONE;
 }
@@ -97,63 +109,73 @@ int mac_files_volume_ok(MacCpu *cpu, uint32_t pb) {
     return volume == 0 || volume == -1 ? 0 : -35;
 }
 
+/* The staging copy sits beside the file: "dir/.stage-leaf". */
 int mac_files_stage_name(const char *name, char *out, size_t capacity) {
-    int k = snprintf(out, capacity, STAGE_PREFIX "%s", name);
+    const char *slash = strrchr(name, '/');
+    size_t dir = slash ? (size_t)(slash - name) + 1 : 0;
+    int k = snprintf(out, capacity, "%.*s" STAGE_PREFIX "%s", (int)dir, name, name + dir);
     return k < 0 || (size_t)k >= capacity ? -1 : 0;
 }
 
-DIR *mac_files_open_listing(int directory) {
-    int fd = openat(directory, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-    if (fd < 0) return NULL;
-    DIR *dir = fdopendir(fd);
-    if (!dir) close(fd);
-    return dir;
-}
+DIR *mac_files_open_listing(int directory) { return mac_dirs_opendir(directory, ""); }
 
-/* Committed save files plus the growth of staged copies. Hidden entries,
- * links, directories and devices never count and are never followed. */
-static int usage(const FileState *s, unsigned *files, uint64_t *bytes) {
-    DIR *dir = mac_files_open_listing(s->saves);
+/* Committed save files plus the growth of staged copies, over the whole overlay tree. Hidden entries, links and devices never count and are never
+ * followed; directories are walked (bounded by ENTRY_LIMIT entries and the depth limit). */
+static int usage_walk(const char *rel, int saves, unsigned *scanned, unsigned *files, int64_t *total, unsigned depth) {
+    DIR *dir = mac_dirs_opendir(saves, rel);
     if (!dir) return -36;
-    unsigned scanned = 0;
-    int64_t total = 0;
     int error = 0;
-    *files = 0;
     for (;;) {
         errno = 0;
         struct dirent *e = readdir(dir);
         if (!e) { if (errno) error = -36; break; }
-        if (++scanned > ENTRY_LIMIT) { error = -50; break; }
+        if (++*scanned > ENTRY_LIMIT) { error = -50; break; }
         if (e->d_name[0] == '.') continue;
+        char child[DIRS_PATH_MAX];
+        if (snprintf(child, sizeof child, "%s%s%s", rel, rel[0] ? "/" : "", e->d_name) >= (int)sizeof child) continue;
         struct stat st;
-        if (fstatat(s->saves, e->d_name, &st, AT_SYMLINK_NOFOLLOW)) { error = -36; break; }
+        if (mac_dirs_stat(saves, child, &st)) { error = -36; break; }
+        if (S_ISDIR(st.st_mode) && depth < DIRS_DEPTH_MAX) {
+            if ((error = usage_walk(child, saves, scanned, files, total, depth + 1))) break;
+            continue;
+        }
         if (!S_ISREG(st.st_mode)) continue;
         (*files)++;
-        total += st.st_size;
+        *total += st.st_size;
     }
     closedir(dir);
+    return error;
+}
+int mac_files_usage(const FileState *s, unsigned *files, uint64_t *bytes) {
+    unsigned scanned = 0;
+    int64_t total = 0;
+    *files = 0;
+    int error = usage_walk("", s->saves, &scanned, files, &total, 0);
     if (error) return error;
     for (int i = 0; i < FILE_LIMIT; i++) {
         const GuestFile *f = &s->files[i];
         struct stat staged, committed;
         if (f->fd < 0 || !f->writable || fstat(f->fd, &staged)) continue;
-        int64_t base = fstatat(s->saves, f->name, &committed, AT_SYMLINK_NOFOLLOW) ? 0 : committed.st_size;
+        int64_t base = mac_dirs_stat(s->saves, f->name, &committed) ? 0 : committed.st_size;
         total += (int64_t)staged.st_size - base;
     }
     *bytes = total < 0 ? 0 : (uint64_t)total;
     return 0;
 }
 
-static void recover(int saves) {
-    DIR *dir = mac_files_open_listing(saves);
+static void recover(int saves, const char *rel, unsigned depth) {
+    DIR *dir = mac_dirs_opendir(saves, rel);
     if (!dir) return;
     unsigned scanned = 0;
     struct dirent *e;
     while ((e = readdir(dir)) && ++scanned <= ENTRY_LIMIT) {
         struct stat st;
-        if (strncmp(e->d_name, STAGE_PREFIX, sizeof STAGE_PREFIX - 1)) continue;
-        if (!fstatat(saves, e->d_name, &st, AT_SYMLINK_NOFOLLOW) && S_ISREG(st.st_mode))
-            unlinkat(saves, e->d_name, 0);
+        char child[DIRS_PATH_MAX];
+        if (!strcmp(e->d_name, ".") || !strcmp(e->d_name, "..")) continue;
+        if (snprintf(child, sizeof child, "%s%s%s", rel, rel[0] ? "/" : "", e->d_name) >= (int)sizeof child) continue;
+        if (mac_dirs_stat(saves, child, &st)) continue;
+        if (S_ISDIR(st.st_mode) && depth < DIRS_DEPTH_MAX) { recover(saves, child, depth + 1); continue; }
+        if (!strncmp(e->d_name, STAGE_PREFIX, sizeof STAGE_PREFIX - 1) && S_ISREG(st.st_mode)) mac_dirs_unlink(saves, child);
     }
     closedir(dir);
 }
@@ -169,7 +191,7 @@ int mac_files_writable(MacRuntime *rt, const char *directory, unsigned max_files
      * application data directory or anywhere the data root could alias. */
     if (fstat(fd, &saves) || fstat(s->directory, &data) ||
         (saves.st_dev == data.st_dev && saves.st_ino == data.st_ino)) { close(fd); return -1; }
-    recover(fd);
+    recover(fd, "", 0);
     s->saves = fd;
     s->max_files = max_files;
     s->max_bytes = max_bytes;
@@ -181,7 +203,7 @@ static int open_error(void) {
 }
 
 int mac_files_open_regular(int directory, const char *name, int flags) {
-    int fd = openat(directory, name, flags | O_NOFOLLOW | O_CLOEXEC);
+    int fd = mac_dirs_openat(directory, name, flags, 0);
     if (fd < 0) return open_error();
     struct stat st;
     if (fstat(fd, &st) || !S_ISREG(st.st_mode) || st.st_size > INT32_MAX) { close(fd); return -54; }
@@ -200,20 +222,20 @@ int mac_files_open_save(MacRuntime *rt, const char *name, unsigned permission, G
         int fd = mac_files_open_regular(s->saves, name, O_RDONLY);
         if (fd < 0) return fd;
         *file = (GuestFile){fd, 0, 0, {0}, 0};
-        memcpy(file->name, name, strlen(name) + 1);
+        snprintf(file->name, sizeof file->name, "%s", name);
         return 0;
     }
     GuestFile *other = mac_files_open_by_name(s, name);
     if (other && other->writable) return -49; /* opWrErr: one writer per file. */
-    char stage[64];
+    char stage[DIRS_PATH_MAX + 16];
     if (mac_files_stage_name(name, stage, sizeof stage)) return -50;
     int src = mac_files_open_regular(s->saves, name, O_RDONLY);
     if (src < 0) return src;
     struct stat copy_size;
     if (fstat(src, &copy_size) == 0 && volume_budget_spend(&s->disk, (uint64_t)copy_size.st_size)) { close(src); return -34; }
-    int dst = openat(s->saves, stage, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
-    if (dst < 0 && errno == EEXIST && !unlinkat(s->saves, stage, 0))
-        dst = openat(s->saves, stage, O_RDWR | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+    int dst = mac_dirs_openat(s->saves, stage, O_RDWR | O_CREAT | O_EXCL, 0600);
+    if (dst < 0 && errno == EEXIST && !mac_dirs_unlink(s->saves, stage))
+        dst = mac_dirs_openat(s->saves, stage, O_RDWR | O_CREAT | O_EXCL, 0600);
     if (dst < 0) { close(src); return -36; }
     uint8_t buffer[16384];
     for (;;) {
@@ -230,10 +252,10 @@ int mac_files_open_save(MacRuntime *rt, const char *name, unsigned permission, G
     }
     close(src);
     *file = (GuestFile){dst, 0, 1, {0}, 0};
-    memcpy(file->name, name, strlen(name) + 1);
+    snprintf(file->name, sizeof file->name, "%s", name);
     return 0;
 fail:
-    close(src); close(dst); unlinkat(s->saves, stage, 0);
+    close(src); close(dst); mac_dirs_unlink(s->saves, stage);
     return -36;
 }
 
@@ -255,19 +277,19 @@ int mac_files_finder_set(int fd, const uint8_t in[16]) {
 int mac_files_close(FileState *s, GuestFile *f) {
     int error = 0;
     if (f->writable) {
-        char stage[64];
+        char stage[DIRS_PATH_MAX + 16];
         if (mac_files_stage_name(f->name, stage, sizeof stage) || fsync(f->fd)) error = -36;
         if (!error) {
-            int committed = openat(s->saves, f->name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+            int committed = mac_dirs_openat(s->saves, f->name, O_RDONLY, 0);
             uint8_t info[16];
             if (committed >= 0) {
                 if (mac_files_finder_get(committed, info)) mac_files_finder_set(f->fd, info);
                 close(committed);
             }
-            if (renameat(s->saves, stage, s->saves, f->name)) error = -36;
+            if (mac_dirs_rename(s->saves, stage, f->name)) error = -36;
             else fsync(s->saves);
         }
-        if (error) unlinkat(s->saves, stage, 0);
+        if (error) mac_dirs_unlink(s->saves, stage);
     }
     if (close(f->fd) && !error) error = -36;
     f->fd = -1;
@@ -276,13 +298,14 @@ int mac_files_close(FileState *s, GuestFile *f) {
 }
 
 void mac_files_abort(FileState *s, GuestFile *f) {
-    char stage[64];
+    char stage[DIRS_PATH_MAX + 16];
     close(f->fd);
-    if (f->writable && !mac_files_stage_name(f->name, stage, sizeof stage)) unlinkat(s->saves, stage, 0);
+    if (f->writable && !mac_files_stage_name(f->name, stage, sizeof stage)) mac_dirs_unlink(s->saves, stage);
     f->fd = -1;
     f->writable = 0;
 }
 
+/* Save files in the overlay's top level that are not also application data (the root directory's valence, with the data files counted separately). */
 int mac_files_overlay_count(const FileState *s, unsigned *count) {
     *count = 0;
     if (s->saves < 0) return 0;
@@ -295,10 +318,10 @@ int mac_files_overlay_count(const FileState *s, unsigned *count) {
         struct dirent *e = readdir(dir);
         if (!e) { if (errno) error = -36; break; }
         if (++scanned > ENTRY_LIMIT) { error = -50; break; }
-        if (!mac_files_save_name_ok(e->d_name) || mac_files_in_folder(e->d_name)) continue;
+        if (!mac_files_save_name_ok(e->d_name)) continue;
         struct stat st;
-        if (fstatat(s->saves, e->d_name, &st, AT_SYMLINK_NOFOLLOW)) { error = -36; break; }
-        if (S_ISREG(st.st_mode) && fstatat(s->directory, e->d_name, &st, AT_SYMLINK_NOFOLLOW)) (*count)++;
+        if (mac_dirs_stat(s->saves, e->d_name, &st)) { error = -36; break; }
+        if (S_ISREG(st.st_mode) && mac_dirs_stat(s->directory, e->d_name, &st)) (*count)++;
     }
     closedir(dir);
     return error;
@@ -311,78 +334,6 @@ int mac_files_locked_error(const FileState *s, int kind) {
     if (kind == FILE_SAVE_UNSUPPORTED) return -54;
     if (kind != FILE_SAVE) return s->saves < 0 ? -46 : -45;
     return 0;
-}
-
-/* The *_name cores are shared by the PB calls (parameter-block names) and the FSSpec calls. */
-int mac_files_create_name(MacRuntime *rt, const char *name) {
-    FileState *s = rt->file_state;
-    if (!s) return -35;
-    if (s->saves < 0) return -46;
-    if (!mac_files_save_name_ok(name)) return -50;
-    if (mac_files_classify(s, name) != FILE_NONE) return -48;
-    unsigned files; uint64_t bytes;
-    int error = usage(s, &files, &bytes);
-    if (error) return error;
-    if (files >= s->max_files) return -34;
-    int fd = openat(s->saves, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
-    if (fd < 0) return errno == EEXIST ? -48 : -36;
-    close(fd);
-    fsync(s->saves);
-    return 0;
-}
-
-int mac_files_create(MacRuntime *rt, uint32_t pb) {
-    char name[256];
-    int error = mac_files_pb_name(rt, pb, mac_cpu_read(rt->cpu, pb + 18, 4), name, sizeof name);
-    if (error) return error;
-    if (!rt->file_state) return -35;
-    if ((error = mac_files_volume_ok_rt(rt, pb))) return error;
-    return mac_files_create_name(rt, name);
-}
-
-int mac_files_delete_name(MacRuntime *rt, const char *name) {
-    FileState *s = rt->file_state;
-    int error = mac_files_locked_error(s, mac_files_classify(s, name));
-    if (error) return error;
-    if (mac_files_open_by_name(s, name)) return -47;
-    if (unlinkat(s->saves, name, 0)) return errno == ENOENT ? -43 : -36;
-    fsync(s->saves);
-    return 0;
-}
-
-int mac_files_delete(MacRuntime *rt, uint32_t pb, int hfs) {
-    char name[256];
-    int error = mac_files_pb_name(rt, pb, mac_cpu_read(rt->cpu, pb + 18, 4), name, sizeof name);
-    if (error) return error;
-    if (!rt->file_state) return -35;
-    if ((error = mac_files_volume_ok_rt(rt, pb))) return error;
-    if (hfs) {
-        uint32_t directory = mac_cpu_read(rt->cpu, pb + 48, 4);
-        if (directory != 0 && directory != 2) return -120;
-    }
-    return mac_files_delete_name(rt, name);
-}
-
-int mac_files_rename_names(MacRuntime *rt, const char *from, const char *to) {
-    FileState *s = rt->file_state;
-    int error = mac_files_locked_error(s, mac_files_classify(s, from));
-    if (error) return error;
-    if (!mac_files_save_name_ok(to)) return -50;
-    if (mac_files_classify(s, to) != FILE_NONE) return -48;
-    if (mac_files_open_by_name(s, from)) return -47;
-    if (renameat(s->saves, from, s->saves, to)) return errno == ENOENT ? -43 : -36;
-    fsync(s->saves);
-    return 0;
-}
-
-int mac_files_rename(MacRuntime *rt, uint32_t pb) {
-    char from[256], to[256];
-    int error = mac_files_pb_name(rt, pb, mac_cpu_read(rt->cpu, pb + 18, 4), from, sizeof from);
-    if (error) return error;
-    if (!rt->file_state) return -35;
-    if ((error = mac_files_volume_ok_rt(rt, pb))) return error;
-    if ((error = mac_files_pb_name(rt, pb, mac_cpu_read(rt->cpu, pb + 28, 4), to, sizeof to))) return error;
-    return mac_files_rename_names(rt, from, to);
 }
 
 static int position(MacCpu *cpu, uint32_t pb, const GuestFile *f, int64_t size, int64_t *mark) {
@@ -403,7 +354,7 @@ static int position(MacCpu *cpu, uint32_t pb, const GuestFile *f, int64_t size, 
 static int growth_allowed(FileState *s, int64_t size, int64_t end) {
     if (end <= size) return 0;
     unsigned files; uint64_t bytes;
-    int error = usage(s, &files, &bytes);
+    int error = mac_files_usage(s, &files, &bytes);
     if (error) return error;
     if (bytes + (uint64_t)(end - size) > s->max_bytes) return -34;
     return volume_budget_spend(&s->disk, (uint64_t)(end - size));   /* the internal disk's own capacity */

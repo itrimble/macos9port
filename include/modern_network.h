@@ -1,6 +1,7 @@
 #ifndef MODERN_NETWORK_H
 #define MODERN_NETWORK_H
 #include <stddef.h>
+#include <stdint.h>
 #include <stdatomic.h>
 
 typedef enum {
@@ -21,6 +22,10 @@ typedef struct {
     int (*allow_url)(const char *url, void *context);
     void *context;
     const atomic_bool *cancel;
+    /* Optional, from the calling (worker) thread, at least about once a second: bytes of the body received
+       on the current hop and the size the server announced (0 when unknown). */
+    void (*progress)(void *progress_ctx, uint64_t received, uint64_t expected);
+    void *progress_ctx;
 } NetPolicy;
 
 typedef struct {

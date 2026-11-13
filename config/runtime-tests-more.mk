@@ -201,3 +201,7 @@ build/test_mac_system: $(RUNTIME_OBJ) tests/test_mac_system.c $(RUNTIME_HDRS) $(
 build/test_mac_raster: $(RUNTIME_OBJ) tests/test_mac_raster.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_raster.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
+# Compressed resources, a program's own resource load hook, truncated CODE 0 tables, the one-process Process Manager (synthetic forks and guest code only).
+build/test_mac_rescomp: $(RUNTIME_OBJ) tests/test_mac_rescomp.c tests/fork_builder.h $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_rescomp.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+test: build/test_mac_rescomp

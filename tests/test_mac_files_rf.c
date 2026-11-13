@@ -72,7 +72,7 @@ int main(void) {
     CHECK(create_res(&r, "Fresh") == -49);                                                                                                       /* a fork with bytes: left alone, dupFNErr in ResErr */
     CHECK(create_res(&r, "App") == -54);                                                                                                         /* on the application volume */
     CHECK(create_res(&r, "AVeryLongHouseNameIsHere123") == -50);
-    CHECK(create_res(&r, "bad:name") == -50);
+    CHECK(create_res(&r, "bad:name") == -35);   /* "bad" is neither this volume nor a folder here */
     CHECK(create_res(&r, "House") == -49);                                                                                                       /* House's fork already holds 14 bytes */
     {   MacRuntime q = {0}; q.cpu = mac_cpu_create(RAM); CHECK(create_res(&q, "X") == -35); mac_cpu_destroy(q.cpu); }                          /* no file system */
     /* FSpOpenResFile (HighLevelFSDispatch selector 13) opens the overlay sidecar as a Resource Manager file: a reference number in the result, ResError 0 */
@@ -123,7 +123,7 @@ int main(void) {
     CHECK(mac_files_writable(&r, saves, 8, 1 << 20) == 0);
     CHECK(find(&r, 0x8000, 0x70726566, 0) == -43);
     CHECK(find(&r, 0x8000, 0x70726566, 1) == 0 && rd(&r, 0x2104, 2) == 0xffff);
-    uint32_t prefs = rd(&r, 0x2100, 4); CHECK(prefs >= 3 && prefs <= 66);
+    uint32_t prefs = rd(&r, 0x2100, 4); CHECK(prefs > 2 && prefs < 0x80000000u);   /* a table ID for the real directory */
     CHECK(find(&r, 0, 0x70726566, 0) == 0 && rd(&r, 0x2100, 4) == prefs);                    /* found afterwards, on the default volume too */
     CHECK(find(&r, 0x8000, 0x6374726c, 0) == -43);                                            /* another folder is still absent */
     CHECK(find(&r, 0x8000, 0x3f3f3f3f, 1) == -43);                                            /* unknown folder type */

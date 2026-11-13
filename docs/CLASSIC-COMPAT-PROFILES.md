@@ -45,6 +45,12 @@ Rules: Finder file type, when known, must be APPL; names and extensions are neve
 evidence of 32-bit cleanliness; damaged structure gives `malformed` and profile D, never a guess. Tests:
 `tests/test_app_classify.c` (every prefix of valid inputs plus 4000 seeded corruptions, also run under ASan/UBSan).
 
+CODE 0 and compressed CODE (12 Nov 2026, `include/mac_codefmt.h`, shared by `app_classify` and the loader). A jump table stored shorter than its header declares is accepted when
+at least one whole entry is stored and the declared table fits the A5 world; the classifier reports the shortfall under `uncertainty` (installer engines that load themselves in
+stages ship such a CODE 0, with the rest packed behind an `A89F` word). Jump-table entries are checked against a segment's *expanded* size when its resource carries the Resource
+Manager's compressed-resource header (`A89F 6572`) or an engine's `A89F 000C` marker. Recognition is still not compatibility: expanding such a segment needs its `dcmp`
+resource (Resource Manager form) or the program's own load hook (engine form); see `docs/RUNTIME-APP-TRACES-2026-11-13.md`.
+
 ## Audit of the 16 MB / 24-bit fallback (verified against the code and a headless probe)
 
 * The CPU bus mask is real. `mac_cpu.c` masks every Musashi bus read/write, instruction fetch and PC to 24 bits when

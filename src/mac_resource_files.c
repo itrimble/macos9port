@@ -29,27 +29,30 @@ static int equal(const char *a,const char *b) {
     }
     return !*a&&!*b;
 }
+/* name is a host-relative path ("dir/leaf"); the export is "<leaf>.rsrc" in the same directory, matched without regard to case. On success path is the
+ * export's relative path. */
 static int resolve(int root,const char *name,char path[256]) {
-    char export_name[261];size_t length=strlen(name);
-    if(length>250)return -37;
-    memcpy(export_name,name,length);memcpy(export_name+length,".rsrc",6);
-    int fd=openat(root,".",O_RDONLY|O_DIRECTORY|O_CLOEXEC);
-    if(fd<0)return -36;
-    DIR *dir=fdopendir(fd);if(!dir){close(fd);return -36;}
+    char dirpart[256];const char *leaf;
+    mac_dirs_parent(name,dirpart,&leaf);
+    char export_name[261];size_t length=strlen(leaf);
+    if(length>250||strlen(name)>240)return -37;
+    memcpy(export_name,leaf,length);memcpy(export_name+length,".rsrc",6);
+    DIR *dir=mac_dirs_opendir(root,dirpart);
+    if(!dir)return errno==ENOENT||errno==ENOTDIR?-43:-36;
     unsigned scanned=0,matches=0;int error=0,base_exists=0;
     for(;;) {
         errno=0;struct dirent *e=readdir(dir);
         if(!e){if(errno)error=-36;break;}
         if(++scanned>DIRECTORY_LIMIT){error=-108;break;}
-        if(equal(e->d_name,name))base_exists=1;
+        if(equal(e->d_name,leaf))base_exists=1;
         if(!equal(e->d_name,export_name))continue;
+        char found[512];
+        if(snprintf(found,sizeof found,"%s%s%s",dirpart,dirpart[0]?"/":"",e->d_name)>=256){error=-37;break;}
         struct stat st;
-        if(fstatat(root,e->d_name,&st,AT_SYMLINK_NOFOLLOW)){error=-36;break;}
+        if(mac_dirs_stat(root,found,&st)){error=-36;break;}
         if(!S_ISREG(st.st_mode)){error=-54;break;}
         if(++matches>1){error=-37;break;}
-        size_t n=strlen(e->d_name);
-        if(n>255){error=-37;break;}
-        memcpy(path,e->d_name,n+1);
+        memcpy(path,found,strlen(found)+1);
     }
     if(closedir(dir)&&!error)error=-36;
     return error?error:matches?0:base_exists?-1:-43;
@@ -59,9 +62,10 @@ static int read_fork(MacRuntime *rt,const char *name,MacOpenResource *out) {
     char path[256];int error=0,fd=-1;
     /* A resource fork on the save overlay ("<name>.rsrc", see mac_files_rf.c) shadows the application volume's export and is writable. */
     const FileState *fs=rt->file_state;out->writable=0;
-    if(fs && fs->saves>=0 && strlen(name)+5<=FILE_NAME_MAX) {
+    const char *leaf=strrchr(name,'/');leaf=leaf?leaf+1:name;
+    if(fs && fs->saves>=0 && strlen(leaf)+5<=FILE_NAME_MAX && strlen(name)+6<=sizeof path) {
         snprintf(path,sizeof path,"%s.rsrc",name);
-        fd=openat(fs->saves,path,O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC);
+        fd=mac_dirs_openat(fs->saves,path,O_RDONLY|O_NONBLOCK,0);
         if(fd>=0){out->writable=1;snprintf(out->sidecar,sizeof out->sidecar,"%s",path);}
     }
     if(fd<0) {
@@ -69,7 +73,7 @@ static int read_fork(MacRuntime *rt,const char *name,MacOpenResource *out) {
         if(error && rt->trace)fprintf(stderr,"resource-open name=%s error=%d\n",name,error);
         if(error==-1){mac_cpu_halt(rt->cpu,"Native resource fork opening is unsupported; an exported .rsrc fork is required.");return -1;}
         if(error)return error;
-        fd=openat(root,path,O_RDONLY|O_NOFOLLOW|O_NONBLOCK|O_CLOEXEC);
+        fd=mac_dirs_openat(root,path,O_RDONLY|O_NONBLOCK,0);
         if(fd<0)return errno==ELOOP||errno==EACCES?-54:errno==ENOENT?-43:-36;
     }
     struct stat st;
@@ -99,18 +103,17 @@ static struct MacResourceChain *ensure(MacRuntime *rt) {
     }
     return rt->resource_chain;
 }
-int mac_resource_open_by_pointer(MacRuntime *rt,uint32_t pointer,int16_t *ref);
+/* OpenResFile(fileName): the name is a Pascal string, resolved against the default directory (a partial path or "OS999 HD:dir:name" also works). */
 int mac_resource_open_by_pointer(MacRuntime *rt,uint32_t pointer,int16_t *ref) {
-    MacCpu *cpu=rt->cpu;
-    if(!pointer||!valid(cpu,pointer,1))return -37;
-    unsigned length=mac_cpu_ram(cpu)[pointer];
-    if(!length||!valid(cpu,pointer,1+length))return -37;
-    char name[256];memcpy(name,mac_cpu_ram(cpu)+pointer+1,length);name[length]=0;
-    unsigned skip=mac_files_volume_prefix(name,length);   /* "OS999 HD:Name" is the same file as "Name" */
-    if(skip){memmove(name,name+skip,length-skip+1);length-=skip;}
-    for(unsigned i=0;i<length;i++)if((unsigned char)name[i]<32||(unsigned char)name[i]>=127||
-        name[i]=='/'||name[i]==':'||name[i]=='\\')return -37;
-    if(!strcmp(name,".")||!strcmp(name,".."))return -37;
+    if(!pointer||!valid(rt->cpu,pointer,1))return -37;
+    char name[DIRS_PATH_MAX];
+    int error=mac_files_ptr_path(rt,pointer,0,0,name);
+    if(error==-50||(!error&&!name[0]))return -37;
+    if(error)return error;
+    return mac_resource_open_path(rt,name,ref);
+}
+/* OpenResFile of a file by host-relative path (also what FSpOpenResFile uses). */
+int mac_resource_open_path(MacRuntime *rt,const char *name,int16_t *ref) {
     struct MacResourceChain *c=ensure(rt);if(!c)return -108;
     MacOpenResource opened={0};int error=read_fork(rt,name,&opened);if(error)return error;
     for(unsigned i=0;i<MAC_FORK_LIMIT;i++)if(c->files[i].bytes &&

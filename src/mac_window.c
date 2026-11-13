@@ -14,9 +14,7 @@ static int valid(MacRuntime *rt,uint32_t p,size_t n,int aligned) {
 }
 static uint32_t rd(MacRuntime *rt,uint32_t p,unsigned n){return mac_cpu_read(rt->cpu,p,n);}
 static void wr(MacRuntime *rt,uint32_t p,unsigned n,uint32_t v){mac_cpu_write(rt->cpu,p,n,v);}
-static void rect(MacRuntime *rt,uint32_t p,int t,int l,int b,int r) {
-    wr(rt,p,2,(uint16_t)t);wr(rt,p+2,2,(uint16_t)l);wr(rt,p+4,2,(uint16_t)b);wr(rt,p+6,2,(uint16_t)r);
-}
+static void rect(MacRuntime *rt,uint32_t p,int t,int l,int b,int r) {wr(rt,p,2,(uint16_t)t);wr(rt,p+2,2,(uint16_t)l);wr(rt,p+4,2,(uint16_t)b);wr(rt,p+6,2,(uint16_t)r);}
 static MacHandle *record(MacRuntime *rt,uint32_t h,unsigned size) {
     if(!valid(rt,h,4,1))return NULL;
     for(size_t i=0;i<rt->handle_count;i++) {
@@ -29,10 +27,7 @@ static uint32_t region(MacRuntime *rt,uint32_t h) {
     MacHandle *m=record(rt,h,10);
     return m && rd(rt,m->pointer,2)==10 ? m->pointer : 0;
 }
-static int display(MacRuntime *rt) {
-    return rt->screen_depth==8 && rt->screen_width==640 && rt->screen_height==480 &&
-        rt->screen_row_bytes==640 && valid(rt,rt->screen_base,640*480,0);
-}
+static int display(MacRuntime *rt) {return rt->screen_depth==8 && rt->screen_width==640 && rt->screen_height==480 && rt->screen_row_bytes==640 && valid(rt,rt->screen_base,640*480,0);}
 static int window_valid(MacRuntime *rt) {
     MacWindowState *w=&rt->window;
     if(!w->address || !valid(rt,w->address,156,1) || !display(rt) ||

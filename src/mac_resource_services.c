@@ -1,5 +1,7 @@
 #include "mac_runtime.h"
 #include "mac_resource_chain.h"
+#include "mac_rescomp.h"
+#include "mac_codefmt.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -60,6 +62,18 @@ static int load(MacRuntime *rt, MacHandle *h, const MacResource *r) {
     return 0;
 }
 
+/* A load that has to wait for guest code (a compressed resource's decompressor, a program's load hook) finishes its trap here. One at a time: guest calls
+ * do not nest. */
+static struct { uint32_t sp, value; unsigned args, width; } pending;
+static int load_done(MacRuntime *rt, void *ctx, int error) {
+    (void)ctx;
+    return result(rt, pending.sp, pending.args, pending.width, error ? 0 : pending.value, error) < 0 ? -1 : 0;
+}
+static int start_hooks(MacRuntime *rt, uint32_t sp, unsigned args, unsigned width, uint32_t value) {
+    pending.sp = sp; pending.args = args; pending.width = width; pending.value = value;
+    return mac_rescomp_begin(rt, value, load_done, NULL);
+}
+
 static int get_resource(MacRuntime *rt, uint32_t sp, int indexed, int picture, int one) {
     unsigned args = picture ? 2 : 6;
     int16_t id = (int16_t)mac_cpu_read(rt->cpu, sp, 2);
@@ -85,6 +99,10 @@ static int get_resource(MacRuntime *rt, uint32_t sp, int indexed, int picture, i
     if (!h) return result(rt, sp, args, 4, 0, RES_NOT_FOUND);
     int error = load(rt, h, &r);
     if (error == -1) return -1;
+    if (!error) {
+        int hooked = start_hooks(rt, sp, args, 4, value);
+        if (hooked) return hooked < 0 ? -1 : 1;
+    }
     return result(rt, sp, args, 4, error ? 0 : value, error);
 }
 
@@ -197,12 +215,21 @@ int mac_resource_service(MacRuntime *rt, uint16_t opcode) {
     MacResource r;
     MacHandle *h = handle(rt, value, &r);
     if (!h) return result(rt, sp, args, width, UINT32_MAX, RES_NOT_FOUND);
-    if (opcode == 0xa9a5 || opcode == 0xa821) return result(rt, sp, 4, 4, (uint32_t)r.size, 0);
+    /* SizeResource is the size on disk; MaxSizeRsrc is the size once loaded, which for a compressed resource is the expanded size. */
+    if (opcode == 0xa9a5) return result(rt, sp, 4, 4, (uint32_t)r.size, 0);
+    if (opcode == 0xa821) {
+        MacComp comp;
+        return result(rt, sp, 4, 4, mac_comp_parse(r.data, r.size, &comp) == 1 && comp.kind == MAC_COMP_SYSTEM ? comp.expanded : (uint32_t)r.size, 0);
+    }
     if (opcode == 0xa9a6) return result(rt, sp, 4, 2,
         r.attributes | (h->resource_changed ? 0x80 : 0), 0);
     if (opcode == 0xa9a2) {
         int error = load(rt, h, &r);
         if (error == -1) return -1;
+        if (!error) {
+            int hooked = start_hooks(rt, sp, 4, 0, value);
+            if (hooked) return hooked < 0 ? -1 : 1;
+        }
         return result(rt, sp, 4, 0, 0, error);
     }
     if (opcode == 0xa992) {

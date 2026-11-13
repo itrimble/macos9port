@@ -31,7 +31,7 @@ void session_wheel(Session *s, int dy) {
     if (control_panels_wheel(s, eff)) return;
     if (session_overlay_active(s) || s->desktop_focus || s->nwin <= 0) return;
     Window *w = &s->win[s->nwin - 1];
-    if ((w->kind == WIN_FONT_BOOK && font_book_window_wheel(w, eff)) || (w->kind == WIN_MOVIE && movie_picker_wheel(w, -eff)) || classic_apps_panel_wheel(w, -eff)) return;
+    if (session_window_wheel(w, eff)) return;
     if (w->collapsed) return;
     int step = s->wheel_speed == 1 ? 9 : s->wheel_speed == 3 ? 30 : 18;
     w->scroll -= eff * step;
@@ -428,8 +428,7 @@ void session_key(Session *s, int key, int mods) {
     }
     if (notes_key(s, key, mods)) return;
     if (finder_edit_key(s, key, mods)) return;
-    if (s->menu < 0 && s->nwin && (font_book_window_key(s, &s->win[s->nwin - 1], key, mods) ||
-                                    movie_picker_key(s, &s->win[s->nwin - 1], key, mods))) return;
+    if (s->menu < 0 && s->nwin && session_window_key(s, &s->win[s->nwin - 1], key, mods)) return;
     if (key >= 'A' && key <= 'Z') key += 'a' - 'A';
     if (context_key(s, key, mods)) return;
     if (menu_navigation_key(s, key, mods)) return;

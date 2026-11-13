@@ -13,7 +13,7 @@ static void gestalt(void) {
 
 static void unimplemented_halts(void) {
     static const struct { unsigned selector; const char *name; } cases[] = {
-        {3, "FSpOpenRF"}, {14, "FSpCreateResFile"}, {0, "selector 0"}, {16, "selector 16"}, {0x7fff, "unknown"},
+        {14, "FSpCreateResFile"}, {0, "selector 0"}, {16, "selector 16"}, {0x7fff, "unknown"},
     };
     for (unsigned i = 0; i < sizeof cases / sizeof *cases; i++) {
         MacRuntime rt = fresh();
@@ -38,7 +38,7 @@ static void read_only_volume(const char *data) {
     CHECK(make(&rt, -1, 2, "os999 hd:game data", SPEC) == 0);
     CHECK(make(&rt, -1, 2, ":Game Data", SPEC) == 0);
     CHECK(make(&rt, -1, 2, "Missing", SPEC) == -43 && spec_is(&rt, SPEC, -1, 2, "Missing")); /* usable spec */
-    CHECK(make(&rt, -1, 2, "sub", SPEC) == -43);                 /* host directories are not files */
+    CHECK(make(&rt, -1, 2, "sub", SPEC) == 0);                  /* a host directory is a directory entry */
     CHECK(make(&rt, -1, 2, "link", SPEC) == -43);                /* links are never followed */
     CHECK(make(&rt, -1, 2, "", SPEC) == 0 && spec_is(&rt, SPEC, -1, 1, "OS999 HD"));
     CHECK(make(&rt, 0, 0, "", SPEC) == 0 && spec_is(&rt, SPEC, -1, 1, "OS999 HD"));
@@ -49,12 +49,13 @@ static void read_only_volume(const char *data) {
     CHECK(make(&rt, -2, 2, "Game Data", SPEC) == -35);              /* the System volume exists only when the runtime has one */
     CHECK(make(&rt, -1, 100, "Game Data", SPEC) == -120);          /* 3 to 66 are folder IDs (see the folders test); 100 is none */
     CHECK(make(&rt, -1, 1, "Game Data", SPEC) == -120);
-    CHECK(make(&rt, -1, 2, "sub:file", SPEC) == -35);           /* "sub" is read as a volume name */
+    CHECK(make(&rt, -1, 2, "sub:file", SPEC) == -43);           /* "sub" is no volume but a folder here, so a partial path; the file is not there */
     CHECK(make(&rt, -1, 2, "Game Data:", SPEC) == -35);
-    CHECK(make(&rt, -1, 2, ":sub:file", SPEC) == -120);         /* below the root: no subdirectories */
+    CHECK(make(&rt, -1, 2, ":sub:file", SPEC) == -43);          /* a missing last component is fnfErr */
     CHECK(make(&rt, -1, 2, ":Game Data:", SPEC) == -120);
     CHECK(make(&rt, -1, 2, "::Game Data", SPEC) == -120);
-    CHECK(make(&rt, -1, 2, "OS999 HD:sub:x", SPEC) == -120);
+    CHECK(make(&rt, -1, 2, "OS999 HD:sub:x", SPEC) == -43);
+    CHECK(make(&rt, -1, 2, "OS999 HD:nosuch:x", SPEC) == -120);   /* a missing earlier component is dirNFErr */
     CHECK(make(&rt, -1, 2, "../escape", SPEC) == -37);
     CHECK(make(&rt, -1, 2, "a/b", SPEC) == -37);
     CHECK(make(&rt, -1, 2, "a\\b", SPEC) == -37);
@@ -62,7 +63,7 @@ static void read_only_volume(const char *data) {
     CHECK(make(&rt, -1, 2, "..", SPEC) == -37);
     CHECK(make(&rt, -1, 2, "bad\001name", SPEC) == -37);
     CHECK(make(&rt, -1, 2, "0123456789012345678901234567890123456789012345678901234567890123", SPEC) == -37); /* 64 */
-    CHECK(make(&rt, -1, 2, "012345678901234567890123456789012345678901234567890123456789012", SPEC) == -43);  /* 63 fits Str63 */
+    CHECK(make(&rt, -1, 2, "012345678901234567890123456789012345678901234567890123456789012", SPEC) == -37);  /* more than 31 characters is bdNamErr: HFS names stop at 31 */
     /* On failure the spec is cleared, not left stale. */
     spec_of(&rt, SPEC, -1, 2, "Game Data");
     CHECK(make(&rt, -1, 2, "../x", SPEC) == -37 && mac_cpu_read(rt.cpu, SPEC + 2, 4) == 0);

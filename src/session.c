@@ -29,6 +29,7 @@
 #include "native_launch.h"
 #include "finder_edit.h"
 #include "session_int.h"
+#include "quake_pick.h"
 #include "term.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -333,6 +334,7 @@ void session_command(Session *s, int cmd) {
         break;
     case CMD_QUAKE3_DEMO: session_open_quake_demo(s); break;
     case CMD_QUAKE3: session_open_quake(s); break;
+    case CMD_QUAKE_CHOOSE: quake_pick_open(s); break;
     case CMD_TERMINAL_SHELL:
         terminal_open(s, TERM_MODE_SHELL);
         break;

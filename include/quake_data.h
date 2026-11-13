@@ -13,7 +13,12 @@ int quake_data_demo_ok(const char *path);
  * install a verified copy as <home>/<support>/Quake3/demoq3/pak0.pk3. Returns 0 when installed,
  * 1 when a verified copy was already installed, -1 when nothing matched or the copy failed. */
 int quake_data_import(const char *home, const char *const dirs[], int ndirs, off_t size, const char *sha256_hex);
-/* The same, for the real demo, searching the volume and the user's Downloads and Desktop. */
+/* Where the imports look: OS999_QUAKE3_IMPORT, then the volume's Downloads, Documents and top, then the
+ * host user's Downloads, Documents and Desktop. Each is searched itself and one level of subfolders. */
+#define QUAKE_DIRS_MAX 8
+typedef struct { char p[QUAKE_DIRS_MAX][1100]; int n; } QuakeDirs;
+int quake_data_search_dirs(const char *volume, const char *host_home, QuakeDirs *out);
+/* The same, for the real demo, searching those places (host home is $HOME). */
 int quake_data_import_demo(const char *home, const char *volume);
 
 /* Full retail game: baseq3/pak0.pk3..pak8.pk3, each verified by size and SHA-256 against a table. */
@@ -29,4 +34,10 @@ int quake_data_retail_ok(const char *datapath);
 int quake_data_import_set(const char *home, const char *const dirs[], int ndirs, const QuakePak *table, int n);
 /* Retail import from OS999_QUAKE3_IMPORT (a folder the user chose), the volume, Downloads and Desktop. */
 int quake_data_import_retail(const char *home, const char *volume);
+/* One folder the user picked: install a complete verified retail set found in it (it, folder/baseq3 or an
+ * immediate subfolder), else the verified demo pak0.pk3. Returns 1 retail installed, 2 demo installed,
+ * -1 nothing verified (nothing is copied). The _real form uses the built-in size/hash tables. */
+int quake_data_import_folder(const char *home, const char *folder, const QuakePak *table, int n,
+                             off_t demo_size, const char *demo_sha);
+int quake_data_import_folder_real(const char *home, const char *folder);
 #endif

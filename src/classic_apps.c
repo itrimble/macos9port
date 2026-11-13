@@ -137,12 +137,22 @@ static int fetch_garden(const ClassicApp *app, const char *dest, const atomic_bo
 /* ---- local sources ---- */
 
 enum { COPY_MAX_ENTRIES = 20000, COPY_MAX_DEPTH = 12 };
-static int copy_plain_file(const char *src, const char *dst) {
+typedef struct { const ClassicHooks *h; uint64_t done, total; } CopyProg;
+static int cancelled(const ClassicHooks *h) { return h && h->cancel && atomic_load(h->cancel); }
+
+static int copy_plain_file(const char *src, const char *dst, CopyProg *cp) {
     FILE *in = fopen(src, "rb"), *out = in ? fopen(dst, "wbx") : NULL;
     char buf[65536];
     size_t got;
     int ok = in && out;
-    while (ok && (got = fread(buf, 1, sizeof buf, in)) > 0) ok = fwrite(buf, 1, got, out) == got;
+    while (ok && (got = fread(buf, 1, sizeof buf, in)) > 0) {
+        ok = fwrite(buf, 1, got, out) == got;
+        if (cp) {
+            cp->done += got;
+            if (cp->h && cp->h->bytes) cp->h->bytes(cp->h->ctx, cp->done, cp->total);
+            if (cancelled(cp->h)) ok = 0;
+        }
+    }
     if (in) { ok = ok && !ferror(in); fclose(in); }
     if (out) ok = fclose(out) == 0 && ok;
     if (ok) chmod(dst, 0644);   /* never carry an execute bit across */
@@ -150,7 +160,7 @@ static int copy_plain_file(const char *src, const char *dst) {
 }
 
 /* dst == NULL: measure only. Symlinks and special files are skipped, never followed. */
-static int copy_tree(const char *src, const char *dst, int depth, int *count, uint64_t *bytes) {
+static int copy_tree(const char *src, const char *dst, int depth, int *count, uint64_t *bytes, CopyProg *cp) {
     DIR *d = depth > COPY_MAX_DEPTH ? NULL : opendir(src);
     if (!d) return -1;
     if (dst && mkdir(dst, 0755) != 0 && errno != EEXIST) { closedir(d); return -1; }
@@ -163,25 +173,24 @@ static int copy_tree(const char *src, const char *dst, int depth, int *count, ui
         if (snprintf(s, sizeof s, "%s/%s", src, e->d_name) >= (int)sizeof s ||
             (dst && snprintf(t, sizeof t, "%s/%s", dst, e->d_name) >= (int)sizeof t) || lstat(s, &st)) { rc = -1; break; }
         if (++*count > COPY_MAX_ENTRIES) { rc = -1; break; }
-        if (S_ISDIR(st.st_mode)) rc = copy_tree(s, dst ? t : NULL, depth + 1, count, bytes);
-        else if (S_ISREG(st.st_mode)) { *bytes += (uint64_t)st.st_size; if (dst) rc = copy_plain_file(s, t); }
+        if (S_ISDIR(st.st_mode)) rc = copy_tree(s, dst ? t : NULL, depth + 1, count, bytes, cp);
+        else if (S_ISREG(st.st_mode)) { *bytes += (uint64_t)st.st_size; if (dst) rc = copy_plain_file(s, t, cp); }
     }
     closedir(d);
     return rc;
 }
 
-static int fetch_copy(const ClassicApp *app, const char *dest, const atomic_bool *cancel, void *ctx, char *err, size_t en) {
-    (void)app; (void)cancel;
-    unlink(dest);   /* the caller made an empty temp file; copy_plain_file creates exclusively */
-    if (copy_plain_file((const char *)ctx, dest) == 0) return 0;
-    snprintf(err, en, "Could not read that file.");
-    return -1;
-}
-
 /* ---- the install ---- */
 
 static void progress(const ClassicHooks *h, const char *stage) { if (h && h->progress) h->progress(h->ctx, stage); }
-static int cancelled(const ClassicHooks *h) { return h && h->cancel && atomic_load(h->cancel); }
+static void stage(const ClassicHooks *h, ClassicStage st) { if (h && h->stage) h->stage(h->ctx, st); }
+
+/* Network byte counts arrive from install.c; pass them on, falling back to the catalogue size for the total. */
+typedef struct { const ClassicHooks *h; uint64_t expect; } NetTap;
+static void net_tap(void *ctx, uint64_t got, uint64_t total) {
+    NetTap *t = ctx;
+    if (t->h && t->h->bytes) t->h->bytes(t->h->ctx, got, total ? total : t->expect);
+}
 
 static void safe_leaf(const char *name, char *out, size_t n) {
     size_t w = 0;
@@ -250,19 +259,32 @@ static ClassicResult install_core(const char *root, const ClassicApp *app, const
     int count = 0;
     if (local_dir) {
         progress(hooks, "Measuring the folder");
-        if (copy_tree(local, NULL, 0, &count, &size)) FAIL(CA_FAILED, "That folder could not be read (too deep, too many files or unreadable).");
+        if (copy_tree(local, NULL, 0, &count, &size, NULL)) FAIL(CA_FAILED, "That folder could not be read (too deep, too many files or unreadable).");
         snprintf(leaf, sizeof leaf, "%s", strrchr(local, '/') ? strrchr(local, '/') + 1 : local);
     } else {
         int fd = install_tempfile(tmp, sizeof tmp, "classic");
         if (fd < 0) FAIL(CA_FAILED, "Could not start the download.");
         close(fd);
         progress(hooks, local ? "Reading the archive" : "Downloading");
-        ClassicFetch fetch = local ? fetch_copy : hooks && hooks->fetch ? hooks->fetch : fetch_garden;
+        stage(hooks, local ? CS_COPYING : CS_DOWNLOADING);
         char why[200] = "";
-        int bad = fetch(app, tmp, hooks ? hooks->cancel : NULL, local ? (void *)local : hooks ? hooks->ctx : NULL, why, sizeof why);
+        int bad;
+        if (local) {
+            CopyProg cp = {hooks, 0, (uint64_t)ls.st_size};
+            unlink(tmp);   /* the temp file above only reserved a name; copy_plain_file creates exclusively */
+            bad = copy_plain_file(local, tmp, &cp);
+            if (bad) snprintf(why, sizeof why, "Could not read that file.");
+        } else {
+            NetTap tap = {hooks, app->size};
+            if (!(hooks && hooks->fetch)) install_fetch_set_progress(net_tap, &tap);
+            ClassicFetch fetch = hooks && hooks->fetch ? hooks->fetch : fetch_garden;
+            bad = fetch(app, tmp, hooks ? hooks->cancel : NULL, hooks ? hooks->ctx : NULL, why, sizeof why);
+            install_fetch_set_progress(NULL, NULL);
+        }
         if (cancelled(hooks)) { unlink(tmp); FAIL(CA_CANCELLED, "Cancelled."); }
         if (bad) { unlink(tmp); FAIL(CA_FAILED, "%s", why[0] ? why : "The download failed."); }
         progress(hooks, "Checking the download");
+        stage(hooks, CS_VERIFYING);
         if (classic_hash_file(tmp, md5, sha, &size)) { unlink(tmp); FAIL(CA_FAILED, "Could not read the downloaded file."); }
         if ((app->size && app->size != size) || (app->md5[0] && strcasecmp(app->md5, md5)) ||
             (app->sha256[0] && strcasecmp(app->sha256, sha))) {
@@ -285,12 +307,14 @@ static ClassicResult install_core(const char *root, const ClassicApp *app, const
         FAIL(CA_FAILED, "%s", why);
     }
     progress(hooks, "Installing into your volume");
+    stage(hooks, CS_UNPACKING);
     int bad;
     if (local_dir) {
         char dest_full[OSPI_PATH];
         int n2 = 0;
         uint64_t b2 = 0;
-        bad = volume_join(dest_full, sizeof dest_full, root, target) || copy_tree(local, dest_full, 0, &n2, &b2);
+        CopyProg cp = {hooks, 0, size};
+        bad = volume_join(dest_full, sizeof dest_full, root, target) || copy_tree(local, dest_full, 0, &n2, &b2, &cp);
         if (bad) snprintf(why, sizeof why, "Could not copy that folder in.");
     } else {
         bad = install_expand_archive(root, tmp, target, why, sizeof why);
@@ -298,6 +322,7 @@ static ClassicResult install_core(const char *root, const ClassicApp *app, const
     if (tmp[0]) unlink(tmp);
     if (bad) {
         undo_target(root, target, wrapped);   /* an expansion that fails leaves nothing behind */
+        if (cancelled(hooks)) FAIL(CA_CANCELLED, "Cancelled.");
         FAIL(CA_FAILED, "%s", why[0] ? why : "Could not install this item.");
     }
     if (write_receipt(root, app, source, leaf, size, md5, sha, verified, target))
