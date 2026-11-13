@@ -316,7 +316,7 @@ static int dlg_service(MacRuntime *rt, uint16_t opcode) {
         if (!sd) { if (rt->dlgmgr) M(rt)->port = 0; return 0; }
         M(rt)->port = rd(rt, sp, 4);
         if (!mac_dlgwin_available(rt) && !sd->port_window) { pop = 4; break; }                      /* no colour window machinery: the port stays a name and QuickDraw on it is swallowed */
-        if (!mac_dlgwin_ensure(rt, sd)) return -1;                                                   /* the dialog's drawing goes to its port window (QuickDraw draws there, in dialog coordinates) */
+        if (!mac_dlgwin_ensure(rt, sd)) return mac_cpu_halted(rt->cpu) ? -1 : fail(rt, "SetPort on a dialog: its port window could not be made (guest memory for windows is exhausted).");                                                   /* the dialog's drawing goes to its port window (QuickDraw draws there, in dialog coordinates) */
         rt->current_port = sd->port_window; if (rt->qd_globals) wr(rt, rt->qd_globals, 4, sd->port_window);
         pop = 4; break; }
     case 0xabf1: {                                    /* the standard filter, called by the guest: theDialog, VAR event, VAR itemHit -> Boolean */

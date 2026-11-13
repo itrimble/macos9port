@@ -247,3 +247,73 @@ pixels remain where the new window does not cover them.
 
 **Not verified.** All headless. The Agree and Continue clicks are scripted. The built-in `itl` values are this project's own choice of US conventions, not a comparison with a real Mac. What the engine does with the
 `itl0` handle after getting it is not known. The `??` disk name and the space shortfall are as seen in one frame; I did not trace which File Manager call produced them.
+
+## Seventh run — the disk alert, the System Folder, and the progress window — branch `qt/install-disk`
+
+Same MBP copy (`QuickTime Installer` 34,338 bytes, `.rsrc` 353,773 bytes, `QuickTime Install Cache` 8,344,292 bytes), headless `ospi-runtime-probe`, scratch copies, scripted clicks. The probe now takes `--disk VOLUME`
+like `ospi-runtime` does (it measures the guest disk against that folder), and `--trace` now prints what a volume-information call returned (volume reference, drive and driver reference numbers,
+block counts and size, free blocks, the name), the name in a catalogue call, `FindFolder` requests and `ParamText` strings. The method was the third run's: trace, then read the engine's own code around the call
+(`ospi-dasm` over a RAM dump, observation only).
+
+**What the "??" was.** The File Manager was not the cause of the name. The engine builds a table of volumes at start-up (one 66-byte entry per volume, from `PBHGetVInfo` by `ioVolIndex` 1, 2 and 3: OS999 HD, the System volume, then
+`nsvErr`, which ends the walk) and takes the name, the capacity and the free space from those answers (`ioNamePtr` was right: `OS999 HD`). After Continue it asks `PBHGetVInfo` again, this time
+with `ioNamePtr` NIL, `ioVRefNum` -1 and `ioVolIndex` 0, and reads `ioVDrvInfo` (+66) and `ioVDRefNum` (+68), then `ioVNmAlBlks` (+46) and `ioVFrBlk` (+62), each multiplied by `ioVAlBlkSiz` (+48). When the free bytes
+are short it calls `ParamText` with the volume's table entry as the first string, and then builds the sentence itself: it reads the four **`DAStrings`** handles at low memory `$0AA0`, `$0AA4`, `$0AA8`, `$0AAC`, replaces `^0` to `^3` in
+the text of STR# 1009 with their contents, disposes the handles and zeroes the array, and puts the result in the alert with `SetIText`. This runtime kept `ParamText` only in a host copy, so `$0AA0` held NIL and the engine
+substituted an empty string: `named “” does not have enough free space`. The quotes are Mac Roman `$D2` and `$D3`, which this runtime's stand-in face has no glyphs for, so they drew as `?` and the line read `named ?? does not`.
+The second cause was real: in the probe the disk was not attached, so `ioVFrBlk` was 0 and there was never room.
+
+| | Before (`e205a5d`) | After |
+| --- | --- | --- |
+| Alert text, probe without `--disk` | `named ?? does not have enough` (an empty name between two `$D2`/`$D3` quotes) | `named ?OS999 HD? does not have enough free space` (the quotes still draw as `?`: a font gap, not fixed) |
+| `ioVFrBlk` with the disk attached (`--disk`) | not possible in the probe | about 2.0 GB free: 64,605 blocks of 32,256 bytes in the first run (the host was nearly full, so the capacity was host-limited and moved with the host's free space during the day) |
+| `ParamText` | host copy only; `$0AA0` stays NIL | four guest handles at `$0AA0` (`src/mac_dialog.c`), replaced on each call; a NIL parameter leaves its slot; a slot the program disposed and zeroed is refilled |
+
+**The File Manager answers, as they are.** `PBHGetVInfo` for the OS999 HD: `ioNamePtr` gets `OS999 HD` when the caller gives a pointer; `ioVRefNum` -1; `ioVDrvInfo` 1 (the drive queue entry of the data volume) and `ioVDRefNum` 0;
+`ioVNmAlBlks` and `ioVAlBlkSiz` are the internal disk's capacity clipped to 65,535 blocks and just under 2 GiB (`volume_classic_view`, 512-byte steps), `ioVFrBlk` the free space in those blocks. These were correct
+already and are unchanged; a new test checks that the product stays at or under `$7FFFFE00` and that free is never above total. No `PBXGetVolInfo` (`HFSDispatch` selector 18, `FSDispatch` `$A060`) was called: the engine only does that when it
+decides the file system supports volumes over 2 GiB, and this runtime's `Gestalt('fs  ')` does not claim that. The engine takes `ioVDrvInfo` 1 and 2 for floppies (it skips its capacity test for them); it did not
+matter for this volume, and I did not change the drive numbers.
+
+**The System Folder.** With the disk check past, the next alert is *Installation requires a System Folder on the selected disk*. The engine first asks `Gestalt('fold')` (undefined here before) and, with no Folder Manager, finds the
+System Folder in `ioVFndrInfo[0]` (+90) of the `PBHGetVInfo` record, the directory ID of the blessed folder. This runtime returned 0. Changes:
+
+* `PBHGetVInfo` (the 122-byte record only) returns the directory ID of the volume's `System Folder` in `ioVFndrInfo[0]`, making that folder in the **save overlay** first if the program has one and it is not there yet (the data
+  folder is never written; with no overlay the answer is 0 and nothing is made). This is a side effect on any program that calls `PBHGetVInfo`: Monkey Island's save folder now gets an empty `System Folder`
+  (its probe frames and instruction counts did not change, see below).
+* `Gestalt('fold')` answers 1 (`gestaltFindFolderPresent`). The engine then uses `FindFolder`: it asked for `macs`, `ctrl`, `desk`, `extn`, `font`, `temp` and `pref`, and created only `pref`.
+* `FindFolder` (`src/mac_alias.c`, `src/mac_files_dircreate.c`) now places the folders as the public layout does: Preferences, Control Panels, Extensions, Apple Menu Items, Startup Items, Fonts and Shutdown Items inside the System
+  Folder; Temporary Items, Trash, Desktop Folder and PrintMonitor Documents at the root. Before, every one was a root folder. `createFolder` makes the System Folder above it too. All of it is in the overlay.
+  `kOnSystemDisk`, 0, -1 and -2 still mean this one namespace.
+
+**Past the disk and System Folder checks.** The engine runs: the *Internet Connection* window (DLOG 5100: "14.4 Modem" to "Intranet/LAN", "Allow Multiple Simultaneous Streams"), the *QuickTime Pro registration* window (DLOG 5102, three
+edit fields), then the **install progress window** (DLOG 1008): "Your QuickTime components are being ..." with a number, `23`, drawn, and a Cancel button. The first two took one scripted click on Continue (515, 385) each; nothing was typed.
+Two more things stood in the way and are fixed, each with a test:
+
+| Stop | Cause | Change |
+| --- | --- | --- |
+| `Unsupported SANE FP68K selector` at the progress window | the progress arithmetic uses `FDIVD` (`$0806`), `FC2X` (`$300E`) and `FCMPX` (`$0008`); the halt did not name the selector | the message names it (`$xxxx`); arithmetic with a double, single, integer, long or comp source (`$0800`, `$1000`, `$2000`, `$2800`, `$3000` plus 0, 2, 4, 6), comp to extended, and `FCMPX`/`FCPXX`, which set Z for equal and N for less in the condition codes (the signed-branch reading; the exact X, V and C bits of Apple's table were **not checked**) |
+| `unhandled A-line trap a873` (`SetPort`) on the next alert | every `NewCWindow` copies a 300 KB backdrop into the native arena, which never gives memory back; a dialog's port window needs one; after about a dozen windows the arena was dry and `NewCWindow` answered NIL, which `SetPort` reported as an unhandled trap | a closed window's backdrop is kept and handed to the next window (`backdrop_spare`, `src/mac_window.c`); `SetPort` on a dialog whose port window cannot be made halts with its own message |
+
+**What was written, and where.** The probe ran with `--saves` at a scratch directory and `--disk` at a scratch copy of the installer's folder; the guest volume's data folder is read-only to the program. The tree the installer made, in the save overlay only:
+
+```
+System Folder/                       (made by PBHGetVInfo; FindFolder 'macs' finds it)
+  Preferences/                       (FindFolder 'pref' with createFolder)
+    QuickTime Preferences            (0 bytes, created through the FSp calls)
+```
+
+Nothing else changed in the scratch tree (the capacity code also keeps a `.os999/capacity` file in the volume root, in the scratch copy). The MBP's own volume was only read (`scp`).
+
+**The stop: file names with Mac Roman characters.** On the progress window the engine asks `PBGetCatInfo` (`HFSDispatch` 9, `ioDirID` 2, `ioFDirIndex` 0) for **`QuickTime™ Folder`** (the `™` is `$AA`), the folder it installs into at the root of the
+disk, to see whether it exists. It gets `paramErr` (-50), shows *Error creating folder.* with code `1008:9,-50`, and waits for OK. By reading the code, the cause is the File Manager's host-name rule: only ASCII 32 to 126 is accepted, in at least eight places
+(`mac_dirs_name.c` `component_ok`, `mac_files_read_name`, `mac_files_save_name_ok`, `mac_fsspec.c`, and the listing filters in `mac_volume.c`, `mac_files_info.c` and `mac_files_write.c`); a real Mac answers `fnfErr` for a name that is not there, and a
+`PBDirCreate` of the same name would then have to work. Letting a program use Mac Roman names means a two-way mapping to host names (UTF-8, and macOS's normalisation of file names) in every one of those places and in the listings. That is a File Manager
+naming subsystem of its own, not an iteration, and I stopped there. The installer has not copied one file out of the Install Cache: it opens and reads `QuickTime Install Cache` as before, and nothing of QuickTime itself was written.
+
+**MI1 and MI2.** Probe against a build of `e205a5d`, 12 seconds each: identical instruction counts (32,611,248 and 37,422,033) and byte-identical frames at 0, 3, 6, 9 and 12 seconds. Their data folders in
+`~/os999-guest-software/from-mbp-20261111/` were hashed before and after (13 files, `shasum`) and are unchanged.
+
+**Not verified.** Everything is headless and from the probe; the clicks are scripted. The meaning of the engine's table fields (`+0x22` total bytes, `+0x26` free bytes, `+0x3a` volume reference) is from its code, not from a decompiled
+listing, and the claim that `$0AA0` is `DAStrings` rests on the public name of that low-memory global and on the engine's own use of it. The compare condition-code mapping is unchecked against Apple's table, as said. The progress
+number `23` is as drawn in one frame; I did not establish what it counts. Mac Roman quotes still draw as `?`. No real window, no real mouse. The `-50` on `QuickTime™ Folder` is attributed to the name rule by reading, not by a probe of a non-ASCII name on its own.

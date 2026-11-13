@@ -1,5 +1,6 @@
 #include "mac_runtime.h"
 #include "mac_sane_arith.h"
+#include <stdio.h>
 #include <string.h>
 
 /* Independent bounded FP68K/Pack4 conversions. Public Apple Numerics Manual,
@@ -67,6 +68,19 @@ static int integer_result(Extended x,unsigned bits,unsigned rounding,uint32_t *o
     if(whole>(negative?limit:limit-1))return -1;
     *out=negative?(uint32_t)(0-(uint32_t)whole):(uint32_t)whole;*inexact=fraction;return 0;
 }
+/* The order of two normalized (or zero, or infinite) extended values: -1, 0 or 1. Both zeros are equal. FCMPX and FCPXX report the order in the 68K
+ * condition codes; this runtime sets Z for equal and N for less, nothing for greater, which is what the signed branches (BEQ, BLT, BGT, BLE, BGE) read.
+ * The exact bits of the public table for X, V and C were not checked. */
+static int extended_compare(Extended a,Extended b) {
+    int an=(a.sign_exp&0x8000)!=0,bn=(b.sign_exp&0x8000)!=0,az=!(a.sign_exp&0x7fff)&&!a.significand,bz=!(b.sign_exp&0x7fff)&&!b.significand;
+    if(az&&bz)return 0;
+    if(az)return bn?1:-1;
+    if(bz)return an?-1:1;
+    if(an!=bn)return an?-1:1;
+    unsigned ae=a.sign_exp&0x7fff,be=b.sign_exp&0x7fff;
+    int magnitude=ae!=be?(ae<be?-1:1):a.significand==b.significand?0:a.significand<b.significand?-1:1;
+    return an?-magnitude:magnitude;
+}
 int mac_sane_service(MacRuntime *rt,uint16_t opcode) {
     if(opcode!=0xa9eb)return 0;
     if(!rt||!rt->cpu||mac_cpu_halted(rt->cpu))return -1;
@@ -74,12 +88,23 @@ int mac_sane_service(MacRuntime *rt,uint16_t opcode) {
     if(!range(rt,sp,2))return fail(rt,"Invalid SANE selector stack.");
     uint8_t *ram=mac_cpu_ram(rt->cpu);unsigned op=r16(ram+sp);
     unsigned args=10,src_size=10,dst_size=10;
-    switch(op) {
+    unsigned cop=op,code=op&0xff;   /* cop: the conversion that loads the source operand */
+    int arith=!(op&1)&&(code<=6||code==8||code==0xa),compare=arith&&code>=8;   /* dst := dst op src (add, sub, mul, div), or a comparison that only sets the condition codes */
+    if(arith) {   /* FADDX, FDIVD, FMULI, FSUBS, FCMPC ...: the source may be in another format than extended */
+        switch(op&0xff00) {
+        case 0:break;
+        case 0x0800:case 0x3000:src_size=8;break;   /* double, comp */
+        case 0x1000:case 0x2800:src_size=4;break;   /* single, long integer */
+        case 0x2000:src_size=2;break;               /* integer */
+        default:{char why[64];snprintf(why,sizeof why,"Unsupported SANE FP68K selector $%04X.",op);return fail(rt,why);}
+        }
+        if(op&0xff00)cop=(op&0xff00)|0x0e;
+    } else switch(op) {
     case 0x100e:src_size=4;break;
     case 0x200e:src_size=2;break;
     case 0x280e:src_size=4;break;
+    case 0x300e:src_size=8;break;   /* FC2X: comp (a 64-bit integer) to extended */
     case 0x000e:case 0x0010:break;
-    case 0x0000:case 0x0002:case 0x0004:case 0x0006:break;   /* FADDX, FSUBX, FMULX, FDIVX: dst := dst op src, both extended */
     case 0x2010:dst_size=2;break;
     case 0x1010:dst_size=4;break;   /* FX2S: extended to single */
     case 0x0810:dst_size=8;break;   /* FX2D: extended to double */
@@ -87,7 +112,7 @@ int mac_sane_service(MacRuntime *rt,uint16_t opcode) {
     case 0x2810:dst_size=4;break;
     case 0x0016:args=6;src_size=0;break;
     case 0x0001:case 0x0003:args=6;src_size=0;dst_size=2;break;
-    default:return fail(rt,"Unsupported SANE FP68K selector.");
+    default:{char why[64];snprintf(why,sizeof why,"Unsupported SANE FP68K selector $%04X.",op);return fail(rt,why);}   /* the message names it */
     }
     if(!range(rt,sp,args))return fail(rt,"Invalid SANE operand stack.");
     uint32_t dst=r32(ram+sp+2),src=src_size?r32(ram+sp+6):dst;
@@ -99,22 +124,34 @@ int mac_sane_service(MacRuntime *rt,uint16_t opcode) {
     else {
         if(environment&0x0060)return fail(rt,"SANE nonextended rounding precision is unsupported.");
         Extended x={0};
-        if(op==0x100e){if(single_extended(r32(ram+src),&x))return fail(rt,"SANE single NaN conversion is unsupported.");}
-        else if(op==0x080e) {
+        if(cop==0x100e){if(single_extended(r32(ram+src),&x))return fail(rt,"SANE single NaN conversion is unsupported.");}
+        else if(cop==0x080e) {
             const char *why="SANE double conversion failed.";
             if(mac_sane_from_double((uint64_t)r32(ram+src)<<32|r32(ram+src+4),&x,&why))return fail(rt,why);
-        } else if(op==0x200e||op==0x280e) {
-            int64_t value=op==0x200e?(int16_t)r16(ram+src):(int32_t)r32(ram+src);
+        } else if(cop==0x200e||cop==0x280e) {
+            int64_t value=cop==0x200e?(int16_t)r16(ram+src):(int32_t)r32(ram+src);
             x=unsigned_extended((uint64_t)(value<0?-value:value),value<0);
+        } else if(cop==0x300e) {
+            int64_t value=(int64_t)((uint64_t)r32(ram+src)<<32|r32(ram+src+4));
+            if(value==INT64_MIN)return fail(rt,"SANE comp NaN conversion is unsupported.");   /* the comp NaN is the one value with no magnitude */
+            x=unsigned_extended(value<0?(uint64_t)0-(uint64_t)value:(uint64_t)value,value<0);
         } else x=load(ram+src);
         unsigned exponent=x.sign_exp&0x7fff;
         if((exponent && exponent!=0x7fff && !(x.significand>>63)) ||
            (!exponent && (x.significand>>63)))
             return fail(rt,"SANE unnormalized extended operand is unsupported.");
         if(exponent==0x7fff && x.significand!=(UINT64_C(1)<<63))return fail(rt,"SANE extended NaN conversion is unsupported.");
-        if(op==0x0000||op==0x0002||op==0x0004||op==0x0006) {
+        if(compare) {
+            Extended y=load(ram+dst);unsigned ye=y.sign_exp&0x7fff;
+            if((ye && ye!=0x7fff && !(y.significand>>63)) || (!ye && (y.significand>>63)) || (ye==0x7fff && y.significand!=(UINT64_C(1)<<63)))
+                return fail(rt,"SANE comparison of unnormalized operands or NaNs is unsupported.");
+            int relation=extended_compare(y,x);   /* dst against src */
+            uint32_t sr=mac_cpu_get(rt->cpu,MAC_SR)&~0x1fu;
+            if(relation==0)sr|=0x04;else if(relation<0)sr|=0x08;   /* equal: Z, less: N, greater: none (the signed-branch reading; see the note at extended_compare) */
+            mac_cpu_set(rt->cpu,MAC_SR,sr);
+        } else if(arith) {
             const char *why="SANE arithmetic failed.";Extended y=load(ram+dst),z;
-            if(mac_sane_arith(op,y,x,(environment>>13)&3,&z,&inexact,&why))return fail(rt,why);
+            if(mac_sane_arith(op&0xff,y,x,(environment>>13)&3,&z,&inexact,&why))return fail(rt,why);
             store(output,z);
         } else if(op==0x0016) {
             if(exponent!=0x7fff)inexact=truncate(&x);
@@ -132,6 +169,6 @@ int mac_sane_service(MacRuntime *rt,uint16_t opcode) {
         if(inexact && (environment&0x10))return fail(rt,"SANE inexact exception callback is unsupported.");
         if(inexact)environment|=0x1000;
     }
-    if(op!=1)memcpy(ram+dst,output,dst_size);
+    if(op!=1&&!compare)memcpy(ram+dst,output,dst_size);
     rt->sane_environment=environment;mac_cpu_set(rt->cpu,MAC_A7,sp+args);return 1;
 }

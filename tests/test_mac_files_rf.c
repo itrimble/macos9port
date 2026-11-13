@@ -128,6 +128,19 @@ int main(void) {
     CHECK(find(&r, 0x8000, 0x6374726c, 0) == -43);                                            /* another folder is still absent */
     CHECK(find(&r, 0x8000, 0x3f3f3f3f, 1) == -43);                                            /* unknown folder type */
     CHECK(find(&r, 5, 0x70726566, 0) == -35);                                                 /* unknown volume */
+    /* the special folders sit where the public layout puts them: inside the System Folder (which is made with them), or at the root; only in the overlay */
+    { struct stat st; char hp[900];
+      snprintf(hp, sizeof hp, "%s/System Folder/Preferences", saves); CHECK(stat(hp, &st) == 0 && S_ISDIR(st.st_mode));
+      snprintf(hp, sizeof hp, "%s/Preferences", saves); CHECK(stat(hp, &st) != 0);                                     /* not at the root any more */
+      CHECK(find(&r, 0x8000, 0x6d616373, 0) == 0); uint32_t sysf = rd(&r, 0x2100, 4); CHECK(sysf > 2 && sysf != prefs && rd(&r, 0x2104, 2) == 0xffff);   /* made by the Preferences request */
+      CHECK(find(&r, 0x8000, 0x6578746e, 0) == -43 && find(&r, 0x8000, 0x6578746e, 1) == 0); uint32_t ext = rd(&r, 0x2100, 4);
+      snprintf(hp, sizeof hp, "%s/System Folder/Extensions", saves); CHECK(stat(hp, &st) == 0 && S_ISDIR(st.st_mode) && ext != sysf && ext != prefs);
+      CHECK(find(&r, 0, 0x6578746e, 0) == 0 && rd(&r, 0x2100, 4) == ext && find(&r, 0x8000, 0x6d616373, 0) == 0 && rd(&r, 0x2100, 4) == sysf);
+      CHECK(find(&r, 0x8000, 0x74727368, 1) == 0); snprintf(hp, sizeof hp, "%s/Trash", saves); CHECK(stat(hp, &st) == 0 && S_ISDIR(st.st_mode));   /* the Trash is at the root */
+      CHECK(find(&r, 0x8000, 0x666f6e74, 1) == 0 && find(&r, 0x8000, 0x6374726c, 1) == 0 && find(&r, 0x8000, 0x616d6e75, 1) == 0 && find(&r, 0x8000, 0x73747274, 1) == 0 && find(&r, 0x8000, 0x73686466, 1) == 0);
+      snprintf(hp, sizeof hp, "%s/System Folder/Control Panels", saves); CHECK(stat(hp, &st) == 0);
+      snprintf(hp, sizeof hp, "%s/System Folder", data); CHECK(stat(hp, &st) != 0);                                    /* nothing was made in the program's own data */
+      snprintf(hp, sizeof hp, "%s/Extensions", data); CHECK(stat(hp, &st) != 0); }
     mac_cpu_set(r.cpu, MAC_A7, 0xf000); mac_cpu_set(r.cpu, MAC_D0, 0); w(&r, 0xf000, 4, 0);
     CHECK(mac_alias_service(&r, 0xa823) == -1 && mac_cpu_halted(r.cpu));                      /* nil result pointer */
     mac_files_destroy(&r); mac_cpu_destroy(r.cpu);

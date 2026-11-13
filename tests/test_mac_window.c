@@ -343,4 +343,21 @@ static void offscreen(void) {
  CHECK(resize(&r,600,470,1)==-1 && r.window.bounds[2]==300 && r.window.bounds[3]==450);mac_cpu_destroy(r.cpu);
  r=fresh();new_args(&r,STORAGE,0);CHECK(mac_window_service(&r,0xaa45)==1);CHECK(resize(&r,600,470,1)==1 && r.window.bounds[2]==510);mac_cpu_destroy(r.cpu);
 }
-int main(void){calc_vis_behind();show_hide_checks();moving();titling();sizing();offscreen();calc_vis();lifecycle();failures();custom_wdef_and_behind();hiliting();puts("one-window lifecycle, drawing, and update checks passed");}
+/* A closed window's 300 KB backdrop snapshot lives in the native arena, which never gives memory back, so the next window takes the closed one's:
+ * opening and closing windows one after another (an installer's dialogs) no longer eats the arena (it ran dry after about a dozen). */
+static void backdrop_reuse(void) {
+    MacRuntime rt=fresh();new_args(&rt,STORAGE,0);CHECK(mac_window_service(&rt,0xaa45)==1);
+    uint32_t first=rt.window.backdrop;CHECK(first && rt.backdrop_spares==0);
+    CHECK(call(&rt,0xa92d,STORAGE)==1 && rt.backdrop_spares==1);
+    uint32_t used=rt.heap_next;
+    new_args(&rt,STORAGE,0);CHECK(mac_window_service(&rt,0xaa45)==1);
+    CHECK(rt.window.backdrop==first && rt.backdrop_spares==0 && rt.heap_next-used<20000);   /* the snapshot was reused: only the port's small records were new */
+    uint32_t after_one=rt.heap_next;
+    for(unsigned i=0;i<40;i++) {                                                           /* 40 more open-and-close cycles all succeed */
+        CHECK(call(&rt,0xa92d,STORAGE)==1);
+        new_args(&rt,STORAGE,0);CHECK(mac_window_service(&rt,0xaa45)==1 && rt.window.address==STORAGE && rd(&rt,SP+26,4)==STORAGE);
+    }
+    CHECK(rt.heap_next-after_one<40*20000);
+    mac_cpu_destroy(rt.cpu);
+}
+int main(void){backdrop_reuse();calc_vis_behind();show_hide_checks();moving();titling();sizing();offscreen();calc_vis();lifecycle();failures();custom_wdef_and_behind();hiliting();puts("one-window lifecycle, drawing, and update checks passed");}

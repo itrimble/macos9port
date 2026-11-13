@@ -30,6 +30,41 @@ static void conversions(void) {
     }
     put(&r,SRC,4,0x80000000);CHECK(call(&r,0x280e)==1);equal_ext(&r,0xc01e,UINT64_C(0x8000000000000000));
     put(&r,SRC,2,0x8000);CHECK(call(&r,0x200e)==1);equal_ext(&r,0xc00e,UINT64_C(0x8000000000000000));
+    /* FC2X ($300E): comp, a signed 64-bit integer, to extended; the comp NaN has no magnitude and halts by name */
+    put(&r,SRC,4,0);put(&r,SRC+4,4,1);CHECK(call(&r,0x300e)==1);equal_ext(&r,0x3fff,UINT64_C(0x8000000000000000));
+    put(&r,SRC,4,0xffffffff);put(&r,SRC+4,4,0xfffffffd);CHECK(call(&r,0x300e)==1);equal_ext(&r,0xc000,UINT64_C(0xc000000000000000));   /* -3 */
+    put(&r,SRC,4,0x00000001);put(&r,SRC+4,4,0);CHECK(call(&r,0x300e)==1);equal_ext(&r,0x401f,UINT64_C(0x8000000000000000));            /* 2^32 */
+    put(&r,SRC,4,0x7fffffff);put(&r,SRC+4,4,0xffffffff);CHECK(call(&r,0x300e)==1);equal_ext(&r,0x403d,UINT64_C(0xfffffffffffffffe));    /* 2^63 - 1 */
+    put(&r,SRC,4,0);put(&r,SRC+4,4,0);CHECK(call(&r,0x300e)==1);equal_ext(&r,0,0);
+    /* arithmetic with a source that is not extended: dst := dst op src (FDIVD $0806, FMULI $2004, FSUBS $1002, FADDC $3000, FDIVL $2806) */
+    ext(&r,DST,0x4000,UINT64_C(0xc000000000000000));put(&r,SRC,4,0x40000000);put(&r,SRC+4,4,0);CHECK(call(&r,0x0806)==1);equal_ext(&r,0x3fff,UINT64_C(0xc000000000000000));   /* 3.0 / 2.0 */
+    CHECK(mac_cpu_get(r.cpu,MAC_A7)==SP+10);
+    ext(&r,DST,0x4000,UINT64_C(0xc000000000000000));put(&r,SRC,2,0xfffe);CHECK(call(&r,0x2004)==1);equal_ext(&r,0xc001,UINT64_C(0xc000000000000000));                              /* 3.0 * -2 = -6 */
+    ext(&r,DST,0x4000,UINT64_C(0xc000000000000000));put(&r,SRC,4,0x3f800000);CHECK(call(&r,0x1002)==1);equal_ext(&r,0x4000,UINT64_C(0x8000000000000000));                          /* 3.0 - 1.0f = 2.0 */
+    ext(&r,DST,0x4000,UINT64_C(0xc000000000000000));put(&r,SRC,4,0);put(&r,SRC+4,4,5);CHECK(call(&r,0x3000)==1);equal_ext(&r,0x4002,UINT64_C(0x8000000000000000));   /* 3.0 + comp 5 = 8.0 */
+    ext(&r,DST,0x4000,UINT64_C(0xc000000000000000));put(&r,SRC,4,2);CHECK(call(&r,0x2806)==1);equal_ext(&r,0x3fff,UINT64_C(0xc000000000000000));                                    /* 3.0 / long 2 */
+    /* FCMPX ($0008) and FCPXX ($000A), and compares with another source format: the condition codes carry the order, dst is untouched, the operands are popped */
+    {   const struct {uint16_t de;uint64_t ds;uint16_t se;uint64_t ss;unsigned z,n;} rel[]={
+            {0x4000,UINT64_C(0xc000000000000000),0x4000,UINT64_C(0xc000000000000000),1,0},   /* 3 = 3 */
+            {0x4000,UINT64_C(0xc000000000000000),0x4001,UINT64_C(0x8000000000000000),0,1},   /* 3 < 4 */
+            {0x4001,UINT64_C(0x8000000000000000),0x4000,UINT64_C(0xc000000000000000),0,0},   /* 4 > 3 */
+            {0x0000,0,0x8000,0,1,0},                                                         /* +0 = -0 */
+            {0xc000,UINT64_C(0xc000000000000000),0x3fff,UINT64_C(0x8000000000000000),0,1},   /* -3 < 1 */
+            {0x3fff,UINT64_C(0x8000000000000000),0xc000,UINT64_C(0xc000000000000000),0,0},   /* 1 > -3 */
+            {0xc000,UINT64_C(0xc000000000000000),0xc001,UINT64_C(0x8000000000000000),0,0},   /* -3 > -4 */
+            {0x7fff,UINT64_C(0x8000000000000000),0x7ffe,UINT64_C(0xffffffffffffffff),0,0}};  /* +inf > big */
+        for(unsigned i=0;i<sizeof rel/sizeof rel[0];i++) for(unsigned op=8;op<=10;op+=2) {
+            ext(&r,DST,rel[i].de,rel[i].ds);ext(&r,SRC,rel[i].se,rel[i].ss);mac_cpu_set(r.cpu,MAC_SR,0x271f);
+            CHECK(call(&r,op)==1 && mac_cpu_get(r.cpu,MAC_A7)==SP+10);
+            CHECK(((mac_cpu_get(r.cpu,MAC_SR)>>2)&1)==rel[i].z && ((mac_cpu_get(r.cpu,MAC_SR)>>3)&1)==rel[i].n && (mac_cpu_get(r.cpu,MAC_SR)&0xff00)==0x2700);
+            CHECK(get(&r,DST,2)==rel[i].de && get(&r,DST+2,4)==(uint32_t)(rel[i].ds>>32));
+        }
+        ext(&r,DST,0x4000,UINT64_C(0xc000000000000000));put(&r,SRC,4,0x40400000);mac_cpu_set(r.cpu,MAC_SR,0x2700);                  /* 3.0 against single 3.0 */
+        CHECK(call(&r,0x1008)==1 && (mac_cpu_get(r.cpu,MAC_SR)&0x1f)==4);
+        put(&r,SRC,2,5);CHECK(call(&r,0x2008)==1 && (mac_cpu_get(r.cpu,MAC_SR)&0x1f)==8);                                           /* 3.0 against integer 5 */
+    }
+    MacRuntime n;init(&n);put(&n,SRC,4,0x80000000);put(&n,SRC+4,4,0);CHECK(call(&n,0x300e)==-1 && mac_cpu_halted(n.cpu) && strstr(mac_cpu_error(n.cpu),"comp NaN"));mac_cpu_destroy(n.cpu);
+    init(&n);CHECK(call(&n,0x3a0e)==-1 && strstr(mac_cpu_error(n.cpu),"selector $3A0E"));mac_cpu_destroy(n.cpu);   /* any other selector halts and names itself */
     ext(&r,SRC,0x3fff,UINT64_C(0x8000000000000001));CHECK(call(&r,0x0010)==1);
     equal_ext(&r,0x3fff,UINT64_C(0x8000000000000001)); /* Preserve full64-bit significand. */
     mac_cpu_destroy(r.cpu);
@@ -70,7 +105,7 @@ static void integer_tests(void) {
     mac_cpu_destroy(r.cpu);
 }
 static void failure_tests(void) {
-    const unsigned selectors[]={0x100e,0x2810,0x16,0x0008};
+    const unsigned selectors[]={0x100e,0x2810,0x16,0x000c};   /* the last: FREMX, not implemented */
     for(unsigned i=0;i<4;i++) {
         MacRuntime r;init(&r);memset(mac_cpu_ram(r.cpu)+DST,0xa5,10);
         if(i==0)put(&r,SRC,4,0x7fc00000);

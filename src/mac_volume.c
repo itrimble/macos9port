@@ -173,6 +173,12 @@ static int volume_info(MacRuntime *rt, uint32_t pb, int directory_fd, size_t siz
     put16(out + 66, 1); /* Matches the mounted application drive queue entry. */
     put32(out + 82, metadata.files);
     put32(out + 86, metadata.directories);
+    /* ioVFndrInfo[0] (offset 90, the public Files.h Finder-info record) is the directory ID of the volume's blessed System Folder, 0 for a volume with none.
+     * The guest volume always has one when the program can write: it is made here, in the save overlay and nowhere else, if it is not there yet, so it is the
+     * same folder FindFolder names. Without a writable overlay there is none to bless. */
+    uint32_t blessed = 0;
+    if (size >= VOLUME_PB_SIZE && mac_files_folder_find(rt, "System Folder", 1, &blessed)) blessed = 0;
+    put32(out + 90, blessed);
     memcpy(input, out, size);
     if (name) {
         ram[name] = sizeof(volume_name) - 1;

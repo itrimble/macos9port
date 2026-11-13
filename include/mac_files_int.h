@@ -12,7 +12,7 @@
 /* Names inside the File Manager service are host-relative paths ("Textures/oak"): see mac_dirs.h. A directory ID is the table mapping of such a path.
  * Directory-level entry points (mac_files_dirs.c, mac_catinfo.c): */
 int mac_files_dir_create(MacRuntime *rt, uint32_t pb);   /* PBDirCreate; the OSErr */
-int mac_files_folder_find(MacRuntime *rt, const char *name, int create, uint32_t *id);   /* a root-level folder by name (FindFolder), optionally making it; the OSErr */
+int mac_files_folder_find(MacRuntime *rt, const char *name, int create, uint32_t *id);   /* a special folder by ':' path from the root (FindFolder), optionally making it and its parents; the OSErr */
 uint32_t mac_files_wd_folder(const MacRuntime *rt, int vref);   /* the directory ID an open working-directory reference stands for, or 0 */
 int mac_files_wd_ours(const MacRuntime *rt, unsigned selector, uint32_t dir_id, int vref);
 int mac_files_wd(MacRuntime *rt, uint32_t pb, unsigned selector);   /* PBOpenWD (1), PBCloseWD (2), PBGetWDInfo (7) */

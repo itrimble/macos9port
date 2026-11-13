@@ -91,6 +91,8 @@ int main(void) {
     if (mac_system_service(&rt,0xa3ad)!=1 || mac_cpu_get(rt.cpu,MAC_D0)!=(uint32_t)-5550) failed=1; /* built in */
     mac_cpu_set(rt.cpu,MAC_D0,0x73746466);mac_cpu_set(rt.cpu,MAC_A7,0x50000);                  /* 'stdf': exactly bit 0, StandardFile58 */
     if (mac_system_service(&rt,0xa1ad)!=1 || mac_cpu_get(rt.cpu,MAC_A0)!=1 || mac_cpu_get(rt.cpu,MAC_D0)!=0) failed=1;
+    mac_cpu_set(rt.cpu,MAC_D0,0x666f6c64);mac_cpu_set(rt.cpu,MAC_A7,0x50000);                  /* 'fold': gestaltFindFolderPresent, bit 0, exactly (FindFolder is in mac_alias.c) */
+    if (mac_system_service(&rt,0xa1ad)!=1 || mac_cpu_get(rt.cpu,MAC_A0)!=1 || mac_cpu_get(rt.cpu,MAC_D0)!=0) failed=1;
     rt.main_device=1;rt.screen_depth=8;                         /* the indexed color profile is up */
     mac_cpu_set(rt.cpu,MAC_D0,0x71647277);mac_cpu_set(rt.cpu,MAC_A7,0x50000);
     if (mac_system_service(&rt,0xa1ad)!=1 || mac_cpu_get(rt.cpu,MAC_A0)!=1 || mac_cpu_get(rt.cpu,MAC_D0)!=0) failed=1;

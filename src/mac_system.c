@@ -59,6 +59,7 @@ static int16_t builtin_gestalt(MacRuntime *rt, uint32_t selector, uint32_t *resp
         *response = rt->main_device && rt->screen_depth == 8 ? 1 : 0; return 0;
     case 0x66732020: /* fs  : gestaltHasFSSpecCalls (bit 1) only; the FSp calls dispatch through $AA52 (mac_fsspec.c). */
         *response = 1u << 1; return 0;
+    case 0x666f6c64: *response = 1; return 0; /* fold: gestaltFindFolderPresent (bit 0), FindFolder in mac_alias.c */
     case 0x73746466: /* stdf: gestaltStandardFile58 (bit 0) only (mac_stdput.c, mac_stdfile.c). */
         *response = 1; return 0;
     default: return -5551;

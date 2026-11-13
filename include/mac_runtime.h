@@ -120,6 +120,7 @@ typedef struct {
     MacWindowState parked_windows[7];
     uint32_t window_order[8];
     unsigned window_count;
+    uint32_t backdrop_spare[8]; unsigned backdrop_spares;   /* backdrops (640x480 snapshots, in the never-reclaimed native arena) of closed windows, handed to the next NewCWindow */
     int exited;
     int trace;
     int guard_allocs;

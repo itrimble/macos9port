@@ -326,9 +326,13 @@ static int file_service(MacRuntime *rt, uint16_t opcode) {
     case 0xa260: {
         if (wd && state) state->hfs_call = 1;
         int error = selector == 0x30 ? mac_files_get_volparms(rt,pb) : selector == 9 ? mac_files_cat_info(rt,pb) : selector == 5 ? mac_files_cat_move(rt,pb) : selector == 8 ? mac_files_fcb_info(rt,pb) : selector == 1 || selector == 2 || (selector == 7 && mac_files_wd_folder(rt,(int16_t)mac_cpu_read(cpu,pb+22,2))) ? mac_files_wd(rt,pb,selector) : working_directory(rt,pb);
-        if (rt->trace) fprintf(stderr, "hfs-dispatch selector=%u volume=%d index=%d dirid=%u name-ptr=%08x error=%d\n",
-                               selector, (int16_t)mac_cpu_read(cpu,pb+22,2), (int16_t)mac_cpu_read(cpu,pb+28,2),
-                               mac_cpu_read(cpu,pb+48,4), mac_cpu_read(cpu,pb+18,4), error);
+        if (rt->trace) {
+            uint32_t np = mac_cpu_read(cpu,pb+18,4);
+            fprintf(stderr, "hfs-dispatch selector=%u volume=%d index=%d dirid=%u name-ptr=%08x error=%d", selector, (int16_t)mac_cpu_read(cpu,pb+22,2),
+                    (int16_t)mac_cpu_read(cpu,pb+28,2), mac_cpu_read(cpu,pb+48,4), np, error);
+            if (np && np < mac_cpu_ram_size(cpu) - 256) { fprintf(stderr, " name='"); for (unsigned i = 0, n = mac_cpu_read(cpu,np,1); i < n; i++) fputc((int)mac_cpu_read(cpu,np+1+i,1), stderr); fputc('\'', stderr); }
+            fputc('\n', stderr);
+        }
         return result(cpu, pb, error);
     }
     case 0xa014: return result(cpu, pb, mac_files_get_volume(rt, pb));
@@ -368,6 +372,15 @@ int mac_file_service(MacRuntime *rt, uint16_t opcode) {
     }
     int handled = file_service(rt, opcode);
     if (handled > 0 && rt && rt->trace) fprintf(stderr, "file-call op=%04x result=%d\n", opcode, (int32_t)mac_cpu_get(rt->cpu, MAC_D0));
-    if (handled > 0 && rt && rt->trace && (opcode & ~0x400u) == 0xa207) fprintf(stderr, "  get-vinfo vref=%d index=%d name-ptr=%08x\n", vref, index, name);
+    if (handled > 0 && rt && rt->trace && (opcode & ~0x400u) == 0xa207) {
+        fprintf(stderr, "  get-vinfo vref=%d index=%d name-ptr=%08x", vref, index, name);
+        if (pb && !(pb & 1) && pb < mac_cpu_ram_size(rt->cpu) - 128 && (int32_t)mac_cpu_get(rt->cpu, MAC_D0) == 0) {   /* the fields a caller reads back */
+            fprintf(stderr, " -> vref=%d drvnum=%d drefnum=%d nmalblks=%u alblksiz=%u frblk=%u", (int16_t)mac_cpu_read(rt->cpu, pb + 22, 2),
+                    (int16_t)mac_cpu_read(rt->cpu, pb + 66, 2), (int16_t)mac_cpu_read(rt->cpu, pb + 68, 2), (unsigned)mac_cpu_read(rt->cpu, pb + 46, 2),
+                    (unsigned)mac_cpu_read(rt->cpu, pb + 48, 4), (unsigned)mac_cpu_read(rt->cpu, pb + 62, 2));
+            if (name && name < mac_cpu_ram_size(rt->cpu) - 256) { fprintf(stderr, " name='"); for (unsigned i = 0, n = mac_cpu_read(rt->cpu, name, 1); i < n; i++) fputc((int)mac_cpu_read(rt->cpu, name + 1 + i, 1), stderr); fputc('\'', stderr); }
+        }
+        fputc('\n', stderr);
+    }
     return handled;
 }

@@ -70,7 +70,7 @@ static void refusals(void){
         {4,0x0001,UINT64_C(0x8000000000000000),0x0001,UINT64_C(0x8000000000000000),0},          /* underflow */
         {0,0x3fff,UINT64_C(0x8000000000000000),0x3fff,UINT64_C(0x8000000000000000),0x0020},     /* double precision rounding */
         {0,0x3fff,UINT64_C(0x8000000000000000),0x3fb9,UINT64_C(0x8000000000000000),0x0010},     /* inexact halt enabled */
-        {8,0x3fff,UINT64_C(0x8000000000000000),0x3fff,UINT64_C(0x8000000000000000),0},          /* FCMPX is not here */
+        {0xc,0x3fff,UINT64_C(0x8000000000000000),0x3fff,UINT64_C(0x8000000000000000),0},        /* FREMX is not here (FCMPX is, in mac_sane.c) */
     };
     for(unsigned i=0;i<sizeof c/sizeof c[0];i++){
         MacRuntime r;init(&r);ext(&r,DST,c[i].ae,c[i].as);ext(&r,SRC,c[i].be,c[i].bs);r.sane_environment=c[i].env;

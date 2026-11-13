@@ -136,7 +136,7 @@ static void apply_action(MacRuntime *rt, const ProbeAction *a, int *mouse_down, 
 }
 
 int main(int argc, char **argv) {
-    const char *path = NULL, *wav = NULL, *frames_dir = NULL, *script = NULL, *dump_ram = NULL, *saves = NULL;
+    const char *path = NULL, *wav = NULL, *frames_dir = NULL, *script = NULL, *dump_ram = NULL, *saves = NULL, *disk = NULL;
     double seconds = 30, frame_every = 5;
     int slices = 4, trace = 0;
     for (int i = 1; i < argc; i++) {
@@ -146,6 +146,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--frame-every") && i + 1 < argc) frame_every = atof(argv[++i]);
         else if (!strcmp(argv[i], "--script") && i + 1 < argc) script = argv[++i];
         else if (!strcmp(argv[i], "--saves") && i + 1 < argc) saves = argv[++i];
+        else if (!strcmp(argv[i], "--disk") && i + 1 < argc) disk = argv[++i];
         else if (!strcmp(argv[i], "--slices") && i + 1 < argc) slices = atoi(argv[++i]);
         else if (!strcmp(argv[i], "--trace")) trace = 1;
         else if (!strcmp(argv[i], "--dump-ram") && i + 1 < argc) dump_ram = argv[++i];
@@ -153,7 +154,7 @@ int main(int argc, char **argv) {
         else { fprintf(stderr, "Unexpected argument: %s\n", argv[i]); return 2; }
     }
     if (!path || seconds <= 0 || seconds > 1200 || slices < 1 || slices > 16 || frame_every <= 0) {
-        fprintf(stderr, "Usage: ospi-runtime-probe [--seconds S] [--wav out.wav] [--frames DIR] [--frame-every S] [--script FILE] [--saves DIR] [--slices N] [--trace] [--dump-ram FILE] resource-fork\n");
+        fprintf(stderr, "Usage: ospi-runtime-probe [--seconds S] [--wav out.wav] [--frames DIR] [--frame-every S] [--script FILE] [--saves DIR] [--disk VOLUME] [--slices N] [--trace] [--dump-ram FILE] resource-fork\n");
         return 2;
     }
     ProbeAction actions[PROBE_MAX_ACTIONS];
@@ -187,6 +188,7 @@ int main(int argc, char **argv) {
     mac_files_set_app_path(&rt, path);
     if (saves && mac_files_writable(&rt, saves, 64, UINT64_C(16) << 20)) { fprintf(stderr, "Cannot establish the writable save directory: %s\n", saves); return 2; }
 
+    if (disk && mac_files_disk(&rt, disk)) fprintf(stderr, "Could not measure the OS999 disk at %s; guest disk space is not limited.\n", disk);   /* as ospi-runtime --disk */
     uint64_t total_frames = (uint64_t)(seconds * MAC_SOUND_RATE) + PROBE_FRAMES_PER_TICK;
     int16_t *pcm = wav ? calloc((size_t)total_frames * 2, sizeof *pcm) : NULL;
     uint64_t captured = 0, clock_us = 0, callback_instructions = 0, next_frame_us = 0;
@@ -242,7 +244,7 @@ int main(int argc, char **argv) {
         if (!f || fwrite(mac_cpu_ram(rt.cpu), 1, mac_cpu_ram_size(rt.cpu), f) != mac_cpu_ram_size(rt.cpu))
             fprintf(stderr, "Cannot write RAM dump %s\n", dump_ram);
         if (f) fclose(f);
-        fprintf(stderr, "ram-dump %s pc=%08x a7=%08x\n", dump_ram, mac_cpu_get(rt.cpu, MAC_PC), mac_cpu_get(rt.cpu, MAC_A7));
+        fprintf(stderr, "ram-dump %s pc=%08x a7=%08x a5=%08x\n", dump_ram, mac_cpu_get(rt.cpu, MAC_PC), mac_cpu_get(rt.cpu, MAC_A7), mac_cpu_get(rt.cpu, MAC_A5));
     }
     free(pcm);
     mac_runtime_destroy(&rt);

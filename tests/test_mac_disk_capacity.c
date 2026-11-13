@@ -87,12 +87,26 @@ int main(void) {
 
     /* Before the disk is attached: old behaviour, read-only attribute only if no overlay (there is one). */
     CHECK(vinfo(&rt, 0) == 0 && get(&rt, 62, 2) == 0);
+    /* ioVFndrInfo[0] (offset 90) names the blessed System Folder: the guest volume always has one when its program can write, made in the overlay and only there. */
+    uint32_t blessed = get(&rt, 90, 4);
+    CHECK(blessed > 2 && blessed < 0x80000000u);
+    snprintf(path, sizeof path, "%s/Saves/Game/System Folder", parent);
+    { struct stat sf; CHECK(stat(path, &sf) == 0 && S_ISDIR(sf.st_mode)); }
+    snprintf(path, sizeof path, "%s/Volume/Game/System Folder", parent);
+    { struct stat sf; CHECK(stat(path, &sf) != 0); }                                   /* the program's own data is never written */
+    CHECK(vinfo(&rt, 0) == 0 && get(&rt, 90, 4) == blessed);                            /* the same folder every time */
+    for (unsigned i = 1; i < 8; i++) CHECK(get(&rt, 90 + 4 * i, 4) == 0);               /* the rest of the Finder info stays empty */
+    /* PBGetVInfo (the 64-byte record) has no room for it and leaves the bytes after ioVFrBlk alone */
+    clear_pb(&rt); put(&rt, 64, 2, 0x1111); put(&rt, 90, 4, 0xdeadbeef); put(&rt, 18, 4, 0); put(&rt, 22, 2, 0);
+    CHECK(call(&rt, 0xa007) == 0 && get(&rt, 90, 4) == 0xdeadbeef);
+    snprintf(path, sizeof path, "%s/Saves/Game", parent);
 
     CHECK(mac_files_disk(&rt, root) == 0);
     CHECK(vinfo(&rt, 0) == 0);
     uint32_t total = get(&rt, 46, 2), size = get(&rt, 48, 4), free_blocks = get(&rt, 62, 2);
     CHECK(total == 43690 && size == 1536);                       /* 64 MiB in at most 65535 blocks of 512-byte multiples */
     CHECK(free_blocks <= 6 && free_blocks <= total);             /* ~8 KiB free of 64 MiB */
+    CHECK((uint64_t)total * size <= UINT64_C(0x7FFFFE00) && (uint64_t)free_blocks * size <= (uint64_t)total * size);   /* never above the 2 GiB clamp, free never above the whole */
     CHECK(get(&rt, 38, 2) == 0);                                 /* writable: the save overlay is mounted */
     uint8_t *ram = mac_cpu_ram(rt.cpu);
     CHECK(vinfo(&rt, NAME) == 0);
@@ -119,6 +133,16 @@ int main(void) {
 
     mac_files_destroy(&rt);
     mac_drive_destroy(&rt);
+    /* A program with no writable overlay: nothing to bless (0), and nothing is made. The name still comes back in ioNamePtr. */
+    MacRuntime ro = {0};
+    ro.cpu = mac_cpu_create(65536); ro.heap_next = 0x800; ro.heap_limit = 0xe00;
+    CHECK(ro.cpu != NULL && mac_files_root(&ro, data) == 0);
+    CHECK(vinfo(&ro, NAME) == 0 && get(&ro, 90, 4) == 0);
+    CHECK(mac_cpu_ram(ro.cpu)[NAME] == 8 && !memcmp(mac_cpu_ram(ro.cpu) + NAME + 1, "OS999 HD", 8));
+    snprintf(path, sizeof path, "%s/Volume/Game/System Folder", parent);
+    { struct stat sf; CHECK(stat(path, &sf) != 0); }
+    mac_files_destroy(&ro);
+    mac_drive_destroy(&ro);
     if (failures) { fprintf(stderr, "%d failure(s)\n", failures); return 1; }
     puts("guest disk capacity checks passed");
     return 0;

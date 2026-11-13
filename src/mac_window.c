@@ -1,7 +1,6 @@
 #include "mac_window_int.h"
 #include <string.h>
 #include <stdlib.h>
-
 /* One independent standard color window. Public record and behavior ABI:
  * dev.os9.ca/techpubs/mac/Toolbox/Toolbox-215.html, -227.html, -260.html.
  * No WDEF guest code or Apple assets. Overlapping windows/custom WDEFs,
@@ -126,7 +125,8 @@ static int create_window(MacRuntime *rt,uint32_t sp) {
     unsigned free_slots=0;for(unsigned i=0;i<MAC_RUNTIME_HANDLES;i++)if(!rt->handles[i].handle && !rt->handles[i].pointer)free_slots++;
     /* OpenCPort: 32+50+26+10+10+28+28+28+2056 = 2268 bytes.
      * Our five masters:20; three aligned regions:36; title:round4; state:16. */
-    uint32_t need=2268+307200+20+36+((title[0]+4u)&~3u)+16+(storage?0:156);
+    int reuse=rt->backdrop_spares>0;   /* a closed window's backdrop is reused: the native arena never gives memory back */
+    uint32_t need=2268+(reuse?0u:307200u)+20+36+((title[0]+4u)&~3u)+16+(storage?0:156);
     uint32_t ceiling=rt->heap_limit;
     if(rt->heap_high && rt->heap_high<ceiling)ceiling=rt->heap_high;
     if(ceiling>mac_cpu_ram_size(rt->cpu))ceiling=(uint32_t)mac_cpu_ram_size(rt->cpu);
@@ -143,7 +143,7 @@ static int create_window(MacRuntime *rt,uint32_t sp) {
         rt->handles[slot]=(MacHandle){.pointer=storage,.size=156};
         if(rt->handle_count<=slot)rt->handle_count=slot+1;
     }
-    fresh.address=storage;fresh.backdrop=mac_runtime_alloc(rt,307200);
+    fresh.address=storage;fresh.backdrop=reuse?rt->backdrop_spare[--rt->backdrop_spares]:mac_runtime_alloc(rt,307200);
     memcpy(mac_cpu_ram(rt->cpu)+fresh.backdrop,mac_cpu_ram(rt->cpu)+rt->screen_base,307200);
     memset(mac_cpu_ram(rt->cpu)+storage,0,156);
     wr(rt,sp,4,storage);mac_cpu_set(rt->cpu,MAC_A7,sp);
@@ -205,6 +205,7 @@ static int close_window(MacRuntime *rt,uint32_t sp,int dispose_storage) {
     memset(mac_cpu_ram(rt->cpu)+w->address+108,0,48);
     if(dispose_storage)for(size_t i=0;i<rt->handle_count;i++)
         if(!rt->handles[i].handle && rt->handles[i].pointer==w->address)memset(&rt->handles[i],0,sizeof(MacHandle));
+    if(w->backdrop && rt->backdrop_spares<8)rt->backdrop_spare[rt->backdrop_spares++]=w->backdrop;
     memset(w,0,sizeof(*w));
     mac_cpu_set(rt->cpu,MAC_A7,sp+4);return 1;
 }

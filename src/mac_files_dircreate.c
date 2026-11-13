@@ -9,19 +9,34 @@
  * root is read-only, new directories are made in the save overlay, and a directory that exists in both is one directory whose entries are merged.
  * Directory IDs map to host-relative paths (mac_dirs.h). */
 
-/* The root-level folder `name` (FindFolder): its ID when it exists; otherwise fnfErr (-43), or, with `create`, it is made now in the overlay (-46 without
- * a writable save overlay, like DirCreate). */
+/* A special folder of the guest volume, named by a partial path from the root with ':' between the components ("System Folder:Extensions"): its ID when
+ * it exists; otherwise fnfErr (-43), or, with `create`, it and any missing folder above it are made now in the save overlay (-46 without a writable
+ * overlay, like DirCreate; -34 when the disk budget is spent). A folder that exists only in the application's read-only data is found as it is. */
 int mac_files_folder_find(MacRuntime *rt, const char *name, int create, uint32_t *id) {
     FileState *s = rt->file_state;
     if (!s) return -35;
-    char path[DIRS_PATH_MAX];
-    int error = mac_dirs_resolve(rt, -1, DIRS_ROOT_ID, name, path);
-    if (error) return error == -37 ? -50 : error;
-    if (mac_dirs_is_dir(s, path)) { *id = mac_dirs_id(&s->dirs, path); return 0; }
-    if (!create) return -43;
-    if (s->saves < 0) return -46;
-    if (mac_files_classify(s, path) != FILE_NONE) return -48;
-    if (mac_dirs_mkdir(s->saves, path)) return -36;
+    char part[DIRS_PATH_MAX], path[DIRS_PATH_MAX];
+    size_t length = strlen(name);
+    if (!length) return -50;
+    for (size_t at = 0; at < length;) {
+        const char *colon = strchr(name + at, ':');
+        size_t end = colon ? (size_t)(colon - name) : length;
+        if (end >= sizeof part) return -50;
+        memcpy(part, name, end); part[end] = 0;
+        int error = mac_dirs_resolve(rt, -1, DIRS_ROOT_ID, part, path);
+        if (error) return error == -37 ? -50 : error;
+        if (!mac_dirs_is_dir(s, path)) {
+            if (!create) return -43;
+            if (s->saves < 0) return -46;
+            if (mac_files_classify(s, path) != FILE_NONE) return -48;
+            char parent[DIRS_PATH_MAX]; const char *leaf;
+            mac_dirs_parent(path, parent, &leaf);
+            if (volume_budget_spend(&s->disk, 512)) return -34;
+            if (parent[0] && (error = mac_dirs_ensure_overlay(s, parent))) return error;
+            if (mac_dirs_mkdir(s->saves, path)) return -36;
+        }
+        at = end + 1;
+    }
     *id = mac_dirs_id(&s->dirs, path);
     return 0;
 }

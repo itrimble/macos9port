@@ -6,14 +6,16 @@
 
 /* FindFolder, selector 0 of the same trap: FUNCTION FindFolder(vRefNum: INTEGER; folderType: OSType; createFolder: BOOLEAN; VAR foundVRefNum: INTEGER;
  * VAR foundDirID: LONGINT): OSErr. Stack from SP: foundDirID pointer, foundVRefNum pointer, the create flag as a byte in a word, the type, the volume, the
- * result. The data volume has no System Folder: a special folder exists only if a root folder with its usual name was made earlier (by this call with
- * createFolder, or by DirCreate), in the approximated folder model of mac_files_dircreate.c (root folders only, IDs derived from the name). So a folder
- * that was never made is fnfErr (-43), an unknown folder type is fnfErr, another volume is nsvErr (-35), and creating one needs the save overlay.
+ * result. The data volume has no System Folder of its own: the folders live in the guest volume's namespace (the data folder merged with the save overlay),
+ * placed as the public layout has them: the System Folder at the root with Preferences, Control Panels, Extensions, Apple Menu Items, Startup Items, Fonts and
+ * Shutdown Items inside it; Temporary Items, Trash, Desktop Folder and PrintMonitor Documents at the root (type codes from the public Folders.h). A folder exists
+ * if it was made earlier (by this call with createFolder, which also makes the System Folder above it, or by DirCreate), so one never made is fnfErr (-43), an
+ * unknown folder type is fnfErr, another volume is nsvErr (-35), and creating one needs the save overlay: nothing is ever made outside it.
  * kOnSystemDisk ($8000), the default volume (0), the data volume (-1) and the System volume (-2) all mean this one namespace. */
 static const struct { uint32_t type; const char *name; } FOLDERS[] = {
-    {0x6d616373, "System Folder"}, {0x70726566, "Preferences"}, {0x6374726c, "Control Panels"}, {0x6578746e, "Extensions"}, {0x616d6e75, "Apple Menu Items"},
-    {0x73747274, "Startup Items"}, {0x74656d70, "Temporary Items"}, {0x74727368, "Trash"}, {0x6465736b, "Desktop Folder"}, {0x666f6e74, "Fonts"},
-    {0x70726e74, "PrintMonitor Documents"}, {0x73686466, "Shutdown Items"},
+    {0x6d616373, "System Folder"}, {0x70726566, "System Folder:Preferences"}, {0x6374726c, "System Folder:Control Panels"}, {0x6578746e, "System Folder:Extensions"},
+    {0x616d6e75, "System Folder:Apple Menu Items"}, {0x73747274, "System Folder:Startup Items"}, {0x666f6e74, "System Folder:Fonts"}, {0x73686466, "System Folder:Shutdown Items"},
+    {0x74656d70, "Temporary Items"}, {0x74727368, "Trash"}, {0x6465736b, "Desktop Folder"}, {0x70726e74, "PrintMonitor Documents"},
 };
 static int find_folder(MacRuntime *rt) {
     MacCpu *cpu = rt->cpu;
@@ -28,6 +30,7 @@ static int find_folder(MacRuntime *rt) {
     else for (size_t i = 0; i < sizeof FOLDERS / sizeof FOLDERS[0]; i++)
         if (FOLDERS[i].type == type) { error = mac_files_folder_find(rt, FOLDERS[i].name, create, &id); break; }
     if (!error) { mac_cpu_write(cpu, vol, 2, 0xffff); mac_cpu_write(cpu, dir, 4, id); }
+    if (rt->trace) fprintf(stderr, "find-folder vref=%d type=%08x create=%d -> error=%d dirid=%u\n", vref, type, create, error, error ? 0u : id);
     mac_cpu_write(cpu, sp + 16, 2, (uint16_t)error);
     mac_cpu_set(cpu, MAC_A7, sp + 16);
     return 1;
