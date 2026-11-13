@@ -317,3 +317,55 @@ naming subsystem of its own, not an iteration, and I stopped there. The installe
 **Not verified.** Everything is headless and from the probe; the clicks are scripted. The meaning of the engine's table fields (`+0x22` total bytes, `+0x26` free bytes, `+0x3a` volume reference) is from its code, not from a decompiled
 listing, and the claim that `$0AA0` is `DAStrings` rests on the public name of that low-memory global and on the engine's own use of it. The compare condition-code mapping is unchecked against Apple's table, as said. The progress
 number `23` is as drawn in one frame; I did not establish what it counts. Mac Roman quotes still draw as `?`. No real window, no real mouse. The `-50` on `QuickTime™ Folder` is attributed to the name rule by reading, not by a probe of a non-ASCII name on its own.
+
+## Eighth run — the Mac Roman folder, file installation, and the Resource Manager's write side — branch `qt/install-files`
+
+Built on `d395c15` (Mac Roman file names and glyphs). Same method: headless `ospi-runtime-probe --disk` on a scratch copy of the installer folder (`QuickTime Installer` 34,338 bytes, `.rsrc` 353,773, `QuickTime Install Cache` 8,344,292, its `.rsrc` 10,456), `--saves` at a scratch directory,
+scripted clicks (Continue at 510,385 after 2 s on Welcome, then 515,385 each 2 s for the licence's Agree, the install type (Full), Internet Connection and registration). Observation by trace; no real window.
+
+| | Before (`d395c15`, Mac Roman names in place) | After (`qt/install-files`) |
+| --- | --- | --- |
+| `PBGetCatInfo` of `QuickTime™ Folder` at the root | `fnfErr` (-43) with the Mac Roman names in place; `PBDirCreate` makes it; then *Error creating folder.* `1008:9,-50` | same -43 and DirCreate, then the installer goes on |
+| What returned -50 | **`PBSetCatInfo`** (`HFSDispatch` selector 10) on the new folder: not implemented here; the call was not handled by the File Manager service and some later service answered paramErr (I did not find which). The `-50` in the seventh run's text was therefore not only the name rule | `mac_files_set_cat_info` (`src/mac_catinfo_set.c`): stores the 16-byte Finder info of a folder or file in the host metadata of the item in the **save overlay**; `PBGetCatInfo` of a folder now reads it back. Dates, lock bit and extended Finder info are accepted and not applied. A data-volume file is `fLckdErr` (-45); a folder that exists only in the data volume is first made in the overlay; no overlay is -46 |
+| Progress window | alert, then stuck | "Installing: Full" with a progress bar and *Items remaining to be ...* (this window never advanced past a few percent in the frames I looked at) |
+| Next stop | n/a | `unhandled A-line trap a054` after the `Sample Movie` copy: **`UprString`** (`src/mac_cmpstring.c`) now folds ASCII and the accented lower case of Mac OS Roman, in place; the table is from the public character set and is not checked against the system routine |
+| Stop now | n/a | `unhandled A-line trap a9ad` at 33.4 s guest time: **`RmveResource`**, see below |
+
+New tests: `tests/test_mac_catinfo_set.c` (folder made through the call, folder only in data made in the overlay, data folder untouched, file Finder info, locked and missing items, no overlay) and a `UprString` case in `tests/test_mac_files_rf.c` (letters, accented letters, other bytes, the length word, a range outside RAM halts).
+
+**What the installer does with the Install Cache.** After the folder it creates, in this order, in `QuickTime™ Folder`: QuickTime Player (a 0-byte data fork and a **799,406-byte `.rsrc`** written through the File Manager), Sample Movie, PictureViewer, Sample Image, Internet Config and QuickTime Plugin. For each it asks `PBGetCatInfo` (fnfErr), then opens the data fork and the `.rsrc` with write permission (`file-open ... permission=3`); the types and creators in the tree below are present on the files, set by some call I did not trace individually. It never touched `System Folder:Extensions` (the extension is later in its list; the *QuickTime extension was not reached*).
+
+**The stop, and the subsystem it names.** The engine then does `OpenResFile` on the new `QuickTime Plugin` fork (the guest's own copy in the overlay, reference 256), `GetResource` `STR#` 228 and 128, and calls `RmveResource` on a handle. This runtime's Resource Manager is **read-only for any fork but the application's**: `AddResource`
+and `ChangedResource` are accepted and dropped, `WriteResource` and `SetResInfo` go into an edit layer keyed to the application fork, and no call serialises a modified resource map back to a guest-opened `.rsrc`. A real installer edits the forks it has just written (it removes, adds and rewrites resources, then
+`UpdateResFile`/`CloseResFile`), so this is **a writable Resource Manager**: `AddResource`, `RmveResource`, `ChangedResource`, `WriteResource`, `SetResInfo`, `UpdateResFile` and close-time flush over files opened by `OpenResFile`/`FSpOpenResFile` with write permission, with a fork writer (type list, reference lists, map, data) that rebuilds the sidecar
+in the save overlay atomically and keeps the handle table coherent. I did not start it; it is a subsystem of its own. What the installer wrote up to the stop is partial: `QuickTime Plugin.rsrc` is mid-edit (14,547 bytes) and the later components (the QuickTime extension, Components, control panels, the Internet Config prefs) do not exist.
+
+**What was written, and where.** Probe at `--seconds 400` stopped at the halt. All of it is inside the scratch `--saves` directory; the scratch installer folder (the `--disk` volume) is byte-identical to the copy I made (`diff -r`), no `.os999` file appeared in it, and the guest-software and live OS Pi volume paths were not written (the probe was never given them; I checked the live volume for files newer than the run and found none).
+
+```
+QuickTime™ Folder/                        (Finder info 00..00 FFFFFFFF 0000, set through PBSetCatInfo)
+  Internet Config        0 B      APPL/ICAp
+  Internet Config.rsrc   250,996
+  PictureViewer          0        APPL/ogle
+  PictureViewer.rsrc     163,261
+  QuickTime Player       0        APPL/TVOD
+  QuickTime Player.rsrc  799,406  (68K code and resources; the PowerPC half is not here yet)
+  QuickTime Plugin       0        NSPL/'å'nd9   (type and creator as the file's xattr: 4E53504C 8C6E6439)
+  QuickTime Plugin.rsrc  14,547   (incomplete)
+  Sample Image           29,363   qtif/ogle
+  Sample Image.rsrc      472
+  Sample Movie           73,318   MooV/TVOD
+  Sample Movie.rsrc      472
+System Folder/
+  Preferences/
+    QuickTime Preferences  0      pref/'å'nd6
+```
+
+Types and creators are read from the host `com.apple.FinderInfo` attribute, not from a Finder. Sizes are host sizes. Nothing it installed was run.
+
+**MI1 and MI2.** Probes of `d4ec8e7` (`mbp/handoff/install-disk-on-main`, built in a scratch worktree) and this tip, 12 s each: Monkey Island 32,611,248 instructions both, Monkey Island 2 37,422,033 both, and byte-identical frames at 0, 3, 6, 9 and 12 s. The 55 files in `~/os999-guest-software/from-mbp-20261111/` hashed (`shasum`) before and after: unchanged. The tip includes the Mac Roman name work as well as this run's changes, so the comparison covers both.
+
+**Not verified.** Headless probe and scripted clicks only; the progress bar's meaning and rate were not established (the installer's own number, *22*, still sits above it). That `RmveResource` is applied to the plugin's own fork is read from the resource-find lines (owner 256, `STR#` 228 and 128) and the order of calls, not from a listing of the engine. The `UprString` register convention (A0 text, D0 low word length) and its accent table are from memory of the public interface and unchecked against a real system.
+The Finder info of the folder was set to the guest's value as given; what it means (position -1, -1 in a window) I did not check. No real window, no real mouse.
+
+**Suite.** `BUILDFLEET_LOCAL=1 make -j1 test` on the tip before this paragraph: exit 0. The desktop-menus test took several minutes on this machine (cause not examined).

@@ -1,9 +1,11 @@
 #include "mac_files_int.h"
 
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 /* PBGetCatInfo (HFSDispatch selector 9) and PBCatMove (selector 5) over the hierarchical volume, from the public Files chapter in my own words.
  * CInfoPBRec offsets: ioNamePtr +18, ioVRefNum +22, ioFDirIndex +28, ioFlAttrib +30 (bit 4 set for a directory), ioACUser +31, the Finder info +32 (16 bytes),
@@ -47,6 +49,10 @@ static int directory_record(MacRuntime *rt, uint32_t pb, const char *path) {
     mac_cpu_write(cpu, pb + 30, 1, 0x10);                                 /* a directory; no fabricated lock */
     mac_cpu_write(cpu, pb + 31, 1, 0);
     memset(mac_cpu_ram(cpu) + pb + 32, 0, 16);
+    if (path[0]) {   /* a folder's Finder info, as PBSetCatInfo stored it in the overlay (or as the data volume has it) */
+        int fd = mac_dirs_openat(root, path, O_RDONLY, 0);
+        if (fd >= 0) { uint8_t info[16]; if (mac_files_finder_get(fd, info)) memcpy(mac_cpu_ram(cpu) + pb + 32, info, 16); close(fd); }
+    }
     mac_cpu_write(cpu, pb + 48, 4, mac_dirs_id(&s->dirs, path));
     mac_cpu_write(cpu, pb + 52, 2, count > 0xffff ? 0xffff : count);
     memset(mac_cpu_ram(cpu) + pb + 54, 0, 18);

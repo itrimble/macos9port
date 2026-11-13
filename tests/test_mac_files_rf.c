@@ -105,6 +105,12 @@ int main(void) {
     CHECK(cmp(&r, 0xa03c, "Abc", "Abcd", 3, 4) == 1 && cmp(&r, 0xa03c, "", "", 0, 0) == 0 && cmp(&r, 0xa03c, "ab", "", 2, 0) == 1);
     CHECK(cmp(&r, 0xa03c, "A@", "a`", 2, 2) == 1);                                                                                                  /* only letters fold */
     CHECK(cmp(&r, 0xa03b, "a", "a", 1, 1) == -9 && cmp(&r, 0xa83c, "a", "a", 1, 1) == -9);                                                         /* neighbours / toolbox numbers are not ours */
+    /* UprString: the letters become capitals in place (ASCII and the accented lower case of Mac OS Roman), other bytes stay, the length word bounds it, the range is checked */
+    memcpy(mac_cpu_ram(r.cpu) + 0x1000, "Qt4 x\x8e\x9f_zZ!", 11);
+    mac_cpu_set(r.cpu, MAC_A0, 0x1000); mac_cpu_set(r.cpu, MAC_D0, 0x00110009);
+    CHECK(mac_cmpstring_service(&r, 0xa054) == 1 && mac_cpu_get(r.cpu, MAC_D0) == 0 && !memcmp(mac_cpu_ram(r.cpu) + 0x1000, "QT4 X\x83\x86_ZZ!", 11));
+    mac_cpu_set(r.cpu, MAC_A0, RAM - 2); mac_cpu_set(r.cpu, MAC_D0, 8); CHECK(mac_cmpstring_service(&r, 0xa054) == -1 && mac_cpu_halted(r.cpu));
+    r.cpu = (mac_cpu_destroy(r.cpu), mac_cpu_create(RAM));
     mac_cpu_set(r.cpu, MAC_A0, RAM - 2); mac_cpu_set(r.cpu, MAC_A1, 0x1100); mac_cpu_set(r.cpu, MAC_D0, 8u << 16 | 3); CHECK(mac_cmpstring_service(&r, 0xa03c) == -1 && mac_cpu_halted(r.cpu));
     mac_cpu_destroy(r.cpu);
     /* ResolveAliasFile: an existing file resolves to itself; a missing one is fnfErr; bad pointers halt */

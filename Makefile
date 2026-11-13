@@ -159,7 +159,7 @@ RUNTIME += src/mac_sound.c src/mac_sound_render.c
 RUNTIME += src/mac_sound_double.c
 RUNTIME += src/mac_sound_resample.c
 RUNTIME += src/mac_time.c src/mac_delay.c src/mac_guestcall.c src/mac_ditl.c src/mac_dlgdraw.c src/mac_dlgwindow.c src/mac_stdfile_list.c src/mac_window_inval.c src/mac_random.c src/mac_text_state.c src/mac_font.c src/mac_text.c src/mac_textedit.c src/mac_sysfont.c src/mac_dlgswallow.c src/mac_sound_volume.c src/mac_scrap.c src/mac_resload.c src/mac_handcopy.c src/mac_colorindex.c src/mac_window_title.c src/mac_files_rf.c src/mac_files_hvol.c src/mac_files_crf.c src/mac_cmpstring.c src/mac_alias.c src/mac_controls.c src/mac_cdef.c src/mac_mdef.c src/mac_script.c src/mac_gworld.c src/mac_print.c src/mac_cicn.c src/mac_control_draw.c src/mac_qdcolor.c src/mac_window_stack.c src/mac_menuselect.c src/mac_toolutil.c src/mac_stdprocs.c src/mac_rgn.c src/mac_appfork.c src/mac_dialog_draw.c src/mac_alert.c src/mac_stdput.c src/mac_dlgmgr.c src/mac_devmgr.c src/mac_shape.c src/mac_shapes.c src/mac_stdfile.c src/mac_stdfile_draw.c src/mac_init.c src/mac_env.c src/ext_init.c src/ext_runtime.c src/ext_scan.c src/ext_state.c
-RUNTIME += src/mac_files_write.c src/mac_files_hidden.c src/mac_files_flush.c src/mac_files_volparms.c src/mac_sysbeep.c src/mac_textbox.c src/mac_dlgedit.c src/mac_partition.c src/mac_files_dircreate.c src/mac_dlgpict.c src/mac_files_info.c src/mac_fsspec.c src/mac_files_ops.c src/mac_dirs.c src/mac_dirs_name.c src/mac_catinfo.c src/mac_fcbinfo.c src/mac_rescomp.c src/mac_process.c src/mac_rescomp_fork.c
+RUNTIME += src/mac_files_write.c src/mac_files_hidden.c src/mac_files_flush.c src/mac_files_volparms.c src/mac_sysbeep.c src/mac_textbox.c src/mac_dlgedit.c src/mac_partition.c src/mac_files_dircreate.c src/mac_dlgpict.c src/mac_files_info.c src/mac_fsspec.c src/mac_files_ops.c src/mac_dirs.c src/mac_dirs_name.c src/mac_catinfo.c src/mac_catinfo_set.c src/mac_fcbinfo.c src/mac_rescomp.c src/mac_process.c src/mac_rescomp_fork.c
 RUNTIME_HDRS += src/mac_list_int.h src/mac_te_int.h include/mac_mdef.h include/mac_files_int.h include/volume_capacity.h include/mac_rescomp.h include/mac_codefmt.h
 RUNTIME += src/volume_capacity.c
 RUNTIME_HDRS += include/mac_time.h include/mac_init.h include/ext_init.h include/ext_registry.h include/ext_runtime.h
@@ -171,7 +171,7 @@ RUNTIME_HDRS += include/mac_resource_chain.h include/mac_resource_chain_int.h in
 include config/ppc-tests.mk
 # Toolbox calls added while taking real applications further (docs/REAL-APP-COMPATIBILITY.md).
 REALAPP_SRC := src/macroman.c src/mac_chrome_glyph.c src/mac_fontnames.c src/mac_handles.c src/mac_pixpat.c src/mac_dlguser.c src/mac_dlgtitle.c src/mac_list.c src/mac_list_ui.c src/mac_testyle.c src/mac_intl.c
-REALAPP_TESTS := test_mac_fontnames test_mac_loadseg_loop test_macroman test_mac_names
+REALAPP_TESTS := test_mac_fontnames test_mac_loadseg_loop test_macroman test_mac_names test_mac_catinfo_set
 RUNTIME_HDRS += include/macroman.h src/macroman_table.h include/mac_chrome.h
 RUNTIME += $(REALAPP_SRC)
 

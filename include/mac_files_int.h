@@ -91,6 +91,7 @@ int mac_files_flush_staged(FileState *s);                                 /* com
 void mac_files_abort(FileState *s, GuestFile *file);
 int mac_files_usage(const FileState *s, unsigned *files, uint64_t *bytes);   /* save files and bytes across the overlay tree */
 int mac_files_overlay_count(const FileState *s, unsigned *count);
+int mac_files_set_cat_info(MacRuntime *rt, uint32_t pb);   /* PBSetCatInfo (mac_catinfo_set.c) */
 int mac_files_create(MacRuntime *rt, uint32_t pb);
 int mac_files_delete(MacRuntime *rt, uint32_t pb, int hfs);
 int mac_files_rename(MacRuntime *rt, uint32_t pb);

@@ -274,7 +274,7 @@ static unsigned block_size(unsigned base, int wd, unsigned selector) {
     case 0xa007: return 64;
     case 0xa209: case 0xa214: case 0xa215: case 0xa00a: case 0xa20a: return 52;
     case 0xa207: return 122;
-    case 0xa260: return wd && selector == 9 ? 104 : wd && selector == 8 ? 62 : 52;
+    case 0xa260: return wd && (selector == 9 || selector == 10) ? 104 : wd && selector == 8 ? 62 : 52;
     default: return PB_BYTES;
     }
 }
@@ -309,7 +309,7 @@ static int file_service(MacRuntime *rt, uint16_t opcode) {
         uint32_t q = mac_cpu_get(cpu, MAC_A0);
         if (!(q & 1) && valid(cpu, q, 52)) return result(cpu, q, mac_files_dir_create(rt, q));
     }
-    if (wd && selector != 1 && selector != 2 && selector != 5 && selector != 7 && selector != 8 && selector != 9 && selector != 0x30) return 0;
+    if (wd && selector != 1 && selector != 2 && selector != 5 && selector != 7 && selector != 8 && selector != 9 && selector != 10 && selector != 0x30) return 0;
     if (wd && (selector == 1 || selector == 2) && !mac_files_wd_ours(rt, selector, mac_cpu_read(cpu, mac_cpu_get(cpu, MAC_A0) + 48, 4), (int16_t)mac_cpu_read(cpu, mac_cpu_get(cpu, MAC_A0) + 22, 2))) return 0;   /* not one of ours: another service's */
     if (base == 0xa060 && selector != 0x1a) return 0; /* _FSDispatch: only PBOpenDF so far */
     if (wd && selector == 8 && !mac_files_fcb_ours(rt)) return 0;   /* PBGetFCBInfo of a reference that is not ours: another service's */
@@ -325,7 +325,7 @@ static int file_service(MacRuntime *rt, uint16_t opcode) {
     case 0xa207: return result(cpu, pb, mac_volume_info(rt, pb, state ? state->directory : -1));
     case 0xa260: {
         if (wd && state) state->hfs_call = 1;
-        int error = selector == 0x30 ? mac_files_get_volparms(rt,pb) : selector == 9 ? mac_files_cat_info(rt,pb) : selector == 5 ? mac_files_cat_move(rt,pb) : selector == 8 ? mac_files_fcb_info(rt,pb) : selector == 1 || selector == 2 || (selector == 7 && mac_files_wd_folder(rt,(int16_t)mac_cpu_read(cpu,pb+22,2))) ? mac_files_wd(rt,pb,selector) : working_directory(rt,pb);
+        int error = selector == 0x30 ? mac_files_get_volparms(rt,pb) : selector == 9 ? mac_files_cat_info(rt,pb) : selector == 10 ? mac_files_set_cat_info(rt,pb) : selector == 5 ? mac_files_cat_move(rt,pb) : selector == 8 ? mac_files_fcb_info(rt,pb) : selector == 1 || selector == 2 || (selector == 7 && mac_files_wd_folder(rt,(int16_t)mac_cpu_read(cpu,pb+22,2))) ? mac_files_wd(rt,pb,selector) : working_directory(rt,pb);
         if (rt->trace) {
             uint32_t np = mac_cpu_read(cpu,pb+18,4);
             fprintf(stderr, "hfs-dispatch selector=%u volume=%d index=%d dirid=%u name-ptr=%08x error=%d", selector, (int16_t)mac_cpu_read(cpu,pb+22,2),
