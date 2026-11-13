@@ -232,3 +232,57 @@ Not verified: everything here is headless; no frame was looked at. The 29 `CopyB
 Tests exist for the offscreen worlds (`build/test_mac_gworld` from the 68K side, `build/test_mac_ppc_gworld` from PowerPC code), the converting `CopyBits`
 (inside `test_mac_gworld`), `DeleteMenuItem`, `TEGetHeight`, `TECalText`, `GetItemCmd`'s width, `EqualString` and `num2dec` (`build/test_mac_ppc_libs`).
 `TESetClickLoop`, `TESetWordBreak` and the dialog `refCon` change have no test of their own; only the real application has run them.
+
+
+## Fifth real-file run: printing, a long stretch of start-up, and a folder it cannot find — 12 November 2026
+
+Branch `ppc/printing` from main `8950fd6`. Same application and copy, headless `--steps`, `OS999_PPC_TRACE=1`. Two ways of running it matter now:
+alone (`dwl.rsrc` in an otherwise empty directory, `--saves` pointing at a scratch directory) and from a full copy of the application folder.
+
+| Run | Imports | PowerPC instructions | Stops at |
+| --- | --- | --- | --- |
+| Before (fourth run) | 2,554 | 929,567 | `Unsupported PowerPC import InterfaceLib::PrOpen` |
+| Alone, no `--saves` | 2,597 | 1,017,487 | a note alert (`ALRT` 4003) waiting for a click |
+| Alone, `--saves` scratch | 57,138 | 15,104,713 | the same alert, after a long stretch of start-up |
+| Full folder copy | 2,597 | 1,017,487 | the same alert |
+
+Printing Manager for "no printer" (`src/mac_print.c`, trap `$A8FD`, selector long on the stack; bridge rows in `mac_ppc_sigs_toolbox.c`). What the
+public Printing Manager chapter (read this session; my words) establishes: the routine selectors (`PrOpen` `$C8000000`, `PrClose` `$D0000000`,
+`PrError` `$BA000000`, `PrSetError` `$C0000200`, `PrDrvrOpen` `$80000000`, `PrDrvrClose` `$88000000`, `PrintDefault` `$20040480`, `PrValidate`
+`$52040498`, `PrStlDialog` `$2A040484`, `PrJobDialog` `$32040488`, `PrJobMerge` `$5804089C`, `PrOpenDoc` `$04000C00`, `PrCloseDoc` `$08000484`,
+`PrOpenPage` `$10000808`, `PrClosePage` `$1800040C`, `PrPicFile` `$60051480`), that errors are reported through `PrError`, and a list of result
+codes of which `PAPNoPrinter` (-4101) is the one tied to "no printer found, closed or not selected". What it does not establish, as far as I could
+read it before my Firecrawl credits ran out: the exact code a real Macintosh gives from `PrOpen` when nothing is chosen in the Chooser. So -4101 is
+the most conservative documented code, not an observed one. Behaviour: `PrOpen` and `PrDrvrOpen` set `PrintErr` ($944) to -4101; every routine that
+needs a driver sets the same, shows no dialog, returns FALSE or nil and leaves the caller's records untouched; `PrClose`, `PrDrvrClose` clear it;
+`PrError` returns it; `PrSetError` stores it. Nothing is spooled and nothing pretends to print. The application calls `PrOpen` twice, checks
+`PrError` each time, and carries on, which is the graceful path.
+
+Other stops, in order (each removed by the change beside it):
+
+| Stop | Change |
+| --- | --- |
+| `ParamText requires a Pascal string, not NIL.` | The public page says to pass empty strings for unused parameters and does not cover NIL. The application passes NIL, so a NIL now leaves that parameter as it was. This is an inference from its use, not from a page |
+| import `HGetFInfo` | `HGetFInfo` and `HSetFInfo` glue over `PBHGetFInfo`/`PBHSetFInfo` |
+| import `MathLib::dec2num` | exact inverse of `num2dec`'s record (host `strtod`) |
+| import `IUEqualString` | 0 when equal ignoring case, else 1 (ASCII folding only) |
+| `Only unpacked indexed-8 color PixMaps are supported.` | the application makes a 1-bit offscreen world and erases a rectangle in it; rectangle-like calls on colour ports now work at 1, 2 and 4 bits (pixels packed and unpacked, the port's foreground and background mapped to the PixMap's table by nearest colour). Text, lines and pixel patterns on those depths still halt |
+| `DisposeGWorld: the pointer is not a GWorld` | `DisposeGWorld(NIL)` does nothing (the application makes that call; the public text does not cover it) |
+| `Toolbox trap $A9C7 ... DateToSeconds` | `DateToSeconds`, the inverse of the existing `SecondsToDate` (no time zone) |
+| import `GetIndPattern` | glue over `GetResource('PAT#')` |
+| import `HCreate` | `PBHCreate` plus `PBHSetFInfo` for type and creator; `HDelete` too |
+
+The stop. `ALRT` 4003 is the application's generic error alert: "could not be completed, because ^0 (^2)". Its text in this run: "DesignWorkshop was
+unable to find the "Textures" folder." (from the full-folder copy) or "could not read the Material Resource" (alone, after `PBDirCreate` made an
+empty `Textures` in the save overlay). The application keeps its materials in a `Textures` folder of about fifty files beside it; the File Manager
+here has no real directory tree. Folders are an approximation (`mac_fsspec.c`: a folder made by `PBDirCreate` gets an ID and files are looked up
+flat), so a host directory next to the application is invisible. That is the large missing subsystem: **a hierarchical File Manager over real host
+directories** (catalog IDs for directories, `PBGetCatInfo` enumeration, lookups by directory ID, per-directory file creation). The alert blocks
+headlessly (nothing clicks OK), which is why the run ends at the instruction budget. No window was shown: the alert is native and the application's
+`ShowWindow` was not reached.
+
+Not verified: everything is headless and no frame was looked at. The -4101 code is the open point above. Tests: `build/test_mac_print` (68K side:
+every selector, records untouched, refusals), `build/test_mac_ppc_libs` (PowerPC side: `PrOpen`, `PrError`, `PrClose`, `dec2num`, plus the earlier
+`EqualString` and `num2dec`), a low-depth drawing case in `build/test_mac_gworld`. `HGetFInfo`, `HSetFInfo`, `HCreate`, `HDelete`,
+`IUEqualString`, `GetIndPattern`, `DateToSeconds`, the `ParamText` NIL rule and `DisposeGWorld(NIL)` have no test of their own; only the real
+application ran them.

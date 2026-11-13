@@ -23,6 +23,7 @@ class EmbedHost {
   void Handle(Os999BrowserMsg m);
   void Tick();
   void Shutdown();
+  void MaybeQuit();  // quit the loop once shutting down with nothing left open
 
   int fd_;
   std::string download_dir_;

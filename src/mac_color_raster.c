@@ -79,20 +79,32 @@ static int set_rgb(MacRuntime *rt,uint32_t port,const unsigned rgb[3],int back) 
     for(unsigned k=0;k<3;k++)wr(rt,port+(back?42:36)+k*2,2,rgb[k]);
     wr(rt,port+(back?84:80),4,index);return 1;
 }
+/* Indexed PixMaps of 1, 2 and 4 bits (an offscreen world made at those depths): the rectangle-like calls pack and unpack the pixel they touch. The
+ * port's foreground and background are device indices; at these depths they are turned into the PixMap's own colour table by the nearest colour. */
+static unsigned table_index(MacRuntime*rt,uint32_t pm,unsigned device_index) {
+    uint32_t th=rd(rt,pm+42,4),tp=th&&valid(rt,th,4,1)>0?rd(rt,th,4):0;
+    if(!tp||valid(rt,tp,8,1)<0)return 0;
+    unsigned n=rd(rt,tp+6,2)+1;if(n>256||valid(rt,tp,8+n*8,1)<0)return 0;
+    uint32_t c=rt->palette[device_index&255];unsigned want[3]={((c>>16)&255)*257,((c>>8)&255)*257,(c&255)*257},pick=0;
+    uint64_t best=UINT64_MAX;
+    for(unsigned i=0;i<n;i++){uint64_t d=0;for(unsigned k=0;k<3;k++){int64_t x=(int64_t)rd(rt,tp+10+i*8+2*k,2)-(int64_t)want[k];d+=(uint64_t)(x*x);}if(d<best){best=d;pick=i;}}
+    return pick;
+}
 /* preset: when not NULL the rectangle to paint (the call is PaintRect, op $A8A2), instead of one read from the stack. */
 static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op,const Box *preset,uint32_t fillpat,const MacShape *outer,const MacShape *inner,const MacPixTile *tile) {
     uint32_t pm;
     if(handle(rt,rd(rt,port+2,4),50,&pm)<0)return -1;
-    unsigned row=rd(rt,pm+4,2);
-    if((row&0xc000)!=0x8000 || rd(rt,pm+30,2)!=0 || rd(rt,pm+32,2)!=8 ||
-       rd(rt,pm+34,2)!=1 || rd(rt,pm+36,2)!=8 || rd(rt,pm+16,2)!=0)
-        return fail(rt,"Only unpacked indexed-8 color PixMaps are supported.");
+    unsigned row=rd(rt,pm+4,2),depth=rd(rt,pm+32,2);
+    if((row&0xc000)!=0x8000 || rd(rt,pm+30,2)!=0 || (depth!=8 && depth!=4 && depth!=2 && depth!=1) ||
+       rd(rt,pm+34,2)!=1 || rd(rt,pm+36,2)!=depth || rd(rt,pm+16,2)!=0)
+        return fail(rt,"Only unpacked indexed color PixMaps of 1, 2, 4 and 8 bits are supported.");
+    if(depth<8 && tile)return fail(rt,"Pixel patterns are unsupported on PixMaps of fewer than 8 bits.");
     row&=0x3fff;
     Box bounds,clip,b,rg;
     if(box(rt,pm+6,&bounds)<0 || box(rt,port+16,&clip)<0)return -1;
     int width=bounds.r-bounds.l,height=bounds.b-bounds.t;
     uint32_t base=rd(rt,pm,4);
-    if(width<0 || height<0 || (unsigned)width>row || (uint64_t)row*(unsigned)height>8u*1024u*1024u)
+    if(width<0 || height<0 || (uint64_t)(unsigned)width*depth>(uint64_t)row*8 || (uint64_t)row*(unsigned)height>8u*1024u*1024u)
         return fail(rt,"Color PixMap dimensions exceed raster budget.");
     if(valid(rt,base,(size_t)row*(unsigned)height,0)<0)return -1;
     clip=intersect(clip,bounds);
@@ -105,6 +117,8 @@ static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op,const Box *
     else if(box(rt,op==0xa8a5?rd(rt,sp+4,4):arg,&b)<0)return -1;
     unsigned fg=rd(rt,port+80,4),bg=rd(rt,port+84,4);
     if(fg>255 || bg>255)return fail(rt,"Color indices exceed 8-bit palette.");
+    unsigned mask=(1u<<depth)-1;
+    if(depth<8){fg=table_index(rt,pm,fg);bg=table_index(rt,pm,bg);}
     int mode=(op==0xa8a1 || op==0xa8a2)?(int)rd(rt,port+56,2):8;
     /* 44 is transparent + patCopy (Apple's Color QuickDraw chapter: "To specify a transparent pattern, add the transparent constant to the patCopy
      * constant"): the pattern's set bits paint the foreground, and its clear bits, which are the background colour, leave the destination alone. The
@@ -131,18 +145,22 @@ static int draw(MacRuntime *rt,uint32_t port,uint32_t sp,uint16_t op,const Box *
     for(int y=c.t;y<c.b;y++)for(int x=c.l;x<c.r;x++) {
         if(outer && !mac_shape_contains(outer,x,y))continue;                   /* an oval or round rectangle: only its rows */
         if(op==0xa8a1 && (inner?mac_shape_contains(inner,x,y):(x>=b.l+pw && x<b.r-pw && y>=b.t+ph && y<b.b-ph)))continue;
-        uint8_t *p=mac_cpu_ram(rt->cpu)+base+(size_t)(y-bounds.t)*row+(unsigned)(x-bounds.l);
+        unsigned bit_at=(unsigned)(x-bounds.l)*depth,sh=8-depth-(bit_at&7);
+        uint8_t *p=mac_cpu_ram(rt->cpu)+base+(size_t)(y-bounds.t)*row+bit_at/8,cell=*p,*pp=p;
+        uint8_t px=(uint8_t)((cell>>sh)&mask);
+        if(depth<8)p=&px;
         if(tile){*p=tile->px[(size_t)(((y%tile->h)+tile->h)%tile->h)*(size_t)tile->w+(size_t)(((x%tile->w)+tile->w)%tile->w)];continue;}
         int bit=!!(pat[(unsigned)y&7]&(0x80u>>((unsigned)x&7)));
         if(mode&4)bit=!bit;
-        if(op==0xa8a4)*p^=255;
+        if(op==0xa8a4)*p^=(uint8_t)mask;
         else if(transparent){ if(bit && fg!=bg)*p=(uint8_t)fg; }
         else { switch(mode&3) {
             case 0:*p=(uint8_t)(bit?fg:bg);break;
             case 1: { if(bit)*p=(uint8_t)fg; break; }
-            case 2: { if(bit)*p^=255; break; }
+            case 2: { if(bit)*p^=(uint8_t)mask; break; }
             case 3: { if(bit)*p=(uint8_t)bg; break; }
         } }
+        if(depth<8)*pp=(uint8_t)((cell&~(mask<<sh))|((px&mask)<<sh));
     }
     return 1;
 }

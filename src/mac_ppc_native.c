@@ -125,6 +125,23 @@ static int get_ind_string(PpcCpu *c, void *user) {
     return 0;
 }
 
+/* GetIndPattern(VAR thePattern, patListID, index): library glue over GetResource('PAT#'): a count word, then that many 8-byte patterns. An absent list
+ * or an index outside it leaves the pattern as it was. */
+static int get_ind_pattern(PpcCpu *c, void *user) {
+    MacRuntime *rt = user;
+    uint32_t args[2] = {UINT32_C(0x50415423), c->gpr[4] & 0xffffu}, handle = 0;
+    int index = (int16_t)c->gpr[5];
+    uint8_t *dst = ppc_mem_span(c, c->gpr[3], 8);
+    if (!dst) { ppc_cpu_halt(c, "GetIndPattern was given a pattern outside guest RAM at %08x.", c->gpr[3]); return 0; }
+    if (mac_ppc_invoke(rt, "GetResource", 0xa9a0, "l:lw", args, 2, &handle)) return 0;
+    uint32_t p = handle ? mac_cpu_read(rt->cpu, handle, 4) : 0, size = 0;
+    for (size_t i = 0; i < rt->handle_count; i++) if (rt->handles[i].handle == handle && handle) size = rt->handles[i].size;
+    const uint8_t *list = p ? ppc_mem_span(c, p, size) : NULL;
+    if (!list || size < 2 || index < 1 || index > ((list[0] << 8) | list[1]) || size < 2u + 8u * (unsigned)index) return 0;
+    memcpy(dst, list + 2 + 8 * (index - 1), 8);
+    return 0;
+}
+
 static int get_date_time(PpcCpu *c, void *user) { /* GetDateTime(&secs): the Time global */
     MacRuntime *rt = user;
     ppc_mem_write(c, c->gpr[3], 4, mac_cpu_read(rt->cpu, 0x20c, 4));
@@ -162,6 +179,15 @@ static int equal_string(PpcCpu *c, void *user) {
     return 0;
 }
 
+/* IUEqualString(aStr, bStr): INTEGER, 0 when the strings are equal without regard to case and 1 when not (Operating System Utilities, international
+ * utilities; from memory, and with only the ASCII letters folded, like the comparison above). */
+static int iu_equal_string(PpcCpu *c, void *user) {
+    c->gpr[5] = 0;
+    equal_string(c, user);
+    c->gpr[3] = c->gpr[3] ? 0 : 1;
+    return 0;
+}
+
 #define N(name, fn) {"InterfaceLib", name, fn, NULL}
 static const MacCfmHostImport imports[] = {
     LM_GET("MemError", 0x220, 2), LM_GET("LMGetMemErr", 0x220, 2),
@@ -181,8 +207,8 @@ static const MacCfmHostImport imports[] = {
     N("C2PStr", c2pstr), N("P2CStr", p2cstr), N("Debugger", debugger), N("DebugStr", debug_str),
     N("NGetTrapAddress", n_get_trap_address), N("GetTrapAddress", get_trap_address), N("FlushEvents", flush_events),
     N("HLockHi", hlock_hi), N("GetOSEvent", get_os_event), N("OSEventAvail", os_event_avail),
-    N("GetIndString", get_ind_string), N("GetDateTime", get_date_time),
-    N("EqualString", equal_string), N("TESetClickLoop", te_set_click_loop), N("TESetWordBreak", te_set_word_break),
+    N("GetIndString", get_ind_string), N("GetIndPattern", get_ind_pattern), N("GetDateTime", get_date_time),
+    N("EqualString", equal_string), N("IUEqualString", iu_equal_string), N("TESetClickLoop", te_set_click_loop), N("TESetWordBreak", te_set_word_break),
 };
 
 const MacCfmHostImport *mac_ppc_native_imports(size_t *count) {

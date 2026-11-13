@@ -1,6 +1,7 @@
 #include "desktop_commands.h"
 #include "session_int.h"
 #include "volume_directory.h"
+#include "app_mode.h"
 #include <dirent.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -195,6 +196,11 @@ static void get_info(Session *s, Window *w) {
     if (special && S_ISDIR(st.st_mode)) {
         snprintf(s->info_rel, sizeof s->info_rel, "%s", rel);
         strncat(body, "\nKept its special icon when renamed. OK restores the standard icon.", sizeof body - strlen(body) - 1);
+    }
+    if (application && S_ISREG(st.st_mode)) {
+        char brief[256];   /* the Memory mode rows start below the first lines, so keep this to four */
+        snprintf(brief, sizeof brief, "Name: %s\nKind: %s\n%.60s\nModified: %s", name, kind, size_line, modified);
+        if (app_mode_open(s, rel, brief) == 0) return;
     }
     dialog_info(s, "Get Info", body);
     if (s->info_rel[0]) { s->dialog = 2; s->dialog_cmd = CMD_STANDARD_ICON; }

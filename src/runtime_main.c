@@ -63,7 +63,7 @@ int main(int argc, char **argv) {
             if (!guest_memory_parse_mb(argv[++i])) { fprintf(stderr, "Invalid --ram-mb (a whole number of MiB).\n"); return 2; }
             setenv("OS999_GUEST_RAM_MB", argv[i], 1);
         } else if (!strcmp(argv[i], "--addressing") && i + 1 < argc) {
-            /* 24 (today's default machine, 16 MB) or 32. 24 is the mode for programs that keep flags in pointer high bytes. */
+            /* 24 (the 16 MB legacy machine) or 32 (the 256 MB default). 24 is the mode for programs that keep flags in pointer high bytes. */
             ++i;
             if (strcmp(argv[i], "24") && strcmp(argv[i], "32")) { fprintf(stderr, "Invalid --addressing (24 or 32).\n"); return 2; }
             setenv("OS999_GUEST_ADDRESSING", argv[i], 1);

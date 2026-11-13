@@ -8,6 +8,7 @@
  * copied into the OS999 framebuffer. OS999 always keeps all input. */
 
 #include <SDL.h>
+#include "frame_dump.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -29,5 +30,8 @@ void overlay_place(SDL_Window *win, int logical_w, int logical_h, int slot,
 void overlay_draw_cpu(int slot, uint32_t *frame, int fw, int fh, OverlayRect content);
 float overlay_scale(SDL_Window *win, int logical_w);
 uint64_t overlay_frames(int slot);
+/* Developer test hook: samples the surface last presented for the slot (see frame_dump.h).
+ * Returns 0 and fills the outputs, or -1 when no frame has arrived / not supported. */
+int overlay_probe(int slot, int *w, int *h, SurfaceStats *out);
 
 #endif

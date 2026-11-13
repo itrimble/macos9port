@@ -3,6 +3,7 @@
 #include "finder_apps.h"
 #include "finder_print.h"
 #include "ospi.h"
+#include "classic_apps.h"
 #include "app_switcher.h"
 #include "draw.h"
 #include "native_launch.h"
@@ -13,6 +14,7 @@
 #include "desktop_display.h"
 #include "desktop_shortcuts.h"
 #include "browser_window.h"
+#include "frame_dump.h"
 #include "term.h"
 #include <SDL.h>
 #include <limits.h>
@@ -85,6 +87,14 @@ int main(int argc, char **argv) {
     uint32_t *frame = display.frame, *startup_desktop = display.backdrop;
     int dumped = 0;
     const char *dump = getenv("OSPI_DUMP");
+    const char *dump_at = NULL;     /* OSPI_DUMP_AT=ms,ms,...: dump at those times (test-hook builds only) */
+    int dump_next = 0;
+    uint32_t dump_t0 = SDL_GetTicks();
+#ifdef OS999_ENABLE_TEST_HOOKS
+    dump_at = getenv("OSPI_DUMP_AT");
+#endif
+    const char *dump_after = getenv("OSPI_DUMP_AFTER_MS"); /* test hook: dump a later frame, e.g. a running guest */
+    uint32_t dump_after_ms = dump_after ? (uint32_t)strtoul(dump_after, NULL, 10) : 0;
     uint32_t *guest_pixels = calloc((size_t)RUNTIME_BRIDGE_MAX_WIDTH *
                                     RUNTIME_BRIDGE_MAX_HEIGHT, sizeof *guest_pixels);
     Os999Startup startup = {0};
@@ -193,9 +203,11 @@ int main(int argc, char **argv) {
     int guest_drag = 0, guest_mouse_capture = 0, guest_focus = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--quake-demo")) session_command(s, CMD_QUAKE3_DEMO);
+        if (!strcmp(argv[i], "--quake")) session_command(s, CMD_QUAKE3); /* the menu item: retail, else demo */
         if (!strcmp(argv[i], "--tailscale")) session_command(s, CMD_TAILSCALE);
         if (!strcmp(argv[i], "--terminal")) session_command(s, CMD_TERMINAL_SHELL);
     }
+    classic_apps_first_run(s);   /* a one-time offer to fetch classic apps into this volume */
     const char *play_path = flag_arg(argc, argv, "--play");
     if (play_path && session_media_hooks() && session_media_hooks()->open_file)
         session_media_hooks()->open_file(s, play_path);
@@ -428,7 +440,15 @@ int main(int argc, char **argv) {
         if (os999_startup_active(&startup))
             os999_startup_frame(&startup, SDL_GetTicks(), 1, frame, startup_desktop,
                                 OSPI_W, OSPI_H);
-        if (dump && !dumped) {
+        if (dump && dump_at && *dump_at) {
+            if (frame_dump_due(dump_at, &dump_next, SDL_GetTicks() - dump_t0)) {
+                char name[PATH_MAX];
+                if (frame_dump_name(dump, dump_next, name, sizeof name) == 0 &&
+                    frame_dump_write(name, frame, OSPI_W, OSPI_H) == 0)
+                    fprintf(stderr, "OS999: frame dump %s at %u ms\n", name,
+                            (unsigned)(SDL_GetTicks() - dump_t0));
+            }
+        } else if (dump && !dumped && SDL_GetTicks() >= dump_after_ms) {
             FILE *f = fopen(dump, "wb");
             if (f) {
                 fprintf(f, "P6\n%d %d\n255\n", OSPI_W, OSPI_H);

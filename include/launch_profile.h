@@ -15,7 +15,7 @@
 #define LAUNCH_MAX_ARGS 4
 #define LAUNCH_ARG_LEN 24
 
-/* What the session (Memory panel store) asks for. 0 = unset: the built-in 16 MB, 24-bit machine. */
+/* The session machine after defaults are applied (guest_memory.h): addr 24 or 32 and its RAM. 0 = unknown, treated as 24-bit. */
 typedef struct { int addr; unsigned ram_mb; } LaunchSession;
 
 /* A saved choice for one executable. Keyed on the classifier identity, so renaming or moving the application keeps
@@ -44,6 +44,10 @@ typedef struct {
  * program) is ignored, and the reason says so. */
 void launch_policy_decide(const AppClassification *c, const LaunchOverride *override_, const LaunchSession *session,
                           LaunchPolicy *out);
+
+/* Same, naming where `override_` came from ("override" for a user's saved choice, "known-list" for the built-in list). */
+void launch_policy_decide_from(const AppClassification *c, const LaunchOverride *override_, const char *source,
+                               const LaunchSession *session, LaunchPolicy *out);
 
 /* One log line, no newline. */
 void launch_policy_describe(const LaunchPolicy *p, const AppClassification *c, char *out, size_t n);

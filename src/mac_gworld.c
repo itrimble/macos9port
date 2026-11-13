@@ -194,6 +194,7 @@ static int update_gworld(MacRuntime *rt, uint32_t sp) {
 }
 static int dispose_gworld(MacRuntime *rt, uint32_t sp) {
     uint32_t port = rd(rt, sp, 4); GW *w = find(rt, port);
+    if (!port) { finish(rt, sp, 4); return 1; }          /* DisposeGWorld(NIL): the public text does not cover it; a shipped application makes the call, so it does nothing */
     if (!w) return fail(rt, "DisposeGWorld: the pointer is not a GWorld made by NewGWorld.");
     uint32_t cur = rt->qd_globals ? rd(rt, rt->qd_globals, 4) : 0;
     if (cur == port) return fail(rt, "DisposeGWorld: the GWorld is the current port.");

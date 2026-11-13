@@ -126,11 +126,59 @@ static int set_vol(PpcCpu *c, void *user) { /* (volName, vRefNum) */
     return 0;
 }
 
+/* HGetFInfo / HSetFInfo (vRefNum, dirID, name, FInfo): PBHGetFInfo / PBHSetFInfo with the 16 bytes of Finder info at ioFlFndrInfo (+32). */
+static int h_finfo(PpcCpu *c, void *user, int set) {
+    Block b;
+    uint32_t at = c->gpr[6];
+    uint8_t *info = ppc_mem_span(c, at, 16);
+    if (!info) { ppc_cpu_halt(c, "HGetFInfo/HSetFInfo was given an FInfo outside guest RAM at %08x.", at); return 0; }
+    if (pb_open(&b, user)) return 0;
+    put(&b, IO_VREF, 2, c->gpr[3] & 0xffffu);
+    put(&b, IO_DIRID, 4, c->gpr[4]);
+    put(&b, IO_NAME, 4, c->gpr[5]);
+    if (set) memcpy(mac_cpu_ram(b.rt->cpu) + b.pb + 32, info, 16);
+    c->gpr[3] = pb_call(&b, set ? "HSetFInfo" : "HGetFInfo", set ? 0xa20d : 0xa20c, "@A0>D0w");
+    if (!set && (int16_t)c->gpr[3] == 0) { info = ppc_mem_span(c, at, 16); if (info) memcpy(info, mac_cpu_ram(b.rt->cpu) + b.pb + 32, 16); }
+    pb_close(&b);
+    return 0;
+}
+static int h_get_finfo(PpcCpu *c, void *user) { return h_finfo(c, user, 0); }
+static int h_set_finfo(PpcCpu *c, void *user) { return h_finfo(c, user, 1); }
+
+/* HCreate(vRefNum, dirID, name, creator, fileType): library glue, PBHCreate and then PBHSetFInfo to store the type and creator in the Finder
+ * info (type at +0 of the info, creator at +4). HDelete(vRefNum, dirID, name): PBHDelete. */
+static int h_create(PpcCpu *c, void *user) {
+    Block b;
+    uint32_t creator = c->gpr[6], type = c->gpr[7];
+    if (pb_open(&b, user)) return 0;
+    put(&b, IO_VREF, 2, c->gpr[3] & 0xffffu);
+    put(&b, IO_DIRID, 4, c->gpr[4]);
+    put(&b, IO_NAME, 4, c->gpr[5]);
+    c->gpr[3] = pb_call(&b, "HCreate", 0xa208, "@A0>D0w");
+    if ((int16_t)c->gpr[3] == 0) {
+        memset(mac_cpu_ram(b.rt->cpu) + b.pb + 32, 0, 16);
+        put(&b, 32, 4, type); put(&b, 36, 4, creator);
+        c->gpr[3] = pb_call(&b, "HSetFInfo", 0xa20d, "@A0>D0w");
+    }
+    pb_close(&b);
+    return 0;
+}
+static int h_delete(PpcCpu *c, void *user) {
+    Block b;
+    if (pb_open(&b, user)) return 0;
+    put(&b, IO_VREF, 2, c->gpr[3] & 0xffffu);
+    put(&b, IO_DIRID, 4, c->gpr[4]);
+    put(&b, IO_NAME, 4, c->gpr[5]);
+    c->gpr[3] = pb_call(&b, "HDelete", 0xa209, "@A0>D0w");
+    pb_close(&b);
+    return 0;
+}
+
 #define F(name, fn) {"InterfaceLib", name, fn, NULL}
 static const MacCfmHostImport imports[] = {
     F("FSClose", fs_close), F("FSRead", fs_read), F("FSWrite", fs_write), F("GetEOF", get_eof), F("SetFPos", set_fpos),
     F("GetFPos", get_fpos), F("HOpen", h_open), F("HOpenDF", h_open_df), F("HOpenRF", h_open_rf), F("GetVol", get_vol),
-    F("SetVol", set_vol),
+    F("SetVol", set_vol), F("HGetFInfo", h_get_finfo), F("HCreate", h_create), F("HDelete", h_delete), F("HSetFInfo", h_set_finfo),
 };
 
 const MacCfmHostImport *mac_ppc_file_imports(size_t *count) {

@@ -193,8 +193,8 @@ int main(void) {
         unsigned sel = k == 0 ? 1 : 4;
         if (k == 7) g.rt.screen_depth = 1;
         start(&g, sel, num, k == 8 ? 0x10101 : 0, hook, fproc, -4000, V, H);
-        if (k == 5) wr(&g.rt, STACK - 34 + 8, 4, 0xfffff0);                    /* reply pointer beyond RAM */
-        if (k == 6) wr(&g.rt, STACK - 34 + 26, 4, 0x1000010);                  /* prompt pointer beyond RAM */
+        if (k == 5) wr(&g.rt, STACK - 34 + 8, 4, 0xfffffff0u);                /* reply pointer beyond RAM (any machine size) */
+        if (k == 6) wr(&g.rt, STACK - 34 + 26, 4, 0xfffffff0u);              /* prompt pointer beyond RAM (any machine size) */
         pump(&g, 4);
         if (!(mac_cpu_halted(g.rt.cpu) && !g.rt.exited && !dialog(&g) && screen_all_back(&g) && mac_cpu_get(g.rt.cpu, MAC_D1) != 5))
             fprintf(stderr, "refusal case %u: halted=%d exited=%d dialog=%d back=%d d1=%u\n", k, mac_cpu_halted(g.rt.cpu), g.rt.exited, dialog(&g) != NULL, screen_all_back(&g), mac_cpu_get(g.rt.cpu, MAC_D1));

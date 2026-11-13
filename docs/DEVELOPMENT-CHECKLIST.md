@@ -191,6 +191,13 @@ See [the preserved baseline](DEVELOPMENT-BASELINE.md). Newer acceptance evidence
   encrypted, truncated, garbage StuffIt, content sniff, nothing run, dialog Cancel/Expand and app selection) passes.
   Not seen in a real window; no real `.sit` specimen or `unar`-only variant (StuffIt 13/15/X) was tried in this change;
   the dialog is a plain two-button confirm with no progress bar, so a large archive blocks the UI while it expands.
+- 12 Nov 2026, default guest machine (note, not a pass): the default is now 256 MB with 32-bit addressing
+  (`include/guest_memory.h`); unset Memory-panel keys mean this, a saved memory/guest_machine_mb or memory/addr_bits still
+  wins, and the 16 MB, 24-bit machine stays available (`--ram-mb 16 --addressing 24`). The launch policy gives every
+  profile A (legacy 68K) program `--addressing 24` for its own launch; profiles B and C run on the default. Headless probe
+  (20 s, same build): three adventure/puzzle specimens and four others are identical on 256 MB/32-bit and 16 MB/24-bit;
+  one program that sets is32BitCompatible halts on 32-bit with a 24-bit-dirty pointer and needs a profile A override
+  (no UI for overrides yet). That is startup behaviour only, not gameplay, graphics, input or sound.
 - [ ] R01 Implement the 68k execution core, memory model, exceptions, instruction
   accounting, and reproducible traces. Validate with independently authored
   instruction vectors, including flags, alignment, branches, and fault cases.

@@ -12,4 +12,8 @@
 int native_policy_prepare(const char *root, const char *full, const NativeSettings *settings, LaunchPolicy *policy,
                           char *logline, size_t logline_n, char *err, size_t err_n);
 
+/* The classification step alone, shared with the Get Info panel. 0 classified, 1 not an executable, 2 CODE 0 header the
+ * classifier does not accept. `canon` (PATH_MAX bytes) receives the canonical volume root; `slot` is the path hash. */
+int native_policy_classify(const char *root, const char *full, AppClassification *c, uint64_t *slot, char *canon, size_t canon_n);
+
 #endif

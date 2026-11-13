@@ -1,10 +1,55 @@
 /* Synthetic bridge checks: no proprietary data, display or engine required. */
 #include "../src/quake_session.c"
 #include <assert.h>
+#include <sys/stat.h>
+static char last_dialog[512];
 void dialog_info(Session *s, const char *title, const char *message) {
-    (void)s; (void)title; (void)message;
+    (void)s; snprintf(last_dialog, sizeof last_dialog, "%s|%s", title, message);
+}
+static void write_junk(const char *path) {
+    FILE *f = fopen(path, "wb"); assert(f); fputs("not a verified pak", f); fclose(f);
+}
+/* The menu and icon paths launch only verified data: retail, else the demo, else the baseq3 dialog. */
+static void check_open_paths(void) {
+    char tmp[1024], vol[1100], exe[1200], dir[1400], file[1500];
+    const char *t = getenv("TMPDIR");
+    snprintf(tmp, sizeof tmp, "%s/os999-qopen-XXXXXX", t && *t ? t : "/tmp");
+    assert(mkdtemp(tmp));
+    snprintf(vol, sizeof vol, "%s/vol", tmp); assert(!mkdir(vol, 0755));
+    snprintf(exe, sizeof exe, "%s/fake-quake3", tmp); write_junk(exe); assert(!chmod(exe, 0755));
+    setenv("HOME", tmp, 1); /* the demo carry-over looks in the Mac's Library: keep the host out of this test */
+    setenv("OS999_QUAKE3", exe, 1); unsetenv("OS999_QUAKE3_DATA"); unsetenv("OS999_QUAKE3_IMPORT");
+    os999_private_set_root(vol);
+    Session *s = calloc(1, sizeof *s); assert(s);
+    snprintf(s->root, sizeof s->root, "%s", vol);
+    for (int pass = 0; pass < 2; pass++) {
+        for (int mode = 0; mode < 3; mode++) {
+            last_dialog[0] = 0;
+            assert(open_quake(s, mode) == -1);
+            assert(surface == NULL && child == 0);              /* nothing was started */
+            if (mode == 1) assert(strstr(last_dialog, "Arena"));
+            else { if (!strstr(last_dialog, "baseq3")) fprintf(stderr, "pass %d mode %d: %s\n", pass, mode, last_dialog); assert(strstr(last_dialog, "baseq3")); }          /* menu and icon: ask for the original folder */
+        }
+        /* Unverified files under every name the resolvers look for must still never launch. */
+        const char *base = "Library/Application Support/OS999";
+        const char *sets[] = {"Quake3-Full/baseq3", "Quake3/baseq3", "Quake3/demoq3"};
+        snprintf(dir, sizeof dir, "%s/.os999/%s", vol, base); (void)dir;
+        for (int i = 0; i < 3; i++) {
+            snprintf(dir, sizeof dir, "%s/.os999/Library", vol); mkdir(dir, 0755);
+            snprintf(dir, sizeof dir, "%s/.os999/Library/Application Support", vol); mkdir(dir, 0755);
+            snprintf(dir, sizeof dir, "%s/.os999/%s", vol, base); mkdir(dir, 0755);
+            char sub[1400]; snprintf(sub, sizeof sub, "%s/%.*s", dir, (int)(strchr(sets[i], '/') - sets[i]), sets[i]);
+            mkdir(sub, 0755);
+            snprintf(sub, sizeof sub, "%s/%s", dir, sets[i]); mkdir(sub, 0755);
+            snprintf(file, sizeof file, "%s/pak0.pk3", sub); write_junk(file);
+        }
+    }
+    free(s);
+    unsetenv("OS999_QUAKE3");
+    char rm[1100]; snprintf(rm, sizeof rm, "rm -rf '%s'", tmp); (void)!system(rm);
 }
 int main(void) {
+    check_open_paths();
     surface = calloc(1, sizeof *surface);
     uint32_t *out = calloc(OS999Q_WIDTH * OS999Q_HEIGHT, sizeof *out);
     assert(surface && out);

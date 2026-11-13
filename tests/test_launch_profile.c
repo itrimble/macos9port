@@ -179,7 +179,7 @@ static void prepare(void) {
     CHECK(native_policy_prepare(root, "x", &st, &p, line, sizeof line, err, sizeof err) == 1);   /* missing file: not ours */
     char full[512];
     snprintf(full, sizeof full, "%s/Game", root);
-    CHECK(native_policy_prepare(root, full, &st, &p, line, sizeof line, err, sizeof err) == 0 && p.nargs == 0);   /* default argv unchanged */
+    CHECK(native_policy_prepare(root, full, &st, &p, line, sizeof line, err, sizeof err) == 0 && p.nargs == 0);   /* profile B on the default machine: no extra argv */
     CHECK(strstr(line, "profile=B-clean-68k") && strstr(line, "source=classifier") && strstr(line, "args=[]"));
     snprintf(full, sizeof full, "%s/Game.rsrc", root);
     CHECK(native_policy_prepare(root, full, &st, &p, line, sizeof line, err, sizeof err) == 0);   /* the sidecar itself, same result */
@@ -211,7 +211,9 @@ static void prepare(void) {
     NativeSettings s32 = {"8", 1, 1, "256", 32};
     snprintf(full, sizeof full, "%s/Old", root);
     CHECK(native_policy_prepare(root, full, &s32, &p, line, sizeof line, err, sizeof err) == 0 && has_arg(&p, "--addressing", "24"));
-    CHECK(native_policy_prepare(root, full, &st, &p, line, sizeof line, err, sizeof err) == 0 && p.nargs == 0);
+    CHECK(native_policy_prepare(root, full, &st, &p, line, sizeof line, err, sizeof err) == 0 && has_arg(&p, "--addressing", "24"));   /* unset = the 256 MB, 32-bit default */
+    NativeSettings s24 = {"8", 1, 1, "16", 24};   /* the user saved the 16 MB, 24-bit machine: already right for profile A */
+    CHECK(native_policy_prepare(root, full, &s24, &p, line, sizeof line, err, sizeof err) == 0 && p.nargs == 0);
     /* a CODE 0 header the classifier does not accept is left to the runtime loader, exactly as before this layer existed */
     uint8_t odd[32]; memcpy(odd, code0, sizeof odd); p32(odd + 8, 7);
     Res oddres[1] = {{FOURCC('C', 'O', 'D', 'E'), 0, odd, sizeof odd}};
@@ -259,7 +261,10 @@ static void powerpc_launch(void) {
     write_file("PPCApp.rsrc", f, rn);
     snprintf(full, sizeof full, "%s/PPCApp", root);
     CHECK(native_policy_prepare(root, full, &st, &p, line, sizeof line, err, sizeof err) == 0);
-    CHECK(p.profile == APP_PROFILE_C_CLASSIC_PPC && has_arg(&p, "--addressing", "32") && has_arg(&p, "--ram-mb", "256") && strstr(line, "profile=C-classic-ppc"));
+    CHECK(p.profile == APP_PROFILE_C_CLASSIC_PPC && p.nargs == 0 && strstr(line, "profile=C-classic-ppc"));   /* the 256 MB, 32-bit default already suits it */
+    NativeSettings s24 = {"8", 1, 1, "16", 24};   /* a user who saved the 16 MB, 24-bit machine: this launch asks for 32-bit */
+    CHECK(native_policy_prepare(root, full, &s24, &p, line, sizeof line, err, sizeof err) == 0);
+    CHECK(has_arg(&p, "--addressing", "32") && has_arg(&p, "--ram-mb", "256"));
     /* CarbonLib: still refused, naming what is missing, with no fallback */
     pn = build_pef(pef, sizeof pef, carbon, 2);
     write_file("CarbonApp", pef, pn);

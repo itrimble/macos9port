@@ -130,22 +130,19 @@ static int open_quake(Session *s, int mode) {
     QuakeLaunch q;
     /* Quake's data and settings live in OS999's own folder, not the Mac's Library. */
     char own[OSPI_PATH + 32]; const char *home = os999_private_dir(NULL, own, sizeof own) ? NULL : own;
-    int ready = -3, retail = 0;
+    int ready = -3;
     if (mode != 1) {
-        /* The full game, when a complete verified retail set is installed or can be imported. */
+        /* The full game first, when a complete verified retail set is installed or can be imported. */
         ready = quake_launch_resolve_retail(&q, exe[0] ? exe : NULL, home);
         if (ready == -3 && home && quake_data_import_retail(home, s->root) >= 0)
             ready = quake_launch_resolve_retail(&q, exe[0] ? exe : NULL, home);
-        retail = ready == 0;
+        if (ready == -3) demo = 1; /* no verified retail set: fall back to the verified demo, else ask for baseq3 */
     }
-    if (!retail && ready != -1) {
-        ready = quake_launch_resolve(&q, exe[0] ? exe : NULL, home);
-        if (mode == 2 && ready != -1 && ready != 0) demo = 1; /* no retail data: use the demo */
-        if (demo) {
+    if (demo && ready != -1) {
+        ready = quake_launch_resolve_demo(&q, exe[0] ? exe : NULL, home);
+        if (ready == -3 && home && quake_data_import_demo(home, s->root) >= 0) /* found a verified copy */
             ready = quake_launch_resolve_demo(&q, exe[0] ? exe : NULL, home);
-            if (ready == -3 && quake_data_import_demo(home, s->root) >= 0) /* found a verified copy */
-                ready = quake_launch_resolve_demo(&q, exe[0] ? exe : NULL, home);
-        }
+        if (ready == -3 && mode != 1) ready = -2; /* neither set verified: the "need baseq3" dialog */
     }
     if (ready == -1) {
         dialog_info(s, "Quake III Arena", "The Quake III engine is not installed. Build quake/ and package it with make app.");

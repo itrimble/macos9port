@@ -145,13 +145,17 @@ build/test_app_classify: $(APP_CLASSIFY_SRC) src/app_classify_int.h include/app_
 build/os999-classify: $(APP_CLASSIFY_SRC) src/app_classify_tool.c src/app_classify_int.h include/app_classify.h include/mac_resource.h
 	$(CC) $(CFLAGS) src/app_classify_tool.c $(APP_CLASSIFY_SRC) -o $@
 test: build/test_app_classify
-LAUNCH_SRC := src/launch_profile.c src/native_policy.c $(APP_CLASSIFY_SRC)
+LAUNCH_SRC := src/launch_profile.c src/compat_known.c src/native_policy.c $(APP_CLASSIFY_SRC)
 build/test_launch_profile: $(LAUNCH_SRC) include/launch_profile.h src/native_policy.h include/native_settings.h tests/test_launch_profile.c src/control_panel_store.c $(STORAGE_A)
 	$(CC) $(CFLAGS) -Isrc -pthread tests/test_launch_profile.c $(LAUNCH_SRC) src/control_panel_store.c src/os999_private.c $(STORAGE_LINK) -o $@
 test: build/test_launch_profile
 build/test_legacy_pointers: $(RUNTIME_OBJ) tests/test_legacy_pointers.c include/guest_memory.h $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_legacy_pointers.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 test: build/test_legacy_pointers
+build/test_app_mode: $(CORE) $(STORAGE_A) $(STARTUP_SRC) tests/test_app_mode.c include/app_mode.h include/compat_known.h $(HDRS) $(STARTUP_HDR)
+	mkdir -p build
+	$(CC) $(CFLAGS) -o $@ $(CORE) $(STORAGE_LINK) $(STARTUP_SRC) tests/test_app_mode.c $(FT_LIBS) -lm $(NET_LIBS)
+test: build/test_app_mode
 
 # Bridge under ASan/UBSan: only the heap, bridge and test are instrumented; the rest of the runtime is the normal build.
 build/test_mac_heap_bridge_asan: $(RUNTIME_OBJ) src/os999_heap.c src/mac_heap_bridge.c tests/test_mac_heap_bridge.c $(RUNTIME_HDRS) $(CPUOBJ)
@@ -190,8 +194,8 @@ build/test_mac_appfork: $(RUNTIME_OBJ) tests/test_mac_appfork.c $(RUNTIME_HDRS) 
 build/test_mac_unloadseg: $(RUNTIME_OBJ) tests/test_mac_unloadseg.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_unloadseg.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
-build/test_native_launch: src/control_panel_store.c include/native_settings.h include/control_panel_store.h $(STORAGE_A) src/application_probe.c include/application_probe.h src/native_launch.c src/native_policy.c src/launch_profile.c src/app_classify.c src/app_classify_exec.c src/app_classify_json.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c include/native_launch.h include/mac_resource.h include/runtime_bridge.h
-	$(CC) $(CFLAGS) -pthread src/control_panel_store.c src/native_launch.c src/native_policy.c src/launch_profile.c src/app_classify.c src/app_classify_exec.c src/app_classify_json.c src/os999_private.c src/application_probe.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c $(STORAGE_LINK) -o $@
+build/test_native_launch: src/control_panel_store.c include/native_settings.h include/control_panel_store.h $(STORAGE_A) src/application_probe.c include/application_probe.h src/native_launch.c src/native_policy.c src/launch_profile.c src/compat_known.c src/app_classify.c src/app_classify_exec.c src/app_classify_json.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c include/native_launch.h include/mac_resource.h include/runtime_bridge.h
+	$(CC) $(CFLAGS) -pthread src/control_panel_store.c src/native_launch.c src/native_policy.c src/launch_profile.c src/compat_known.c src/app_classify.c src/app_classify_exec.c src/app_classify_json.c src/os999_private.c src/application_probe.c src/runtime_bridge.c src/mac_resource.c tests/test_native_launch.c $(STORAGE_LINK) -o $@
 
 build/test_mac_events: $(RUNTIME_OBJ) tests/test_mac_events.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_events.c $(CPUOBJ) -lm $(FT_LIBS) -o $@

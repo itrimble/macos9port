@@ -54,6 +54,14 @@ bool Enabled() {
   return v && std::string(v) == "1";
 }
 
+int ParseDelaySeconds(const char* text, int fallback) {
+  if (!text || !*text) return fallback;
+  char* end = nullptr;
+  long v = strtol(text, &end, 10);
+  if (*end || v < 1 || v > 3600) return fallback;
+  return (int)v;
+}
+
 bool IsHardwareDecoderName(const std::string& name) {
   static const char* kHw[] = {"VideoToolbox", "VTVideoDecode", "D3D11VideoDecoder", "D3D12VideoDecoder",
                               "VaapiVideoDecoder", "V4L2", "MediaCodec", "VdaVideoDecoder"};

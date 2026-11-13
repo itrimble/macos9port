@@ -24,8 +24,9 @@ int mac_dialog_service(MacRuntime *rt, uint16_t opcode) {
         unsigned char snapshot[4][256] = {{0}};
         for (unsigned i = 0; i < 4; i++) {
             uint32_t p = mac_cpu_read(cpu, sp + (3 - i) * 4, 4);
-            /* Public API requires an empty Pascal string, not a NULL pointer. */
-            if (!p) { mac_cpu_halt(cpu, "ParamText requires a Pascal string, not NIL."); return -1; }
+            /* The public text says to pass empty strings for unused parameters and does not cover NIL. A shipped application passes NIL for
+             * parameters it does not set, so a NIL leaves that parameter as it was (an inference from that use, not from a page). */
+            if (!p) { memcpy(snapshot[i], rt->dialog_params[i], sizeof snapshot[i]); continue; }
             if (!valid(rt, p, 1, 0)) return -1;
             unsigned n = mac_cpu_read(cpu, p, 1);
             if (!valid(rt, p, n + 1, 0)) return -1;

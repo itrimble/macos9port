@@ -82,3 +82,8 @@ float overlay_scale(SDL_Window *win, int lw) {
 }
 
 uint64_t overlay_frames(int slot) { return slot >= 0 && slot < SLOTS ? g_frames[slot] : 0; }
+
+int overlay_probe(int slot, int *w, int *h, SurfaceStats *out) {
+    (void)slot; (void)w; (void)h; (void)out;  /* CPU frames already land in the framebuffer (OSPI_DUMP_AT) */
+    return -1;
+}

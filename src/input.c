@@ -31,7 +31,7 @@ void session_wheel(Session *s, int dy) {
     if (control_panels_wheel(s, eff)) return;
     if (session_overlay_active(s) || s->desktop_focus || s->nwin <= 0) return;
     Window *w = &s->win[s->nwin - 1];
-    if ((w->kind == WIN_FONT_BOOK && font_book_window_wheel(w, eff)) || (w->kind == WIN_MOVIE && movie_picker_wheel(w, -eff))) return;
+    if ((w->kind == WIN_FONT_BOOK && font_book_window_wheel(w, eff)) || (w->kind == WIN_MOVIE && movie_picker_wheel(w, -eff)) || classic_apps_panel_wheel(w, -eff)) return;
     if (w->collapsed) return;
     int step = s->wheel_speed == 1 ? 9 : s->wheel_speed == 3 ? 30 : 18;
     w->scroll -= eff * step;

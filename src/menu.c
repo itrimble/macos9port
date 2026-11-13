@@ -40,7 +40,7 @@ static MenuItem k_file[] = {
     KEY("Show Original", CMD_SHOW_ORIGINAL, "Cmd-R", 'r'), SEP,
     ITEM("Page Setup...", CMD_PAGE_SETUP), KEY("Print Window...", CMD_PRINT_WINDOW, "Cmd-P", 'p'), SEP,
     ITEM("Rename...", CMD_RENAME), ITEM("Move to Trash", CMD_MOVE_TRASH),
-    ITEM("Install from Garden", CMD_INSTALL), ITEM("New Terminal", CMD_TERMINAL_SHELL),
+    ITEM("Install from Garden", CMD_INSTALL), ITEM("Install Classic Apps...", CMD_CLASSIC_APPS), ITEM("New Terminal", CMD_TERMINAL_SHELL),
     ITEM("New OS999 Console", CMD_TERMINAL_CONSOLE), SEP, KEY("Quit OS999", CMD_QUIT, "Cmd-Q", 'q'),
 };
 static MenuItem k_edit[] = {
@@ -136,7 +136,7 @@ static void update_items(Session *s, MenuItem *items, int count) {
         case CMD_ABOUT: case CMD_CONTROL_PANELS: case CMD_CP_GENERAL: case CMD_CP_SOUND:
         case CMD_CP_MONITORS: case CMD_CP_KEYBOARD: case CMD_CP_ENERGY:
         case CMD_CP_MEMORY: case CMD_CP_NETWORK: case CMD_CP_BLUETOOTH: case CMD_CP_EXTENSIONS:
-        case CMD_APPEARANCE_DESKTOP: case CMD_FONT_BOOK: case CMD_INSTALL:
+        case CMD_APPEARANCE_DESKTOP: case CMD_FONT_BOOK: case CMD_INSTALL: case CMD_CLASSIC_APPS:
         case CMD_QUIT: case CMD_SHUTDOWN: case CMD_STARTUP_PREVIEW: case CMD_SLEEP:
         case CMD_HELP: case CMD_HELP_KEYS: case CMD_HELP_STATUS: yes = 1; break;
         case CMD_STARTUP_TOGGLE: yes = 1; checked = s->host_startup_enabled; break;

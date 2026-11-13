@@ -66,7 +66,7 @@ static int implemented(unsigned key) {
     case 0xaa00: case 0xaa01: case 0xaa02: case 0xa8ec:
     case 0xaa14: case 0xaa15: case 0xaa33: case 0xaa34: case 0xaa19: case 0xaa1a: case 0xaa18: case 0xaa3e: case 0xaa40: case 0xaa3f:
     case 0xaa27: case 0xaa29: case 0xaa2a: case 0xaa2b: case 0xaa2c: case 0xaa31: case 0xaa32:
-    case 0xaa1b: case 0xaa1c: case 0xaa1d: case 0xaa26: case 0xa8b5: return 1;
+    case 0xaa1b: case 0xaa1c: case 0xaa1d: case 0xaa26: case 0xa8b5: case 0xa8fd: return 1;
     default: return 0;
     }
 }
@@ -200,6 +200,8 @@ static int dispatch(MacRuntime *rt, uint16_t opcode, uint32_t pc, uint32_t conti
     if (menusel) return menusel > 0 ? 0 : -1;
     int gworld = mac_gworld_service(rt, opcode);
     if (gworld) return gworld > 0 ? 0 : -1;
+    int printing = mac_print_service(rt, opcode);
+    if (printing) return printing > 0 ? 0 : -1;
     int script = mac_script_service(rt, opcode);
     if (script) return script > 0 ? 0 : -1;
     int toolbox = mac_toolbox_service(rt, opcode);

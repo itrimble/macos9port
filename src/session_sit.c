@@ -1,5 +1,6 @@
 #include "session_int.h"
 #include "volume_capacity.h"
+#include "classic_apps.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -57,6 +58,7 @@ static void select_single_app(Session *s) {
 }
 
 int session_sit_command(Session *s, int cmd) {
+    if (cmd == CMD_CLASSIC_APPS) { classic_apps_open(s); return 1; }
     if (cmd != CMD_EXPAND_ARCHIVE_DO) return 0;
     char expanded[OSPI_PATH] = {0};
     char err[240] = {0};

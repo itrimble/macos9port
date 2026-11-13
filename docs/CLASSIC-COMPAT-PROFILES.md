@@ -24,8 +24,8 @@ reports what a program appears to need. A pass needs a real run, recorded separa
 | Runs in this build | yes (68K runtime) | yes | no: no interpreter or PEF loader | no |
 | Missing | none | none | PowerPC interpreter, PEF/CFM loader; CarbonLib for Carbon imports | stated per case |
 
-B tolerates both addressing modes, A tolerates only 24-bit. A session-wide 24-bit machine therefore satisfies A and B;
-only C and large-partition B need 32-bit.
+B tolerates both addressing modes, A tolerates only 24-bit. The default machine is now 256 MB, 32-bit (12 Nov 2026), so
+every profile A launch asks for the 16 MB, 24-bit machine through its own argv; B and C run on the default.
 
 Not supported, and recognised only to say why: Mac OS X Mach-O (any architecture, no x86/Rosetta/Cocoa), CFM-68K,
 PowerPC shared libraries, programs with CODE but no usable CODE 0. Mixed 68K/PowerPC programs take a path the host can
@@ -95,16 +95,17 @@ runtime log (the first line, before the runtime's own output).
 
 | Profile | Extra argv | Why |
 | --- | --- | --- |
-| A, session default | none | the default machine is 24-bit |
-| A, session set to 32-bit | `--addressing 24` | this launch only; the session setting is not changed |
+| A, session machine 32-bit (the default) | `--addressing 24` | this launch only; the session setting is not changed |
+| A, session machine saved as 24-bit | none | already the right machine |
 | B, partition up to 12 MB | none (unchanged) | 32-bit-clean programs run on either machine |
 | B, SIZE above 12 MB | `--addressing 32 --ram-mb N` | N = 16 + preferred MB + 16, at least 256, at most 1024; omitted if the session already provides it |
 | C, when a PowerPC runtime exists | `--addressing 32 --ram-mb N` | refused today: no interpreter or PEF loader |
 | D, or not runnable | refused | the alert carries the classifier's reason and what is missing |
 
 Nothing falls back: a refused program is never handed to Systemless or to another profile, and a program that crashed
-is never relaunched under a different profile (there is no retry path in the code). The default 16 MB/24-bit launch of
-every program that worked is byte-identical to before.
+is never relaunched under a different profile (there is no retry path in the code). With the 12 Nov default change, a B program's argv is still empty and it now starts on the 256 MB, 32-bit machine; the
+"session machine" the policy compares against is resolved by `guest_memory_from_env`, the function the runtime itself
+calls (environment, then saved keys memory/guest_machine_mb and memory/addr_bits, then the default).
 
 Overrides live in `<volume>/.os999/launch-profiles` (an older `<volume>/.os999-launch-profiles` is read once, copied there and removed; text, atomic replace, symlinks refused, damaged lines dropped). An
 entry is found by executable identity, so renaming or moving the application keeps it. A hash of the application's path
@@ -131,3 +132,33 @@ pointer flag bytes, and window/control/dialog record pointers.
 2. No UI for per-app overrides or for viewing the selected profile; the log line is the only surface.
 3. A profile A specimen (System 6-era 68K program) is needed before the legacy path can be called exercised.
 4. PowerPC availability is a constant in `native_policy.c` (`ppc_available = 0`).
+
+## Default machine change (12 Nov 2026)
+
+The built-in default is 256 MB with 32-bit addressing; unset keys mean that. A saved Memory-panel setting still wins, and
+`--ram-mb 16 --addressing 24` (or the saved keys) gives the 16 MB, 24-bit machine. Probe results for MI1, MI2, Castle of
+Dr. Brain and S4-S8 on the new default are in the commit message and the checklist note.
+
+Probe result on the new default (headless, 20 s, same build, 16 MB/24-bit versus 256 MB/32-bit): MI1, MI2, Castle of
+Dr. Brain and S4, S6, S7, S8 are identical in both. S5 differs: it sets is32BitCompatible, runs to its idle loop on the
+24-bit machine, and halts on the 32-bit machine after 27,848 instructions with "invalid 1-byte memory access at 47616d6b
+... looks like a 24-bit-dirty address" (an ASCII string used as a pointer). It is a profile A program the SIZE flag
+mislabels. It is now in the built-in list (below); with no user override its launch policy gives `--addressing 24` and the
+headless probe run through that policy reaches the same idle loop as the 24-bit baseline (138,230 instructions). The
+other seven get no extra argv and match their earlier results.
+
+## Per-application memory mode and the built-in list (12 Nov 2026)
+
+Launch order for the profile: (1) the user's saved override, (2) the built-in list, (3) the classifier. The log line says
+`source=override`, `source=known-list` or `source=classifier`.
+
+* Get Info on an application (the Finder's Get Info command) shows a **Memory mode** choice: Automatic, 24-bit (16 MB) or
+  32-bit, in OS999's own dialog, plus the profile, who chose it (your saved choice, the built-in list or the classifier)
+  and the reason. OK saves, Cancel changes nothing. Automatic removes the override; 24-bit saves profile A with
+  `--addressing 24`; 32-bit saves profile B (C for a PowerPC program) with `--addressing 32`. `app_mode.c` holds the model,
+  `finder_settings.c` routes the rows. Not seen in a real window: the dialog is exercised headless through its clicks and
+  keys only (`tests/test_app_mode.c`), so the layout needs a look by a person.
+* The saved choice is keyed on the executable identity, so renaming or moving the application keeps it; replacing the
+  executable drops it the next time Get Info or a launch looks at it.
+* `src/compat_known.c` is a table of identity hashes with a short reason, no application names. An entry needs a headless
+  run on both machines behind it. It has one entry (S5, profile A). `compat_known_set_table` is the test seam.

@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "browser_stats.h"
+#include "embed_diag.h"
 #include "version_guard.h"
 #include "include/base/cef_callback.h"
 #include "include/cef_app.h"
@@ -21,6 +22,7 @@ void EmbedHost::Start() {
   reader_ = std::thread(&EmbedHost::ReadLoop, this);
   reader_.detach();
   Send(OS999B_READY, 0, 0, 0, "");
+  embed_diag::Start([this]() { MaybeQuit(); });  // no-op unless OS999_DECODE_DIAG=1
   VersionGuard::Get().Start([this](const VersionResult& r) {
     Send(OS999B_SECURITY, 0, (int)r.verdict, r.block ? 1 : 0, r.message);
   });
@@ -101,13 +103,18 @@ void EmbedHost::OnBrowserClosed(int id) {
     browsers_.erase(it);
   }
   Send(OS999B_CLOSED, id, 0, 0, "");
-  if (shutting_down_ && browsers_.empty()) CefQuitMessageLoop();
+  MaybeQuit();
+}
+
+void EmbedHost::MaybeQuit() {
+  if (shutting_down_ && browsers_.empty() && !embed_diag::Busy()) CefQuitMessageLoop();
 }
 
 void EmbedHost::Shutdown() {
   if (shutting_down_) return;
   shutting_down_ = true;
-  if (browsers_.empty()) {
+  embed_diag::Stop();  // verdict first: Chromium's teardown watchdog can end the process
+  if (browsers_.empty() && !embed_diag::Busy()) {
     CefQuitMessageLoop();
     return;
   }
@@ -123,6 +130,7 @@ void EmbedHost::Tick() {
   if (shutting_down_) return;
   double fps, copy;
   int w, h;
+  embed_diag::Tick();
   if (BrowserStats::Get().Sample(&fps, &copy, &w, &h)) {
     char line[160];
     snprintf(line, sizeof line, "GPU %.0f fps  %dx%d px  copy %.2f ms", fps, w, h, copy);

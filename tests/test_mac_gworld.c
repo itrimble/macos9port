@@ -165,8 +165,30 @@ static void transfers(void){
     { uint32_t pm=pixmap_of(&r,g32);rect(&r,RECT,0,0,8,8);rect(&r,RECT2,0,0,8,8);CHECK(copy(&r,pm,sbits,1)==-1 && mac_cpu_halted(r.cpu) && strstr(mac_cpu_error(r.cpu),"srcCopy")); }
     mac_cpu_destroy(r.cpu);
 }
+/* Rectangle calls on a 1-, 2- and 4-bit world pack and unpack the pixels they touch. */
+static void low_depth_drawing(void){
+    MacRuntime r=mk();uint32_t sp=screen_port(&r),g;(void)sp;
+    unsigned dark=0,light=0,lo=~0u,hi=0;
+    for(unsigned i=0;i<256;i++){uint32_t c=r.palette[i];unsigned v=((c>>16)&255)+((c>>8)&255)+(c&255);if(v<lo){lo=v;dark=i;}if(v>=hi){hi=v;light=i;}}
+    for(unsigned k=0;k<3;k++){
+        static const int depth[3]={1,2,4};
+        CHECK(new_gw(&r,depth[k],0,0,8,16,0,&g)==0);
+        wr(&r,SP,4,0);wr(&r,SP+4,4,g);CHECK(sel(&r,0x00080006)==1);
+        uint32_t pm=pixmap_of(&r,g),b=rd(&r,pm,4);unsigned row=rd(&r,pm+4,2)&0x3fff;
+        memset(ram(&r)+b,0xff,row*8);
+        wr(&r,g+80,4,dark);wr(&r,g+84,4,light);                                 /* foreground and background, as device indices */
+        rect(&r,RECT,2,3,5,11);
+        mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,RECT);CHECK(mac_color_raster_service(&r,0xa8a3)==1);        /* EraseRect: the background (white, entry 0) */
+        unsigned d=depth[k];
+        #define PIX(x,y) ((ram(&r)[b+(y)*row+((x)*d)/8]>>(8-d-(((x)*d)%8)))&((1u<<d)-1))
+        CHECK(PIX(3,2)==0 && PIX(10,4)==0 && PIX(2,2)==((1u<<d)-1) && PIX(11,2)==((1u<<d)-1) && PIX(5,5)==((1u<<d)-1) && PIX(5,1)==((1u<<d)-1));   /* inside cleared, around untouched */
+        mac_cpu_set(r.cpu,MAC_A7,SP);wr(&r,SP,4,RECT);CHECK(mac_color_raster_service(&r,0xa8a2)==1);        /* PaintRect: the foreground (black, the last entry) */
+        CHECK(PIX(3,2)==(d==1?1u:(1u<<d)-1) && PIX(10,4)==(d==1?1u:(1u<<d)-1) && PIX(2,2)==((1u<<d)-1));
+    }
+    CHECK(!mac_cpu_halted(r.cpu));mac_cpu_destroy(r.cpu);
+}
 int main(void){
-    creation();ports_and_dispose();transfers();
+    creation();low_depth_drawing();ports_and_dispose();transfers();
     if(!fails)puts("Offscreen graphics world checks passed");
     return fails?1:0;
 }

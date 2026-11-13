@@ -102,7 +102,7 @@ int quake_launch_resolve_retail(QuakeLaunch *q, const char *exe_dir, const char 
 
 int quake_launch_argv(const QuakeLaunch *q, char *argv[], int max) {
     static char base_arg[1100], cd_arg[1100], home_arg[1100];
-    if (!q || !argv || max < (q->arena_demo ? 23 : q->homepath[0] ? 14 : 11)) return 0;
+    if (!q || !argv || max < (q->arena_demo ? 23 : q->homepath[0] ? 19 : 11)) return 0;
     /* The engine joins argv into its own command language. Preserve spaces
      * and reject characters that could terminate a quoted path. */
     const char *paths[] = {q->basepath, q->datapath, q->homepath};
@@ -117,11 +117,23 @@ int quake_launch_argv(const QuakeLaunch *q, char *argv[], int max) {
     argv[n++] = "+set"; argv[n++] = "fs_cdpath"; argv[n++] = cd_arg;
     if (strcmp(q->game, "baseq3")) { argv[n++] = "+set"; argv[n++] = "fs_game"; argv[n++] = (char *)q->game; }
     if (!q->arena_demo && q->homepath[0]) { argv[n++] = "+set"; argv[n++] = "fs_homepath"; argv[n++] = home_arg; }
+    /* Measured with the retail set (12 Nov 2026): with the default sv_pure 1 a local +map q3dm17 falls back to the
+     * CD key screen instead of entering the map; sv_pure 0 (as the demo profile already uses) plays it. */
+    if (!q->arena_demo && q->homepath[0]) { argv[n++] = "+set"; argv[n++] = "sv_pure"; argv[n++] = "0"; }
+    /* Local play only, like the demo profile: no UDP listener unless multiplayer is added deliberately. */
+    if (!q->arena_demo && q->homepath[0]) { argv[n++] = "+set"; argv[n++] = "net_noudp"; argv[n++] = "1"; }
     if (q->arena_demo) {
         argv[n++] = "+set"; argv[n++] = "os999_demoProfile"; argv[n++] = "arena-1.11";
         argv[n++] = "+set"; argv[n++] = "fs_homepath"; argv[n++] = home_arg;
         argv[n++] = "+set"; argv[n++] = "sv_pure"; argv[n++] = "0";
         argv[n++] = "+set"; argv[n++] = "net_noudp"; argv[n++] = "1";
+    }
+    /* Test hook: OS999_QUAKE3_MAP=q3dm17 starts the full game straight in that map (letters, digits, underscore). */
+    static char map_arg[40];
+    const char *map = getenv("OS999_QUAKE3_MAP");
+    if (map && !q->arena_demo && q->homepath[0] && strlen(map) < 32 && map[strspn(map, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")] == 0 && map[0]) {
+        snprintf(map_arg, sizeof map_arg, "%s", map);
+        argv[n++] = "+map"; argv[n++] = map_arg;
     }
     argv[n] = NULL;
     return n;

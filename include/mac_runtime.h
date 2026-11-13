@@ -253,6 +253,7 @@ void mac_scrap_destroy(MacRuntime *rt); /* mac_scrap.c */
 void mac_rgn_record_observe(MacRuntime *rt, uint16_t opcode); /* called before every trap: records outline calls while a region is open */
 void mac_rgn_record_destroy(MacRuntime *rt);
 int mac_menuselect_service(MacRuntime *rt, uint16_t opcode);
+int mac_print_service(MacRuntime *rt, uint16_t opcode); /* Printing Manager with no printer (mac_print.c) */
 int mac_script_service(MacRuntime *rt, uint16_t opcode); /* Script Manager, Roman only (mac_script.c) */
 void mac_menuselect_destroy(MacRuntime *rt);
 int mac_region_box_algebra(unsigned op, const int a[4], const int b[4], int out[4]); /* rectangle algebra, mac_regions.c */

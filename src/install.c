@@ -260,9 +260,12 @@ static int garden_network_allowed(const char *url, void *context) {
     return net_https_url(url) && (garden_page_ok(url) || download_host_ok(url));
 }
 
+static const atomic_bool *g_fetch_cancel;   /* set by the Install Classic Apps worker; one install at a time */
+void install_fetch_set_cancel(const atomic_bool *cancel) { g_fetch_cancel = cancel; }
+
 static int secure_fetch(const char *url, const char *dest, size_t limit, long timeout, const char *referer) {
     NetPolicy policy = {.max_bytes = limit, .timeout_ms = timeout,
-                        .allow_url = garden_network_allowed, .referer = referer};
+                        .allow_url = garden_network_allowed, .referer = referer, .cancel = g_fetch_cancel};
     if (net_init() != 0) return -1;
     return net_download(url, dest, &policy).status == NET_OK ? 0 : -1;
 }
@@ -284,6 +287,14 @@ static int fetch_archive(const char *page, const char *file_url, const char *des
     }
     return -1;
 }
+
+int install_fetch_page(const char *url, const char *dest, long timeout_ms) {
+    return secure_fetch(url, dest, 2000000, timeout_ms, NULL);
+}
+int install_fetch_archive(const char *page, const char *file_url, const char *dest) {
+    return fetch_archive(page, file_url, dest);
+}
+int install_download_url_ok(const char *url) { return url && download_host_ok(url); }
 
 /* Expand an archive into dest_rel (an existing, empty volume folder) through
  * the storage stack: content-based detection, forks and Finder info kept in

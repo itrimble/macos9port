@@ -180,6 +180,7 @@ static void runtime_policy_and_guard_checks(void) {
 
     unsetenv("OS999_GUEST_HEAP_MB");
     unsetenv("OS999_GUEST_GUARD");
+    setenv("OS999_GUEST_ADDRESSING", "24", 1);   /* these checks pin the legacy 16 MB layout (MemTop at the partition top); the default machine is 256 MB/32-bit */
     mac_runtime_set_memory_policy(2, 0);
     MacRuntime rt;
     CHECK(mac_runtime_init(&rt, &f, err, sizeof err) == 0);

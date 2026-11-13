@@ -84,7 +84,7 @@ int main(void) {
     CHECK(call(&rt, 0xa011, 1, 0, 0, 0, 0) == 1 && result(&rt) == 0 && raw(&rt, PB + 28, 4) == size);
     CHECK(call(&rt, 0xa011, 2, 0, 0, 0, 0) == 0);
     /* A buffer that does not fit guest RAM halts, writing nothing. */
-    CHECK(call(&rt, 0xa002, 1, 0xfffff0, 64, 1, 0) == -1 && mac_cpu_halted(rt.cpu));
+    CHECK(call(&rt, 0xa002, 1, 0xfffffff0u, 64, 1, 0) == -1 && mac_cpu_halted(rt.cpu));
     mac_runtime_destroy(&rt);
     if (!fails) puts("Application resource fork checks passed");
     return fails ? 1 : 0;

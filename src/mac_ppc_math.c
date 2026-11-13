@@ -7,7 +7,7 @@
 
 /* MathLib: the C math functions the host's libm computes on IEEE doubles. Arguments arrive in f1, f2 and results
  * return in f1 (integers in r3). Results follow the host libm, which may differ from the original library in the last
- * bit; of the decimal-record conversions only num2dec exists (dec2num and str2dec are not implemented). */
+ * bit; of the decimal-record conversions num2dec and dec2num exist (str2dec is not implemented). */
 #define UNARY(fn) static int m_##fn(PpcCpu *c, void *u) { (void)u; ppc_fpr_set(c, 1, fn(ppc_fpr_get(c, 1))); return 0; }
 #define BINARY(fn) static int m_##fn(PpcCpu *c, void *u) { (void)u; ppc_fpr_set(c, 1, fn(ppc_fpr_get(c, 1), ppc_fpr_get(c, 2))); return 0; }
 UNARY(ceil) UNARY(floor) UNARY(fabs) UNARY(sin) UNARY(cos) UNARY(tan) UNARY(asin) UNARY(acos) UNARY(atan) UNARY(exp2)
@@ -82,13 +82,32 @@ static int m_num2dec(PpcCpu *c, void *u) {
     return 0;
 }
 
+/* dec2num(const decimal *d): double, the inverse of num2dec: sig * 10^exp with the sign; "I" is infinity and "N" a NaN. Correctly rounded by the host's strtod. */
+static int m_dec2num(PpcCpu *c, void *u) {
+    (void)u;
+    const uint8_t *d = ppc_mem_span(c, c->gpr[3], 36);
+    if (!d) { ppc_cpu_halt(c, "dec2num was given a pointer outside guest RAM."); return 0; }
+    unsigned n = d[4] > 31 ? 31 : d[4];
+    char buf[80]; double v;
+    if (n && (d[5] == 'I' || d[5] == 'i')) v = INFINITY;
+    else if (n && (d[5] == 'N' || d[5] == 'n')) v = NAN;
+    else {
+        memcpy(buf, d + 5, n);
+        for (unsigned i = 0; i < n; i++) if (buf[i] < '0' || buf[i] > '9') buf[i] = '0';
+        snprintf(buf + n, sizeof buf - n, "e%d", (int)(int16_t)(d[2] << 8 | d[3]));
+        v = n ? strtod(buf, NULL) : 0.0;
+    }
+    ppc_fpr_set(c, 1, d[0] ? -v : v);
+    return 0;
+}
+
 #define M(name, fn) {"MathLib", name, fn, NULL}
 static const MacCfmHostImport imports[] = {
     M("ceil", m_ceil), M("floor", m_floor), M("fabs", m_fabs), M("sin", m_sin), M("cos", m_cos), M("tan", m_tan),
     M("asin", m_asin), M("acos", m_acos), M("atan", m_atan), M("exp2", m_exp2), M("round", m_round), M("exp", m_exp),
     M("log", m_log), M("log10", m_log10), M("trunc", m_trunc), M("rint", m_rint), M("pow", m_pow), M("fmod", m_fmod),
     M("atan2", m_atan2), M("modf", m_modf), M("roundtol", m_roundtol), M("__signbitd", m_signbit),
-    M("__fpclassifyd", m_fpclassify), M("num2dec", m_num2dec),
+    M("__fpclassifyd", m_fpclassify), M("num2dec", m_num2dec), M("dec2num", m_dec2num),
 };
 
 const MacCfmHostImport *mac_ppc_math_imports(size_t *count) {

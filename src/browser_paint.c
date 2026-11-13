@@ -131,8 +131,16 @@ static void paint_status(Fb *fb, BrowserWin *b, int w) {
         b->shown_fps = (int)((f - b->last_frames) * 1000 / (now - b->last_ms ? now - b->last_ms : 1));
         b->last_frames = f;
         b->last_ms = now;
-        if (getenv("OSPI_BROWSER_LOG") && BS.fd >= 0)
+        if (getenv("OSPI_BROWSER_LOG") && BS.fd >= 0) {
+#ifdef OS999_ENABLE_TEST_HOOKS
+            int sw = 0, sh = 0; SurfaceStats st;
+            if (overlay_probe(w, &sw, &sh, &st) == 0)
+                fprintf(stderr, "os999-browser window %d presented %d fps, frames %llu, surface %dx%d colors=%d mean=%d range=%d..%d\n",
+                        w, b->shown_fps, (unsigned long long)f, sw, sh, st.distinct, st.mean, st.min, st.max);
+            else
+#endif
             fprintf(stderr, "os999-browser window %d presented %d fps\n", w, b->shown_fps);
+        }
     }
     int sy = b->y + b->h - BW_STATUS - 1;
     fb_fill(fb, b->x + 1, sy, b->w - 2, BW_STATUS, 0xFFDDDDDDu);

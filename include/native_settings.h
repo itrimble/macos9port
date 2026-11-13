@@ -5,7 +5,7 @@
 #include <stdlib.h>
 
 /* ram: saved machine RAM in MiB ("" = unset); addr: 0 unset, 24 or 32.
- * Both come from the store keys memory/guest_machine_mb and memory/addr_bits (no UI yet); unset keeps the 16 MB, 24-bit machine and are clamped by guest_memory.h. */
+ * Both come from the store keys memory/guest_machine_mb and memory/addr_bits (no UI yet); unset means the built-in default (256 MB, 32-bit); values are clamped by guest_memory.h. */
 typedef struct { char heap[16]; int guard, isolated; char ram[16]; int addr; } NativeSettings;
 /* Parse before fork using the same typed, whole-document parser as the UI.
  * Invalid or missing documents retain conservative defaults. */

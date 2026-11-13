@@ -29,7 +29,8 @@ static int override_fits(const AppClassification *c, const LaunchOverride *o) {
     return 0;
 }
 
-void launch_policy_decide(const AppClassification *c, const LaunchOverride *ov, const LaunchSession *session, LaunchPolicy *p) {
+void launch_policy_decide_from(const AppClassification *c, const LaunchOverride *ov, const char *source, const LaunchSession *session, LaunchPolicy *p) {
+    int used_override = 0;
     static const LaunchSession none;
     memset(p, 0, sizeof *p);
     if (!session) session = &none;
@@ -38,9 +39,10 @@ void launch_policy_decide(const AppClassification *c, const LaunchOverride *ov, 
     char note[APP_TEXT] = "";
     if (ov && override_fits(c, ov)) {
         p->profile = ov->profile;
-        p->source = "override";
+        p->source = source;
+        used_override = 1;
     } else if (ov) {
-        snprintf(note, sizeof note, "; saved override (%s) ignored: it does not fit this executable", app_profile_name(ov->profile));
+        snprintf(note, sizeof note, "; %s entry (%s) ignored: it does not fit this executable", source, app_profile_name(ov->profile));
     }
     /* A listed missing requirement (CarbonLib services, a fragment the runtime cannot find) refuses the launch even when
      * the host has the CPU path: "runnable" says the runtime exists, "missing" says what this program still needs. */
@@ -80,10 +82,10 @@ void launch_policy_decide(const AppClassification *c, const LaunchOverride *ov, 
             why = "profile C needs 32-bit addressing";
         }
     }
-    if (ov && !strcmp(p->source, "override")) {   /* explicit choices win over the profile's own defaults */
+    if (used_override) {   /* explicit choices win over the profile's own defaults */
         if (ov->addr == 24) { addr = 24; ram = 0; }
         else if (ov->addr == 32) { addr = 32; ram = ov->ram_mb ? ov->ram_mb : (ram ? ram : 256); }
-        why = "saved per-application override";
+        why = !strcmp(source, "known-list") ? "built-in compatibility list" : "saved per-application override";
     }
     p->addr = addr;
     p->ram_mb = ram;
@@ -101,6 +103,10 @@ void launch_policy_describe(const LaunchPolicy *p, const AppClassification *c, c
     snprintf(out, n, "launch policy: profile=%s source=%s confidence=%s identity=%016llx %s args=[%s] reason=%s",
              app_profile_name(p->profile), p->source, app_confidence_name(c->confidence), (unsigned long long)c->identity,
              p->refuse ? "REFUSED" : "launch", args, p->reason);
+}
+
+void launch_policy_decide(const AppClassification *c, const LaunchOverride *ov, const LaunchSession *session, LaunchPolicy *p) {
+    launch_policy_decide_from(c, ov, "override", session, p);
 }
 
 uint64_t launch_slot_key(const char *path) {

@@ -289,7 +289,7 @@ static void refusing_items(void) {
         else if (k == 4) { wr(&g.rt, SP, 4, str + 0); wr(&g.rt, SP + 4, 4, forged); mac_cpu_set(g.rt.cpu, MAC_A7, 0xffffff0); r = mac_dlgmgr_service(&g.rt, 0xa98f); }
         else if (k == 5) { wr(&g.rt, SP, 4, 0x31000); wr(&g.rt, SP + 4, 4, 0x31000); wr(&g.rt, SP + 8, 4, 0x31000); wr(&g.rt, SP + 12, 2, 99); wr(&g.rt, SP + 14, 4, d); r = trap(&g, 0xa98d, SP); }   /* item 99 */
         else if (k == 6) { wr(&g.rt, SP, 4, 0x31000); wr(&g.rt, SP + 4, 4, 0x31000); wr(&g.rt, SP + 8, 4, 0x31000); wr(&g.rt, SP + 12, 2, 1); wr(&g.rt, SP + 14, 4, d + 2); r = trap(&g, 0xa98d, SP); }   /* a forged DialogPtr */
-        else if (k == 7) { wr(&g.rt, SP, 4, 0x1000000); wr(&g.rt, SP + 4, 4, 0x31000); wr(&g.rt, SP + 8, 4, 0x31000); wr(&g.rt, SP + 12, 2, 1); wr(&g.rt, SP + 14, 4, d); r = trap(&g, 0xa98d, SP); }  /* box pointer off RAM */
+        else if (k == 7) { wr(&g.rt, SP, 4, 0x20000000); wr(&g.rt, SP + 4, 4, 0x31000); wr(&g.rt, SP + 8, 4, 0x31000); wr(&g.rt, SP + 12, 2, 1); wr(&g.rt, SP + 14, 4, d); r = trap(&g, 0xa98d, SP); }  /* box pointer off RAM */
         else { mac_cpu_ram(g.rt.cpu)[str] = 255; wr(&g.rt, SP, 4, 0xfffffff0u - 1 + 1); wr(&g.rt, SP + 4, 4, 0x31000); r = trap(&g, 0xa98f, SP); }
         if (!(r == -1 && mac_cpu_halted(g.rt.cpu))) fprintf(stderr, "item refusal %u rc=%d\n", k, r);
         CHECK(r == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
@@ -378,14 +378,14 @@ static void modal_loop(void) {
     wr(&g.rt, SP + 200, 4, d); CHECK(trap(&g, 0xa983, SP + 200) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
     /* a filter whose dialog disappears under it, a filter outside RAM, an odd filter and the null event (no input) are handled */
     CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); CHECK(modal(&g, 0x20001, hit) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
-    CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); CHECK(modal(&g, 0xfffffe, hit) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
+    CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); CHECK(modal(&g, 0x20000000, hit) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
     CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); CHECK(modal(&g, 0x20000, hit) == 1 && raw(&g.rt, raw(&g.rt, mac_cpu_get(g.rt.cpu, MAC_A7) + 8, 4), 2) == 0); mac_runtime_destroy(&g.rt);   /* no events: a null event (what 0) */
     /* filters: the standard one is accepted, any other halts; ModalDialog with no dialog, a bad itemHit pointer and a changed stack halt */
     CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc);
     CHECK(modal(&g, mac_native_stub(0xbf1), hit) == 1 && !mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
     CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); CHECK(modal(&g, 0x12345, hit) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
     CHECK(rig_open(&g) == 0); CHECK(modal(&g, 0, hit) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
-    CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); CHECK(modal(&g, 0, 0x1000000) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
+    CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); CHECK(modal(&g, 0, 0x20000000) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
     CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc); modal(&g, 0, hit); wr(&g.rt, SP - 2, 4, hit); CHECK(trap(&g, 0xa991, SP - 4) == -1 && mac_cpu_halted(g.rt.cpu)); mac_runtime_destroy(&g.rt);
     /* The DialogPtr is also a GrafPort: portRect, visRgn (+24, the dialog's rectangle in local coordinates) and clipRgn (+28, wide open) are real regions, so a program that
      * intersects its drawing with thePort^.visRgn^^.rgnBBox (Glider PRO's Load House) draws; they are freed with the dialog. */

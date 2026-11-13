@@ -91,6 +91,8 @@ set(OS999B_SRCS
   src/decode_diag_host.mm
   src/embed/embed_browser.cc
   src/embed/embed_browser.h
+  src/embed/embed_diag.h
+  src/embed/embed_diag.mm
   src/embed/embed_frames.h
   src/embed/embed_frames_mac.mm
   src/embed/embed_host.cc

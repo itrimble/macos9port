@@ -37,6 +37,15 @@ static void snapshots(void) {
     CHECK(mac_dialog_service(&rt, 0xafff) == 0);
     mac_cpu_destroy(rt.cpu);
 }
+/* A NIL parameter leaves that parameter as it was (the public text covers only empty strings; see mac_dialog.c). */
+static void nil_leaves_unchanged(void) {
+    MacRuntime rt = fresh();
+    memset(rt.dialog_params, 0x35, sizeof rt.dialog_params);
+    mac_cpu_write(rt.cpu, SP, 4, 0); mac_cpu_write(rt.cpu, SP + 4, 4, 0); mac_cpu_write(rt.cpu, SP + 8, 4, 0); mac_cpu_write(rt.cpu, SP + 12, 4, 0);
+    CHECK(mac_dialog_service(&rt, 0xa98b) == 1 && mac_cpu_get(rt.cpu, MAC_A7) == SP + 16);
+    for (unsigned i = 0; i < sizeof rt.dialog_params; i++) CHECK(((unsigned char *)rt.dialog_params)[i] == 0x35);
+    mac_cpu_destroy(rt.cpu);
+}
 static void bad_pointer(uint32_t p) {
     MacRuntime rt = fresh();
     memset(rt.dialog_params, 0x35, sizeof rt.dialog_params);
@@ -60,7 +69,7 @@ static void alerts_are_not_ours(void) {
     }
 }
 int main(void) {
-    snapshots(); bad_pointer(0); bad_pointer(RAM - 1); bad_pointer(0xffffffff);
+    snapshots(); nil_leaves_unchanged(); bad_pointer(RAM - 1); bad_pointer(0xffffffff);
     const uint32_t bad_sp[] = {SP + 1, RAM - 14, 0xfffffff8};
     for (unsigned i = 0; i < 3; i++) {
         MacRuntime rt = fresh(); mac_cpu_set(rt.cpu, MAC_A7, bad_sp[i]);

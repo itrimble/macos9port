@@ -25,7 +25,11 @@ static void clear_env(void) {
 
 /* ---- configuration: defaults, precedence, clamping ---- */
 static void config_rules(void) {
-    GuestMemoryConfig c = guest_memory_resolve(0, 0, NULL, NULL);       /* nothing requested: today's machine */
+    GuestMemoryConfig c = guest_memory_resolve(0, 0, NULL, NULL);       /* nothing requested: the default machine (12 Nov 2026) */
+    CHECK(c.ram_mb == 256 && c.addr32 == 1 && !c.clamped);
+    c = guest_memory_resolve(16, 0, NULL, NULL);                        /* an explicit 16 MB with no mode is the legacy machine */
+    CHECK(c.ram_mb == 16 && c.addr32 == 0);
+    c = guest_memory_resolve(0, 24, NULL, NULL);                        /* a saved 24-bit mode wins over the default */
     CHECK(c.ram_mb == 16 && c.addr32 == 0 && !c.clamped);
     c = guest_memory_resolve(0, 0, NULL, "32");                         /* 32-bit alone asks for 256 MB */
     CHECK(c.ram_mb == 256 && c.addr32 == 1);
@@ -43,14 +47,14 @@ static void config_rules(void) {
     CHECK(c.ram_mb == 1024 && c.clamped && c.addr32);
     c = guest_memory_resolve(0, 0, "banana", "32");                     /* invalid size: as unset, flagged */
     CHECK(c.ram_mb == 256 && c.clamped);
-    c = guest_memory_resolve(-5, 0, NULL, NULL);                        /* negative saved value: ignored */
-    CHECK(c.ram_mb == 16 && c.addr32 == 0);
+    c = guest_memory_resolve(-5, 0, NULL, NULL);                        /* negative saved value: ignored, so the default */
+    CHECK(c.ram_mb == 256 && c.addr32 == 1);
     c = guest_memory_resolve(0, 0, "256", "24");                        /* 24 bits cannot reach more than 16 MB */
     CHECK(c.addr32 == 0 && c.ram_mb == 16);
     c = guest_memory_resolve(0, 24, "512", NULL);
     CHECK(c.addr32 == 0 && c.ram_mb == 16);
     c = guest_memory_resolve(0, 0, NULL, "16");                         /* unknown mode: default, flagged */
-    CHECK(c.addr32 == 0 && c.clamped);
+    CHECK(c.addr32 == 1 && c.ram_mb == 256 && c.clamped);
 }
 
 /* ---- CPU: reservation, address masks, boundaries ---- */
@@ -250,7 +254,12 @@ static void default_machine(void) {
     uint8_t bytes[TOTAL]; MacResourceFork f; char err[240];
     clear_env();
     CHECK(open_fork(bytes, &f));
-    MacRuntime d;                                                          /* nothing requested: the unchanged 16 MB machine */
+    MacRuntime d;                                                          /* nothing requested: 256 MB, 32-bit */
+    CHECK(mac_runtime_init(&d, &f, err, sizeof err) == 0);
+    CHECK(mac_cpu_ram_size(d.cpu) == RAM256 && d.addr32 == 1 && d.a5 == 0x800000);
+    CHECK(mac_cpu_read(d.cpu, 0x108, 4) == RAM256 && mac_cpu_read(d.cpu, 0x130, 4) == 0x700000);
+    mac_runtime_destroy(&d);
+    setenv("OS999_GUEST_ADDRESSING", "24", 1);                             /* the legacy machine stays available */
     CHECK(mac_runtime_init(&d, &f, err, sizeof err) == 0);
     CHECK(mac_cpu_ram_size(d.cpu) == MAC_RUNTIME_RAM && d.addr32 == 0 && d.a5 == 0x800000);
     CHECK(mac_cpu_read(d.cpu, 0x108, 4) == 0x800000 && mac_cpu_read(d.cpu, 0x130, 4) == 0x700000);

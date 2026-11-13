@@ -115,5 +115,10 @@ int main() {
   assert(Enabled());
   setenv("OS999_DECODE_DIAG", "yes", 1);
   assert(!Enabled());
+  assert(ParseDelaySeconds(nullptr, 30) == 30 && ParseDelaySeconds("", 30) == 30);
+  assert(ParseDelaySeconds("45", 30) == 45 && ParseDelaySeconds("1", 30) == 1);
+  assert(ParseDelaySeconds("3600", 30) == 3600 && ParseDelaySeconds("3601", 30) == 30);
+  assert(ParseDelaySeconds("0", 30) == 30 && ParseDelaySeconds("-5", 30) == 30);
+  assert(ParseDelaySeconds("12s", 30) == 30 && ParseDelaySeconds("abc", 30) == 30);
   puts("decode diagnostics: ok");
 }

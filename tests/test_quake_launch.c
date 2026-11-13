@@ -139,18 +139,28 @@ int main(int argc, char **args) {
         const char *rd = getenv("OS999_TEST_RETAIL_DATA"); /* optional: a folder holding the real baseq3, kept outside Git */
         if (rd) {
             setenv("OS999_QUAKE3_DATA", rd, 1);
+            int before = failures;
             CHECK(quake_launch_resolve_retail(&q, exe, h2) == 0 && !q.arena_demo && !strcmp(q.game, "baseq3"));
             CHECK(strstr(q.homepath, "Quake3-Full-Home") != NULL);
             unsetenv("OS999_QUAKE3_DATA");
-            printf("retail data at %s: accepted, game=%s\n", rd, q.game);
+            if (failures == before) printf("retail data at %s: accepted, game=%s\n", rd, q.game);
+            else printf("retail data at %s: REJECTED by the real-data check\n", rd);
         }
         memset(&q, 0, sizeof q); strcpy(q.game, "baseq3");
         strcpy(q.basepath, "/tmp/engine"); strcpy(q.datapath, "/tmp/full"); strcpy(q.homepath, "/tmp/full-home");
-        char *ra[16];
-        CHECK(quake_launch_argv(&q, ra, 13) == 0);
-        CHECK(quake_launch_argv(&q, ra, 16) == 10 && ra[10] == NULL);
+        char *ra[20];
+        CHECK(quake_launch_argv(&q, ra, 16) == 0 /* too small */);
+        CHECK(quake_launch_argv(&q, ra, 19) == 16 && ra[16] == NULL);
         CHECK(!strcmp(ra[8], "fs_homepath") && !strcmp(ra[9], "\"/tmp/full-home\""));
-        for (int i = 1; i < 10; i++) CHECK(strcmp(ra[i], "fs_game") && strcmp(ra[i], "os999_demoProfile"));
+        CHECK(!strcmp(ra[11], "sv_pure") && !strcmp(ra[12], "0"));   /* retail local play needs sv_pure 0 */
+        CHECK(!strcmp(ra[14], "net_noudp") && !strcmp(ra[15], "1")); /* local only, like the demo */
+        setenv("OS999_QUAKE3_MAP", "q3dm17", 1);                     /* test hook: start in a map */
+        CHECK(quake_launch_argv(&q, ra, 19) == 18 && !strcmp(ra[16], "+map") && !strcmp(ra[17], "q3dm17") && !ra[18]);
+        setenv("OS999_QUAKE3_MAP", "q3dm17; quit", 1);              /* anything but a plain map name is ignored */
+        CHECK(quake_launch_argv(&q, ra, 19) == 16 && ra[16] == NULL);
+        unsetenv("OS999_QUAKE3_MAP");
+        CHECK(quake_launch_argv(&q, ra, 19) == 16);
+        for (int i = 1; i < 16; i++) CHECK(strcmp(ra[i], "fs_game") && strcmp(ra[i], "os999_demoProfile"));
     }
 #endif
     unsetenv("OS999_QUAKE3_DATA");

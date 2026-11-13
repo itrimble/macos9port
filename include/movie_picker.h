@@ -2,6 +2,7 @@
 #define MOVIE_PICKER_H
 #include "draw.h"
 #include "ospi.h"
+#include "classic_apps.h"
 
 /* The empty Movie Player window: lists movies found on the volume and has a
  * Choose Movie... button that opens the shared in-window file browser (file_dialog.h)

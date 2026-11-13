@@ -28,6 +28,9 @@ struct PlayerReport {
 // Players with no kVideoDecoderName (audio-only, or never decoded) are skipped.
 std::vector<PlayerReport> ParseMediaInternals(const std::string& text);
 
+// Seconds from a string such as OS999_DECODE_DIAG_DELAY: whole number 1..3600, else `fallback`.
+int ParseDelaySeconds(const char* text, int fallback);
+
 // True for decoder names that Chromium backs with an OS/GPU decoder.
 bool IsHardwareDecoderName(const std::string& name);
 

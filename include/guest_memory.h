@@ -5,11 +5,13 @@
  * so the desktop, the launcher and the runtime agree. RAM capacity, addressing mode and the application partition
  * (OS999_GUEST_HEAP_MB) are three separate settings.
  *
- * Default (nothing requested): 16 MB, 24-bit addressing, exactly the machine every launch got before. 256 MB with
- * 32-bit addressing is OPT-IN (--ram-mb 256 --addressing 32, or the same via OS999_GUEST_RAM_MB / OS999_GUEST_ADDRESSING
- * or the saved Memory-panel keys), because no 32-bit run of a real guest program has been verified yet. Rules:
+ * Default (nothing requested, nothing saved): 256 MB, 32-bit addressing (Ian, 12 Nov 2026). The 16 MB, 24-bit machine
+ * stays available (--ram-mb 16 --addressing 24, OS999_GUEST_RAM_MB / OS999_GUEST_ADDRESSING, or the saved Memory-panel
+ * keys memory/guest_machine_mb and memory/addr_bits), and the launch policy asks for it per program that needs it. Rules:
+ *  - nothing requested at all means 256 MB, 32-bit;
  *  - addressing 32 with no RAM size asks for GUEST_RAM_TARGET_MB (256);
  *  - a RAM size above 16 MB with no addressing mode implies 32-bit (24 bits cannot reach it);
+ *  - a RAM size of 16 MB or less with no addressing mode is the 24-bit machine;
  *  - addressing 24 can only reach 16 MB, so the machine is 16 MB whatever was asked.
  * Precedence: environment, then saved policy. Invalid values are clamped, never rejected. */
 
@@ -17,7 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GUEST_RAM_DEFAULT_MB 16u  /* default machine: unchanged 16 MB, 24-bit */
+#define GUEST_RAM_DEFAULT_MB 256u /* default machine: 256 MB, 32-bit */
 #define GUEST_RAM_TARGET_MB 256u  /* what "32-bit with no size" gets */
 #define GUEST_RAM_MIN_MB 16u
 #define GUEST_RAM_MAX_MB 1024u   /* host-side ceiling; the 32-bit bus itself could address 4 GB */
@@ -42,7 +44,7 @@ static inline unsigned guest_memory_parse_mb(const char *text) {
  * environment strings (NULL when unset). */
 static inline GuestMemoryConfig guest_memory_resolve(int policy_ram_mb, int policy_addr,
                                                      const char *env_ram, const char *env_addr) {
-    GuestMemoryConfig c = {GUEST_RAM_DEFAULT_MB, 0, 0};
+    GuestMemoryConfig c = {GUEST_RAM_DEFAULT_MB, 1, 0};
     int env_set = env_ram && env_ram[0];
     unsigned want = env_set ? guest_memory_parse_mb(env_ram)
                             : (policy_ram_mb > 0 ? (unsigned)policy_ram_mb : 0);
@@ -56,7 +58,7 @@ static inline GuestMemoryConfig guest_memory_resolve(int policy_ram_mb, int poli
         else if (!strcmp(env_addr, "32")) mode = 32;
         else c.clamped = 1;
     }
-    if (mode == 0) mode = want > GUEST_ADDR24_MB ? 32 : 24;
+    if (mode == 0) mode = want == 0 || want > GUEST_ADDR24_MB ? 32 : 24;
     c.addr32 = mode == 32;
     c.ram_mb = !c.addr32 ? GUEST_ADDR24_MB : want ? want : GUEST_RAM_TARGET_MB;
     return c;

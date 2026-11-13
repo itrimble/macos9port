@@ -171,6 +171,16 @@ static int toolbox_trap(MacRuntime *rt, uint16_t opcode) {
         for (int i = 0; i < 7; i++) if (mac_cpu_write(cpu, a0 + (uint32_t)i * 2, 2, (uint16_t)fields[i])) return -1;
         return 1;
     }
+    case 0xa9c7: { /* DateToSeconds(DateTimeRec* A0) -> secs in D0: the record's year to second, read as the same clock SecondsToDate writes (no time zone) */
+        uint32_t a0 = mac_cpu_get(cpu, MAC_A0);
+        struct tm tm = {0};
+        int f[6];
+        for (int i = 0; i < 6; i++) { uint32_t v = mac_cpu_read(cpu, a0 + (uint32_t)i * 2, 2); f[i] = (int16_t)v; }
+        tm.tm_year = f[0] - 1900; tm.tm_mon = f[1] - 1; tm.tm_mday = f[2]; tm.tm_hour = f[3]; tm.tm_min = f[4]; tm.tm_sec = f[5];
+        int64_t secs = (int64_t)timegm(&tm) + MAC_EPOCH_DELTA;
+        mac_cpu_set(cpu, MAC_D0, (uint32_t)secs);
+        return 1;
+    }
     case 0xa9e1: { /* HandToHand: duplicate the handle in A0 */
         MacHandle *h = by_handle(rt, mac_cpu_get(cpu, MAC_A0));
         if (!h) { mac_cpu_set(cpu, MAC_A0, 0); set_err(cpu, -109); return 1; }

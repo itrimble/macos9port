@@ -437,4 +437,6 @@ The dated runs of the one real application tried so far (first run, bridge slice
 [POWERPC-RUNTIME-TRACES.md](POWERPC-RUNTIME-TRACES.md). Latest, 11 November 2026: custom menu definitions run as 68K code from PowerPC
 callers (`MenuSelect`, `PopUpMenuSelect`, `GetMenu`, `CalcMenuSize`). 12 November 2026: offscreen graphics worlds (`src/mac_gworld.c`), `CopyBits`
 between 1, 8, 16 and 32 bits per pixel, and a `GetItemCmd` fix that lets the application load its own submenus; the application reaches 2,554
-import calls and stops at `InterfaceLib::PrOpen` (the Printing Manager). Its first window is not drawn.
+import calls and stops at `InterfaceLib::PrOpen` (the Printing Manager). 12 November, later: a Printing Manager that reports "no printer" (`src/mac_print.c`), and
+the application then runs 15 million PowerPC instructions of start-up and stops at its own error alert because its `Textures` folder is not visible (the File
+Manager has no real directories). Its first window is not drawn.

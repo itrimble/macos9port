@@ -225,3 +225,18 @@ void overlay_draw_cpu(int slot, uint32_t *frame, int fw, int fh, OverlayRect con
 uint64_t overlay_frames(int slot) {
     return slot >= 0 && slot < SLOTS ? atomic_load(&g_frames[slot]) : 0;
 }
+
+int overlay_probe(int slot, int *w, int *h, SurfaceStats *out) {
+    if (slot < 0 || slot >= SLOTS || !out) return -1;
+    int rc = -1;
+    pthread_mutex_lock(&g_lock);
+    IOSurfaceRef s = g_current[slot];
+    if (s && IOSurfaceLock(s, kIOSurfaceLockReadOnly, NULL) == kIOReturnSuccess) {
+        int sw = (int)IOSurfaceGetWidth(s), sh = (int)IOSurfaceGetHeight(s);
+        rc = frame_surface_stats(IOSurfaceGetBaseAddress(s), sw, sh, IOSurfaceGetBytesPerRow(s), out);
+        if (rc == 0) { if (w) *w = sw; if (h) *h = sh; }
+        IOSurfaceUnlock(s, kIOSurfaceLockReadOnly, NULL);
+    }
+    pthread_mutex_unlock(&g_lock);
+    return rc;
+}

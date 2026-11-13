@@ -3,6 +3,7 @@
 /* Signature rows for the Window, Event, Menu, Control, Dialog and TextEdit Managers (Pascal stack-based Toolbox
  * traps). Written from memory of the public API; see include/mac_ppc.h for the grammar. */
 #define TE(name, sig, selector) {name, 0xa83d, sig "/w" selector}
+#define PR(name, sig, selector) {name, 0xa8fd, sig "/l" selector}   /* Printing Manager: the selector long is pushed after the arguments */
 
 static const MacPpcSig sigs[] = {
     {"InitFonts", 0xa8fe, "-:"}, {"GetFontName", 0xa8ff, "-:wl"}, {"GetFNum", 0xa900, "-:ll"},
@@ -58,6 +59,11 @@ static const MacPpcSig sigs[] = {
     TE("TEGetStyleScrapHandle", "l:l", "0006"), TE("TEStyleInsert", "-:llll", "0007"), TE("TEGetPoint", "l:wl", "0008"),
     TE("TEGetHeight", "l:lll", "0009"), TE("TEContinuousStyle", "b:lll", "000A"),
     TE("TEUseStyleScrap", "-:lllbl", "000B"), TE("TENumStyles", "l:lll", "000D"),
+    PR("PrOpen", "-:", "c8000000"), PR("PrClose", "-:", "d0000000"), PR("PrError", "w:", "ba000000"), PR("PrSetError", "-:w", "c0000200"),
+    PR("PrDrvrOpen", "-:", "80000000"), PR("PrDrvrClose", "-:", "88000000"), PR("PrintDefault", "-:l", "20040480"),
+    PR("PrValidate", "b:l", "52040498"), PR("PrStlDialog", "b:l", "2a040484"), PR("PrJobDialog", "b:l", "32040488"),
+    PR("PrJobMerge", "-:ll", "5804089c"), PR("PrOpenDoc", "l:lll", "04000c00"), PR("PrCloseDoc", "-:l", "08000484"),
+    PR("PrOpenPage", "-:ll", "10000808"), PR("PrClosePage", "-:l", "1800040c"), PR("PrPicFile", "-:lllll", "60051480"),
 };
 
 const MacPpcSig *mac_ppc_sigs_toolbox(size_t *count) {

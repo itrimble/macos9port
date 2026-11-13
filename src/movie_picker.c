@@ -1,4 +1,5 @@
 #include "movie_picker.h"
+#include "classic_apps.h"
 #include "file_dialog.h"
 #include "movie_window.h"
 #include "session_int.h"
@@ -148,6 +149,7 @@ static void browse_finish(Session *s) {
 }
 
 int movie_picker_key(Session *s, Window *w, int key, int mods) {
+    if (classic_apps_panel_key(s, w, key, mods)) return 1;   /* the Install Classic Apps file browser shares this hook */
     if (!g_browse || !s || !w || w->kind != WIN_MOVIE || w->movie) return 0;
     int used = fd_key(&g_fd, key, mods);
     if (g_fd.state != FD_RUNNING) browse_finish(s);

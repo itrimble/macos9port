@@ -11,6 +11,8 @@ void dialog_info(Session *s, const char *title, const char *body) {
     snprintf(s->dialog_title, sizeof s->dialog_title, "%s", title);
     snprintf(s->dialog_body, sizeof s->dialog_body, "%s", body);
 }
+/* The Memory mode panel is covered by test_app_mode; here an application's Get Info keeps its plain panel. */
+int app_mode_open(Session *s, const char *rel, const char *info) { (void)s; (void)rel; (void)info; return -1; }
 static void info(Session *s) { s->dialog = 0; assert(desktop_command(s, 420)); }
 int main(void) {
     Session *s = calloc(1, sizeof *s); assert(s);

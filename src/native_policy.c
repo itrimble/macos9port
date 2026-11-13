@@ -1,4 +1,6 @@
 #include "native_policy.h"
+#include "guest_memory.h"
+#include "compat_known.h"
 
 #include <fcntl.h>
 #include <limits.h>
@@ -53,11 +55,13 @@ static int data_fork_is_executable(const char *root, const char *path) {
     return !memcmp(m, "Joy!peff", 8) || w == 0xfeedfaceu || w == 0xfeedfacfu || w == 0xcefaedfeu || w == 0xcffaedfeu || w == 0xcafebabeu;
 }
 
-int native_policy_prepare(const char *root, const char *full, const NativeSettings *settings, LaunchPolicy *policy,
-                          char *logline, size_t logline_n, char *err, size_t err_n) {
-    char canon[PATH_MAX], data_path[PATH_MAX], sidecar[PATH_MAX];
-    if (logline_n) logline[0] = 0;
-    if (!root || !full || !realpath(root, canon) || strlen(full) >= sizeof data_path - 8) return 1;
+/* 0: classified (c, slot filled). 1: not an executable. 2: CODE 0 header the classifier does not accept (c filled, slot 0).
+   canon receives the canonical volume root. */
+int native_policy_classify(const char *root, const char *full, AppClassification *c, uint64_t *slot, char *canon, size_t canon_n) {
+    (void)canon_n;
+    if (!root || !full || !c || !slot || !canon || canon_n < PATH_MAX) return 1;
+    char data_path[PATH_MAX], sidecar[PATH_MAX];
+    if (!realpath(root, canon) || strlen(full) >= sizeof data_path - 8) return 1;
     size_t len = strlen(full);
     int is_sidecar = len > 5 && !strcasecmp(full + len - 5, ".rsrc");
     snprintf(data_path, sizeof data_path, "%s", full);
@@ -67,34 +71,24 @@ int native_policy_prepare(const char *root, const char *full, const NativeSettin
     size_t dn = 0, rn = 0;
     if (data_fork_is_executable(canon, data_path)) read_fork(canon, data_path, "", &data, &dn);
     if (!read_fork(canon, sidecar, "", &rsrc, &rn)) read_fork(canon, data_path, "/..namedfork/rsrc", &rsrc, &rn);
-    AppClassification c;
-    AppClassifyCaps caps = {1, 0};   /* the runtime has the PEF/CFM loader and the PowerPC interpreter (docs/POWERPC-RUNTIME.md) */
-    app_classify(data, dn, rsrc, rn, 0, &caps, &c);
-    if (c.format == APP_FMT_FAT) {
+        AppClassifyCaps caps = {1, 0};   /* the runtime has the PEF/CFM loader and the PowerPC interpreter (docs/POWERPC-RUNTIME.md) */
+    app_classify(data, dn, rsrc, rn, 0, &caps, c);
+    if (c->format == APP_FMT_FAT) {
         /* A program that also has CODE 0 keeps the 68K path in the runtime (mac_ppc_runtime_open only takes programs
          * without CODE 0), so it is classified as a 68K program rather than promised a PowerPC start it will not get. */
         AppClassifyCaps m68k_only = {0, 0};
-        app_classify(data, dn, rsrc, rn, 0, &m68k_only, &c);
-    } else if (c.profile == APP_PROFILE_C_CLASSIC_PPC && !(c.has_cfrg && (c.cfrg_arch & APP_ARCH_PEF_PPC))) {
+        app_classify(data, dn, rsrc, rn, 0, &m68k_only, c);
+    } else if (c->profile == APP_PROFILE_C_CLASSIC_PPC && !(c->has_cfrg && (c->cfrg_arch & APP_ARCH_PEF_PPC))) {
         /* The PowerPC start path finds its fragment through the resource fork's cfrg resource; a bare PEF in the data
          * fork has no member for it to load, and the runtime would stop at "missing CODE 0". Refuse that up front. */
-        size_t k = strlen(c.missing);
-        snprintf(c.missing + k, sizeof c.missing - k, "%scfrg resource naming the PowerPC fragment (the runtime starts PowerPC programs through it)",
+        size_t k = strlen(c->missing);
+        snprintf(c->missing + k, sizeof c->missing - k, "%scfrg resource naming the PowerPC fragment (the runtime starts PowerPC programs through it)",
                  k ? "; " : "");
-        c.runnable = 0;
+        c->runnable = 0;
     }
     free(data); free(rsrc);
-    if (c.format == APP_FMT_NONE) return 1;   /* plain data or a document: not ours to refuse */
-    if (c.format == APP_FMT_MALFORMED && c.has_code0 && !c.code0_layout_ok && !(c.arch & ~APP_ARCH_M68K)) {
-        /* CODE 0 exists but its jump-table header is outside what the classifier accepts. The runtime loader checks the
-         * same header itself and reports exactly what is wrong, so the launch path is left as it always was. */
-        memset(policy, 0, sizeof *policy);
-        policy->profile = APP_PROFILE_A_LEGACY_68K;
-        policy->source = "runtime-validated";
-        snprintf(policy->reason, sizeof policy->reason, "CODE 0 layout not recognised by the classifier; the runtime validates it");
-        if (logline_n) snprintf(logline, logline_n, "launch policy: profile=A-legacy-68k source=runtime-validated args=[] reason=%s", policy->reason);
-        return 0;
-    }
+    if (c->format == APP_FMT_NONE) return 1;   /* plain data or a document: not ours to refuse */
+    if (c->format == APP_FMT_MALFORMED && c->has_code0 && !c->code0_layout_ok && !(c->arch & ~APP_ARCH_M68K)) { *slot = 0; return 2; }
 
     /* The slot is the application's path inside the volume without any .rsrc suffix. */
     char real[PATH_MAX];
@@ -104,17 +98,46 @@ int native_policy_prepare(const char *root, const char *full, const NativeSettin
         if (rl > 5 && !strcasecmp(real + rl - 5, ".rsrc")) real[rl - 5] = 0;
         if (inside(canon, real)) rel = real + strlen(canon);
     }
-    uint64_t slot = launch_slot_key(rel);
+    *slot = launch_slot_key(rel);
+    return 0;
+}
+
+int native_policy_prepare(const char *root, const char *full, const NativeSettings *settings, LaunchPolicy *policy,
+                          char *logline, size_t logline_n, char *err, size_t err_n) {
+    char canon[PATH_MAX];
+    AppClassification c;
+    uint64_t slot = 0;
+    if (logline_n) logline[0] = 0;
+    int kind = native_policy_classify(root, full, &c, &slot, canon, sizeof canon);
+    if (kind == 1) return 1;   /* plain data or a document: not ours to refuse */
+    if (kind == 2) {
+        /* CODE 0 exists but its jump-table header is outside what the classifier accepts. The runtime loader checks the
+         * same header itself and reports exactly what is wrong, so the launch path is left as it always was. */
+        memset(policy, 0, sizeof *policy);
+        policy->profile = APP_PROFILE_A_LEGACY_68K;
+        policy->source = "runtime-validated";
+        snprintf(policy->reason, sizeof policy->reason, "CODE 0 layout not recognised by the classifier; the runtime validates it");
+        if (logline_n) snprintf(logline, logline_n, "launch policy: profile=A-legacy-68k source=runtime-validated args=[] reason=%s", policy->reason);
+        return 0;
+    }
     LaunchOverride ov;
     uint64_t stale = 0;
     int found = c.identity ? launch_override_find(canon, c.identity, slot, &ov, &stale) : 0;
-    LaunchSession session = {settings ? settings->addr : 0, settings && settings->ram[0] ? (unsigned)atoi(settings->ram) : 0};
-    launch_policy_decide(&c, found == 1 ? &ov : NULL, &session, policy);
+    /* The session machine as the runtime itself will resolve it: environment, then saved keys, then the built-in default
+     * (256 MB, 32-bit). Same function the runtime calls, so policy and launch cannot disagree. */
+    GuestMemoryConfig machine = guest_memory_from_env(settings && settings->ram[0] ? atoi(settings->ram) : 0, settings ? settings->addr : 0);
+    LaunchSession session = {machine.addr32 ? 32 : 24, machine.ram_mb};
+    const CompatKnown *known = found == 1 ? NULL : compat_known_lookup(c.identity);
+    if (known) {   /* order: user override, built-in list, classifier */
+        LaunchOverride entry = {c.identity, slot, known->profile, 0, 0};
+        launch_policy_decide_from(&c, &entry, "known-list", &session, policy);
+    } else launch_policy_decide_from(&c, found == 1 ? &ov : NULL, "override", &session, policy);
     char line[sizeof policy->reason + 400];
     launch_policy_describe(policy, &c, line, sizeof line);
     if (found == 2)
         snprintf(line + strlen(line), sizeof line - strlen(line), "; saved override for identity %016llx dropped: the executable at this place changed",
                  (unsigned long long)stale);
+    if (known && !policy->refuse) snprintf(line + strlen(line), sizeof line - strlen(line), "; listed: %s", known->reason);
     if (logline_n) snprintf(logline, logline_n, "%s", line);
     if (policy->refuse) {
         if (err && err_n) snprintf(err, err_n, "%s", policy->message);

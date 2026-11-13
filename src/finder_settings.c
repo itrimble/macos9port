@@ -5,6 +5,7 @@
 #include "desktop_theme.h"
 #include "session_int.h"
 #include "menu_navigation.h"
+#include "app_mode.h"
 #include <stdio.h>
 #include <string.h>
 static const char *views[] = {"Icons", "Buttons (single-click to open)", "List", "Arrange by name", "Arrange by kind", "Arrange by date modified", "Arrange by size", "Arrange by date created", "Arrange by label"};
@@ -14,11 +15,14 @@ static int desktop_view(const Session *s) {
     return s->settings_kind == CMD_VIEW_OPTIONS && w && w->desktop_surface;
 }
 static int view_row(const Session *s, int row) { return desktop_view(s) && row > 0 ? row + 2 : row; }
-static int count(const Session *s) { return s->settings_kind == CMD_LABEL ? 8 : s->settings_kind == CMD_PREFERENCES ? 5 : desktop_view(s) ? 7 : 9; }
+static int top(const Session *s) { return s->settings_kind == CMD_APP_MODE ? APP_MODE_ROWS_TOP : 40; }
+static int count(const Session *s) { return s->settings_kind == CMD_APP_MODE ? APP_MODE_COUNT : s->settings_kind == CMD_LABEL ? 8 : s->settings_kind == CMD_PREFERENCES ? 5 : desktop_view(s) ? 7 : 9; }
 static const char *name(const Session *s, int row) {
+    if (s->settings_kind == CMD_APP_MODE) return app_mode_label(row);
     return s->settings_kind == CMD_LABEL ? finder_label_name(row) : s->settings_kind == CMD_PREFERENCES ? prefs[row] : views[view_row(s, row)];
 }
 static int chosen(const Session *s, int row) {
+    if (s->settings_kind == CMD_APP_MODE) return s->settings_flags == row;
     if (s->settings_kind == CMD_LABEL) return s->settings_flags == row;
     if (s->settings_kind == CMD_PREFERENCES) return !!(s->settings_flags & (1 << row));
     row = view_row(s, row);
@@ -27,6 +31,7 @@ static int chosen(const Session *s, int row) {
 }
 static void choose(Session *s, int row) {
     s->settings_row = row;
+    if (s->settings_kind == CMD_APP_MODE) { app_mode_choose(s, row); return; }
     if (s->settings_kind == CMD_PREFERENCES && row == 2) { finder_labels_preferences(s); return; }
     if (s->settings_kind == CMD_PREFERENCES && row == 4) {
         s->settings_delay = s->settings_delay < 600 ? 600 : s->settings_delay < 1200 ? 1200 : 300; return;
@@ -42,6 +47,7 @@ int finder_settings_command(Session *s, int command) {
     if (!s || s->dialog) return 1;
     Window *w = finder_current(s);
     if (command == CMD_SETTINGS_APPLY) {
+        if (s->settings_kind == CMD_APP_MODE) { app_mode_apply(s); s->settings_kind = 0; return 1; }
         if (s->settings_kind == CMD_PREFERENCES) {
             int enabled = !!(s->settings_flags & 8);
             if ((enabled != !s->spring_disabled || s->settings_delay != (s->spring_delay_ms >= 100 && s->spring_delay_ms <= 2000 ? s->spring_delay_ms : 600)) &&
@@ -106,8 +112,8 @@ int finder_settings_move(Session *s, int x, int y) {
 int finder_settings_down(Session *s, int x, int y) {
     if (s->dialog != 4) return 0;
     Rect box, cancel, ok; dialog_layout(s, &box, &cancel, &ok);
-    int row = (y - box.y - 40) / 26;
-    if (y < box.y + 40 || row < 0 || row >= count(s) || x < box.x + 14 || x >= box.x + box.w - 14) return 0;
+    int row = (y - box.y - top(s)) / 26;
+    if (y < box.y + top(s) || row < 0 || row >= count(s) || x < box.x + 14 || x >= box.x + box.w - 14) return 0;
     if (s->settings_kind == CMD_PREFERENCES && row == 4) {
         slider_position(s, x);
         s->settings_row = row; s->down = 1; s->drag = 7; return 1;
@@ -117,7 +123,7 @@ int finder_settings_down(Session *s, int x, int y) {
 void finder_settings_paint(Fb *fb, const Session *s, Rect box) {
     if (s->dialog != 4) return;
     for (int i = 0; i < count(s); i++) {
-        int x = box.x + 20, y = box.y + 40 + i * 26;
+        int x = box.x + 20, y = box.y + top(s) + i * 26;
         uint32_t ink = desktop_theme_color(THEME_FOREGROUND);
         if (s->settings_kind == CMD_PREFERENCES && i == 4) {
             int left = box.x + 150, width = box.w - 190;
@@ -141,4 +147,5 @@ void finder_settings_paint(Fb *fb, const Session *s, Rect box) {
         fb_text(fb, x + 26, y + 4, s->settings_kind == CMD_LABEL ? finder_label_ink(i) : ink, name(s, i));
         if (s->settings_row == i) fb_frame(fb, x - 4, y - 1, box.w - 34, 24, ink);
     }
+    app_mode_paint(fb, s, box);
 }
