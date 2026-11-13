@@ -425,3 +425,73 @@ No staging files were left behind.
 
 **Not verified.** Headless probe and scripted clicks only. The Resource Manager's behaviour is built from the public documentation of the calls and has not been compared with a real system: error codes for corner cases (for example a duplicate ID in `SetResInfo`), whether a changed flag is required before `SetResAttrs` reaches the file, and the fork layout details are as I understood them (a reader other than ours, the independent script I used above, accepts the file). Attribute bits are stored and returned but not applied to loaded handles (a locked or purgeable attribute does not lock
 or mark the memory handle). `SetResPurge` is recorded and does nothing. The PowerPC half of the installer, the `Components` and `Control Panels` items and the Internet Config preferences were not reached. The cause of the -17954 is not known.
+
+## Tenth run — -17954, the folder cache, and the installer finishing — branch `qt/findfolder-vref`
+
+Built on `cff0bec` (Build 47 in the gate). Same method as the ninth run: headless `ospi-runtime-probe --disk --saves` on scratch copies of the MBP specimen, the same scripted clicks (Continue at 510,385 at 2 s, then 515,385 at 4, 6, 8 and 10 s). No real window, no real mouse. To read the engine I disassembled a RAM dump (`--dump-ram`) with Musashi's disassembler and used a temporary write watchpoint in `mac_cpu_write` and a temporary stack dump in `find_folder` (both removed again; nothing of them is committed).
+
+**The lead hypothesis was wrong.** -17954 is not a working-directory reference number. Working directories here are `-(100 + slot)` and none was open; no reply from this runtime contains the value. In the trace it first appears as an *input*: `trap a207 pc=00143e42 d0=ffffb9de`, then `find-folder vref=-17954 type=6578746e`. It is a stale stack word. A watchpoint on the slot the installer reads it from shows the last writer: `link A6` at `$13F56A` (a drawing helper, called while the progress window is updated) storing the saved frame pointer **$007FB9DE**; the low half, $B9DE, is the "volume". The installer's FindFolder wrapper (`$1222F0`) picks the volume by a mode byte from its own CALL resource: mode 2 means "the vRefNum already in the caller's record", and the caller (`$12C4AC`) never initialised that record on this path. So the value is an uninitialised guest local, not a truncation and not a record this runtime fills.
+
+**The real cause is earlier.** The engine does not normally reach that wrapper's FindFolder call. It first asks a table of folders (14-byte entries, handle in a global; lookup `$141268`) and only falls through when the entry for the kind is unresolved. At start-up it fills that table by asking `FindFolder` for `extn`, `ctrl` and `desk` (trace: `find-folder vref=-1 type=6578746e ... error=-43`, then `6374726c`, `6465736b`) and stores each answer. Here all three answered fnfErr, because this runtime only knew a folder after something had made it, and the volume had a System Folder (made by the engine's own Preferences request) with nothing else in it. The RAM dump shows entries 10, 11 and 14 of the table holding `ffd5` (-43). Later, with the Extensions entry unresolved, the engine takes the fall-through with the garbage record. On a real system disk those folders always exist. I did not run this on a real system; this is what the engine's code and the dump show.
+
+**What changed.**
+
+| Piece | Where | What it does |
+| --- | --- | --- |
+| FindFolder | `src/mac_alias.c` | Once the System Folder exists, its standard folders (Preferences, Control Panels, Extensions, Apple Menu Items, Startup Items, Fonts, Shutdown Items) and the Desktop Folder count as present: a lookup without `createFolder` makes the missing one in the save overlay and answers with its ID. Trash and Temporary Items are not in the list. No System Folder, or no writable overlay: fnfErr as before. A lookup therefore writes (an empty directory, overlay only); the installer's start-up probe makes `Fonts`, `Control Panels`, `Extensions` and `Desktop Folder`. |
+| Fork names | `src/macroman.c`, `src/mac_files_write.c` | A file name of up to 31 bytes can carry a resource fork: the sidecar `<name>.rsrc` may be up to 36 bytes (it is never listed to the guest, because names over 31 are hidden). It was 26 before, and `QuickTime Internet Extras 68k` (29) failed with paramErr when the installer opened its fork. |
+| CR in names | `src/macroman.c`, `src/volume.c` | `$0D` is a legal name byte, so the Finder's custom-icon file "Icon" + CR can be looked up and made (the installer asks for it in the new `QuickTime Extensions` folder and got paramErr). Other control bytes stay refused. The desktop listing hides any name with a CR. |
+| `PBFlushFile` | `src/mac_files.c` | `$A045`: publishes staged writes (as FlushVol does), -51 for a reference that is not open. It halted as an unhandled trap after the last component. |
+| `SetDItem` on an icon | `src/mac_dlguser.c`, `src/mac_dlgdraw.c` | The completion dialog gives its icon item a handle of its own (item 6, type `$A0`). It is recorded, `GetDItem` reports it, and the 32x32 bitmap behind it is drawn instead of the DITL's ICON. Text and other items still refuse a changed handle; the halt message now names the item, type and handles. |
+
+**Tests** (in `make test`): `test_mac_files_rf` (FindFolder: no System Folder or no overlay is still fnfErr and nothing is made; with a System Folder `extn`, `ctrl` and `desk` are found and exist on disk in the overlay and not in the data; `temp` and `trsh` stay fnfErr; 27- and 31-byte names open and create forks), `test_macroman` (CR allowed, the sidecar rule), `test_mac_files_write` (Icon CR looked up, made and removed; `Ic\non` refused; `PBFlushFile` publishes a staged write before close, -51 after), `test_mac_dlgmgr` (icon handle taken and reported, text handle refused, odd handle halts).
+
+**Before and after**, same specimen and clicks:
+
+| | `cff0bec` | this branch |
+| --- | --- | --- |
+| `FindFolder('extn')` | -43 at start-up, then vRefNum -17954 -> -35 | 0 (Extensions made in the overlay), no later call with a bad volume |
+| Install | QuickTime Player, samples and plugin; alert *This installation requires a System Folder*, `1008:1,-35` | all components; at about 163 s guest time the progress bar is full and the window *Installation was successful. You have instal...* appears with **Continue** and **Restart**; the run idles there (300 s probe) |
+| Stops on the way (in order) | -35 | `Error creating file` `1008:5,-50` (Icon CR); `Error opening file: QuickTime Internet Extras` `1008:6,-50` (fork name); halt on `$A045`; halt in SetDItem; none |
+
+**Written tree** (everything is in the scratch `--saves` overlay; sizes in bytes; type and creator from the stored Finder info; `.rsrc` is the fork; `\r` is a CR):
+
+```
+Desktop Folder/                      (made by the start-up probe, empty)
+QuickTime™ Folder/
+  Internet Config 0 (APPL ICAp)             Internet Config.rsrc 250,996
+  PictureViewer 0 (APPL ogle)               PictureViewer.rsrc 163,261
+  QuickTime Player 0 (APPL TVOD)            QuickTime Player.rsrc 799,406
+  QuickTime Plugin 0 (NSPL)                 QuickTime Plugin.rsrc 13,181
+  QuickTime READ ME 4,607 (ttro ttxt)       QuickTime READ ME.rsrc 22,628
+  Sample Image 29,363 (qtif ogle)           Sample Image.rsrc 472
+  Sample Movie 73,318 (MooV TVOD)           Sample Movie.rsrc 472
+System Folder/
+  Control Panels/  QuickTime™ Settings 0 (cdev)            .rsrc 91,720
+  Extensions/
+    QuickTime™ 432,504 (INIT)                              .rsrc 574,613
+    QuickTime™ Musical Instruments 0 (INIT dvb )           .rsrc 2,129,203
+    Internet Config Extension 27,708 (thng ICAp)           .rsrc 68,759
+    Sound Manager 15,008 (INIT sad )                       .rsrc 211,775
+    Sound Manager 68K 0 (thng sad )                        .rsrc 71,298
+    QuickTime Extensions/
+      Icon\r 0 (rsrc RSED, invisible)                      Icon\r.rsrc 2,670
+      QuickTime 68k .rsrc 659,863      QuickTime Authoring 68k .rsrc 471,247
+      QuickTime Capture 68k .rsrc 133,062   QuickTime Effects 68k .rsrc 356,277
+      QuickTime Image 68k .rsrc 306,405     QuickTime Internet Extras 68k .rsrc 312,395
+      QuickTime Music 68k .rsrc 321,288     QuickTime Player Extras 0 (TVex) .rsrc 94,904
+      QuickTime Web Helper 0 (pshr) .rsrc 138,128
+      (data forks all 0 bytes; the components are INIT, except where shown)
+  Fonts/            (empty)
+  Preferences/  QuickTime Preferences 179 (pref)
+```
+
+No `Components` folder is written: the 68K installer puts its components in `Extensions:QuickTime Extensions`. No staging files were left behind.
+
+**Containment.** `diff -r` of the scratch `--disk` tree against its pre-run copy: identical, no `.os999` file. Every write is under `--saves`. The live OS Pi volume and the other checkouts were not touched (the MBP specimen was read with `scp -r`).
+
+**MI1 and MI2.** Probes of `cff0bec` (`git archive`, built in a scratch directory) and of this branch, 12 s each, frames at 0, 3, 6, 9 and 12 s: Monkey Island 32,611,248 instructions in both, Monkey Island 2 (`LeChuck's Revenge`) 37,422,033 in both; all ten frame pairs byte-identical (`cmp`). The 55 files in `~/os999-guest-software/from-mbp-20261111/` hashed before and after: unchanged; the save overlays were scratch directories.
+
+**Suite.** `BUILDFLEET_LOCAL=1 make -j1 test` on commit `f0d3342` (code identical to this doc commit): exit 0.
+
+**Not verified.** Headless probe and scripted clicks only; **Continue** and **Restart** were not pressed, so what the installer does after them (relaunch, a restart request, the Internet Config work) is not seen, and no installed component was *run*: QuickTime Player was not launched from this tree. I did not compare with a real Mac: that FindFolder makes the standard folders on lookup is a model choice (a real disk has them), and the claim that the real engine never takes the fall-through is from reading its code. Type and creator codes are as the installer stored them. The mode byte, the table and the `$12C4AC` record layout are my reading of the code, not documented structures. The icon is drawn from the handle's current master pointer when the dialog is painted. The PowerPC half and the "QuickTime Settings" panel's behaviour were not exercised.

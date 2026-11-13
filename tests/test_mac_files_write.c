@@ -182,6 +182,24 @@ int main(void) {
     CHECK(io(&rt, 0xa044, r, 1, -1, NULL, 0) == -40);
     CHECK(close_ref(&rt, r) == 0);
 
+    /* PBFlushFile ($A045) publishes the staged writes of an open file; a reference that is not open is rfNumErr. */
+    w = open_name(&rt, "Pilot 1", 2);
+    CHECK(w >= 128);
+    CHECK(io(&rt, 0xa003, w, 1, 0, "ZZ", 2) == 0);
+    CHECK(io(&rt, 0xa045, w, 0, 0, NULL, 0) == 0);
+    snprintf(path, sizeof path, "%s/Pilot 1", saves);
+    { char seen[2] = {0, 0}; FILE *fp = fopen(path, "rb"); CHECK(fp && fread(seen, 1, 2, fp) == 2 && !memcmp(seen, "ZZ", 2)); if (fp) fclose(fp); }
+    CHECK(io(&rt, 0xa003, w, 1, 0, "sc", 2) == 0);
+    CHECK(close_ref(&rt, w) == 0);
+    CHECK(io(&rt, 0xa045, w, 0, 0, NULL, 0) == -51);
+    CHECK(io(&rt, 0xa045, 3, 0, 0, NULL, 0) == -51);
+    CHECK(host_size(saves, "Pilot 1") == 10);
+
+    /* The Finder's custom-icon file is "Icon" followed by CR: HFS allows it, so it can be looked up (fnfErr), made and removed; other control bytes stay refused. */
+    CHECK(info(&rt, "Icon\r", 0) == -43 && named(&rt, 0xa008, "Icon\r") == 0 && host_exists(saves, "Icon\r") && info(&rt, "Icon\r", 0) == 0);
+    CHECK(named(&rt, 0xa009, "Icon\r") == 0 && !host_exists(saves, "Icon\r"));
+    CHECK(named(&rt, 0xa008, "Ic\non") == -50);
+
     /* Byte quota (128): oversize write and SetEOF are dskFulErr, nothing changes. */
     char big[200]; memset(big, 'X', sizeof big);
     w = open_name(&rt, "Pilot 1", 2);

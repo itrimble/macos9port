@@ -21,6 +21,7 @@ uint8_t mr_fold(uint8_t byte) {
 }
 
 int mr_name_byte_ok(uint8_t byte) {
+    if (byte == 13) return 1;   /* CR: the Finder's custom-icon file is named "Icon" followed by CR; HFS allows it, so a guest can look it up and make it */
     return byte >= 32 && byte != 127 && byte != ':' && byte != '/' && byte != '\\';
 }
 
@@ -110,8 +111,15 @@ int mr_host_representable(const char *utf8) {
 }
 
 int mr_sidecar_ok(const char *leaf) {
-    int n = mr_host_length(leaf);
-    return n >= 0 && n + 5 <= MR_NAME_MAX;
+    return mr_host_length(leaf) >= 0;   /* the sidecar's own name may pass 31: it is never shown to the guest (mr_is_sidecar) */
+}
+
+int mr_is_sidecar(const char *host) {
+    size_t n = strlen(host);
+    char base[MR_HOST_MAX + 8];
+    if (n <= 5 || n >= sizeof base || strcmp(host + n - 5, ".rsrc")) return 0;
+    memcpy(base, host, n - 5); base[n - 5] = 0;
+    return mr_host_length(base) >= 0;
 }
 
 int mr_host_length(const char *utf8) {

@@ -11,12 +11,20 @@
  * Shutdown Items inside it; Temporary Items, Trash, Desktop Folder and PrintMonitor Documents at the root (type codes from the public Folders.h). A folder exists
  * if it was made earlier (by this call with createFolder, which also makes the System Folder above it, or by DirCreate), so one never made is fnfErr (-43), an
  * unknown folder type is fnfErr, another volume is nsvErr (-35), and creating one needs the save overlay: nothing is ever made outside it.
- * kOnSystemDisk ($8000), the default volume (0), the data volume (-1) and the System volume (-2) all mean this one namespace. */
+ * kOnSystemDisk ($8000), the default volume (0), the data volume (-1) and the System volume (-2) all mean this one namespace.
+ * The standard folders inside an existing System Folder (Preferences, Control Panels, Extensions, Apple Menu Items, Startup Items, Fonts, Shutdown Items)
+ * and the Desktop Folder at the root are part of any real system disk, so once the System Folder exists they count as present: a lookup without createFolder
+ * makes the missing one in the save overlay (the host data is never touched) instead of answering fnfErr. Trash and Temporary Items are not in that list (a
+ * real system makes them when it needs them). Without a writable overlay the answer stays fnfErr. */
 static const struct { uint32_t type; const char *name; } FOLDERS[] = {
     {0x6d616373, "System Folder"}, {0x70726566, "System Folder:Preferences"}, {0x6374726c, "System Folder:Control Panels"}, {0x6578746e, "System Folder:Extensions"},
     {0x616d6e75, "System Folder:Apple Menu Items"}, {0x73747274, "System Folder:Startup Items"}, {0x666f6e74, "System Folder:Fonts"}, {0x73686466, "System Folder:Shutdown Items"},
     {0x74656d70, "Temporary Items"}, {0x74727368, "Trash"}, {0x6465736b, "Desktop Folder"}, {0x70726e74, "PrintMonitor Documents"},
 };
+static int standard_folder(uint32_t type) {
+    for (size_t i = 1; i <= 7; i++) if (FOLDERS[i].type == type) return 1;
+    return type == 0x6465736b;   /* 'desk' */
+}
 static int find_folder(MacRuntime *rt) {
     MacCpu *cpu = rt->cpu;
     uint32_t sp = mac_cpu_get(cpu, MAC_A7);
@@ -28,7 +36,13 @@ static int find_folder(MacRuntime *rt) {
     uint32_t id = 0;
     if (!rt->file_state || !(vref == -32768 || vref == 0 || vref == -1 || (vref == -2 && rt->system_volume))) error = -35;
     else for (size_t i = 0; i < sizeof FOLDERS / sizeof FOLDERS[0]; i++)
-        if (FOLDERS[i].type == type) { error = mac_files_folder_find(rt, FOLDERS[i].name, create, &id); break; }
+        if (FOLDERS[i].type == type) {
+            error = mac_files_folder_find(rt, FOLDERS[i].name, create, &id);
+            uint32_t system_id;
+            if (error == -43 && !create && standard_folder(type) && !mac_files_folder_find(rt, FOLDERS[0].name, 0, &system_id))
+                error = mac_files_folder_find(rt, FOLDERS[i].name, 1, &id) ? -43 : 0;
+            break;
+        }
     if (!error) { mac_cpu_write(cpu, vol, 2, 0xffff); mac_cpu_write(cpu, dir, 4, id); }
     if (rt->trace) fprintf(stderr, "find-folder vref=%d type=%08x create=%d -> error=%d dirid=%u\n", vref, type, create, error, error ? 0u : id);
     mac_cpu_write(cpu, sp + 16, 2, (uint16_t)error);

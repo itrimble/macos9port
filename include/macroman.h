@@ -10,7 +10,7 @@
  *  - Host names are UTF-8. Names this runtime writes are precomposed (NFC); names it reads may be NFC or NFD (combining marks after a base letter
  *    are composed before mapping), so both spellings of one name are the same name.
  *  - ':' is the guest path separator and cannot be in a guest component. A host name with ':' is therefore HIDDEN from the guest (never listed,
- *    never matched, never made). A '/' from the guest is refused (it would be a host path separator); '\\', NUL, control bytes ($00-$1F, $7F)
+ *    never matched, never made). A '/' from the guest is refused (it would be a host path separator); '\\', NUL, control bytes ($00-$1F except CR ($0D), $7F)
  *    and a leading '.' are refused too, so the containment and traversal rules stay as they were.
  *  - A host name with a character outside Mac Roman, invalid UTF-8, or more than 31 Mac Roman bytes is HIDDEN from the guest as well.
  *  - Names match without regard to case, as HFS did: ASCII letters plus the accented Latin letters of Mac Roman (A-umlaut with a-umlaut, E-acute
@@ -23,7 +23,7 @@ enum { MR_NAME_MAX = 31, MR_HOST_MAX = 3 * MR_NAME_MAX + 1 };   /* a Mac Roman b
 uint32_t mr_unicode(uint8_t byte);                 /* the codepoint of a Mac Roman byte (ASCII is itself) */
 int mr_from_unicode(uint32_t cp);                  /* the Mac Roman byte of a codepoint, or -1 */
 uint8_t mr_fold(uint8_t byte);                     /* lower case, by the classic Mac rule above */
-int mr_name_byte_ok(uint8_t byte);                 /* may appear in a guest name component: $20-$7E and $80-$FF except ':' '/' '\\' */
+int mr_name_byte_ok(uint8_t byte);                 /* may appear in a guest name component: $20-$7E, CR ($0D) and $80-$FF except ':' '/' '\\' */
 
 /* Guest component (Mac Roman bytes, 1 to 31, no leading '.') -> host UTF-8 NFC. Returns the UTF-8 length, or -1 for a refused name. */
 int mr_component_to_host(const uint8_t *mr, size_t n, char *out, size_t capacity);
@@ -36,8 +36,11 @@ int mr_host_length(const char *utf8);
 int mr_host_equal_fold(const char *a, const char *b);
 /* Whether a host name (any length, a leading dot allowed) is made only of characters the guest can name: the visibility test of volume counts. */
 int mr_host_representable(const char *utf8);
-/* A file whose fork sidecar "<leaf>.rsrc" is still a legal 31-byte name (Mac Roman bytes, not UTF-8 bytes). */
+/* A file that can carry a fork sidecar "<leaf>.rsrc": a legal guest name of up to 31 Mac Roman bytes. The sidecar's host name is up to 36 and is never
+ * listed or addressable by the guest (names over 31 are hidden from it), so a 31-byte file name can have a resource fork. */
 int mr_sidecar_ok(const char *leaf);
+/* Whether a host name is a fork sidecar: a legal guest name followed by ".rsrc" (so up to 36 Mac Roman bytes in all). */
+int mr_is_sidecar(const char *host);
 int mr_equal_fold(const uint8_t *a, size_t an, const uint8_t *b, size_t bn);
 /* Writes a Pascal string of at most `max` bytes to dst (dst must hold max+1). A hidden name writes an empty string and returns -1. */
 int mr_put_pstring(uint8_t *dst, size_t max, const char *utf8);

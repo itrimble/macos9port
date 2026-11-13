@@ -54,8 +54,13 @@ int main(void) {
     CHECK(read_ref(&r, ref, 14) == 0 && !memcmp(mac_cpu_ram(r.cpu) + DATA, "resource bytes", 14) && close_ref(&r, ref) == 0);                   /* PBOpenRF, read-only, same bytes */
     CHECK(open_rf(&r, 0xa20a, "Nothing", 1, 0) == -43);                                                                                          /* no such file */
     CHECK(open_rf(&r, 0xa20a, "House", 1, 7) == -35);                                                                                            /* another volume */
-    CHECK(open_rf(&r, 0xa20a, "A Name That Is Rather Long.", 1, 0) == -50);                                                                       /* 27 + 5 > 31 */
-    CHECK(create(&r, "AVeryLongHouseNameIsHere123") == 0 && open_rf(&r, 0xa20a, "AVeryLongHouseNameIsHere123", 1, 0) == -50);                    /* 27 + 5 > 31 */
+    CHECK(open_rf(&r, 0xa20a, "A Name That Is Rather Long.", 1, 0) == -43);                                                                       /* 27 chars: no such file (the sidecar's 5 more bytes are not a limit) */
+    CHECK(create(&r, "AVeryLongHouseNameIsHere123") == 0 && open_rf(&r, 0xa20a, "AVeryLongHouseNameIsHere123", 1, 0) == 0);                      /* 27 chars carry a fork: the sidecar is 32 */
+    ref = (int16_t)rd(&r, PB + 24, 2); CHECK(close_ref(&r, ref) == 0);
+    { char longname[40]; memset(longname, 'n', 31); longname[31] = 0;
+      CHECK(create(&r, longname) == 0 && open_rf(&r, 0xa20a, longname, 1, 0) == 0);                                                              /* 31 chars carry a fork: the sidecar is 36 */
+      ref = (int16_t)rd(&r, PB + 24, 2); CHECK(close_ref(&r, ref) == 0);
+      snprintf(p, sizeof p, "%s/%s.rsrc", saves, longname); CHECK(stat(p, &st) == 0); }
     CHECK(open_rf(&r, 0xa20a, "AVeryLongHouseNameIsHer", 1, 0) == -43);                                                                           /* 23 chars is not too long: simply no such file */
     /* the application volume: its export opens read-only, never for writing; a file without an export is not found */
     CHECK(open_rf(&r, 0xa20a, "App", 1, 0) == 0); ref = (int16_t)rd(&r, PB + 24, 2); CHECK(read_ref(&r, ref, 4) == 0 && !memcmp(mac_cpu_ram(r.cpu) + DATA, "FORK", 4) && close_ref(&r, ref) == 0);
@@ -71,7 +76,7 @@ int main(void) {
         CHECK(bytes[3] == 0 && bytes[2] == 1 && bytes[7] == 0 && bytes[6] == 1 && bytes[15] == 30 && !memcmp(bytes, bytes + 256, 16) && bytes[256 + 25] == 28 && bytes[256 + 29] == 0xff); }
     CHECK(create_res(&r, "Fresh") == -49);                                                                                                       /* a fork with bytes: left alone, dupFNErr in ResErr */
     CHECK(create_res(&r, "App") == -54);                                                                                                         /* on the application volume */
-    CHECK(create_res(&r, "AVeryLongHouseNameIsHere123") == -50);
+    CHECK(create_res(&r, "AVeryLongHouseNameIsHere123") == 0);                                                                                   /* a 27-character name carries a fork (its sidecar is 32) */
     CHECK(create_res(&r, "bad:name") == -35);   /* "bad" is neither this volume nor a folder here */
     CHECK(create_res(&r, "House") == -49);                                                                                                       /* House's fork already holds 14 bytes */
     {   MacRuntime q = {0}; q.cpu = mac_cpu_create(RAM); CHECK(create_res(&q, "X") == -35); mac_cpu_destroy(q.cpu); }                          /* no file system */
@@ -126,12 +131,15 @@ int main(void) {
     r = (MacRuntime){0}; r.cpu = mac_cpu_create(RAM); r.heap_next = 0x3000; r.heap_limit = 0x8000; CHECK(mac_files_root(&r, data) == 0);
     CHECK(find(&r, 0x8000, 0x70726566, 0) == -43 && rd(&r, 0x2100, 4) == 0x77777777 && mac_cpu_get(r.cpu, MAC_A7) == 0xf010);
     CHECK(find(&r, 0x8000, 0x70726566, 1) == -46);                                            /* read-only volume */
+    CHECK(find(&r, 0x8000, 0x6465736b, 0) == -43 && find(&r, 0x8000, 0x6578746e, 0) == -43);   /* no overlay to make a standard folder in: still fnfErr */
     CHECK(mac_files_writable(&r, saves, 8, 1 << 20) == 0);
     CHECK(find(&r, 0x8000, 0x70726566, 0) == -43);
+    CHECK(find(&r, 0x8000, 0x6578746e, 0) == -43 && find(&r, 0x8000, 0x6374726c, 0) == -43);   /* no System Folder yet: its standard folders are not made by a lookup */
+    { struct stat st; char hp[900]; snprintf(hp, sizeof hp, "%s/System Folder", saves); CHECK(stat(hp, &st) != 0); }
     CHECK(find(&r, 0x8000, 0x70726566, 1) == 0 && rd(&r, 0x2104, 2) == 0xffff);
     uint32_t prefs = rd(&r, 0x2100, 4); CHECK(prefs > 2 && prefs < 0x80000000u);   /* a table ID for the real directory */
     CHECK(find(&r, 0, 0x70726566, 0) == 0 && rd(&r, 0x2100, 4) == prefs);                    /* found afterwards, on the default volume too */
-    CHECK(find(&r, 0x8000, 0x6374726c, 0) == -43);                                            /* another folder is still absent */
+    CHECK(find(&r, 0x8000, 0x74656d70, 0) == -43 && find(&r, 0x8000, 0x74727368, 0) == -43);   /* Temporary Items and the Trash are not standard System Folder contents: still absent */
     CHECK(find(&r, 0x8000, 0x3f3f3f3f, 1) == -43);                                            /* unknown folder type */
     CHECK(find(&r, 5, 0x70726566, 0) == -35);                                                 /* unknown volume */
     /* the special folders sit where the public layout puts them: inside the System Folder (which is made with them), or at the root; only in the overlay */
@@ -139,9 +147,14 @@ int main(void) {
       snprintf(hp, sizeof hp, "%s/System Folder/Preferences", saves); CHECK(stat(hp, &st) == 0 && S_ISDIR(st.st_mode));
       snprintf(hp, sizeof hp, "%s/Preferences", saves); CHECK(stat(hp, &st) != 0);                                     /* not at the root any more */
       CHECK(find(&r, 0x8000, 0x6d616373, 0) == 0); uint32_t sysf = rd(&r, 0x2100, 4); CHECK(sysf > 2 && sysf != prefs && rd(&r, 0x2104, 2) == 0xffff);   /* made by the Preferences request */
-      CHECK(find(&r, 0x8000, 0x6578746e, 0) == -43 && find(&r, 0x8000, 0x6578746e, 1) == 0); uint32_t ext = rd(&r, 0x2100, 4);
+      /* the System Folder now exists, so its standard folders count as present: a lookup without createFolder makes the missing one in the overlay (found, same ID after) */
+      CHECK(find(&r, 0x8000, 0x6578746e, 0) == 0); uint32_t ext = rd(&r, 0x2100, 4);
+      CHECK(find(&r, 0x8000, 0x6578746e, 1) == 0 && rd(&r, 0x2100, 4) == ext);
+      CHECK(find(&r, 0x8000, 0x6465736b, 0) == 0); snprintf(hp, sizeof hp, "%s/Desktop Folder", saves); CHECK(stat(hp, &st) == 0 && S_ISDIR(st.st_mode));   /* the Desktop Folder is at the root */
+      CHECK(find(&r, 0x8000, 0x6374726c, 0) == 0); snprintf(hp, sizeof hp, "%s/System Folder/Control Panels", saves); CHECK(stat(hp, &st) == 0 && S_ISDIR(st.st_mode));
       snprintf(hp, sizeof hp, "%s/System Folder/Extensions", saves); CHECK(stat(hp, &st) == 0 && S_ISDIR(st.st_mode) && ext != sysf && ext != prefs);
       CHECK(find(&r, 0, 0x6578746e, 0) == 0 && rd(&r, 0x2100, 4) == ext && find(&r, 0x8000, 0x6d616373, 0) == 0 && rd(&r, 0x2100, 4) == sysf);
+      CHECK(find(&r, 0x8000, 0x74656d70, 0) == -43);                                                                      /* Temporary Items is still not made by a lookup */
       CHECK(find(&r, 0x8000, 0x74727368, 1) == 0); snprintf(hp, sizeof hp, "%s/Trash", saves); CHECK(stat(hp, &st) == 0 && S_ISDIR(st.st_mode));   /* the Trash is at the root */
       CHECK(find(&r, 0x8000, 0x666f6e74, 1) == 0 && find(&r, 0x8000, 0x6374726c, 1) == 0 && find(&r, 0x8000, 0x616d6e75, 1) == 0 && find(&r, 0x8000, 0x73747274, 1) == 0 && find(&r, 0x8000, 0x73686466, 1) == 0);
       snprintf(hp, sizeof hp, "%s/System Folder/Control Panels", saves); CHECK(stat(hp, &st) == 0);

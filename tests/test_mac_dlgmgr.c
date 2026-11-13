@@ -176,6 +176,24 @@ static void items(void) {
      memcpy(mac_cpu_ram(g.rt.cpu) + str, "\002ok", 3); SETT(hh);
      CHECK(raw(&g.rt, 0x32000, 4) == 0x55555555 && raw(&g.rt, 0x32000 + 255, 1) == 0x55 && raw(&g.rt, hh, 4) == good && !memcmp(mac_cpu_ram(g.rt.cpu) + good, "ok", 3));}
     mac_runtime_destroy(&g.rt);
+    /* SetDItem on an icon item: the program's own icon handle is taken (GetDItem reports it) and drawn in place of the DITL's ICON; a text item still may not change its handle;
+     * an odd or out-of-memory icon handle halts */
+    CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc);
+    {   enum { MASTER = 0x33000, BITS = 0x33100 };
+        wr(&g.rt, MASTER, 4, BITS); memset(mac_cpu_ram(g.rt.cpu) + BITS, 0xff, 128);
+        wr(&g.rt, box_p, 2, 10); wr(&g.rt, box_p + 2, 2, 10); wr(&g.rt, box_p + 4, 2, 42); wr(&g.rt, box_p + 6, 2, 42);
+        wr(&g.rt, SP, 4, box_p); wr(&g.rt, SP + 4, 4, MASTER); wr(&g.rt, SP + 8, 2, 32); wr(&g.rt, SP + 10, 2, 7); wr(&g.rt, SP + 12, 4, d);
+        CHECK(trap(&g, 0xa98e, SP) == 1 && !mac_cpu_halted(g.rt.cpu) && mac_cpu_get(g.rt.cpu, MAC_A7) == SP + 16);
+        CHECK(GETD(7) == 1 && raw(&g.rt, type_p, 2) == 32 && raw(&g.rt, handle_p, 4) == MASTER);
+        Dlg *dd = M(&g.rt)->open[0]; CHECK(dd && dd->handle[6] == MASTER);
+        wr(&g.rt, SP, 4, box_p); wr(&g.rt, SP + 4, 4, MASTER); wr(&g.rt, SP + 8, 2, 16); wr(&g.rt, SP + 10, 2, 5); wr(&g.rt, SP + 12, 4, d);
+        CHECK(trap(&g, 0xa98e, SP) == -1 && mac_cpu_halted(g.rt.cpu)); }
+    mac_runtime_destroy(&g.rt);
+    CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc);
+    wr(&g.rt, box_p, 2, 10); wr(&g.rt, box_p + 2, 2, 10); wr(&g.rt, box_p + 4, 2, 42); wr(&g.rt, box_p + 6, 2, 42);
+    wr(&g.rt, SP, 4, box_p); wr(&g.rt, SP + 4, 4, 0x33001); wr(&g.rt, SP + 8, 2, 32); wr(&g.rt, SP + 10, 2, 7); wr(&g.rt, SP + 12, 4, d);
+    CHECK(trap(&g, 0xa98e, SP) == -1 && mac_cpu_halted(g.rt.cpu));
+    mac_runtime_destroy(&g.rt);
     /* SelIText */
     CHECK(rig_open(&g) == 0); d = get_new(&g, 128, 0, 0xffffffffu, &rc);
     wr(&g.rt, SP, 2, 3); wr(&g.rt, SP + 2, 2, 0); wr(&g.rt, SP + 4, 2, 6); wr(&g.rt, SP + 6, 4, d); CHECK(trap(&g, 0xa97e, SP) == 1 && mac_cpu_get(g.rt.cpu, MAC_A7) == SP + 10);

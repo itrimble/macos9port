@@ -216,6 +216,7 @@ int volume_free_bytes(const char *root, uint64_t *out) {
 
 static int hidden(const char *root_rel, const char *name) {
     size_t n = strlen(name);
+    if (strchr(name, '\r')) return 1;   /* the Finder's "Icon" + CR custom-icon file is invisible, as on a real system */
     if (name[0] == '.' || (n > 5 && strcasecmp(name + n - 5, ".rsrc") == 0)) {
         return 1;
     }

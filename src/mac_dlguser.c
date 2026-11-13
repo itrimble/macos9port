@@ -8,7 +8,8 @@
  *   PROCEDURE MyItem(theWindow: WindowPtr; itemNo: INTEGER),
  * recorded and called, in item order, whenever the dialog's native drawing has repainted the dialog and the program then waits in ModalDialog or calls DrawDialog:
  * the dialog is made the current port (its port window, in dialog coordinates) for the call and the previous port is put back afterwards. For every other kind
- * of item the handle must be the one GetDItem reports and the kind may not change; anything else halts. The procedures need the colour window machinery (a
+ * of item the handle must be the one GetDItem reports (an icon item may be given another handle: a pointer to 128 bytes of 32x32 bitmap, which is then drawn
+ * in place of the DITL's ICON resource; nil goes back to the resource) and the kind may not change; anything else halts. The procedures need the colour window machinery (a
  * port window); without it the call halts instead of leaving the item blank. */
 static int fail(MacRuntime *rt, const char *why) { mac_cpu_halt(rt->cpu, why); return -1; }
 static int valid(MacRuntime *rt, uint32_t p, size_t n) { size_t z = mac_cpu_ram_size(rt->cpu); return p >= 0x400 && p <= z && n <= z - p; }
@@ -28,7 +29,13 @@ int mac_dlg_set_item(MacRuntime *rt, Dlg *d, uint32_t sp) {
         if (handle && ((handle & 1) || !valid(rt, handle, 2))) return fail(rt, "SetDItem user item procedure is outside guest memory.");
         d->user_proc[item - 1] = handle;
     } else {
-        if (handle != d->handle[item - 1]) return fail(rt, "SetDItem replacing an item's handle is unsupported (only user item procedures can be set).");
+        if (handle != d->handle[item - 1] && it->kind == MAC_ITEM_ICON && (!handle || (!(handle & 1) && valid(rt, handle, 4)))) {
+            d->handle[item - 1] = handle;   /* an icon item takes the program's own icon (a handle to 128 bytes of bitmap, from GetIcon or its own data): drawn from it */
+        } else if (handle != d->handle[item - 1]) {
+            char why[160];
+            snprintf(why, sizeof why, "SetDItem replacing an item's handle is unsupported (only user item procedures and icon handles can be set): item %d, type $%02X, handle $%08X for $%08X.", item, type, handle, d->handle[item - 1]);
+            return fail(rt, why);
+        }
         if (b <= t || r <= l) return fail(rt, "SetDItem gives the item an empty rectangle.");
     }
     if (d->item_hidden[item - 1] && l >= 8192) l -= 16384, r -= 16384;   /* a hidden item reports its box 16384 to the right: take it back */

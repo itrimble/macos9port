@@ -73,10 +73,11 @@ int mac_files_save_name_ok(const char *name) {
     for (const char *p = name;;) {
         const char *slash = strchr(p, '/');
         size_t run = slash ? (size_t)(slash - p) : strlen(p);
-        char part[MR_HOST_MAX];
+        char part[MR_HOST_MAX + 8];
         if (!run || run >= sizeof part) return 0;
         memcpy(part, p, run); part[run] = 0;
-        if (mr_host_length(part) < 0) return 0;   /* not Mac Roman, ':' or '\\', a leading dot, or over 31 Mac Roman bytes */
+        /* not Mac Roman, ':' or '\\', a leading dot, or over 31 Mac Roman bytes; only the last component may be a fork sidecar ("<name>.rsrc", up to 36) */
+        if (mr_host_length(part) < 0 && !(!slash && mr_is_sidecar(part))) return 0;
         if (!slash) break;
         p = slash + 1;
     }

@@ -22,7 +22,7 @@ static void every_byte(void) {
     for (int b = 0; b < 256; b++) {
         char name[4] = { 'a', (char)b, 'z', 0 }, host[MR_HOST_MAX];
         int ok = mr_name_byte_ok((uint8_t)b);
-        int expect = b >= 32 && b != 127 && b != ':' && b != '/' && b != '\\';
+        int expect = b == 13 || (b >= 32 && b != 127 && b != ':' && b != '/' && b != '\\');
         CHECK(ok == expect);
         int n = to_host(name, 3, host);
         CHECK((n >= 0) == expect);
@@ -34,7 +34,7 @@ static void every_byte(void) {
         CHECK(strlen(host) == (size_t)n);
         if (b >= 128) CHECK((uint8_t)host[1] >= 0xC2);   /* high bytes become multi-byte UTF-8 */
     }
-    CHECK(allowed == 256 - 32 - 1 - 3);   /* 95 printable ASCII minus ':' '/' '\\' is 92, plus 128 high bytes = 220 */
+    CHECK(allowed == 256 - 32 - 1 - 3 + 1);   /* 95 printable ASCII minus ':' '/' '\\' is 92, plus 128 high bytes = 220, plus CR ($0D): the Finder's "Icon" + CR file */
     /* The table is a bijection onto distinct codepoints, so no two bytes name the same host character. */
     for (int a = 0; a < 256; a++) {
         CHECK(mr_from_unicode(mr_unicode((uint8_t)a)) == a);
@@ -132,13 +132,17 @@ static void length_limit(void) {
     memset(long_host, 0, sizeof long_host);
     for (int i = 0; i < 31; i++) memcpy(long_host + 2 * i, "\xC3\xA9", 2);
     CHECK(strlen(long_host) == 62 && mr_host_length(long_host) == 31);
-    /* the fork sidecar needs 5 more bytes ("<leaf>.rsrc"), counted in Mac Roman */
+    /* the fork sidecar "<leaf>.rsrc" is up to 36 bytes and hidden from the guest, so a name of the full 31 bytes can carry a fork */
     memset(long_host, 0, sizeof long_host);
-    for (int i = 0; i < 26; i++) memcpy(long_host + 3 * i, "\xE2\x84\xA2", 3);
+    for (int i = 0; i < 31; i++) memcpy(long_host + 3 * i, "\xE2\x84\xA2", 3);
     CHECK(mr_sidecar_ok(long_host));
-    memcpy(long_host + 78, "\xE2\x84\xA2", 3);
+    char side[MR_HOST_MAX + 8];
+    snprintf(side, sizeof side, "%s.rsrc", long_host);
+    CHECK(mr_is_sidecar(side) && mr_host_length(side) < 0);   /* legal for the overlay, invisible to the guest */
+    memcpy(long_host + 93, "\xE2\x84\xA2", 3);
     CHECK(!mr_sidecar_ok(long_host));
     CHECK(mr_sidecar_ok("Game Data") && !mr_sidecar_ok("a:b"));
+    CHECK(mr_is_sidecar("QuickTime Internet Extras 68k.rsrc") && !mr_is_sidecar(".rsrc") && !mr_is_sidecar("a:b.rsrc") && !mr_is_sidecar("Game Data"));
 }
 
 static void pascal_strings(void) {

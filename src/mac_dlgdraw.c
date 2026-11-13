@@ -70,7 +70,9 @@ void mac_dlg_draw(MacRuntime *rt, Dlg *d) {
             mac_pen_text(&pen, l + 16, t + 2, text, n, pen.dark, it->disabled);
         } else if (it->kind == MAC_ITEM_ICON) {
             MacResource icon;
-            if (!mac_resource_find(&rt->fork, ICON_TYPE, (int16_t)be16(it->data), &icon) && icon.size == 128) mac_pen_icon(&pen, l, t, icon.data);
+            uint32_t master = d->handle[k] ? mac_cpu_read(rt->cpu, d->handle[k], 4) : 0;   /* SetDItem gave this item an icon handle of the program's own */
+            if (d->handle[k]) { if (master >= 0x400 && master <= mac_cpu_ram_size(rt->cpu) - 128) mac_pen_icon(&pen, l, t, mac_cpu_ram(rt->cpu) + master); }
+            else if (!mac_resource_find(&rt->fork, ICON_TYPE, (int16_t)be16(it->data), &icon) && icon.size == 128) mac_pen_icon(&pen, l, t, icon.data);
         } else if (it->kind == MAC_ITEM_PICT && it->length == 2) mac_dlg_draw_pict(rt, l, t, r, b, (int16_t)be16(it->data));
     }
 }
@@ -81,6 +83,7 @@ unsigned mac_dlg_state_hash(const MacRuntime *rt, const Dlg *d) {
     unsigned h = 2166136261u;
 #define MIX(v) do { h ^= (unsigned)(v) & 0xffu; h *= 16777619u; } while (0)
     for (unsigned k = 0; k < d->ditl.count; k++) {
+        if (d->ditl.items[k].kind == MAC_ITEM_ICON) for (unsigned s = 0; s < 32; s += 8) MIX(d->handle[k] >> s);
         MIX(d->length[k]); for (unsigned i = 0; i < d->length[k]; i++) MIX(d->text[k][i]);
         MIX(d->value[k]); MIX(d->item_hidden[k]); MIX(d->ditl.items[k].disabled);
     }
