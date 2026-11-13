@@ -291,6 +291,7 @@ int mac_files_disk(MacRuntime *rt, const char *volume_root);
 typedef struct { char name[256]; uint32_t type, creator; uint16_t flags; } MacFileEntry;
 /* Fill up to `max` entries and set *count. Returns 0, or a File Manager error (-35 no volume, -36 I/O, -50 too many). */
 int mac_files_entries(MacRuntime *rt, MacFileEntry *out, unsigned max, unsigned *count);
+void mac_files_set_app_path(MacRuntime *rt, const char *path);   /* the same, from the path of its resource fork ("Name.rsrc" or "Name") */
 void mac_files_set_app(MacRuntime *rt, const char *name);   /* the application file the runtime was started from, reported by PBGetFCBInfo for its resource file */
 void mac_files_destroy(MacRuntime *rt);
 /* Mount a distinct writable save directory as an overlay on the data volume,

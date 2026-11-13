@@ -290,6 +290,31 @@ int main(void) {
     {   MacRuntime rt = fresh(); CHECK(get_new(&rt, 304) == 1); uint32_t d = raw(&rt, SP + 10, 4); rt.manager_flags &= ~2u;
         CHECK(mac_dlgmgr_redirect_bits(&rt, d + 2) == d + 2 && rt.window_count == 0); mac_cpu_destroy(rt.cpu); }                          /* no colour window machinery: unchanged */
     {   MacRuntime rt = {0}; CHECK(mac_dlgmgr_redirect_bits(&rt, 0x5002) == 0x5002); }                                                   /* no Dialog Manager at all */
+    /* SetWTitle on a dialog keeps the title in the WindowRecord (titleHandle +134, titleWidth +138); a window that is not an open dialog is not this service's. */
+    {   MacRuntime rt = fresh(); CHECK(get_new(&rt, 304) == 1); uint32_t d = raw(&rt, SP + 10, 4);
+        memcpy(mac_cpu_ram(rt.cpu) + 0x4200, "\005Setup", 6);
+        wr(&rt, SP, 4, 0x4200); wr(&rt, SP + 4, 4, d); CHECK(trap(&rt, 0xa91a, SP) == 1 && a7(&rt) == SP + 8);
+        uint32_t th = raw(&rt, d + 134, 4); CHECK(th && raw(&rt, d + 138, 2) == 40 && !memcmp(mac_cpu_ram(rt.cpu) + raw(&rt, th, 4), "\005Setup", 6));
+        memcpy(mac_cpu_ram(rt.cpu) + 0x4200, "\002Go", 3); wr(&rt, SP, 4, 0x4200); CHECK(trap(&rt, 0xa91a, SP) == 1);                       /* replaced, the old handle released */
+        th = raw(&rt, d + 134, 4); CHECK(!memcmp(mac_cpu_ram(rt.cpu) + raw(&rt, th, 4), "\002Go", 3));
+        wr(&rt, SP + 4, 4, 0x6000); CHECK(trap(&rt, 0xa91a, SP) == 0);
+        mac_cpu_destroy(rt.cpu); }
+    /* NewControl / FindControl / Draw1Control / DrawControls name the dialog itself: the controls live in its port window, created on first need. */
+    {   MacRuntime rt = fresh(); CHECK(get_new(&rt, 304) == 1); uint32_t d = raw(&rt, SP + 10, 4);
+        wr(&rt, SP, 4, d); CHECK(trap(&rt, 0xa873, SP) == 1 && rt.window_count == 1);
+        uint32_t port = mac_dlgwin_of_dialog(&rt, d); CHECK(port && mac_window_find(&rt, port) && mac_dlgwin_of_dialog(&rt, 0x6000) == 0);
+        wr(&rt, 0x4300, 2, 60); wr(&rt, 0x4302, 2, 150); wr(&rt, 0x4304, 2, 80); wr(&rt, 0x4306, 2, 220); memcpy(mac_cpu_ram(rt.cpu) + 0x4310, "\002OK", 3);
+        mac_cpu_set(rt.cpu, MAC_A7, SP); wr(&rt, SP + 22, 4, d); wr(&rt, SP + 18, 4, 0x4300); wr(&rt, SP + 14, 4, 0x4310); wr(&rt, SP + 12, 1, 1); wr(&rt, SP + 10, 2, 0);
+        wr(&rt, SP + 8, 2, 0); wr(&rt, SP + 6, 2, 1); wr(&rt, SP + 4, 2, 0); wr(&rt, SP, 4, 9);
+        CHECK(mac_controls_service(&rt, 0xa954) == 1 && a7(&rt) == SP + 26);
+        uint32_t h = raw(&rt, SP + 26, 4), p = h ? raw(&rt, h, 4) : 0; CHECK(p && raw(&rt, p + CTL_OWNER, 4) == port && raw(&rt, p + CTL_REFCON, 4) == 9);
+        mac_cpu_set(rt.cpu, MAC_A7, SP); wr(&rt, SP, 4, h); CHECK(mac_controls_service(&rt, 0xa96d) == 1 && a7(&rt) == SP + 4);   /* Draw1Control */
+        mac_cpu_set(rt.cpu, MAC_A7, SP); wr(&rt, SP, 4, d); CHECK(mac_controls_service(&rt, 0xa969) == 1);                          /* DrawControls(dialog) */
+        mac_cpu_set(rt.cpu, MAC_A7, SP); wr(&rt, SP, 4, 0x4320); wr(&rt, SP + 4, 4, d); wr(&rt, SP + 8, 4, 0x00640096u); wr(&rt, SP + 12, 2, 0x5555);   /* FindControl((v 100, h 150)): below the box: part 0 */
+        CHECK(mac_controls_service(&rt, 0xa96c) == 1 && raw(&rt, SP + 12, 2) == 0);
+        mac_cpu_set(rt.cpu, MAC_A7, SP); wr(&rt, SP, 4, 0x4320); wr(&rt, SP + 4, 4, d); wr(&rt, SP + 8, 4, 0x0046009bu); wr(&rt, SP + 12, 2, 0x5555);   /* (v 70, h 155): inside */
+        CHECK(mac_controls_service(&rt, 0xa96c) == 1 && raw(&rt, SP + 12, 2) == 10 && raw(&rt, 0x4320, 4) == h);
+        mac_cpu_destroy(rt.cpu); }
     /* Refusals: a missing CNTL, an item that names none, a CDEF the program lacks. Each halts and registers no window. */
     for (unsigned k = 0; k < 3; k++) {
         MacRuntime rt = fresh(); int rc = get_new(&rt, k == 0 ? 302 : k == 1 ? 303 : 305);

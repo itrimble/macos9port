@@ -101,3 +101,50 @@ by volume index returned `nsvErr` for index 3, which suggests it is searching vo
 
 **Not verified.** Nothing beyond that dialog: no click was sent, the Install Cache was not unpacked, no file was written. The instruction counts are headless budgets. The
 unpacking is the engine's own code; I did not check its output against a reference. `SizeRsrc` answers (the stub's `$A9A5` patch) were not exercised.
+
+## Third run — what the -50 was, and the next stop — branch `qt/installer-volumes`
+
+Same application and the same MBP copy (`QuickTime Installer` data fork 34,338 bytes, `.rsrc` 353,773 bytes), run from a scratch copy, headless, `ospi-runtime-probe --trace`.
+The method this time was to find the instruction that issues the failing call (a temporary program-counter watch in the CPU wrapper, not committed, plus the repo's
+`ospi-dasm` over a RAM dump) and read the engine's own routines around it, as observation only.
+
+**What the -50 was.** The `PBHOpen` with an empty name, `ioVRefNum` -1 and `ioDirID` 0 is the engine opening *its own file*. The routine around it builds a file
+specification record by hand (volume reference word, parent directory long, Pascal name at offset 6) from two globals and then opens its data fork through that record,
+without checking the build. The globals are filled in the engine's start-up: the name is copied from low-memory `$910`, the application-name global (a Str31 the
+system holds for the running program), and the volume reference comes from a `GetVol`-style call (-1 here, the OS999 HD, which is right). `$910` was zero in this
+runtime, so the record named nothing, and an open of an empty name in directory 0 is a parameter error. The name is now published when the runtime learns the
+application's file name (`mac_files_set_app`, `src/mac_fcbinfo.c`), and the probe, which never told the File Manager the name, now does (`mac_files_set_app_path`, shared with `ospi-runtime`).
+The open now reads `open vref=-1 dirid=0 perm=1 name='QuickTime Installer'`, resolves against the default directory (the application's folder, directory ID 2) and succeeds.
+I read the empty-name / directory-0 case as `paramErr` from the public description of the call, not from a reference machine.
+
+**What it was not.** The volume-index probing is correct as it stood. `PBHGetVInfo` by `ioVolIndex` answers index 1 (OS999 HD, reference -1) and index 2 (the authored System volume,
+reference -2, `mac_system_volume.c`) and `nsvErr` for index 3, which is how a program learns the volume list has ended; the engine walks it to the end and then moves on. Reference -1 is
+what `GetVol` returns for the default volume. No File Manager volume-semantics change was needed, and none was made.
+
+**Past the -50, in the order the engine hits things** (each is a fix with a headless test):
+
+| Stop | What was missing | Change |
+| --- | --- | --- |
+| Script Manager selector `8404000C` | `GetScript(script, verb)` | `smScriptEncoding` (verb 28) of the Roman script answers MacRoman (0); any other verb halts naming itself |
+| Script Manager selector `84020008` | `GetEnvirons(verb)` | `smRegionCode` (verb 40) answers verUS (0); any other verb halts naming itself |
+| `SetWTitle` on the installer's dialog | the window service only knows registered windows | a dialog keeps the title in its WindowRecord (`titleHandle`, `titleWidth`); `src/mac_dlgtitle.c`. Dialogs have no title bar here, so nothing is drawn |
+| `NewControl` on a dialog | "dialogs are not supported" | controls of an open dialog are created in its port window (the same hidden window its DITL controls already use) and found through the DialogPtr by `NewControl`, `GetNewControl`, `DrawControls`, `UpdateControls`, `FindControl` |
+| trap `$A96D` | `Draw1Control` | draws one control if it is visible in a visible window |
+
+The selector and verb numbers for the two Script Manager calls are from memory of the public interface and are **not verified against a reference**; they are limited to the one verb each that the engine
+used, and everything else still halts.
+
+**The stop: the List Manager.** After the engine has loaded its main dialog (`DLOG` 1000), added a control and got and set a user item, it calls `Pack0`
+(`$A9E7`) with selector `$0044`, which is `LNew`, with a vertical scroll bar and no horizontal one: it is creating a list (the component list of the custom install,
+by the resources around it). The runtime has no List Manager at all (no `ListRec`, no cell storage, no `LDEF` calls, no `LClick`/`LDraw`/`LAddRow`/`LSetCell` family), and the
+engine ships its own `LDEF` resources, so a real one has to call guest list definitions. That is a subsystem of its own, not an iteration, and I stopped there. The halt is
+`unhandled A-line trap a9e7 at 001177da` after 3,855,480 instructions (1,133 ms of guest time).
+
+| | Before this run | After |
+| --- | --- | --- |
+| Stop | `1009:5,-50` dialog, then `ModalDialog` wait at about 3.0 million instructions | halt on `Pack0` `LNew` at 3,855,480 instructions |
+| The `-50` | `PBHOpen` of an empty name | gone; the engine opens `QuickTime Installer` (perm 1), then `QuickTime Install Cache` (perm 3 refused with `permErr` -54 on the read-only volume, then perm 1) and reads it 54 times |
+
+**Not verified.** No installer window was drawn: a frame at 1 s of guest time shows only the menu bar rule. `LNew` is the stop, so "Easy Install" / "Custom Install" were never seen
+and nothing was clicked. The meaning of the engine's globals comes from its code and from the public names of the low-memory variables; I did not decompile it. One `Read` returns `rfNumErr` (-51)
+just before the volume walk, which I did not explain. The title of a dialog is stored but not shown.

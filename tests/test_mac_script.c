@@ -21,9 +21,27 @@ int main(void) {
     mac_cpu_set(r.cpu, MAC_A7, SP);
     CHECK(mac_script_service(&r, 0xa8b5) == 1 && mac_cpu_get(r.cpu, MAC_A7) == SP + 6 && rd(&r, SP + 6, 2) == 0);
     CHECK(mac_script_service(&r, 0xa8b6) == 0);                                   /* other traps are not ours */
-    /* an unknown selector halts and names itself */
-    wr(&r, SP, 4, 0x84020008u); mac_cpu_set(r.cpu, MAC_A7, SP);
-    CHECK(mac_script_service(&r, 0xa8b5) == -1 && mac_cpu_halted(r.cpu) && strstr(mac_cpu_error(r.cpu), "84020008"));
+    /* GetScript(script, verb): LONGINT. smScriptEncoding (28) of the Roman script is MacRoman (0); the result slot is above the two arguments */
+    wr(&r, SP, 4, 0x8404000cu); wr(&r, SP + 4, 2, 28); wr(&r, SP + 6, 2, 0); wr(&r, SP + 8, 4, 0x12345678u);
+    mac_cpu_set(r.cpu, MAC_A7, SP);
+    CHECK(mac_script_service(&r, 0xa8b5) == 1 && mac_cpu_get(r.cpu, MAC_A7) == SP + 8 && rd(&r, SP + 8, 4) == 0);
+    /* GetEnvirons(verb): LONGINT. smRegionCode (40) is verUS (0) */
+    wr(&r, SP, 4, 0x84020008u); wr(&r, SP + 4, 2, 40); wr(&r, SP + 6, 4, 0x12345678u);
+    mac_cpu_set(r.cpu, MAC_A7, SP);
+    CHECK(mac_script_service(&r, 0xa8b5) == 1 && mac_cpu_get(r.cpu, MAC_A7) == SP + 6 && rd(&r, SP + 6, 4) == 0);
+    mac_cpu_destroy(r.cpu);
+    /* a verb that is not answered halts and names itself and the verb; so does an unknown selector */
+    r = fresh();
+    wr(&r, SP, 4, 0x84020008u); wr(&r, SP + 4, 2, 22); mac_cpu_set(r.cpu, MAC_A7, SP);
+    CHECK(mac_script_service(&r, 0xa8b5) == -1 && mac_cpu_halted(r.cpu) && strstr(mac_cpu_error(r.cpu), "verb 22"));
+    mac_cpu_destroy(r.cpu);
+    r = fresh();
+    wr(&r, SP, 4, 0x8404000cu); wr(&r, SP + 4, 2, 7); wr(&r, SP + 6, 2, 0); mac_cpu_set(r.cpu, MAC_A7, SP);
+    CHECK(mac_script_service(&r, 0xa8b5) == -1 && mac_cpu_halted(r.cpu) && strstr(mac_cpu_error(r.cpu), "verb 7"));
+    mac_cpu_destroy(r.cpu);
+    r = fresh();
+    wr(&r, SP, 4, 0x8206000au); mac_cpu_set(r.cpu, MAC_A7, SP);
+    CHECK(mac_script_service(&r, 0xa8b5) == -1 && mac_cpu_halted(r.cpu) && strstr(mac_cpu_error(r.cpu), "8206000A"));
     mac_cpu_destroy(r.cpu);
     r = fresh(); mac_cpu_set(r.cpu, MAC_A7, SP + 1);                               /* an odd stack */
     CHECK(mac_script_service(&r, 0xa8b5) == -1 && mac_cpu_halted(r.cpu));

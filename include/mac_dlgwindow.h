@@ -8,6 +8,7 @@ uint32_t mac_dlgwin_create(MacRuntime *rt, int top, int left, int height, int wi
 /* Whether the colour window machinery a port window needs is up (QuickDraw initialised with a main device) and the registry has room; when not, SetPort(dialog) keeps the old behaviour: the dialog's QuickDraw is swallowed. */
 int mac_dlgwin_available(const MacRuntime *rt);
 uint32_t mac_dlgwin_ensure(MacRuntime *rt, Dlg *d);
+uint32_t mac_dlgwin_of_dialog(MacRuntime *rt, uint32_t dialog);   /* the port window of an open dialog named by its DialogPtr, created on first need; 0 when it is not an open dialog (or after halting) */
 void mac_dlgwin_shown(MacRuntime *rt, uint32_t window, int shown);   /* the dialog was shown or hidden: whether its controls draw */
 void mac_dlgwin_destroy(MacRuntime *rt, uint32_t window);
 int mac_dlgwin_owe_redraw(MacRuntime *rt, uint32_t window);   /* defer a control redraw requested inside a guest call; 1 if the window is a dialog's */

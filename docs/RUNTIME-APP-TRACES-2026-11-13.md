@@ -54,3 +54,23 @@ volumes. The data fork of the installer is 25 MB; none of it was read.
 * The instruction counts are headless budgets, not timing.
 * For the engine's unpacking I rely on its own code running; I did not compare its output with a reference unpacker.
 * The Resource Manager compressed-resource path (`A89F 6572` and a `dcmp`) is verified only against synthetic forks and a toy decompressor, not a real one.
+
+## The `-50` explained, and the next stop (branch `qt/installer-volumes`)
+
+Both installers use the same engine, so one cause explained both. Full reasoning and the table of fixes are in the third run of `docs/QUICKTIME-RUNTIME-TRACES.md`.
+
+**What the -50 was.** The `PBHOpen` with an empty name and directory 0 is the engine opening its own file through a file specification record it builds from two
+globals: the name copied from low-memory `$910` (ApName, the running application's name) and the default volume. `$910` was empty in this runtime. It is now set from the
+application's file name; the probe did not tell the File Manager the name at all, so both `ospi-runtime` and the probe now share `mac_files_set_app_path`. The volume walk that ends in `nsvErr` for index 3
+is correct (index 1 OS999 HD, index 2 the System volume, 3 past the end); nothing in volume indexing changed.
+
+**WordPerfect 3.5e installer, after the fix.** The same ordering: it opens `Install Corel WordPerfect 3.5e` (perm 1, directory 0, resolved to the default directory) and runs on to the same
+`DLOG` 1000, a `NewControl` on that dialog, and then `Pack0` selector `$0044` (`LNew`, vertical scroll bar) at 2,103,904 instructions (616 ms guest time), where it halts:
+`unhandled A-line trap a9e7`. Before: the `-50` dialog and a `ModalDialog` wait at about 1.76 million instructions. The same Script Manager, `SetWTitle`-on-a-dialog, controls-on-a-dialog and
+`Draw1Control` gaps were hit and closed on the way (the QuickTime record has the table).
+
+**The missing subsystem: the List Manager** (`Pack0`, `$A9E7`: `LNew` and the rest of the `L*` family, with calls into the program's own `LDEF` code). Neither installer's main window ("Easy Install" / "Custom Install")
+has been drawn; the frame at the stop is blank apart from the menu bar rule. Nothing was clicked.
+
+**Regression check.** Monkey Island (`Monkey Island.rsrc`) and Monkey Island 2 (`LeChuck's Revenge.rsrc`), probe copies in `~/os999-guest-software/from-mbp-20261111/`, 12 seconds of guest time each, before and
+after: identical instruction counts (32,611,248 and 37,422,033) and byte-identical frames at 0, 3, 6, 9 and 12 seconds. That is a headless probe comparison, not play.

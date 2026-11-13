@@ -42,6 +42,11 @@ uint32_t mac_dlgwin_ensure(MacRuntime *rt, Dlg *d) {
     }
     return d->port_window;
 }
+uint32_t mac_dlgwin_of_dialog(MacRuntime *rt, uint32_t dialog) {
+    if (!rt->dlgmgr || !dialog) return 0;
+    for (unsigned i = 0; i < MAX_OPEN; i++) if (M(rt)->open[i] && M(rt)->open[i]->ptr == dialog) return mac_dlgwin_available(rt) ? mac_dlgwin_ensure(rt, M(rt)->open[i]) : 0;
+    return 0;
+}
 void mac_dlgwin_shown(MacRuntime *rt, uint32_t window, int shown) { MacWindowState *w = mac_window_find(rt, window); if (w && w->port_only) w->port_only = shown ? 2 : 1; }
 void mac_dlgwin_destroy(MacRuntime *rt, uint32_t window) {
     if (!window || mac_cpu_halted(rt->cpu)) return;

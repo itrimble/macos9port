@@ -184,6 +184,7 @@ int main(int argc, char **argv) {
     if (!slash) return 2;
     *slash = 0;
     if (mac_files_root(&rt, data_root)) { fprintf(stderr, "Cannot establish data directory.\n"); return 2; }
+    mac_files_set_app_path(&rt, path);
     if (saves && mac_files_writable(&rt, saves, 64, UINT64_C(16) << 20)) { fprintf(stderr, "Cannot establish the writable save directory: %s\n", saves); return 2; }
 
     uint64_t total_frames = (uint64_t)(seconds * MAC_SOUND_RATE) + PROBE_FRAMES_PER_TICK;

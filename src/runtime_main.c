@@ -139,14 +139,7 @@ int main(int argc, char **argv) {
     }
     /* Saves live in a distinct directory with bounded quotas; without --saves
      * the data volume stays read-only and every guest write fails cleanly. */
-    {   /* the application's own file name, for PBGetFCBInfo on its resource file */
-        const char *leaf = strrchr(path, '/');
-        char app[64];
-        snprintf(app, sizeof app, "%s", leaf ? leaf + 1 : path);
-        size_t length = strlen(app);
-        if (length > 5 && !strcmp(app + length - 5, ".rsrc")) app[length - 5] = 0;
-        mac_files_set_app(&rt, app);
-    }
+    mac_files_set_app_path(&rt, path);   /* the application's own file name: PBGetFCBInfo on its resource file, and ApName */
     if (saves && mac_files_writable(&rt, saves, 64, UINT64_C(16) << 20)) {
         fprintf(stderr, "Cannot establish the writable save directory: %s\n", saves);
         mac_runtime_destroy(&rt); free(bytes); return 2;

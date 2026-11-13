@@ -111,6 +111,10 @@ static void session(const char *data, const char *saves, uint32_t *tex_id, uint3
     clear_pb(&rt); memset(mac_cpu_ram(rt.cpu) + NAMEA, 0, 48); w32(&rt, PB + 18, NAMEA); w16(&rt, PB + 28, 1);
     CHECK(pbcall(&rt, 0xa260, 8) == 0 && (int16_t)mac_cpu_read(rt.cpu, PB + 24, 2) == r && out_name_is(&rt, "Birch.pct"));
     mac_files_set_app(&rt, "Some App");
+    CHECK(mac_cpu_read(rt.cpu, 0x910, 1) == 8 && !memcmp(mac_cpu_ram(rt.cpu) + 0x911, "Some App", 8));   /* ApName, the Str31 an installer builds its own FSSpec from */
+    mac_files_set_app_path(&rt, "/x/y/Other.rsrc");
+    CHECK(mac_cpu_read(rt.cpu, 0x910, 1) == 5 && !memcmp(mac_cpu_ram(rt.cpu) + 0x911, "Other", 5));
+    mac_files_set_app(&rt, "Some App");
     clear_pb(&rt); memset(mac_cpu_ram(rt.cpu) + NAMEA, 0, 48); w32(&rt, PB + 18, NAMEA); w16(&rt, PB + 24, 1);
     CHECK(pbcall(&rt, 0xa260, 8) == 0 && out_name_is(&rt, "Some App") && mac_cpu_read(rt.cpu, PB + 58, 4) == 2);
     memset(mac_cpu_ram(rt.cpu) + DATA, 0, 8);

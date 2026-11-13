@@ -170,7 +170,7 @@ RUNTIME_HDRS += include/mac_resource_chain.h include/mac_resource_chain_int.h in
 
 include config/ppc-tests.mk
 # Toolbox calls added while taking real applications further (docs/REAL-APP-COMPATIBILITY.md).
-REALAPP_SRC := src/mac_fontnames.c src/mac_handles.c src/mac_pixpat.c src/mac_dlguser.c
+REALAPP_SRC := src/mac_fontnames.c src/mac_handles.c src/mac_pixpat.c src/mac_dlguser.c src/mac_dlgtitle.c
 REALAPP_TESTS := test_mac_fontnames test_mac_loadseg_loop
 RUNTIME += $(REALAPP_SRC)
 

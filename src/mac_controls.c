@@ -1,5 +1,6 @@
 #include "mac_controls.h"
 #include "mac_cdef.h"
+#include "mac_dlgwindow.h"
 #include "mac_window_int.h"
 #include "mac_resource.h"
 #include <stdio.h>
@@ -31,6 +32,13 @@ static uint32_t record(MacRuntime *rt, uint32_t h) {
     }
     mac_cpu_halt(rt->cpu, "A control handle is not a live control (forged, disposed or its master pointer changed).");
     return 0;
+}
+/* The window that owns the controls of `ptr`: a registered window itself, or an open dialog, whose controls live in its port window (mac_dlgwindow.h). */
+static MacWindowState *ctl_window(MacRuntime *rt, uint32_t ptr) {
+    MacWindowState *w = mac_window_find(rt, ptr);
+    if (w) return w;
+    uint32_t port = mac_dlgwin_of_dialog(rt, ptr);
+    return port ? mac_window_find(rt, port) : NULL;
 }
 static MacWindowState *owner_of(MacRuntime *rt, uint32_t p) {
     MacWindowState *w = mac_window_find(rt, rd(rt, p + CTL_OWNER, 4));
@@ -71,8 +79,9 @@ static int dispose(MacRuntime *rt, uint32_t h) {
 /* Shared by NewControl and GetNewControl: validates, allocates the handle and record, links it into the window's list and draws it. Returns the handle, 0 for
  * a memory failure (ResError -108, nil handle) or -1 after halting. `rect` is 8 bytes of big-endian top/left/bottom/right; `title` a Pascal string already checked. */
 static int64_t make_control(MacRuntime *rt, uint32_t win, const uint8_t *rect, const uint8_t *title, unsigned visible, int16_t value, int16_t lo, int16_t hi, unsigned proc, uint32_t refcon) {
-    MacWindowState *w = mac_window_find(rt, win);
-    if (!w) return fail(rt, "NewControl needs a registered window (dialogs are not supported).");
+    MacWindowState *w = ctl_window(rt, win);
+    if (!w) return fail(rt, "NewControl needs a registered window or an open dialog.");
+    win = w->address;
     unsigned base = proc & ~8u;
     int cid = mac_cdef_custom_id(proc);
     uint32_t cdef = 0;
@@ -149,7 +158,7 @@ static int shape(uint16_t op, unsigned *args, unsigned *result) {
     switch (op) {
     case 0xa904: *args = 4; return 1;                                                /* DrawGrowIcon */
     case 0xa954: *args = 26; *result = 4; return 1;                                  /* NewControl */
-    case 0xa955: case 0xa956: case 0xa957: case 0xa958: case 0xa969: *args = 4; return 1;       /* Dispose, Kill, Show, Hide, DrawControls */
+    case 0xa955: case 0xa956: case 0xa957: case 0xa958: case 0xa969: case 0xa96d: *args = 4; return 1;       /* Dispose, Kill, Show, Hide, DrawControls, Draw1Control */
     case 0xa953: *args = 8; return 1;                                                /* UpdateControls(window, rgn) */
     case 0xa959: case 0xa95c: *args = 8; return 1;                                   /* MoveControl, SizeControl */
     case 0xa95a: *args = 4; *result = 4; return 1;                                   /* GetCRefCon */
@@ -187,7 +196,7 @@ int mac_controls_service(MacRuntime *rt, uint16_t op) {
     uint32_t h = 0, p = 0;
     switch (op) {
     case 0xa956: case 0xa969: case 0xa953: {                                         /* KillControls, DrawControls, UpdateControls: take a window */
-        w = mac_window_find(rt, rd(rt, sp + (op == 0xa953 ? 4 : 0), 4));
+        w = ctl_window(rt, rd(rt, sp + (op == 0xa953 ? 4 : 0), 4));
         if (!w) return fail(rt, "The window is not a registered window.");
         uint32_t cur = rd(rt, w->address + 140, 4);
         for (unsigned guard = 0; cur && guard < 512; guard++) {
@@ -201,7 +210,7 @@ int mac_controls_service(MacRuntime *rt, uint16_t op) {
         return mac_cdef_start(rt); }
     case 0xa96c: {                                                                   /* FindControl(thePoint, theWindow, VAR theControl): part */
         uint32_t out = rd(rt, sp, 4), pt = rd(rt, sp + 8, 4);
-        w = mac_window_find(rt, rd(rt, sp + 4, 4));
+        w = ctl_window(rt, rd(rt, sp + 4, 4));
         if (!w) return fail(rt, "FindControl's window is not a registered window.");
         if (!ram_ok(rt, out, 4) || (out & 1)) return fail(rt, "FindControl's result pointer is invalid.");
         int v = (int16_t)(pt >> 16), hh = (int16_t)(pt & 0xffff); uint32_t cur = rd(rt, w->address + 140, 4);
@@ -237,6 +246,7 @@ int mac_controls_service(MacRuntime *rt, uint16_t op) {
         wr(rt, p + CTL_RECT, 2, (uint16_t)t); wr(rt, p + CTL_RECT + 2, 2, (uint16_t)l); wr(rt, p + CTL_RECT + 4, 2, (uint16_t)b); wr(rt, p + CTL_RECT + 6, 2, (uint16_t)r);
         redraw(rt, h);
         break; }
+    case 0xa96d: redraw(rt, h); break;                                                /* Draw1Control(ctl): one control, if it is visible in a visible window */
     case 0xa95a: wr(rt, sp + args, 4, rd(rt, p + CTL_REFCON, 4)); break;
     case 0xa95b: wr(rt, p + CTL_REFCON, 4, rd(rt, sp, 4)); break;
     case 0xa96a: wr(rt, sp + args, 4, rd(rt, p + CTL_ACTION, 4)); break;

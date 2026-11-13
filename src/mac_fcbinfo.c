@@ -31,7 +31,24 @@ int mac_files_fcb_ours(MacRuntime *rt) {
 
 void mac_files_set_app(MacRuntime *rt, const char *name) {
     FileState *s = rt ? rt->file_state : NULL;
-    if (s && name) snprintf(s->app_name, sizeof s->app_name, "%s", name);
+    if (!s || !name) return;
+    snprintf(s->app_name, sizeof s->app_name, "%s", name);
+    /* ApName ($910, Str31): the running application's file name. Installer engines open their own file by building an
+     * FSSpec from the default volume and this name; with it empty the spec names nothing and the open fails with paramErr. */
+    uint8_t length = (uint8_t)strlen(s->app_name);
+    if (length > 31) length = 31;
+    mac_cpu_write(rt->cpu, 0x910, 1, length);
+    for (unsigned i = 0; i < length; i++) mac_cpu_write(rt->cpu, 0x911 + i, 1, (uint8_t)s->app_name[i]);
+}
+
+void mac_files_set_app_path(MacRuntime *rt, const char *path) {
+    if (!path) return;
+    const char *leaf = strrchr(path, '/');
+    char app[64];
+    snprintf(app, sizeof app, "%s", leaf ? leaf + 1 : path);
+    size_t length = strlen(app);
+    if (length > 5 && !strcmp(app + length - 5, ".rsrc")) app[length - 5] = 0;
+    mac_files_set_app(rt, app);
 }
 
 int mac_files_fcb_info(MacRuntime *rt, uint32_t pb) {
