@@ -2,13 +2,38 @@
 
 ## Current integration status
 
-Build 32 is the promoted baseline as of 12 November 2026. Local main is
-`8950fd6`, the promotion of `integration/r11` (`aba87e1`). Main was pushed to
-origin on 12 November (`552a235..8950fd6`, from the MBP; the Neo's synced `.git`
-was missing an object). YouTube: hardware decode was verified from Chromium's
-diagnostics in the standalone browser helper, and Ian heard and saw playback there,
-but playback inside the OS999 desktop window is not yet verified. Builds 25–32 are summarised below and in
-the build table; the Build 24 text that follows is kept as the earlier record.
+Build 45 is the promoted baseline as of 13 November 2026 (main `d4101cf`, pushed to origin).
+Since 12 November the repository is not file-synced: each Mac has its own clone and the MBP checkout
+belongs to the integration watcher (see CLAUDE.md). Every merge below was pushed after a clean scan.
+
+Evidence levels. Seen by Ian in a real window on the MBP (Build 35, 12 Nov): Monkey Island 1 launching
+and playing its intro. Scripted or headless only: the YouTube hardware decode inside the desktop
+(VideoToolbox, hardware=true, from Chromium's diagnostics; Ian heard and saw playback only in the
+standalone helper), Thurrott.com loading inside the desktop (HTTP 200, TLS verified, two pages), and the
+QuickTime 4.0.3 installer running in OS999's runtime as far as installing QuickTime Player and the
+sample files into a scratch volume. QuickTime Player itself has not been run.
+
+Builds 33–45, in order:
+
+- 33: opt-in browser decoder diagnostics and YouTube evidence (`68d6640`).
+- 34: Makefile split under 500 lines; Builds 25–32 recorded (`aff3a39`).
+- 35: integration R12 (`7a04dcf`): Install Classic Apps, embedded YouTube diagnostics, Printing Manager
+  (no printer), 256 MB/32-bit default with a Get Info memory mode, Quake III retail.
+- 36: readable gate commit messages; CLAUDE.md commit and checkout rules (`715a824`).
+- 37: Disk Copy 6 (NDIF) diagnosis and messages (`8786937`).
+- 38: integration R13 (`22315f1`): compressed resources and the VISE packer hook, hierarchical File
+  Manager, installer progress bars, Quake III data picker.
+- 39: Thurrott.com demo evidence and opt-in page-load log (`3ccea48`).
+- 40: VISE installers open their own file (ApName), dialog titles and controls (`8fb52a0`).
+- 41: List Manager with standard and custom LDEFs (`212d64c`).
+- 42: font substitution, multistyled TextEdit, International Utilities (`281024f`).
+- 43: QuickTime installer to its progress window: DAStrings, blessed System Folder, SANE (`d4ec8e7`).
+- 44: Mac Roman file names and glyphs (`1dd6cb1`).
+- 45: the QuickTime installer installs QuickTime Player and samples: PBSetCatInfo, UprString (`a3abce1`).
+
+Open: a writable Resource Manager (the installer's next stop), QuickTime Player running and playing a
+movie in the runtime, TeachText's Apple decompressor (decision pending), Ian's own look at the embedded
+YouTube and Thurrott runs.
 
 Builds 25–32, in order:
 
@@ -145,6 +170,19 @@ builds is not deleted; Quake demo data is copied across once.
 
 | Candidate | Recorded outcome | Remaining work |
 | --- | --- | --- |
+| Build 45 | Gate passed: QuickTime installer installs Player and samples (`a3abce1`) | Promoted `d4101cf`; headless |
+| Build 44 | Gate passed: Mac Roman names and glyphs (`1dd6cb1`) | Promoted `eb1af4f` |
+| Build 43 | Gate passed: installer to progress window (`d4ec8e7`) | Promoted `10e0268` |
+| Build 42 | Gate passed: fonts, styled TextEdit, Intl (`281024f`) | Promoted `7bb5315` |
+| Build 41 | Gate passed: List Manager (`212d64c`) | Promoted `0f82b70` |
+| Build 40 | Gate passed: VISE ApName, dialog controls (`8fb52a0`) | Promoted `f417fd9` |
+| Build 39 | Gate passed: Thurrott.com evidence (`3ccea48`) | Promoted `a50f3b6`; scripted, not seen by Ian |
+| Build 38 | Gate passed: integration R13 (`22315f1`) | Promoted `9ffe084` |
+| Build 37 | Gate passed: Disk Copy NDIF messages (`8786937`) | Promoted `47d045f` |
+| Build 36 | Gate passed: commit rules, gate messages (`715a824`) | Promoted `5e2d4a6` |
+| Build 35 | Gate passed: integration R12 (`7a04dcf`) | Promoted `39c8a44`; Ian saw MI1 play its intro on the MBP |
+| Build 34 | Gate passed: Makefile split, tracker (`aff3a39`) | Promoted `e4202fd` |
+| Build 33 | Gate passed: YouTube decoder diagnostics (`68d6640`) | Promoted `7d032fb` |
 | Build 32 | Gate passed: `integration/r11` `aba87e1`, candidate-owned pins, Movie Player file dialog, guest RAM opt-in, launch profiles, PowerPC runtime, .sit dialog, menu audit, MI1 evidence | Promoted as main `8950fd6`; headless only, not seen in a window; PowerPC test app halts at `PrOpen` |
 | Build 31 | Gate passed: Quake III retail paks `61704f3` | Promoted as `3aa79ea`; headless only |
 | Build 30 | Failed: "Main changed during validation" (untracked `abandonware/` symlink in the main checkout) | Symlink added to `.git/info/exclude`; no package |
