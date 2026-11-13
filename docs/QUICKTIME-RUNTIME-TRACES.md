@@ -369,3 +369,59 @@ Types and creators are read from the host `com.apple.FinderInfo` attribute, not 
 The Finder info of the folder was set to the guest's value as given; what it means (position -1, -1 in a window) I did not check. No real window, no real mouse.
 
 **Suite.** `BUILDFLEET_LOCAL=1 make -j1 test` on the tip before this paragraph: exit 0. The desktop-menus test took several minutes on this machine (cause not examined).
+
+## Ninth run — a writable Resource Manager — branch `runtime/writable-resources`
+
+Built on `a3abce1` (Build 45 in the gate). The eighth run stopped on `RmveResource` ($A9AD) because the Resource Manager could not change any fork but the application's. This run adds the write side, tests it, and reruns the installer. Same method as before: headless `ospi-runtime-probe --disk --saves`
+on scratch copies of the MBP specimen (`QuickTime Installer` 34,338 bytes, `.rsrc` 353,773, `QuickTime Install Cache` 8,344,292), scripted clicks (Continue at 510,385 at 2 s, then 515,385 at 4, 6, 8 and 10 s). No real window, no real mouse.
+
+**What was built.**
+
+| Piece | Where | What it does |
+| --- | --- | --- |
+| Fork writer | `src/mac_resfork_write.c`, `include/mac_resfork_write.h` | Loads a fork into an editable list and writes it back as bytes in the public layout: 16-byte header, 240 reserved bytes (kept as found), data area (a length word before each resource), map (header copy, file attributes, type list, one reference list per type, name list). Types keep first-seen order; the changed bit is not stored; limits (4,096 resources, 24-bit data offsets, 16-bit map offsets, 16 MB) are refused rather than wrapped. |
+| Resource Manager write side | `src/mac_resource_write.c` | `AddResource`, `RmveResource`/`RemoveResource`, `ChangedResource`, `WriteResource`, `SetResInfo` (new ID and name), `SetResAttrs`, `UpdateResFile`, `SetResFileAttrs`/`GetResFileAttrs`, `SetResPurge` (recorded only; nothing is purged), `UniqueID`/`Unique1ID`, and a flush inside `CloseResFile`. |
+| Fork in memory | `MacOpenResource.bytes` | A changed fork is rebuilt in host memory at each change, so every lookup the read side does still works and handles stay valid; the bytes reach the file at `WriteResource`, `UpdateResFile` or `CloseResFile` only. A program that stops before them loses the changes, as on a real machine. |
+| Writing | `put_overlay` | Quota checks first (overlay file count, byte quota, the disk budget from `--disk`: `dskFulErr` -34), then a staging file, `fsync`, one `rename` over `<name>.rsrc` in the overlay. The guest holding the sidecar open for writing gives -49. |
+| Copy-on-write | same | A fork found only in the read-only data is written to the overlay at the first flush, as a whole new file; the data side and the host original are never opened for writing. The open fork then follows the overlay copy (its device and inode are refreshed, so a second `OpenResFile` of the name finds the same reference). |
+
+**Errors, as I implemented the public interface** (from the documented Resource Manager error codes; not checked against a real system): `resNotFound` -192 for a handle that is not a resource, `rfNumErr` -193 for a bad reference, `addResFailed` -194 (nil or non-handle, a handle that is already a resource's, a type and ID that exist, a limit of the layout),
+`resAttrErr` -198 for a protected resource (`ChangedResource`, `WriteResource`, `SetResInfo`, `RmveResource`; `SetResAttrs` can lift it), `wPrErr` -44 when the fork cannot be written (no overlay, a name that cannot carry a sidecar, the application's fork for `RmveResource`, or its `mapReadOnly` file attribute, which
+`SetResFileAttrs` can clear), `dskFulErr` -34, `ioErr` -36. A nil name to `AddResource` or `SetResInfo` means none or unchanged; an empty one clears the name. `Unique1ID` and `UniqueID` return the lowest free ID from 128, not a random one. `AddResource`, `ChangedResource`, `WriteResource`, `SetResInfo` and `SetResAttrs`
+aimed at the application's fork or the System file keep the older behaviour (accepted and dropped, or the edit layer for the application).
+
+**Tests** (`tests/test_mac_resource_write.c`, in `make test`): the writer on its own (grouping, names, attributes, an empty fork, a malformed one, load then build is byte-identical); open, add, change, remove, close, reopen and read back; the overlay file is written only at update or close and the data copy is byte-identical afterwards; names, ID change, duplicate ID,
+purgeable and locked attributes surviving a close, file attributes, protected resources; `Unique1ID` against `UniqueID` across two files; no overlay, the application's fork and a `mapReadOnly` fork refusing; a malformed fork refusing to open and writing nothing; byte-quota and file-count refusals (`-34`, nothing lands, `CloseResFile` still closes); a fork made by `CreateResFile`.
+The neighbouring resource, file and trap tests still pass: `test_mac_resource_services`, `_chain`, `_edits`, `test_mac_resource`, `test_mac_files_rf`, `test_mac_files`, `test_mac_traps`.
+
+**Installer result.** The installer now gets past the stop. It opens the `QuickTime Plugin` fork in the overlay and the trace (`--trace` now prints `resource-write` and `resource-close` lines) shows `RmveResource`, `AddResource`, `RmveResource`, `AddResource`, `RmveResource`, `RmveResource` all answered 0, then `UpdateResFile` 0, then `CloseResFile` with a flush of 0.
+`QuickTime Plugin.rsrc` went from 14,547 bytes (incomplete) to 13,181 and parses with the project's parser and an independent reading: 23 resources (`NSPL`, `BNDL`, `FREF`, `STR#` 126 to 130 and 140, `STR ` 1001, icons, `ALRT`, `DITL`, `vers`, `ftag` and others), file attributes 0. It then copies **`QuickTime READ ME`** (4,607 bytes, 22,628 in the fork) and goes on to a new stop.
+
+**The stop now.** After the READ ME the engine lists the volume root (`PBGetCatInfo` by index until -43), then asks `FindFolder` for `extn` (the Extensions folder) twice with **`vRefNum` -17954** ($B9DE), which is nothing this runtime ever gave it (the volume answers -1). `PBHGetVInfo` on that number gives `nsvErr` (-35), and the engine shows *This installation requires a System Folder on ...* with
+`1008:1,-35 Drive not found`, waits for OK, and idles (the probe ran 400 s guest time without a halt; the scripted clicks stop at 10 s). By reading the engine's code (observation through `ospi-dasm` of a RAM dump): the routine that picks a folder takes a (volume reference, directory ID) pair from its caller and in one mode uses the volume reference as it was given; the value therefore arrives from further up, in the
+installer's own state. I did not find where it is set. It may be an uninitialised value in the guest or a field this runtime fills wrongly; I did not establish which, and I did not change anything for it. **The QuickTime extension was not reached, and nothing was installed into `System Folder:Extensions`.**
+
+**What was written, and where.** All of it inside the scratch `--saves` directory; the scratch `--disk` copy is identical to the copy I made (`diff -r`), no `.os999` file appeared in it, and the live OS Pi volume has nothing newer than the run. The tree:
+
+```
+QuickTime™ Folder/
+  Internet Config            0 B       Internet Config.rsrc   250,996
+  PictureViewer              0         PictureViewer.rsrc     163,261
+  QuickTime Player           0         QuickTime Player.rsrc  799,406
+  QuickTime Plugin           0         QuickTime Plugin.rsrc  13,181   (edited, valid)
+  QuickTime READ ME          4,607     QuickTime READ ME.rsrc 22,628
+  Sample Image               29,363    Sample Image.rsrc      472
+  Sample Movie               73,318    Sample Movie.rsrc      472
+System Folder/
+  Preferences/
+    QuickTime Preferences    0
+```
+
+No staging files were left behind.
+
+**MI1 and MI2.** Probes of `a3abce1` (built from `git archive` in a scratch directory) and this tip, 12 s each, the same flags: Monkey Island 32,611,248 instructions both, Monkey Island 2 37,422,033 both, and byte-identical frames (`cmp`) at 0, 3, 6, 9 and 12 s. The 55 files in `~/os999-guest-software/from-mbp-20261111/` hashed (`shasum`) before and after: unchanged. Their save overlays were scratch directories.
+
+**Suite.** `BUILDFLEET_LOCAL=1 make -j1 test` on the tip before this paragraph (commit `5787864`): exit 0. It took well over an hour on a heavily loaded machine (load average above 60 from other sessions).
+
+**Not verified.** Headless probe and scripted clicks only. The Resource Manager's behaviour is built from the public documentation of the calls and has not been compared with a real system: error codes for corner cases (for example a duplicate ID in `SetResInfo`), whether a changed flag is required before `SetResAttrs` reaches the file, and the fork layout details are as I understood them (a reader other than ours, the independent script I used above, accepts the file). Attribute bits are stored and returned but not applied to loaded handles (a locked or purgeable attribute does not lock
+or mark the memory handle). `SetResPurge` is recorded and does nothing. The PowerPC half of the installer, the `Components` and `Control Panels` items and the Internet Config preferences were not reached. The cause of the -17954 is not known.

@@ -151,7 +151,7 @@ CPUOBJ := build/m68kcpu.o build/m68kops.o build/softfloat.o
 RUNTIME := src/mac_resource.c src/mac_cpu.c src/mac_runtime.c src/mac_services.c src/mac_memory.c src/os999_heap.c src/mac_heap_bridge.c src/mac_resource_services.c src/mac_resource_edits.c src/mac_events.c src/mac_quickdraw.c src/mac_toolbox.c src/mac_raster.c src/mac_system.c src/mac_geometry.c src/mac_files.c src/mac_cursor.c src/mac_ccursor.c src/mac_color.c src/mac_dialog.c src/mac_color_port.c src/mac_copybits.c src/mac_palette.c src/mac_color_raster.c
 RUNTIME += src/mac_video_config.c src/mac_vbl.c src/mac_pixmap.c src/mac_pixels.c src/mac_volume.c src/mac_window.c src/mac_window_draw.c src/mac_regions.c src/mac_system_volume.c src/mac_color_pen.c src/mac_drive_queue.c src/mac_menu.c src/mac_menu_records.c src/mac_palette_manager.c src/mac_window_resource.c src/mac_window_registry.c src/font.c
 RUNTIME_HDRS := include/folder_navigation.h src/runtime_video_pixels.h src/runtime_frame.h src/runtime_pacing.h include/mac_resource.h include/mac_cpu.h include/mac_runtime.h include/mac_window_int.h include/mac_system_volume.h include/mac_drive_queue.h include/mac_menu_int.h include/runtime_bridge.h
-RUNTIME += src/mac_resource_catalog.c src/mac_resource_files.c
+RUNTIME += src/mac_resource_catalog.c src/mac_resource_files.c src/mac_resfork_write.c src/mac_resource_write.c
 RUNTIME += src/mac_pict_decode.c src/mac_picture.c
 RUNTIME += src/mac_sane.c src/mac_sane_arith.c
 RUNTIME += src/mac_numconv.c src/mac_help.c src/mac_appleevents.c
@@ -166,7 +166,7 @@ RUNTIME_HDRS += include/mac_time.h include/mac_init.h include/ext_init.h include
 RUNTIME_HDRS += include/mac_sound_double.h
 RUNTIME_HDRS += include/mac_sound.h include/mac_sound_int.h include/runtime_audio.h include/runtime_perf.h include/runtime_keys.h
 RUNTIME_HDRS += include/mac_pict.h
-RUNTIME_HDRS += include/mac_resource_chain.h include/mac_resource_chain_int.h include/mac_handles.h include/mac_pixpat.h
+RUNTIME_HDRS += include/mac_resource_chain.h include/mac_resource_chain_int.h include/mac_resfork_write.h include/mac_handles.h include/mac_pixpat.h
 
 include config/ppc-tests.mk
 # Toolbox calls added while taking real applications further (docs/REAL-APP-COMPATIBILITY.md).
@@ -192,6 +192,9 @@ build/test_mac_resource_chain: $(RUNTIME_OBJ) tests/test_mac_resource_chain.c $(
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_resource_chain.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 test: build/test_mac_resource_chain
+build/test_mac_resource_write: $(RUNTIME_OBJ) tests/test_mac_resource_write.c $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_resource_write.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+test: build/test_mac_resource_write
 test: build/test_guest_memory
 
 build/test_mac_picture: $(RUNTIME_OBJ) tests/test_mac_picture.c $(RUNTIME_HDRS) $(CPUOBJ)
@@ -245,6 +248,7 @@ test: build/test_os999_startup build/test_os999_startup_bar build/test_ospi buil
 	./build/test_mac_runtime
 	./build/test_mac_resource_services
 	./build/test_mac_resource_chain
+	./build/test_mac_resource_write
 	./build/test_mac_picture
 	./build/test_mac_pict_v1
 	./build/test_mac_sane

@@ -1,5 +1,6 @@
 #include "mac_runtime.h"
 #include "mac_resource_chain.h"
+#include "mac_resource_chain_int.h"
 #include "mac_rescomp.h"
 #include "mac_codefmt.h"
 
@@ -174,6 +175,8 @@ int mac_resource_service(MacRuntime *rt, uint16_t opcode) {
     if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1;
     int file_result=mac_resource_file_service(rt,opcode);
     if(file_result)return file_result;
+    int write_result=mac_resource_write_service(rt,opcode);
+    if(write_result)return write_result;
     switch (opcode) {
     case 0xa9a0: case 0xa81f: case 0xa99d: args = 6; width = 4; break;
     case 0xa9bc: args = 2; width = 4; break; /* GetPicture(picID): GetResource(PICT,id). */

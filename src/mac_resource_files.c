@@ -53,12 +53,16 @@ static int read_fork(MacRuntime *rt,const char *name,MacOpenResource *out) {
     int root=mac_files_directory_fd(rt);if(root<0)return -35;
     char path[256];int error=0,fd=-1;
     /* A resource fork on the save overlay ("<name>.rsrc", see mac_files_rf.c) shadows the application volume's export and is writable. */
-    const FileState *fs=rt->file_state;out->writable=0;
+    FileState *fs=rt->file_state;out->writable=0;out->sidecar[0]=0;
     const char *leaf=strrchr(name,'/');leaf=leaf?leaf+1:name;
-    if(fs && fs->saves>=0 && mr_sidecar_ok(leaf) && strlen(name)+6<=sizeof path) {
-        snprintf(path,sizeof path,"%s.rsrc",name);
-        fd=mac_dirs_openat(fs->saves,path,O_RDONLY|O_NONBLOCK,0);
-        if(fd>=0){out->writable=1;snprintf(out->sidecar,sizeof out->sidecar,"%s",path);}
+    if(mr_sidecar_ok(leaf) && strlen(name)+6<=sizeof path) {
+        snprintf(out->sidecar,sizeof out->sidecar,"%s.rsrc",name); /* where a write goes: the overlay copy, made on the first write */
+        if(fs && fs->saves>=0) {
+            mac_files_flush_staged(fs);
+            snprintf(path,sizeof path,"%s.rsrc",name);
+            fd=mac_dirs_openat(fs->saves,path,O_RDONLY|O_NONBLOCK,0);
+            if(fd>=0)out->writable=1;
+        }
     }
     if(fd<0) {
         error=resolve(root,name,path);
@@ -94,6 +98,12 @@ static struct MacResourceChain *ensure(MacRuntime *rt) {
         if(rt->resource_chain){rt->resource_chain->current=MAC_APP_RES_REF;rt->resource_chain->next_ref=MAC_FORK_REF_BASE;}
     }
     return rt->resource_chain;
+}
+struct MacResourceChain *mac_resource_chain_ensure(MacRuntime *rt) { return ensure(rt); }
+MacOpenResource *mac_resource_file_of(MacRuntime *rt,int16_t ref) {
+    struct MacResourceChain *c=rt->resource_chain;
+    if(c&&ref>=MAC_FORK_REF_BASE)for(unsigned i=0;i<MAC_FORK_LIMIT;i++)if(c->files[i].bytes&&c->files[i].ref==ref)return &c->files[i];
+    return NULL;
 }
 /* OpenResFile(fileName): the name is a Pascal string, resolved against the default directory (a partial path or "OS999 HD:dir:name" also works). */
 int mac_resource_open_by_pointer(MacRuntime *rt,uint32_t pointer,int16_t *ref) {
@@ -148,6 +158,9 @@ static int close_resource(MacRuntime *rt,int16_t ref) {
             mac_cpu_halt(rt->cpu,"CloseResFile cannot invalidate active or malformed resource handles.");return -1;
         }
     }
+    int flushed=mac_resource_flush_file(rt,file);
+    if(rt->trace)fprintf(stderr,"resource-close ref=%d flush=%d\n",ref,flushed);
+    /* a failed write is reported in ResError; the file is closed all the same */
     for(size_t i=0;i<rt->handle_count;i++) {
         MacHandle *h=&rt->handles[i];
         if(h->resource&&h->resource_owner==ref){mac_cpu_write(rt->cpu,h->handle,4,0);mac_runtime_free_data(rt,h->pointer);memset(h,0,sizeof *h);}
@@ -157,7 +170,7 @@ static int close_resource(MacRuntime *rt,int16_t ref) {
         c->current=MAC_APP_RES_REF;uint32_t newest=0;
         for(unsigned i=0;i<MAC_FORK_LIMIT;i++)if(c->files[i].bytes&&c->files[i].serial>newest){newest=c->files[i].serial;c->current=c->files[i].ref;}
     }
-    return 0;
+    return flushed;
 }
 int mac_resource_file_service(MacRuntime *rt,uint16_t opcode) {
     unsigned args,width;
