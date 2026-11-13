@@ -93,7 +93,7 @@ static int get_new_dialog(MacRuntime *rt, uint32_t sp) {
         const MacDitlItem *it = &list.items[k];
         /* a user item (type 0) is accepted but its draw procedure is never called: it stays blank; if enabled it still counts as a hit */
         if (it->kind == MAC_ITEM_CONTROL) has_ctl = 1;
-        if (it->kind != MAC_ITEM_HELP && (it->right <= it->left || it->bottom <= it->top)) return fail(rt, "A dialog item has an empty rectangle.");
+        if (it->kind != MAC_ITEM_HELP && it->kind != MAC_ITEM_USER && it->kind != MAC_ITEM_BUTTON && it->kind != MAC_ITEM_CHECK && it->kind != MAC_ITEM_RADIO && it->kind != MAC_ITEM_STATIC && (it->right <= it->left || it->bottom <= it->top)) return fail(rt, "A dialog item has an empty rectangle.");   /* a button, check box, radio button, static text or user item may be empty (a program resizes or moves it later); it draws nothing and is never hit */
     }
     uint32_t ptr = storage;
     if (storage) { if ((storage & 1) || !valid(rt, storage, RECORD)) return fail(rt, "GetNewDialog dStorage is invalid."); }
@@ -258,7 +258,7 @@ static int dialog_select(MacRuntime *rt, uint32_t sp, uint32_t pc) {
     if (d && d->hidden) d = NULL;
     if (!d) { wr(rt, sp + 12, 2, 0); mac_cpu_set(rt->cpu, MAC_A7, sp + 12); return 1; }
     if (!valid(rt, ev, 16) || !valid(rt, dp, 4) || !valid(rt, ip, 2)) return fail(rt, "DialogSelect pointer is invalid.");
-    unsigned chosen = 0, handled = 0;
+    unsigned chosen = 0, handled = 0; int upd = 0;
     if (d->select_busy) {
         if (pc != d->pc || sp != d->sp) return fail(rt, "DialogSelect called again while a press is being tracked.");
         MacEvent e;
@@ -273,16 +273,16 @@ static int dialog_select(MacRuntime *rt, uint32_t sp, uint32_t pc) {
             else if (item && d->ditl.items[item - 1].kind == MAC_ITEM_USER) chosen = (unsigned)item;
             else if (item) { d->pressed = item; d->select_busy = 1; d->sp = sp; d->pc = pc; draw(rt, d); mac_cpu_set(rt->cpu, MAC_PC, pc); mac_cpu_yield(rt->cpu); return 1; }
         } else if (e.what == 3 || e.what == 5) chosen = handle_event(d, &e);
-        else if (e.what == 6 || e.what == 8) draw(rt, d);
+        else if (e.what == 6 || e.what == 8) { draw(rt, d); d->update_due = 0; upd = 1; }   /* an update: repaint and give the program's own items their turn */
     }
     d->pressed = 0;
     if (chosen && d->ditl.items[chosen - 1].kind == MAC_ITEM_CHECK) d->value[chosen - 1] = !d->value[chosen - 1];
     for (unsigned k = 0; k < d->ditl.count; k++) mirror(rt, d, k);
     if (chosen) { wr(rt, dp, 4, d->ptr); wr(rt, ip, 2, chosen); }
-    draw(rt, d);
+    redraw_changed(rt, d);                                                                          /* only when the dialog's state changed, so what the program drew in it survives */
     wr(rt, sp + 12, 1, chosen ? 1 : 0); wr(rt, sp + 13, 1, 0);
     mac_cpu_set(rt->cpu, MAC_A7, sp + 12);
-    return 1;
+    { int u = upd ? mac_dlg_user_start(rt, d, sp + 12, pc + 2) : 0; return u ? u : 1; }
 }
 
 static int dlg_service(MacRuntime *rt, uint16_t opcode) {
@@ -491,7 +491,7 @@ int mac_dlgmgr_item_control(MacRuntime *rt, uint16_t op, uint32_t h, uint32_t sp
     int toggle = it->kind == MAC_ITEM_CHECK || it->kind == MAC_ITEM_RADIO;
     if (op == 0xa963 && toggle) d->value[k] = (int16_t)rd(rt, sp, 2) != 0;
     else if (op == 0xa960 && toggle) wr(rt, sp + args, 2, (uint16_t)d->value[k]);
-    else if (op == 0xa95d && (toggle || it->kind == MAC_ITEM_BUTTON)) it->disabled = (rd(rt, sp, 2) & 0xff) == 255; else if (op == 0xa959 && (toggle || it->kind == MAC_ITEM_BUTTON)) { if (mac_dlg_move_item(rt, d, k, (int16_t)rd(rt, sp + 2, 2), (int16_t)rd(rt, sp, 2)) < 0) return -1; }
+    else if (op == 0xa95d && (toggle || it->kind == MAC_ITEM_BUTTON)) it->disabled = (rd(rt, sp, 2) & 0xff) == 255; else if (op == 0xa959 && (toggle || it->kind == MAC_ITEM_BUTTON)) { if (mac_dlg_move_item(rt, d, k, (int16_t)rd(rt, sp + 2, 2), (int16_t)rd(rt, sp, 2)) < 0) return -1; } else if (op == 0xa95f || op == 0xa95e) { if (mac_dlg_item_title(rt, d, k, op == 0xa95f, sp) < 0) return -1; }
     else { char m[112]; snprintf(m, sizeof m, "Control trap $%04x on a dialog item handle is unsupported.", op); return fail(rt, m); }
     mac_cpu_set(rt->cpu, MAC_A7, sp + args);
     if (op != 0xa960 && d->drawn) draw(rt, d);

@@ -53,6 +53,7 @@ static int take_event(MacRuntime *rt, uint16_t mask, int consume, MacEvent *out)
         }
         return 1;
     }
+    if (mac_dlgmgr_update_event(rt, mask, out)) return 1;
     return mac_window_update_event(rt, mask, out);
 }
 

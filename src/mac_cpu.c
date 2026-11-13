@@ -152,7 +152,8 @@ static int illegal_instruction(int opcode) {
         if (active && active->trap && active->trap(active, (uint16_t)opcode, pc,
                                                    active->trap_user) == 0)
             return 1;
-        snprintf(error, sizeof error, "unhandled A-line trap %04x at %08x (D0 %08x)", opcode & 0xffff, pc, (unsigned)m68k_get_reg(NULL, M68K_REG_D0)); /* D0 names the selector of the dispatching traps */
+        { unsigned spw = 0, sp = (unsigned)m68k_get_reg(NULL, M68K_REG_SP) & (active ? active->amask : 0xffffffu); if (active && (size_t)sp + 4 <= active->ram_size) spw = (unsigned)(active->ram[sp] << 8 | active->ram[sp + 1]) << 16 | (unsigned)(active->ram[sp + 2] << 8 | active->ram[sp + 3]);
+            snprintf(error, sizeof error, "unhandled A-line trap %04x at %08x (D0 %08x, two words on top of the stack %08x)", opcode & 0xffff, pc, (unsigned)m68k_get_reg(NULL, M68K_REG_D0), spw); } /* D0 names the selector of the register-dispatched traps, the top word that of the stack-dispatched ones (Pack0, Pack3, Pack6, TEDispatch) */
         mac_cpu_halt(active, error);
         return 1;
     }

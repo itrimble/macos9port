@@ -86,3 +86,26 @@ The List Manager exists now (see the fourth run in `docs/QUICKTIME-RUNTIME-TRACE
 
 For WordPerfect the stop is a font policy question, not a missing manager: the runtime refuses to substitute a face, and the faces it may bundle are limited by the clean-room rules. Nothing was drawn (the frame is blank).
 "Easy Install" / "Custom Install" were not reached in either installer. MI1 and MI2 are unchanged: identical instruction counts (32,611,248 and 37,422,033) and byte-identical frames at 0, 3, 6, 9 and 12 seconds against a build of the commit before the List Manager.
+
+## After the font substitution, the picture comment and multistyled TextEdit
+
+Full account in the fifth run of `docs/QUICKTIME-RUNTIME-TRACES.md`. Headless, probe, scratch copies:
+
+| Installer | Before | After |
+| --- | --- | --- |
+| QuickTime 4.0.3 Installer | halt on trap `$A83E` (`TEStyleNew`) after Continue | Welcome, then the Software License window with styled text, scroll bar and Print?/Save As?/Disagree/Agree; a scripted Agree halts on `$A9ED` selector 6 (`IUGetIntl(0)`, International Utilities) |
+| WordPerfect 3.5e installer | halt on `Font family 3 size 9 ... not in the guest application's resources` | splash picture drawn (PICT long comments are skipped), Continue, then the Your License window; waits for input. Its text area wraps one letter per line and the splash is not erased behind it |
+
+"Easy Install" / "Custom Install" were not reached in either. The next missing subsystem for QuickTime is the International Utilities package (Pack6) with an authored `itl0`. MI1 and MI2 are unchanged
+(identical instruction counts and byte-identical frames against the previous commit's build).
+
+## International Utilities and the install-type window
+
+Full account in the sixth run of `docs/QUICKTIME-RUNTIME-TRACES.md`. Headless, probe, scratch copies:
+
+| Installer | Before | After |
+| --- | --- | --- |
+| QuickTime 4.0.3 Installer | scripted Agree halts on Pack6 `IUGetIntl(0)` | install-type window drawn (Minimum / Full / Custom, Quit, Continue) and waiting; a scripted Continue shows the alert "The selected disk named ?? does not have enough [room]" |
+| WordPerfect 3.5e installer | Your License window, text apparently one letter per line | no narrow wrap exists (destRect 441 wide); the engine draws a 431 by 229 srcCopy picture over the text after `TEUpdate`; cause of that order not established |
+
+MI1 and MI2 are unchanged (identical instruction counts and byte-identical frames against the previous commit's build).

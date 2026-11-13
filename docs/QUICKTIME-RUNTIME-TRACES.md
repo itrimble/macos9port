@@ -125,14 +125,13 @@ what `GetVol` returns for the default volume. No File Manager volume-semantics c
 
 | Stop | What was missing | Change |
 | --- | --- | --- |
-| Script Manager selector `8404000C` | `GetScript(script, verb)` | `smScriptEncoding` (verb 28) of the Roman script answers MacRoman (0); any other verb halts naming itself |
+| Script Manager selector `8404000C` | `GetScript(script, verb)` | `smScriptLang` (verb 28) of the Roman script answers langEnglish (0); any other verb halts naming itself |
 | Script Manager selector `84020008` | `GetEnvirons(verb)` | `smRegionCode` (verb 40) answers verUS (0); any other verb halts naming itself |
 | `SetWTitle` on the installer's dialog | the window service only knows registered windows | a dialog keeps the title in its WindowRecord (`titleHandle`, `titleWidth`); `src/mac_dlgtitle.c`. Dialogs have no title bar here, so nothing is drawn |
 | `NewControl` on a dialog | "dialogs are not supported" | controls of an open dialog are created in its port window (the same hidden window its DITL controls already use) and found through the DialogPtr by `NewControl`, `GetNewControl`, `DrawControls`, `UpdateControls`, `FindControl` |
 | trap `$A96D` | `Draw1Control` | draws one control if it is visible in a visible window |
 
-The selector and verb numbers for the two Script Manager calls are from memory of the public interface and are **not verified against a reference**; they are limited to the one verb each that the engine
-used, and everything else still halts.
+The Script Manager selector and verb numbers were checked in the fifth run below against Apple's public Script interface (`GetScript` selector `$8404000C`, `GetEnvirons` `$84020008`, `smRegionCode` 40, `smDoubleByte` 36); verb 28 of `GetScript` is `smScriptLang`, not an encoding, and the answer (0) is unchanged.
 
 **The stop: the List Manager.** After the engine has loaded its main dialog (`DLOG` 1000), added a control and got and set a user item, it calls `Pack0`
 (`$A9E7`) with selector `$0044`, which is `LNew`, with a vertical scroll bar and no horizontal one: it is creating a list (the component list of the custom install,
@@ -160,8 +159,7 @@ headless, including a hand-assembled LDEF, and checks the PowerPC bridge rows fo
 
 Stated differences and limits: the cell data is a host table (the ListRec's `cellArray` offset table does not exist, so a program that reads it directly is unsupported); the default cell height is 12 pixels when the
 program passes 0; scrolling redraws the visible cells instead of copying pixels; `LClick` handles one press (no drag selection, no scroll-bar thumb tracking, which halts by name; arrows and page areas step once);
-`LSearch` with the program's own search procedure halts, and the default match is exact bytes; `LActivate` toggles the scroll bars but does not change how selected cells look. The selector numbers other than
-`LNew` ($44, seen in a real call) follow an alphabetical stride of four from memory and are **not verified against a reference**; the argument orders likewise.
+`LSearch` with the program's own search procedure halts, and the default match is exact bytes; `LActivate` toggles the scroll bars but does not change how selected cells look. The selector numbers and argument orders were verified in the fifth run below.
 
 Three more things the engine asked for after `LNew`, each with a test: `MoveControl` on a dialog's button, check box or radio button item (`src/mac_dlgtitle.c`, the item's rectangle moves like `SetDItem`);
 `SizeWindow` on a dialog (backdrop replaced, regions reset, the port window follows); and the earlier `NewControl`-on-a-dialog route now carries the list's scroll bar.
@@ -179,3 +177,73 @@ reached, and was not seen.
 | Drawn | menu bar rule only | the Welcome dialog (see above) |
 
 **Not verified.** The visual defects above are as seen in one headless frame, not explained. The Continue click is a scripted press through the probe, not a real mouse. Nothing past the Welcome screen has run.
+
+## Fifth run — verified selectors, font substitution, multistyled TextEdit, the licence window — branch `qt/installer-volumes`
+
+**List Manager numbers, verified.** All 26 selectors, their argument orders and result types match Apple's archived *More Macintosh Toolbox* List Manager reference
+(`developer.apple.com/library/archive/documentation/mac/MoreToolbox/MoreToolbox-268.html`, the routine summary), cross-checked on the pages for `LActivate`, `LSetSelect`, `LNew`, `LAddRow` and
+`LDelRow`. `LFind` is that document's `LGetCellDataLocation` and `LDoDraw` its `LSetDrawingMode` (same selectors). Two behaviours I had wrong or had left open are now as documented: a count of 0 in
+`LDelRow`/`LDelColumn` deletes them all, and an invalid start does nothing (it halted before). Insertion at `rowNum` with the first new row as the result, a position past the end appending, and
+scroll bars outside the view rectangle all agree with the same pages. Still from memory and not in what I read: `LSearch`'s default match (exact bytes here), `LNextCell` wrapping, the double-click
+timing test, and the 12-pixel default cell height. The Script Manager verbs were checked against Apple's public `Script.h`: `GetEnvirons` verbs 4 (`smEnabled`), 6, 18, 20, 22, 36 (`smDoubleByte`) and 40
+(`smRegionCode`) are now answered for a Roman-only machine, and `GetScript` verb 28 is `smScriptLang`.
+
+**Font substitution (`src/mac_font.c`).** The classic Font Manager does not refuse a face that is not installed, so `mac_font_find` no longer does: a missing size takes the nearest size of the
+family the program carries (larger first at equal distance, searched among sizes 1 to 127 because a FONT id is `family * 128 + size`), a family with no strike at all takes OS999's stand-in system face
+(ChicagoFLF through `mac_sysfont`, at the requested size clamped to 8 to 36). A strike the program carries but that is malformed is still an error, and nothing is scaled: a nearer size is drawn at its own
+height. `RealFont` answers from the new `mac_font_find_exact`, so it says no for anything that is only a substitute. `FMSwapFont` has no implementation in this runtime (it halts as an unhandled trap), so
+there is nothing there to keep consistent. WordPerfect's `Font family 3 size 9` stop is gone.
+
+**Multistyled TextEdit (`src/mac_testyle.c`, `src/mac_te_int.h`, `src/mac_textedit.c`).** `TEStyleNew` ($A83E) builds a TERec with `txSize`, `lineHeight` and `fontAscent` -1 and the style handle in
+`txFont`/`txFace`; the style record, style table, style runs, line-height table and null style are real guest handles in Apple's public layouts (the numbers are from Apple's public `TextEdit.h` and the
+TextEdit chapter of *Inside Macintosh: Text*). TEDispatch selectors implemented on multistyled records: 1 `TESetStyle` (with `doToggle` and `addSize`), 2 `TEReplaceStyle`, 3 `TEGetStyle`,
+4 `TEGetStyleHandle`, 6 `TEGetStyleScrapHandle`, 7 `TEStyleInsert`, 10 `TEContinuousStyle`, 11 `TEUseStyleScrap`, 13 `TENumStyles`; 0, 5, 12 and 14 halt by name. Layout, line breaking, hit testing,
+`TEGetPoint`, `TEGetHeight`, the caret and highlight use per-line heights from the table; drawing makes one call per run in that run's face and in the nearest palette colour of its RGB. Typing takes the
+style before the caret or the null scrap's. Limits: 2000 runs, 512 styles; a face beyond bold and underline draws plain; `TEStylePaste` and `TESetStyleHandle` are not implemented. `tests/test_mac_testyle.c`
+covers all of it headless with a hand-built two-size font. Also needed: `SetCTitle`/`GetCTitle` on a dialog's button items, and an update event for a dialog that has repainted itself (so a program that
+draws in an event loop, not inside `ModalDialog`, repaints), with `DialogSelect` now repainting only when the dialog's state changed and giving the program's user items their turn on an update.
+
+**Result (headless, probe, MBP copies).** QuickTime: Continue on the Welcome window, then the **Software License** window: "ENGLISH" language row, a heading in bold, the licence text in styled runs (bold
+"1. License." run inside plain text), a scroll bar and the four buttons Print?, Save As?, Disagree, Agree, all with this runtime's stand-in face in place of the Geneva-family fonts the installer asks for.
+It waits there. A scripted click on Agree then halts at **trap `$A9ED`, selector 6, parameter 0: `IUGetIntl(0)`**, the International Utilities package (Pack6) reading the `itl0` number and date format
+resource; the runtime has no International Utilities and no System file to read it from. That is the next subsystem, and the nearest thing to the Easy/Custom Install window that was reached: it is not
+drawn. WordPerfect: past its font stop, past the splash (its own picture, drawn from a PICT with a long comment the decoder now skips) to its **Your License** window, where the licence text area wraps
+one letter per line (cause not found) and the splash picture is not erased from behind the new window; it waits there.
+
+**The Welcome window defects.** Looked at, not fixed. DLOG 1000's DITL has no items at all; the engine builds the window itself (a picture, controls it creates with `NewControl`). So the white rectangle over
+the first body line and the unlabelled rounded button are engine-created items; the trace shows no `SetCTitle` and no `SetIText` for them during the Welcome stage. I did not establish what they are.
+
+**Not verified.** Everything above is headless frames and traces from the probe, not a real window. The Agree click is a scripted press. No real stock font was available, so the stand-in face's look
+here is not what a real Mac shows. The `IUGetIntl` selector and parameter are read from the trap's stack at the halt; what the engine does with `itl0` is not known.
+
+## Sixth run — International Utilities, the install-type window, and the disk alert — branch `qt/installer-volumes`
+
+**International Utilities (`src/mac_intl.c`, Pack6 `$A9ED`).** The stop of the fifth run was `IUGetIntl(0)`. Selector numbers were checked against Apple's public `TextUtils.h` and `Script.h`:
+6 `IUGetIntl` (`GetIntlResource`), 0 `IUDateString`, 2 `IUTimeString`, `$E` `IUDatePString`, `$10` `IUTimePString`; those five are implemented, and every other selector (the string comparisons `$A`, `$C`,
+`$1A`, `$1C`, `IUMetric`, `IUSetIntl`, the long-date and script-order calls) halts naming itself. `IUGetIntl` answers the program's own `itl0`/`itl1` (id 0) when its resource fork carries them; otherwise it hands out
+a US English pair that this runtime builds when first asked, from the documented field layout (`IntlResources.h`: the 32-byte `Intl0Rec`, the 332-byte `Intl1Rec`), with OS999's own values (period, comma and semicolon
+separators, `$`, month-day-year with the century, a 12-hour clock with " AM"/" PM", English day and month names, abbreviation length 3). Nothing is copied from an Apple System resource. Dates (seconds since 1 January
+1904, as the program holds them) are formatted from whichever `itl0` is in use for short dates and times; long and abbreviated dates come from the built-in `itl1` only, and halt for a program's own (the long-date separator
+rules are not implemented). `itl2` and the other ids halt by name. `tests/test_mac_intl.c` covers the built-in records, caching of the handle, short, long and abbreviated dates for three real dates (including a leap day), 12-hour times, a program's
+own resources taking precedence, the P forms with an explicit handle, an `itl0` edited in place, and each refusal.
+
+**Three smaller stops on the way** (all after the Agree click): a dialog's button, check box, radio button, static text or user item with an empty rectangle was refused, though a program may create one and move it later (it now
+draws nothing and is never hit); `SetCtlMin` above the current maximum halted, though the Control Manager does no such validation (it is stored as given and the value settles on the maximum; the existing test now says so);
+and the stack word names in the unhandled-trap message from the fifth run found the first of these.
+
+**Result (headless, probe, MBP copy).** After Agree the QuickTime Installer draws its **install-type window**: three check boxes "Minimum" (audio and video playback), "Full" (selected; recommended for QuickTime Pro users and
+media creators) and "Custom" (advanced users, uninstall capability), each with its explanatory line, and the buttons **Quit** and **Continue**. It waits for input. That is the "Easy Install"/"Custom Install" stage of this installer, in
+its own wording. Defects visible in the frame: a stray vertical scroll bar (the list control, never hidden) overlaps the descriptions at the right, an unlabelled rounded button sits below them, and the licence window's heading
+and first lines still show behind the new window (the screen behind a closed window is not repainted). A scripted click on Continue (with Full selected) shows an alert: **"The selected disk named ?? does not have enough [room]"**,
+with an OK button: the engine asks about the destination disk and gets "??" for its name and too little room. The next subsystem is therefore what the engine reads about the installation disk (volume name and free
+space through the File Manager), not another manager.
+
+**WordPerfect's licence window, looked into.** The report was "wraps one letter per line". It does not. `TECalText` sees a destRect 441 pixels wide (4,5 to 243,446) and 7,899 characters, which wraps normally. The column of
+single letters at the left is the left margin of the text, uncovered: right after the one `TEUpdate`, the engine clips to the text area and draws a 53 KB `PICT` (431 by 229, srcCopy, the Corel artwork with the words "Your
+License") across it, which hides everything but the margin. The engine's own order is TEUpdate, then the picture. Whether a real Mac shows the picture behind the text (so the text would be drawn after it, by a later `TEUpdate`
+on an update event we never send for this dialog) or the picture belongs elsewhere I did not establish; the `PICT` decoder accepts only srcCopy bitmaps, so a transfer mode is not the explanation. No fix was made and no test
+written for a narrow wrap, because there is none to reproduce. The splash (a separate dialog drawn with `DrawPicture`) is disposed with `DisposeDialog`; nothing repaints the screen behind a disposed dialog, which is why its
+pixels remain where the new window does not cover them.
+
+**Not verified.** All headless. The Agree and Continue clicks are scripted. The built-in `itl` values are this project's own choice of US conventions, not a comparison with a real Mac. What the engine does with the
+`itl0` handle after getting it is not known. The `??` disk name and the space shortfall are as seen in one frame; I did not trace which File Manager call produced them.

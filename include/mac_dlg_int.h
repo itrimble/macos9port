@@ -30,6 +30,7 @@ typedef struct MacDlgMgr { Dlg *open[MAX_OPEN]; uint32_t port; /* the dialog Set
 int mac_dlg_set_title(MacRuntime *rt, Dlg *d, uint32_t src);                           /* SetWTitle on a dialog (mac_dlgtitle.c) */
 int mac_dlg_move_item(MacRuntime *rt, Dlg *d, unsigned k, int h, int v);   /* MoveControl on a button/check/radio item (mac_dlgtitle.c) */
 int mac_dlg_size(MacRuntime *rt, Dlg *d, int w, int h);   /* SizeWindow on a dialog (mac_dlgtitle.c) */
+int mac_dlg_item_title(MacRuntime *rt, Dlg *d, unsigned k, int set, uint32_t sp);   /* SetCTitle/GetCTitle on a button, check box or radio item (mac_dlgtitle.c) */
 int mac_dlg_set_item(MacRuntime *rt, Dlg *d, uint32_t sp);                            /* SetDItem (mac_dlguser.c) */
 int mac_dlg_user_start(MacRuntime *rt, Dlg *d, uint32_t sp, uint32_t pc);             /* call the owed user item procedures: 0 none, 1 under way, -1 halted */
 int mac_dlg_port_regions(MacRuntime *rt, Dlg *d);   /* the DialogPtr's GrafPort visRgn (+24, the dialog's rectangle in local coordinates) and clipRgn (+28, wide open): 1, 0 if out of memory (mac_dlgdraw.c) */

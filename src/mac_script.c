@@ -27,7 +27,7 @@ int mac_script_service(MacRuntime *rt, uint16_t opcode) {
     if (selector == 0x8404000cu) {   /* GetScript(script: INTEGER; verb: INTEGER): LONGINT. Only the Roman script exists, and only one verb is answered */
         if (z - sp < 12) return fail(rt, "Script Manager call has an invalid stack.");
         int16_t verb = (int16_t)mac_cpu_read(rt->cpu, sp + 4, 2), script = (int16_t)mac_cpu_read(rt->cpu, sp + 6, 2);
-        if (verb == 28 && script == 0) {   /* smScriptEncoding: the base text encoding of the script, MacRoman = 0 */
+        if (verb == 28 && script == 0) {   /* smScriptLang: the current language of the script; the Roman script's is langEnglish = 0 (verb numbers and selectors checked against Apple's public Script interface) */
             mac_cpu_write(rt->cpu, sp + 8, 4, 0);
             mac_cpu_set(rt->cpu, MAC_A7, sp + 8);
             return 1;
@@ -38,8 +38,10 @@ int mac_script_service(MacRuntime *rt, uint16_t opcode) {
     }
     if (selector == 0x84020008u && z - sp >= 10) {   /* GetEnvirons(verb: INTEGER): LONGINT */
         int16_t verb = (int16_t)mac_cpu_read(rt->cpu, sp + 4, 2);
-        if (verb == 40) {   /* smRegionCode: the system's region within its script; this machine is the US one (verUS = 0) */
-            mac_cpu_write(rt->cpu, sp + 6, 4, 0);
+        /* Verbs (numbers from Apple's public Script interface), answered for a machine with the Roman script only: 4 smEnabled (one script), 6 smBidirect, 18 smSysScript, 20 smLastScript, 22 smKeyScript,
+         * 36 smDoubleByte (no double-byte script), 40 smRegionCode (verUS = 0). */
+        if (verb == 4 || verb == 6 || verb == 18 || verb == 20 || verb == 22 || verb == 36 || verb == 40) {
+            mac_cpu_write(rt->cpu, sp + 6, 4, verb == 4 ? 1 : 0);
             mac_cpu_set(rt->cpu, MAC_A7, sp + 6);
             return 1;
         }

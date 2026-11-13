@@ -79,7 +79,7 @@ int main(void) {
     CHECK(h_word(&rt,0xa963,b4,500)==1 && get16(&rt,0xa960,b4)==100);
     CHECK(h_word(&rt,0xa963,b4,-5)==1 && get16(&rt,0xa960,b4)==0);
     CHECK(h_word(&rt,0xa963,b4,50)==1 && h_word(&rt,0xa965,b4,20)==1 && get16(&rt,0xa962,b4)==20 && get16(&rt,0xa960,b4)==20);   /* lowering the max clamps the value */
-    CHECK(h_word(&rt,0xa964,b4,30)==-1 && mac_cpu_halted(rt.cpu));                                           /* min above max halts */
+    CHECK(h_word(&rt,0xa964,b4,30)==1 && !mac_cpu_halted(rt.cpu) && get16(&rt,0xa961,b4)==30 && get16(&rt,0xa962,b4)==20 && get16(&rt,0xa960,b4)==20);   /* min above max is stored as given; the value settles on the maximum */
     mac_cpu_destroy(rt.cpu);rt=fresh();
     b1=mk(&rt,60,60,80,160,5,0,1,0,"OK");p1=P(&rt,b1);
     wr(&rt,SP+4,4,0);CHECK(h_only(&rt,0xa95a,b1,4)==1 && raw(&rt,SP+4,4)==0x1234);

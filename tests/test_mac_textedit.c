@@ -239,12 +239,12 @@ static void disposal_and_refusals(void) {
         if (k == 1) arg = 0;
         if (k == 2) wrw(rec(th2) + 38, 4, 0x1000);                     /* a wordBreak hook */
         if (k == 3) wrw(rec(th2) + 86, 4, 0x1000);                     /* a highHook (a clikLoop is allowed: nothing calls it) */
-        if (k == 4) wrw(rec(th2) + 74, 2, 99);                         /* a font the guest lacks */
+        if (k == 4) wrw(rec(th2) + 80, 2, 300);                        /* a size no font has (a font the guest lacks is substituted now) */
         if (k == 5) { mac_cpu_set(rt.cpu, MAC_A7, SPT + 1); rc = call(0xa9d8); CHECK(rc == -1 && mac_cpu_halted(rt.cpu)); mac_cpu_destroy(rt.cpu); continue; }
         if (k == 6) { op = 0xa9cf; wrw(SPT, 4, th2); wrw(SPT + 4, 4, 40000); wrw(SPT + 8, 4, TEXT); mac_cpu_set(rt.cpu, MAC_A7, SPT); rc = call(op); CHECK(rc == -1 && mac_cpu_halted(rt.cpu)); mac_cpu_destroy(rt.cpu); continue; }
         if (k == 7) { op = 0xa9cf; wrw(SPT, 4, th2); wrw(SPT + 4, 4, 8); wrw(SPT + 8, 4, 0xfffffc); mac_cpu_set(rt.cpu, MAC_A7, SPT); rc = call(op); CHECK(rc == -1 && mac_cpu_halted(rt.cpu)); mac_cpu_destroy(rt.cpu); continue; }
         if (k == 8) { rt.current_port = 0; wrw(SPT, 4, VIEW); wrw(SPT + 4, 4, DEST); mac_cpu_set(rt.cpu, MAC_A7, SPT); rc = call(0xa9d2); CHECK(rc == -1 && mac_cpu_halted(rt.cpu)); mac_cpu_destroy(rt.cpu); continue; }
-        if (k == 9) { wrw(PORT + 68, 2, 99); wrw(SPT, 4, VIEW); wrw(SPT + 4, 4, DEST); mac_cpu_set(rt.cpu, MAC_A7, SPT); rc = call(0xa9d2); CHECK(rc == -1 && mac_cpu_halted(rt.cpu)); mac_cpu_destroy(rt.cpu); continue; }
+        if (k == 9) { wrw(PORT + 74, 2, 300); wrw(SPT, 4, VIEW); wrw(SPT + 4, 4, DEST); mac_cpu_set(rt.cpu, MAC_A7, SPT); rc = call(0xa9d2); CHECK(rc == -1 && mac_cpu_halted(rt.cpu)); mac_cpu_destroy(rt.cpu); continue; }
         if (k == 10) { rc = key(th2, 1); CHECK(rc == -1 && mac_cpu_halted(rt.cpu)); mac_cpu_destroy(rt.cpu); continue; }        /* an unsupported control key */
         if (k == 11) { rc = key(th2, 30); CHECK(rc == -1 && mac_cpu_halted(rt.cpu)); mac_cpu_destroy(rt.cpu); continue; }       /* up arrow */
         if (k == 12) { wrw(PORT + 6, 2, 0); rect(PORT + 16, 0, 0, 0, 0); hcall(0xa9d8, th2); select_range(th2, 0, 2); CHECK(mac_cpu_halted(rt.cpu)); mac_cpu_destroy(rt.cpu); continue; }  /* highlighting on a basic port */

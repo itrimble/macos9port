@@ -21,7 +21,7 @@ int main(void) {
     mac_cpu_set(r.cpu, MAC_A7, SP);
     CHECK(mac_script_service(&r, 0xa8b5) == 1 && mac_cpu_get(r.cpu, MAC_A7) == SP + 6 && rd(&r, SP + 6, 2) == 0);
     CHECK(mac_script_service(&r, 0xa8b6) == 0);                                   /* other traps are not ours */
-    /* GetScript(script, verb): LONGINT. smScriptEncoding (28) of the Roman script is MacRoman (0); the result slot is above the two arguments */
+    /* GetScript(script, verb): LONGINT. smScriptLang (28) of the Roman script is langEnglish (0); the result slot is above the two arguments */
     wr(&r, SP, 4, 0x8404000cu); wr(&r, SP + 4, 2, 28); wr(&r, SP + 6, 2, 0); wr(&r, SP + 8, 4, 0x12345678u);
     mac_cpu_set(r.cpu, MAC_A7, SP);
     CHECK(mac_script_service(&r, 0xa8b5) == 1 && mac_cpu_get(r.cpu, MAC_A7) == SP + 8 && rd(&r, SP + 8, 4) == 0);
@@ -29,11 +29,15 @@ int main(void) {
     wr(&r, SP, 4, 0x84020008u); wr(&r, SP + 4, 2, 40); wr(&r, SP + 6, 4, 0x12345678u);
     mac_cpu_set(r.cpu, MAC_A7, SP);
     CHECK(mac_script_service(&r, 0xa8b5) == 1 && mac_cpu_get(r.cpu, MAC_A7) == SP + 6 && rd(&r, SP + 6, 4) == 0);
+    wr(&r, SP, 4, 0x84020008u); wr(&r, SP + 4, 2, 4); wr(&r, SP + 6, 4, 0x12345678u); mac_cpu_set(r.cpu, MAC_A7, SP);                       /* smEnabled: one script */
+    CHECK(mac_script_service(&r, 0xa8b5) == 1 && rd(&r, SP + 6, 4) == 1);
+    wr(&r, SP, 4, 0x84020008u); wr(&r, SP + 4, 2, 36); wr(&r, SP + 6, 4, 0x12345678u); mac_cpu_set(r.cpu, MAC_A7, SP);                      /* smDoubleByte: none */
+    CHECK(mac_script_service(&r, 0xa8b5) == 1 && rd(&r, SP + 6, 4) == 0);
     mac_cpu_destroy(r.cpu);
     /* a verb that is not answered halts and names itself and the verb; so does an unknown selector */
     r = fresh();
-    wr(&r, SP, 4, 0x84020008u); wr(&r, SP + 4, 2, 22); mac_cpu_set(r.cpu, MAC_A7, SP);
-    CHECK(mac_script_service(&r, 0xa8b5) == -1 && mac_cpu_halted(r.cpu) && strstr(mac_cpu_error(r.cpu), "verb 22"));
+    wr(&r, SP, 4, 0x84020008u); wr(&r, SP + 4, 2, 24); mac_cpu_set(r.cpu, MAC_A7, SP);
+    CHECK(mac_script_service(&r, 0xa8b5) == -1 && mac_cpu_halted(r.cpu) && strstr(mac_cpu_error(r.cpu), "verb 24"));
     mac_cpu_destroy(r.cpu);
     r = fresh();
     wr(&r, SP, 4, 0x8404000cu); wr(&r, SP + 4, 2, 7); wr(&r, SP + 6, 2, 0); mac_cpu_set(r.cpu, MAC_A7, SP);

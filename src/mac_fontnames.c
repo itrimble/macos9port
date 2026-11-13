@@ -7,7 +7,7 @@
  *   RealFont ($A902) FUNCTION RealFont(fontNum, size: INTEGER): BOOLEAN         stack from SP: size, fontNum, result
  * A family's name is the resource name of its FOND (the resource ID is the family number) or of the FONT whose ID is family * 128 (the size-0 name
  * holder). Names compare without regard to ASCII case. A name nobody carries gives family 0 and a family nobody carries gives the empty string, which
- * is what the calls do for a font that is not installed. RealFont is true when mac_font_find has a plain strike of that family and size, which for
+ * is what the calls do for a font that is not installed. RealFont is true when mac_font_find_exact has a plain strike of that family and size (what is drawn for any other face is a substitute, see mac_font.h), which for
  * families 0 and 1 (the system and application font stand-ins) is any size from 1 to 255. */
 #define FOND_T MAC_RESOURCE_TYPE('F', 'O', 'N', 'D')
 #define FONT_T MAC_RESOURCE_TYPE('F', 'O', 'N', 'T')
@@ -40,7 +40,7 @@ int mac_fontnames_service(MacRuntime *rt, uint16_t opcode) {
     if (opcode == 0xa902) { /* RealFont */
         int size = (int16_t)mac_cpu_read(cpu, sp, 2), fam = (int16_t)mac_cpu_read(cpu, sp + 2, 2);
         MacStrike strike; const char *why = NULL;
-        int real = size > 0 && size <= 255 && fam >= 0 && fam <= 32767 && mac_font_find(&rt->fork, fam, size, 0, &strike, &why) == 0;
+        int real = size > 0 && size <= 255 && fam >= 0 && fam <= 32767 && mac_font_find_exact(&rt->fork, fam, size, 0, &strike, &why) == 0;
         mac_cpu_write(cpu, sp + 4, 2, real ? 0x0100 : 0);
         mac_cpu_set(cpu, MAC_A7, sp + 4);
         return 1;

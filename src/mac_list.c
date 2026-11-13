@@ -4,11 +4,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* List Manager, Pack0 ($A9E7). The selector is a word on top of the stack, the arguments follow it in Pascal order (last argument nearest). Selector numbers and argument
- * orders are from memory of the public interface; LNew's ($0044) was seen in a real program's call, the rest follow the same alphabetical stride of four and are
- * NOT verified against a reference: LActivate 0, LAddColumn 4, LAddRow 8, LAddToCell C, LAutoScroll 10, LCellSize 14, LClick 18, LClrCell 1C, LDelColumn 20, LDelRow 24, LDispose 28,
- * LDoDraw 2C, LDraw 30, LFind 34, LGetCell 38, LGetSelect 3C, LLastClick 40, LNew 44, LNextCell 48, LRect 4C, LScroll 50, LSearch 54, LSetCell 58, LSetSelect 5C, LSize 60, LUpdate 64.
- * A Cell is a Point: v is the row, h the column, both in dataBounds coordinates. Every other selector halts naming itself. */
+/* List Manager, Pack0 ($A9E7). The selector is a word on top of the stack, the arguments follow it in Pascal order (last argument nearest). Selector numbers, argument orders and result types
+ * were checked against Apple's archived "More Macintosh Toolbox" List Manager reference (its routine summary and the pages for LActivate, LSetSelect, LNew, LAddRow and LDelRow): LActivate 0,
+ * LAddColumn 4, LAddRow 8, LAddToCell C, LAutoScroll 10, LCellSize 14, LClick 18, LClrCell 1C, LDelColumn 20, LDelRow 24, LDispose 28, LSetDrawingMode/LDoDraw 2C, LDraw 30,
+ * LGetCellDataLocation/LFind 34, LGetCell 38, LGetSelect 3C, LLastClick 40, LNew 44, LNextCell 48, LRect 4C, LScroll 50, LSearch 54, LSetCell 58, LSetSelect 5C, LSize 60, LUpdate 64.
+ * A Cell is a Point: v is the row, h the column, both in dataBounds coordinates. LAddRow/LAddColumn insert at the given number and return the first new one (a number past the end appends);
+ * LDelRow/LDelColumn with a count of 0 delete them all and with an invalid start do nothing. Every other selector halts naming itself. */
 int list_fail(MacRuntime *rt, const char *why) { mac_cpu_halt(rt->cpu, why); return -1; }
 uint32_t list_rd(MacRuntime *rt, uint32_t a, unsigned n) { return mac_cpu_read(rt->cpu, a, n); }
 void list_wr(MacRuntime *rt, uint32_t a, unsigned n, uint32_t v) { mac_cpu_write(rt->cpu, a, n, v); }
@@ -170,7 +171,9 @@ int mac_list_service(MacRuntime *rt, uint16_t opcode) {
         break; }
     case 0x20: case 0x24: {                                                                                 /* LDelColumn / LDelRow(count, start, lHandle) */
         int row = sel == 0x24, count = s16(rt, A + 6), start = s16(rt, A + 4), lo = row ? top : left, hi = row ? bottom : right;
-        if (count < 0 || start < lo || start > hi) return list_fail(rt, "LDelRow/LDelColumn: a start or count outside the list.");
+        if (count < 0) return list_fail(rt, "LDelRow/LDelColumn with a negative count.");
+        if (count == 0) { start = lo; count = hi - lo; }          /* a count of 0 deletes them all (Apple's List Manager reference) */
+        if (start < lo || start >= hi) break;                      /* an invalid row or column number: nothing is done (same source) */
         if (start + count > hi) count = hi - start;
         if (count && remap(rt, L, row, start, count, 0) < 0) return -1;
         if (list_rebuild(rt, L) < 0 || list_geometry(rt, L) < 0 || list_redraw_all(rt, L) < 0) return -1;

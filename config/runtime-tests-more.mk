@@ -42,6 +42,9 @@ build/test_mac_files_rf: $(RUNTIME_OBJ) tests/test_mac_files_rf.c $(RUNTIME_HDRS
 
 build/test_mac_text: $(RUNTIME_OBJ) tests/test_mac_text.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_text.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+build/test_mac_testyle: $(RUNTIME_OBJ) tests/test_mac_testyle.c src/mac_te_int.h $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) -Isrc $(RUNTIME_OBJ) tests/test_mac_testyle.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
 build/test_mac_textedit: $(RUNTIME_OBJ) tests/test_mac_textedit.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_textedit.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 build/test_mac_rgn: $(RUNTIME_OBJ) tests/test_mac_rgn.c $(RUNTIME_HDRS) $(CPUOBJ)
@@ -64,6 +67,9 @@ build/test_mac_menuselect: $(RUNTIME_OBJ) tests/test_mac_menuselect.c $(RUNTIME_
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_menuselect.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 build/test_mac_list: $(RUNTIME_OBJ) tests/test_mac_list.c tests/fork_builder.h $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_list.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
+
+build/test_mac_intl: $(RUNTIME_OBJ) tests/test_mac_intl.c tests/fork_builder.h $(RUNTIME_HDRS) $(CPUOBJ)
+	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_intl.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
 build/test_mac_script: $(RUNTIME_OBJ) tests/test_mac_script.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_script.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
@@ -129,7 +135,7 @@ build/test_mac_system_volume: $(RUNTIME_OBJ) tests/test_mac_system_volume.c $(RU
 build/test_mac_regions: $(RUNTIME_OBJ) tests/test_mac_regions.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_regions.c $(CPUOBJ) -lm $(FT_LIBS) -o $@
 
-test: build/test_mac_dlgedit build/test_mac_partition build/test_mac_sysbeep build/test_mac_files_flush build/test_mac_dlgwindow build/test_mac_list build/test_mac_cicn build/test_mac_cdef build/test_mac_controls build/test_mac_menu_records build/test_mac_multi_window build/test_mac_window_resource build/test_mac_paintbehind build/test_mac_menu build/test_mac_drive_queue build/test_mac_reservation build/test_mac_color_pen build/test_mac_system_volume build/test_mac_regions build/test_mac_window build/test_mac_window_nogrow build/test_mac_clock_globals build/test_mac_random build/test_mac_supervisor build/test_mac_text_state build/test_mac_text build/test_mac_sound_volume build/test_mac_scrap build/test_mac_handcopy build/test_mac_colorindex build/test_mac_files_rf build/test_mac_sysfont build/test_mac_textedit build/test_mac_rgn build/test_mac_stdprocs build/test_mac_shape build/test_mac_menu_color build/test_mac_devmgr build/test_mac_dlgmgr build/test_mac_stdput build/test_mac_menuselect build/test_mac_mdef build/test_mac_print build/test_mac_gworld build/test_mac_script build/test_mac_toolutil build/test_mac_window_inval build/test_mac_menu_setitem build/test_mac_volume build/test_mac_pixels build/test_mac_pixmap build/test_mac_vbl
+test: build/test_mac_dlgedit build/test_mac_partition build/test_mac_sysbeep build/test_mac_files_flush build/test_mac_dlgwindow build/test_mac_list build/test_mac_testyle build/test_mac_intl build/test_mac_cicn build/test_mac_cdef build/test_mac_controls build/test_mac_menu_records build/test_mac_multi_window build/test_mac_window_resource build/test_mac_paintbehind build/test_mac_menu build/test_mac_drive_queue build/test_mac_reservation build/test_mac_color_pen build/test_mac_system_volume build/test_mac_regions build/test_mac_window build/test_mac_window_nogrow build/test_mac_clock_globals build/test_mac_random build/test_mac_supervisor build/test_mac_text_state build/test_mac_text build/test_mac_sound_volume build/test_mac_scrap build/test_mac_handcopy build/test_mac_colorindex build/test_mac_files_rf build/test_mac_sysfont build/test_mac_textedit build/test_mac_rgn build/test_mac_stdprocs build/test_mac_shape build/test_mac_menu_color build/test_mac_devmgr build/test_mac_dlgmgr build/test_mac_stdput build/test_mac_menuselect build/test_mac_mdef build/test_mac_print build/test_mac_gworld build/test_mac_script build/test_mac_toolutil build/test_mac_window_inval build/test_mac_menu_setitem build/test_mac_volume build/test_mac_pixels build/test_mac_pixmap build/test_mac_vbl
 
 build/test_mac_video_config: $(RUNTIME_OBJ) tests/test_mac_video_config.c $(RUNTIME_HDRS) $(CPUOBJ)
 	$(CC) $(CFLAGS) $(CPUFLAGS) $(RUNTIME_OBJ) tests/test_mac_video_config.c $(CPUOBJ) -lm $(FT_LIBS) -o $@

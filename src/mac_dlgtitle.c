@@ -51,3 +51,31 @@ int mac_dlg_size(MacRuntime *rt, Dlg *d, int w, int h) {
     mac_dlg_set_region(rt, d->region[1], d->top, d->left, d->top + h, d->left + w);
     return !d->port_window || mac_dlgwin_size(rt, d->port_window, w, h) ? 0 : -1;
 }
+
+/* SetCTitle(ctl, title) and GetCTitle(ctl, VAR title) on the handle GetDItem gave for a button, check box or radio button item: the item's text (up to 255 bytes) is replaced or copied out.
+ * The stack at the call holds the string (pointer or VAR pointer) at sp and the control handle at sp + 4; the caller pops them. */
+int mac_dlg_item_title(MacRuntime *rt, Dlg *d, unsigned k, int set, uint32_t sp) {
+    uint32_t p = (uint32_t)mac_cpu_read(rt->cpu, sp, 4); size_t z = mac_cpu_ram_size(rt->cpu);
+    if (!has_text(&d->ditl.items[k])) { mac_cpu_halt(rt->cpu, "SetCTitle/GetCTitle on a dialog item that has no title."); return -1; }
+    if (p < 0x400 || p > z || z - p < (set ? 1u : 256u)) { mac_cpu_halt(rt->cpu, "A control title pointer is outside guest RAM."); return -1; }
+    uint8_t *ram = mac_cpu_ram(rt->cpu);
+    if (set) {
+        unsigned n = ram[p];
+        if (n > z - p - 1) { mac_cpu_halt(rt->cpu, "A control title runs past the end of guest RAM."); return -1; }
+        memcpy(d->text[k], ram + p + 1, n); d->text[k][n] = 0; d->length[k] = (uint8_t)n;
+    } else { ram[p] = d->length[k]; memcpy(ram + p + 1, d->text[k], d->length[k]); }
+    return 0;
+}
+
+/* An update event for a visible dialog that has a port window and has just repainted itself (its native drawing covered what the program draws in it): WaitNextEvent and GetNextEvent
+ * hand it out once, like the Window Manager does for a newly shown window, so a program that draws its own items in an event loop (rather than inside ModalDialog) repaints them. 1 and *out, else 0. */
+int mac_dlgmgr_update_event(MacRuntime *rt, uint16_t mask, MacEvent *out) {
+    if (!rt->dlgmgr || !(mask & (1u << 6))) return 0;
+    for (unsigned i = 0; i < MAX_OPEN; i++) {
+        Dlg *d = M(rt)->open[i];
+        if (!d || !d->update_due || !d->port_window || d->hidden || d->modal) continue;
+        out->what = 6; out->message = d->ptr; d->update_due = 0;
+        return 1;
+    }
+    return 0;
+}

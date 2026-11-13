@@ -61,8 +61,8 @@ static int load(const MacResourceFork *f, int id, MacStrike *out, const char **w
     return mac_strike_parse(r.data, r.size, out, why) ? -1 : 0;
 }
 
-int mac_font_find(const MacResourceFork *f, int family, int size, unsigned style, MacStrike *out, const char **why) {
-    *why = NULL;
+static int find_core(const MacResourceFork *f, int family, int size, unsigned style, MacStrike *out, const char **why, int *missing) {
+    *why = NULL; *missing = 0;
     if (!f || !out) { *why = "No resource fork to find a font in."; return -1; }
     if (size <= 0 || size > 255) { *why = "Text size 0 (the default size) or an invalid size is unsupported."; return -1; }
     if (family < 0 || family > 32767) { *why = "Font family number is outside the supported range (0 to 32767)."; return -1; }
@@ -86,11 +86,43 @@ int mac_font_find(const MacResourceFork *f, int family, int size, unsigned style
     if ((family == 0 || family == 1) && style == 0) {
         const char *sys_why = NULL;
         if (mac_sysfont_strike(size, out, &sys_why) == 0) return 0;
-        *why = sys_why;
+        *why = sys_why; *missing = 1;
         return -1;
     }
+    *missing = 1;
     static char message[160];                                                  /* names what was asked for, so a halt says which face is missing */
     snprintf(message, sizeof message, "Font family %d size %d style %u is not in the guest application's resources (no scaling or system font is provided).", family, size, style);
     *why = message;
+    return -1;
+}
+
+int mac_font_find_exact(const MacResourceFork *f, int family, int size, unsigned style, MacStrike *out, const char **why) {
+    int missing;
+    return find_core(f, family, size, style, out, why, &missing);
+}
+/* The classic Font Manager does not fail for a face that is not installed: when the requested size of a family is missing it uses the closest size that is there (a larger one
+ * before a smaller one at equal distance), and when the family has no strike at all it uses the system font. Here: the nearest plain size of the same family in the program's own fonts,
+ * then OS999's substitute face (mac_sysfont.h: ChicagoFLF drawn at the requested size). A strike the program carries but that is malformed is still an error, and nothing is scaled: a
+ * nearer size is drawn at its own height. */
+int mac_font_find(const MacResourceFork *f, int family, int size, unsigned style, MacStrike *out, const char **why) {
+    int missing;
+    int rc = find_core(f, family, size, style, out, why, &missing);
+    if (rc == 0 || !missing) return rc;
+    for (int d = 1; d < 255; d++) {
+        for (int k = 0; k < 2; k++) {
+            int cand = k == 0 ? size + d : size - d;
+            if (cand < 1 || cand > 127) continue;   /* a FONT id is family * 128 + size: a larger size would alias the next family */
+            const char *w; int m;
+            rc = find_core(f, family, cand, 0, out, &w, &m);
+            if (rc == 0) return 0;
+            if (rc < 0 && !m) { *why = w; return -1; }
+        }
+    }
+    const char *sys_why = NULL;
+    int ssize = size < 8 ? 8 : size > 36 ? 36 : size;                             /* the stand-in face is rendered for sizes 8 to 36: the nearest of those */
+    if (mac_sysfont_strike(ssize, out, &sys_why) == 0) return 0;
+    static char msg[200];
+    snprintf(msg, sizeof msg, "Font family %d size %d is not in the guest application's resources and has no substitute: %s", family, size, sys_why ? sys_why : "none");
+    *why = msg;
     return -1;
 }

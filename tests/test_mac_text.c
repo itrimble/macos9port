@@ -106,24 +106,37 @@ static void lookup_checks(void) {
     MacResourceFork f; char err[200]; size_t total = build_fork(image, list, 6);
     CHECK(mac_resource_open(&f, image, total, err, sizeof err) == 0);
     MacStrike s; const char *why = NULL;
-    CHECK(mac_font_find(&f, 5, 10, 0, &s, &why) == 0 && s.ascent == 2);                 /* a FONT resource with id family*128+size */
-    CHECK(mac_font_find(&f, 5, 9, 0, &s, &why) == 0 && s.ascent == 2);                  /* through the FOND association table to an NFNT */
-    CHECK(mac_font_find(&f, 5, 11, 0, &s, &why) == -1 && why);
+    CHECK(mac_font_find_exact(&f, 5, 10, 0, &s, &why) == 0 && s.ascent == 2);                 /* a FONT resource with id family*128+size */
+    CHECK(mac_font_find_exact(&f, 5, 9, 0, &s, &why) == 0 && s.ascent == 2);                  /* through the FOND association table to an NFNT */
+    CHECK(mac_font_find_exact(&f, 5, 11, 0, &s, &why) == -1 && why);
     CHECK(strstr(why, "family 5 size 11 style 0") != NULL);                         /* the refusal names the face asked for */                          /* no such size, and nothing is scaled */
-    CHECK(mac_font_find(&f, 4, 10, 0, &s, &why) == -1);                                 /* no such family */
+    CHECK(mac_font_find_exact(&f, 4, 10, 0, &s, &why) == -1);                                 /* no such family */
     /* families 0 and 1 (system and application font) come from the stand-in face when the program has no strike of that id; 2 and 3 do not */
     {MacStrike a, b; const char *w2; mac_sysfont_set_path("fonts/ChicagoFLF.ttf");
-     if (mac_font_find(&f, 0, 12, 0, &a, &w2) == 0) { CHECK(mac_font_find(&f, 1, 12, 0, &b, &w2) == 0 && a.rectH == b.rectH && a.ascent == b.ascent); CHECK(mac_font_find(&f, 1, 12, 1, &b, &w2) == -1); CHECK(mac_font_find(&f, 2, 12, 0, &b, &w2) == -1); CHECK(mac_font_find(&f, 3, 12, 0, &b, &w2) == -1); }}
-    CHECK(mac_font_find(&f, 5, 9, 1, &s, &why) == -1);                                  /* a bold strike is not in the association table */
-    CHECK(mac_font_find(&f, 5, 10, 1, &s, &why) == -1);                                 /* a FONT id carries no style */
-    CHECK(mac_font_find(&f, 5, 0, 0, &s, &why) == -1 && why);                           /* size 0, although a FONT with that id exists */
-    CHECK(mac_font_find(&f, -1, 10, 0, &s, &why) == -1);                                /* a negative family, although a FONT with that id exists */
-    CHECK(mac_font_find(&f, 5, 256, 0, &s, &why) == -1 && mac_font_find(&f, 5, -3, 0, &s, &why) == -1);
-    CHECK(mac_font_find(&f, -1, 10, 0, &s, &why) == -1 && mac_font_find(&f, 256, 10, 0, &s, &why) == -1);
-    CHECK(mac_font_find(&f, 32700, 10, 0, &s, &why) == -1 && why && strstr(why, "Font family 32700"));   /* a private family number is looked for, not refused as out of range */
-    CHECK(mac_font_find(&f, 32768, 10, 0, &s, &why) == -1 && why && strstr(why, "outside the supported range"));
-    CHECK(mac_font_find(&f, 6, 7, 0, &s, &why) == -1 && why);                           /* present but malformed */
-    CHECK(mac_font_find(NULL, 5, 10, 0, &s, &why) == -1);
+     if (mac_font_find_exact(&f, 0, 12, 0, &a, &w2) == 0) { CHECK(mac_font_find_exact(&f, 1, 12, 0, &b, &w2) == 0 && a.rectH == b.rectH && a.ascent == b.ascent); CHECK(mac_font_find_exact(&f, 1, 12, 1, &b, &w2) == -1); CHECK(mac_font_find_exact(&f, 2, 12, 0, &b, &w2) == -1); CHECK(mac_font_find_exact(&f, 3, 12, 0, &b, &w2) == -1); }}
+    CHECK(mac_font_find_exact(&f, 5, 9, 1, &s, &why) == -1);                                  /* a bold strike is not in the association table */
+    CHECK(mac_font_find_exact(&f, 5, 10, 1, &s, &why) == -1);                                 /* a FONT id carries no style */
+    CHECK(mac_font_find_exact(&f, 5, 0, 0, &s, &why) == -1 && why);                           /* size 0, although a FONT with that id exists */
+    CHECK(mac_font_find_exact(&f, -1, 10, 0, &s, &why) == -1);                                /* a negative family, although a FONT with that id exists */
+    CHECK(mac_font_find_exact(&f, 5, 256, 0, &s, &why) == -1 && mac_font_find_exact(&f, 5, -3, 0, &s, &why) == -1);
+    CHECK(mac_font_find_exact(&f, -1, 10, 0, &s, &why) == -1 && mac_font_find_exact(&f, 256, 10, 0, &s, &why) == -1);
+    CHECK(mac_font_find_exact(&f, 32700, 10, 0, &s, &why) == -1 && why && strstr(why, "Font family 32700"));   /* a private family number is looked for, not refused as out of range */
+    CHECK(mac_font_find_exact(&f, 32768, 10, 0, &s, &why) == -1 && why && strstr(why, "outside the supported range"));
+    CHECK(mac_font_find_exact(&f, 6, 7, 0, &s, &why) == -1 && why);                           /* present but malformed */
+    CHECK(mac_font_find_exact(NULL, 5, 10, 0, &s, &why) == -1);
+    /* The Font Manager's substitution: a missing size takes the nearest size the family has (larger first at equal distance), a missing family the stand-in system face; a malformed strike is still an error. */
+    CHECK(mac_font_find_exact(&f, 5, 11, 0, &s, &why) == -1 && mac_font_find(&f, 5, 11, 0, &s, &why) == 0 && s.ascent == 2);
+    CHECK(mac_font_find(&f, 5, 13, 0, &s, &why) == 0);
+    CHECK(mac_font_find(&f, 5, 9, 1, &s, &why) == 0);
+    CHECK(mac_font_find(&f, 5, 200, 0, &s, &why) == 0);
+    CHECK(mac_font_find(&f, 6, 8, 0, &s, &why) == -1 && why);                          /* the nearest strike (size 7) is malformed: refused, not skipped */
+    CHECK(mac_font_find(&f, 5, 0, 0, &s, &why) == -1 && mac_font_find(&f, 32768, 10, 0, &s, &why) == -1);   /* out-of-range requests are still refused */
+    {MacStrike a, b; const char *w2; mac_sysfont_set_path("fonts/ChicagoFLF.ttf");
+     if (mac_font_find_exact(&f, 0, 12, 0, &a, &w2) == 0) {
+         CHECK(mac_font_find(&f, 4, 10, 0, &b, &w2) == 0 && b.rectH > 0 && mac_font_find_exact(&f, 4, 10, 0, &b, &w2) == -1);   /* a family nobody carries: the stand-in, though RealFont-style lookups say no */
+         CHECK(mac_font_find(&f, 3, 12, 1, &b, &w2) == 0);
+     }
+     mac_sysfont_set_path(NULL);}
 }
 
 /* ---- the text calls on a real colour port ---- */
@@ -223,7 +236,7 @@ static void service_checks(const MacResourceFork *f) {
 }
 static void default_size(const MacResourceFork *f) {   /* TextSize(0) asks for the default size: taken as 12, so a family without a 12 point strike names size 12 */
     rig(f); wrw(PORT + 74, 2, 0);
-    CHECK(string_width("ab") == -1 && mac_cpu_halted(rt.cpu) && strstr(mac_cpu_error(rt.cpu), "size 12") != NULL);
+    CHECK(string_width("ab") > 0 && !mac_cpu_halted(rt.cpu));   /* no 12 point strike: the nearest size of the family is used */
     rig(f); wrw(PORT + 74, 2, 10); CHECK(string_width("ab") > 0);
 }
 static void refusal_checks(const MacResourceFork *f) {
@@ -232,8 +245,8 @@ static void refusal_checks(const MacResourceFork *f) {
         if (k == 0) wrw(PORT + 70, 1, 2);                              /* italic */
         if (k == 1) wrw(PORT + 70, 1, 8);                              /* outline */
         if (k == 2) wrw(PORT + 76, 4, 0x00018000);                     /* a fractional SpaceExtra */
-        if (k == 3) wrw(PORT + 74, 2, 11);                             /* a size the guest does not supply */
-        if (k == 4) wrw(PORT + 68, 2, 99);                             /* a family it does not supply */
+        if (k == 3) wrw(PORT + 74, 2, 0xffff);                         /* a negative size (a size the guest lacks is substituted now) */
+        if (k == 4) wrw(PORT + 74, 2, 300);   /* a size beyond what a font can have (a missing family is substituted now) */
         if (k == 5) wrw(PORT + 6, 2, 0);                               /* a basic port cannot be drawn on */
         if (k == 6) wrw(PORT + 72, 2, 4);                              /* a "not" transfer mode */
         if (k == 7) wrw(PORT + 72, 2, 8);                              /* a pattern mode */
@@ -309,7 +322,7 @@ static void textbox_checks(const MacResourceFork *f) {
         if (k == 3) wrw(SPT + 10, 4, 0x1000000 - 1);
         if (k == 4) wrw(SPT + 6, 4, (uint32_t)-1);
         if (k == 5) wrw(SPT + 6, 4, 40000);
-        if (k == 6) wrw(PORT + 68, 2, 99);                                   /* a font it does not supply */
+        if (k == 6) wrw(PORT + 74, 2, 300);   /* a size beyond what a font can have */
         int rc = mac_textbox_service(&rt, 0xa9ce);
         CHECK(rc == -1 && mac_cpu_halted(rt.cpu) && !memcmp(before, mac_cpu_ram(rt.cpu) + PIX, sizeof before));
         mac_cpu_destroy(rt.cpu);

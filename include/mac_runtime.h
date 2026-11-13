@@ -132,6 +132,7 @@ typedef struct {
     struct MacAlertState *alert; /* native alert dialog (mac_alert.c) */
     struct MacCdefJob *cdef;     /* control definition calls in flight (mac_cdef.c) */
     struct MacRescomp *rescomp;  /* compressed-resource expansion and load hooks in flight (mac_rescomp.c) */
+    uint32_t intl_handle[2];     /* the built-in itl0 and itl1 handles, made on first use (mac_intl.c) */
     struct MacLists *lists;      /* List Manager lists and the job in flight (mac_list.c) */
     struct MacMdef *mdef;        /* menu definition calls in flight (mac_mdef.c) */
     struct MacGWorlds *gworlds;  /* offscreen graphics worlds (mac_gworld.c) */
@@ -239,6 +240,8 @@ int mac_alert_service(MacRuntime *rt, uint16_t opcode); /* Alert, StopAlert, Not
 void mac_alert_destroy(MacRuntime *rt);
 void mac_cdef_destroy(MacRuntime *rt);
 void mac_mdef_destroy(MacRuntime *rt);
+int mac_dlgmgr_update_event(MacRuntime *rt, uint16_t mask, MacEvent *out);   /* an update event for a dialog that repainted itself over its program's own items (mac_dlgtitle.c) */
+int mac_intl_service(MacRuntime *rt, uint16_t opcode);   /* International Utilities, Pack6 $A9ED (mac_intl.c) */
 int mac_list_service(MacRuntime *rt, uint16_t opcode);   /* List Manager, Pack0 $A9E7 (mac_list.c, mac_list_ui.c) */
 void mac_list_destroy(MacRuntime *rt);
 void mac_gworld_destroy(MacRuntime *rt);

@@ -185,6 +185,7 @@ int mac_pict_decode(const uint8_t *data,size_t size,unsigned width,unsigned heig
         }else if(!header){r.error="PICT opcode precedes its HeaderOp.";goto bad;}
         else if(op==0 || op==0x1e)continue;
         else if(op==0xa0){if(!take(&r,2))goto bad;} /* Default comment procedure ignores comments. */
+        else if(op==0xa1){const uint8_t*c=take(&r,4);if(!c)goto bad;unsigned n=u16(c+2);if(!take(&r,n+(n&1)))goto bad;}   /* LongComment: kind, size, data (padded to a word); ignored like ShortComment */
         else if(op==1){p=take(&r,10);if(!p)goto bad;if(u16(p)!=10){r.error="PICT complex clipping regions are unsupported.";goto bad;}clip=box(p+2);}
         else if(op==0x98 || op==0x99 || op==0x90 || op==0x91){   /* the record is a PixMap when rowBytes has its high bit, otherwise a 1-bit BitMap */
             if(r.pos+2>r.size){r.error="Truncated PICT stream.";goto bad;}

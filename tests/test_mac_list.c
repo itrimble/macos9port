@@ -99,8 +99,14 @@ static void standard(void) {
     CHECK(get(&rt, h, 2, 0, buf) == 4 && !strcmp(buf, "Row2") && get(&rt, h, 3, 0, buf) == 0 && get(&rt, h, 5, 0, buf) == 5 && !strcmp(buf, "Three"));
     CHECK(call(&rt, 0x24, "wwl", 0, NULL, 3u, 3u, h) == 1 && bnd(&rt, h, 2) == 9 && get(&rt, h, 3, 0, buf) == 4 && !strcmp(buf, "Row4"));   /* LDelRow: the inserted pair and "Three" go */
     CHECK(call(&rt, 0x04, "wwl", 2, &res, 2u, 32767u, h) == 1 && (int16_t)res == 1 && bnd(&rt, h, 3) == 3);                         /* LAddColumn at the end */
+    CHECK(call(&rt, 0x24, "wwl", 0, NULL, 1u, 99u, h) == 1 && bnd(&rt, h, 2) == 9);                                                 /* an invalid row number: nothing is done */
     set(&rt, h, 0, 2, "col2"); CHECK(get(&rt, h, 0, 2, buf) == 4);
     CHECK(call(&rt, 0x20, "wwl", 0, NULL, 1u, 1u, h) == 1 && bnd(&rt, h, 3) == 2 && get(&rt, h, 0, 1, buf) == 4 && !strcmp(buf, "col2"));   /* LDelColumn */
+    mac_cpu_destroy(rt.cpu);
+}
+static void delete_all(void) {
+    MacRuntime rt = rig(); uint32_t h = make(&rt, 0, 2, 1); add_rows(&rt, h, 5, 0);
+    CHECK(call(&rt, 0x24, "wwl", 0, NULL, 0u, 2u, h) == 1 && bnd(&rt, h, 2) == 0 && bnd(&rt, h, 3) == 2);                         /* count 0: every row goes, the columns stay */
     mac_cpu_destroy(rt.cpu);
 }
 static void selection(void) {
@@ -190,7 +196,7 @@ static void refusals(void) {
 }
 int main(void) {
     fb_add(&fork_def, 0x4c444546, 1, 0, ldef_code, sizeof ldef_code); (void)put16;
-    standard(); selection(); clicks(); custom(); ppc_rows(); refusals();
+    standard(); delete_all(); selection(); clicks(); custom(); ppc_rows(); refusals();
     puts("List Manager checks passed");
     return 0;
 }

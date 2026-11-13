@@ -258,7 +258,7 @@ int mac_controls_service(MacRuntime *rt, uint16_t op) {
     case 0xa963: case 0xa964: case 0xa965: {
         int16_t v = (int16_t)rd(rt, sp, 2), lo = (int16_t)rd(rt, p + CTL_MIN, 2), hi = (int16_t)rd(rt, p + CTL_MAX, 2), cur = (int16_t)rd(rt, p + CTL_VALUE, 2);
         if (op == 0xa964) lo = v; else if (op == 0xa965) hi = v;
-        if (hi < lo) return fail(rt, "A control's maximum cannot be set below its minimum.");
+        /* No validation, as the Control Manager does none: a minimum above the maximum is stored as given (the value then settles on the maximum). */
         if (op == 0xa963) cur = v;
         if (cur < lo) cur = lo; if (cur > hi) cur = hi;
         wr(rt, p + CTL_MIN, 2, (uint16_t)lo); wr(rt, p + CTL_MAX, 2, (uint16_t)hi); wr(rt, p + CTL_VALUE, 2, (uint16_t)cur);

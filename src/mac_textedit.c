@@ -1,16 +1,17 @@
-#include "mac_text.h"
+#include "mac_te_int.h"
+#include <stdio.h>
 #include <string.h>
 
 /* TextEdit, natively, with the TERec kept in a real guest handle (programs read its fields directly). Calls: TEInit $A9CC,
  * TEDispose $A9CD, TEGetText $A9CB, TESetText $A9CF, TESetSelect $A9D1, TENew $A9D2, TEUpdate $A9D3, TEClick $A9D4, TEActivate $A9D8,
- * TEDeactivate $A9D9, TEIdle $A9DA, TEKey $A9DC, TESetJust $A9DF. Anything else in the family is not claimed and halts by name.
+ * TEDeactivate $A9D9, TEIdle $A9DA, TEKey $A9DC, TESetJust $A9DF, TEStyleNew $A83E; multistyled records (mac_testyle.c, mac_te_int.h) also take the TEDispatch style selectors. Anything else in the family is not claimed and halts by name.
  *
  * Record (offsets): destRect 0, viewRect 8, selRect 16, lineHeight 24, fontAscent 26, selPoint 28, selStart 32, selEnd 34, active 36,
  * wordBreak 38, clikLoop 42, clickTime 46, clickLoc 50, caretTime 52, caretState 56, just 58, teLength 60, hText 62, recalBack 66,
  * recalLines 68, clikStuff 70, crOnly 72, txFont 74, txFace 76, txMode 78, txSize 80, inPort 82, highHook 86, caretHook 90,
  * nLines 94, lineStarts[nLines+1] at 96.
  *
- * Limits, all deliberate: the font is a guest bitmap strike (mac_font.c), so a family/size the guest lacks halts; word and line
+ * Limits, all deliberate: the font is a guest bitmap strike (mac_font.c), substituted by the Font Manager rules when the guest lacks it; word and line
  * hooks (wordBreak, highHook, caretHook) must be NIL (clikLoop may be set: it is never called); TEClick sets the selection at the click and does not track a drag
  * (it cannot block waiting for the mouse); selection and caret are drawn by inverting pixels; an edit redraws from the edited line to
  * the bottom of the view; text is limited to 32000 characters and 4000 lines; left, centre and right justification only. */
@@ -60,9 +61,25 @@ static int te_of(MacRuntime *rt, uint32_t h, uint32_t *rec) {
     *rec = p;
     return 0;
 }
+static int styled(MacRuntime *rt, uint32_t r) { return mac_testyle_is(rt, r); }
 static int face_of(MacRuntime *rt, uint32_t r, MacTextFace *f) {
     if (rd(rt, r + WB, 4) || rd(rt, r + HIGH, 4) || rd(rt, r + CARET, 4)) return fail(rt, "TextEdit hooks (wordBreak, highHook, caretHook) are unsupported.");   /* clikLoop is only called while TEClick tracks a drag, which it does not */
+    if (styled(rt, r)) { TeSeg sg; int n = s16(rt, r + LEN); if (mac_testyle_seg(rt, r, 0, n > 0 ? n : 1, &sg)) return -1; *f = sg.f; return 0; }   /* the first run's face stands for the record */
     return mac_text_face(rt, s16(rt, r + FONT), s16(rt, r + SIZE), rd(rt, r + FACE, 1), 0, f);
+}
+/* Line geometry: a monostyled record has one line height; a multistyled one keeps a height and ascent per line in its line-height table. */
+static int line_h(MacRuntime *rt, uint32_t r, int k) { int h = 0, a = 0; if (!styled(rt, r)) return s16(rt, r + LINE_H); mac_testyle_line_h(rt, r, k, &h, &a); return h; }
+static int line_asc(MacRuntime *rt, uint32_t r, int k) { int h = 0, a = 0; if (!styled(rt, r)) return s16(rt, r + ASC); mac_testyle_line_h(rt, r, k, &h, &a); return a; }
+static int line_top(MacRuntime *rt, uint32_t r, int k) {
+    int top = s16(rt, r + DEST);
+    if (!styled(rt, r)) return top + k * s16(rt, r + LINE_H);
+    for (int i = 0; i < k; i++) top += line_h(rt, r, i);
+    return top;
+}
+static int line_at_v(MacRuntime *rt, uint32_t r, int v) {   /* the line holding vertical position v, clamped to the lines there are */
+    int lines = s16(rt, r + NLINES), k = 0;
+    while (k + 1 < lines && line_top(rt, r, k + 1) <= v) k++;
+    return k;
 }
 static int text_at(MacRuntime *rt, uint32_t r, uint32_t *p) {
     MacHandle *m = record_of(rt, rd(rt, r + HTEXT, 4));
@@ -76,8 +93,8 @@ static int text_at(MacRuntime *rt, uint32_t r, uint32_t *p) {
 static int recalc(MacRuntime *rt, uint32_t h, uint32_t r) {
     MacTextFace f; uint32_t t;
     if (face_of(rt, r, &f) || text_at(rt, r, &t)) return -1;
-    int n = (int)rd(rt, r + LEN, 2), width = s16(rt, r + DEST + 6) - s16(rt, r + DEST + 2), wrap = s16(rt, r + CRONLY) >= 0;
-    static uint16_t starts[MAX_LINES + 2]; int lines = 0, s = 0;
+    int n = (int)rd(rt, r + LEN, 2), width = s16(rt, r + DEST + 6) - s16(rt, r + DEST + 2), wrap = s16(rt, r + CRONLY) >= 0, sty = styled(rt, r);
+    static uint16_t starts[MAX_LINES + 2]; int lines = 0, s = 0; TeSeg sg; sg.end = 0;
     while (s < n) {
         if (lines >= MAX_LINES) return fail(rt, "TextEdit text has more than 4000 lines.");
         starts[lines++] = (uint16_t)s;
@@ -85,13 +102,15 @@ static int recalc(MacRuntime *rt, uint32_t h, uint32_t r) {
         while (i < n) {
             unsigned ch = rd(rt, t + (uint32_t)i, 1);
             if (ch == 13) { end = i + 1; break; }
-            int a = mac_text_advance(&f, ch);
+            if (sty && i >= sg.end && mac_testyle_seg(rt, r, i, n, &sg)) return -1;
+            int a = mac_text_advance(sty ? &sg.f : &f, ch);
             if (wrap && ch != ' ' && w + a > width && i > s) { end = space >= 0 ? space + 1 : i; break; }   /* a space hangs past the margin */
             w += a; if (ch == ' ') space = i; i++;
         }
         s = end >= 0 ? end : n;
     }
     if (n > 0 && rd(rt, t + (uint32_t)(n - 1), 1) == 13) { if (lines >= MAX_LINES) return fail(rt, "TextEdit text has more than 4000 lines."); starts[lines++] = (uint16_t)n; }
+    if (sty && mac_testyle_set_lines(rt, r, starts, lines, n)) return -1;
     if (set_size(rt, h, (uint32_t)(LSTART + 2 * (lines + 1)))) return fail(rt, "TextEdit could not grow its record.");
     r = rec_ptr(rt, h);
     if (!r || !ok(rt, r, (size_t)(LSTART + 2 * (lines + 1)))) return fail(rt, "TextEdit record is invalid.");
@@ -109,31 +128,38 @@ static int text_end(MacRuntime *rt, uint32_t r, uint32_t t, int k) {    /* end o
     int e = line_start(rt, r, k + 1);
     return (e > line_start(rt, r, k) && rd(rt, t + (uint32_t)(e - 1), 1) == 13) ? e - 1 : e;
 }
-static int width_of(MacRuntime *rt, const MacTextFace *f, uint32_t t, int from, int to) {
-    int w = 0; for (int i = from; i < to; i++) w += mac_text_advance(f, rd(rt, t + (uint32_t)i, 1)); return w;
+static int width_of(MacRuntime *rt, uint32_t r, const MacTextFace *f, uint32_t t, int from, int to) {
+    int w = 0;
+    if (!styled(rt, r)) { for (int i = from; i < to; i++) w += mac_text_advance(f, rd(rt, t + (uint32_t)i, 1)); return w; }
+    while (from < to) {
+        TeSeg sg; if (mac_testyle_seg(rt, r, from, to, &sg)) return w;
+        for (int i = from; i < sg.end; i++) w += mac_text_advance(&sg.f, rd(rt, t + (uint32_t)i, 1));
+        from = sg.end;
+    }
+    return w;
 }
 /* Left edge of line k's text, honouring justification (0 left, 1 centre, -1 right). */
 static int line_left(MacRuntime *rt, uint32_t r, const MacTextFace *f, uint32_t t, int k) {
-    int left = s16(rt, r + DEST + 2), right = s16(rt, r + DEST + 6), w = width_of(rt, f, t, line_start(rt, r, k), text_end(rt, r, t, k)), just = s16(rt, r + JUST);
+    int left = s16(rt, r + DEST + 2), right = s16(rt, r + DEST + 6), w = width_of(rt, r, f, t, line_start(rt, r, k), text_end(rt, r, t, k)), just = s16(rt, r + JUST);
     return just == 0 ? left : just == 1 ? left + (right - left - w) / 2 : right - w;
 }
 static void rect4(MacRuntime *rt, uint32_t p, int out[4]) { for (int i = 0; i < 4; i++) out[i] = s16(rt, p + 2 * (unsigned)i); }
 
 /* Selection highlight or caret by inversion. `caret_on` says whether the caret is currently shown. */
 static int paint_sel(MacRuntime *rt, uint32_t r, int caret) {
-    MacTextFace f; uint32_t t; int view[4], lh = s16(rt, r + LINE_H), top = s16(rt, r + DEST), port = (int)rd(rt, r + INPORT, 4);
+    MacTextFace f; uint32_t t; int view[4], port = (int)rd(rt, r + INPORT, 4);
     if (face_of(rt, r, &f) || text_at(rt, r, &t)) return -1;
     rect4(rt, r + VIEW, view);
     int a = s16(rt, r + SEL_S), b = s16(rt, r + SEL_E), lines = s16(rt, r + NLINES);
     if (caret) {
-        int k = lines ? line_of(rt, r, a) : 0, x = (lines ? line_left(rt, r, &f, t, k) + width_of(rt, &f, t, line_start(rt, r, k), a) : s16(rt, r + DEST + 2));
-        int box[4] = {top + k * lh, x, top + (k + 1) * lh, x + 1};
+        int k = lines ? line_of(rt, r, a) : 0, x = (lines ? line_left(rt, r, &f, t, k) + width_of(rt, r, &f, t, line_start(rt, r, k), a) : s16(rt, r + DEST + 2));
+        int box[4] = {line_top(rt, r, k), x, line_top(rt, r, k) + line_h(rt, r, k), x + 1};
         return mac_text_xor_rect(rt, (uint32_t)port, box, view);
     }
     for (int k = 0; k < lines; k++) {
         int s = line_start(rt, r, k), e = text_end(rt, r, t, k), lo = a > s ? a : s, hi = b < e ? b : e;
         if (lo >= hi) continue;
-        int x = line_left(rt, r, &f, t, k), box[4] = {top + k * lh, x + width_of(rt, &f, t, s, lo), top + (k + 1) * lh, x + width_of(rt, &f, t, s, hi)};
+        int x = line_left(rt, r, &f, t, k), y = line_top(rt, r, k), box[4] = {y, x + width_of(rt, r, &f, t, s, lo), y + line_h(rt, r, k), x + width_of(rt, r, &f, t, s, hi)};
         if (mac_text_xor_rect(rt, (uint32_t)port, box, view)) return -1;
     }
     return 0;
@@ -150,15 +176,24 @@ static int show_marks(MacRuntime *rt, uint32_t r) {
 }
 /* Draw every line that meets `upd` (top, left, bottom, right), clipped to the view, then the selection mark. */
 static int draw_lines(MacRuntime *rt, uint32_t r, const int upd[4], int erase_first) {
-    MacTextFace f; uint32_t t; int view[4], lh = s16(rt, r + LINE_H), top = s16(rt, r + DEST), port = (int)rd(rt, r + INPORT, 4), mode = s16(rt, r + MODE);
+    MacTextFace f; uint32_t t; int view[4], port = (int)rd(rt, r + INPORT, 4), mode = s16(rt, r + MODE), sty = styled(rt, r);
     if (face_of(rt, r, &f) || text_at(rt, r, &t)) return -1;
     rect4(rt, r + VIEW, view);
     if (erase_first && mac_text_erase_rect(rt, (uint32_t)port, upd, view)) return -1;
     for (int k = 0; k < s16(rt, r + NLINES); k++) {
-        int y = top + k * lh;
+        int y = line_top(rt, r, k), lh = line_h(rt, r, k);
         if (y + lh <= upd[0] || y >= upd[2] || y + lh <= view[0] || y >= view[2]) continue;
-        int s = line_start(rt, r, k), e = text_end(rt, r, t, k);
-        if (e > s && mac_text_draw_with(rt, (uint32_t)port, &f, mode, line_left(rt, r, &f, t, k), y + s16(rt, r + ASC), t + (uint32_t)s, e - s, view)) return -1;
+        int s = line_start(rt, r, k), e = text_end(rt, r, t, k), x = line_left(rt, r, &f, t, k), base = y + line_asc(rt, r, k);
+        if (!sty) { if (e > s && mac_text_draw_with(rt, (uint32_t)port, &f, mode, x, base, t + (uint32_t)s, e - s, view)) return -1; continue; }
+        for (int i = s; i < e;) {                                                   /* one call per run of a single style, in that style's face and colour */
+            TeSeg sg; if (mac_testyle_seg(rt, r, i, e, &sg)) return -1;
+            uint32_t fg = rd(rt, (uint32_t)port + 80, 4); wr(rt, (uint32_t)port + 80, 4, mac_testyle_fg(rt, sg.rgb));
+            int bad = mac_text_draw_with(rt, (uint32_t)port, &sg.f, mode, x, base, t + (uint32_t)i, sg.end - i, view);
+            wr(rt, (uint32_t)port + 80, 4, fg);
+            if (bad) return -1;
+            for (int c = i; c < sg.end; c++) x += mac_text_advance(&sg.f, rd(rt, t + (uint32_t)c, 1));
+            i = sg.end;
+        }
     }
     if (s16(rt, r + ACTIVE)) {
         if (s16(rt, r + SEL_S) != s16(rt, r + SEL_E)) return paint_sel(rt, r, 0);
@@ -166,14 +201,20 @@ static int draw_lines(MacRuntime *rt, uint32_t r, const int upd[4], int erase_fi
     }
     return 0;
 }
+static struct { int valid, at, removed, added; } pending;                /* an edit TEKey describes so the style runs can follow it */
 static int set_text(MacRuntime *rt, uint32_t h, uint32_t r, uint32_t src, uint32_t n) {
-    uint32_t th = rd(rt, r + HTEXT, 4);
+    uint32_t th = rd(rt, r + HTEXT, 4); int old_len = s16(rt, r + LEN);
     if (n > MAX_TEXT || (n && !ok(rt, src, n))) return fail(rt, "TextEdit text is too long or outside guest RAM.");
     if (set_size(rt, th, n)) return fail(rt, "TextEdit could not size its text handle.");
     MacHandle *m = record_of(rt, th);
     if (!m || m->type != TE_TEXT || m->size < n || (n && !ok(rt, m->pointer, n))) return fail(rt, "TextEdit text handle is invalid.");
     if (n) memmove(mac_cpu_ram(rt->cpu) + m->pointer, mac_cpu_ram(rt->cpu) + src, n);
     wr(rt, r + LEN, 2, n);
+    if (styled(rt, r)) {
+        int ok2 = pending.valid ? mac_testyle_edit(rt, r, pending.at, pending.removed, pending.added) : mac_testyle_edit(rt, r, 0, old_len, (int)n);
+        pending.valid = 0;
+        if (ok2) return -1;
+    }
     return recalc(rt, h, rec_ptr(rt, h));
 }
 static void clamp_sel(MacRuntime *rt, uint32_t r) {
@@ -185,13 +226,17 @@ static void clamp_sel(MacRuntime *rt, uint32_t r) {
 static int offset_at(MacRuntime *rt, uint32_t r, int v, int h) {
     MacTextFace f; uint32_t t; int lines = s16(rt, r + NLINES);
     if (!lines || face_of(rt, r, &f) || text_at(rt, r, &t)) return 0;
-    int k = (v - s16(rt, r + DEST)) / s16(rt, r + LINE_H); if (v < s16(rt, r + DEST)) k = 0; if (k >= lines) k = lines - 1;
+    int k = v < s16(rt, r + DEST) ? 0 : line_at_v(rt, r, v);
     int s = line_start(rt, r, k), e = text_end(rt, r, t, k), x = line_left(rt, r, &f, t, k), best = s;
-    for (int i = s; i < e; i++) { int a = mac_text_advance(&f, rd(rt, t + (uint32_t)i, 1)); if (h < x + a / 2) return i; x += a; best = i + 1; }
+    for (int i = s; i < e;) {
+        TeSeg sg; const MacTextFace *fc = &f; int end = i + 1;
+        if (styled(rt, r)) { if (mac_testyle_seg(rt, r, i, e, &sg)) return 0; fc = &sg.f; end = sg.end; }
+        for (; i < end; i++) { int a = mac_text_advance(fc, rd(rt, t + (uint32_t)i, 1)); if (h < x + a / 2) return i; x += a; best = i + 1; }
+    }
     return best;
 }
 
-static int do_new(MacRuntime *rt, uint32_t sp) {
+static int do_new(MacRuntime *rt, uint32_t sp, int multistyled) {
     uint32_t port = rt->current_port, hr = 0, ht = 0, h;
     if (port < 0x400 || (port & 1) || !ok(rt, port, 108)) return fail(rt, "TENew needs a current port.");
     if (!ok(rt, rd(rt, sp, 4), 8) || !ok(rt, rd(rt, sp + 4, 4), 8)) return fail(rt, "TENew rectangle is outside guest RAM.");
@@ -208,8 +253,43 @@ static int do_new(MacRuntime *rt, uint32_t sp) {
     wr(rt, r + CTIME, 4, rt->ticks); wr(rt, r + HTEXT, 4, ht); wr(rt, r + CRONLY, 2, 1);
     wr(rt, r + FONT, 2, rd(rt, port + 68, 2)); wr(rt, r + FACE, 2, rd(rt, port + 70, 1) << 8); wr(rt, r + MODE, 2, rd(rt, port + 72, 2)); wr(rt, r + SIZE, 2, rd(rt, port + 74, 2));
     wr(rt, r + INPORT, 4, port);
+    if (multistyled && mac_testyle_new(rt, h, r)) return -1;
     wr(rt, sp + 8, 4, h); mac_cpu_set(rt->cpu, MAC_A7, sp + 8);
     return 1;
+}
+
+/* Repaint from the line before character `at` to the bottom of the view, erasing first: a reflow can change that line. */
+static int after_repaint(MacRuntime *rt, uint32_t r, int at) {
+    int view[4]; rect4(rt, r + VIEW, view);
+    int k = line_of(rt, r, at > 0 ? at - 1 : 0), upd[4] = {line_top(rt, r, k), view[1], view[2], view[3]};
+    return draw_lines(rt, r, upd, 1);
+}
+int mac_te_check(MacRuntime *rt, uint32_t h, uint32_t *rec) { return te_of(rt, h, rec); }
+uint32_t mac_te_rec(MacRuntime *rt, uint32_t h) { return rec_ptr(rt, h); }
+int mac_te_recalc(MacRuntime *rt, uint32_t h) { uint32_t r = rec_ptr(rt, h); return r ? recalc(rt, h, r) : fail(rt, "TextEdit record is invalid."); }
+int mac_te_after_edit(MacRuntime *rt, uint32_t h, int at, int erase) {
+    (void)erase; uint32_t r = rec_ptr(rt, h);
+    if (!r || recalc(rt, h, r)) return -1;
+    r = rec_ptr(rt, h);
+    return after_repaint(rt, r, at);
+}
+int mac_te_redraw_all(MacRuntime *rt, uint32_t h) { uint32_t r = rec_ptr(rt, h); int view[4]; if (!r) return -1; rect4(rt, r + VIEW, view); return draw_lines(rt, r, view, 1); }
+int mac_te_set_size(MacRuntime *rt, uint32_t handle, uint32_t size) { return set_size(rt, handle, size); }
+int mac_te_marks(MacRuntime *rt, uint32_t r, int show) { return show ? show_marks(rt, r) : clear_marks(rt, r); }
+/* Inserts n bytes of guest text at `at` (the text handle grows, teLength follows, the style runs make room); no repaint and the selection numbers are left alone. */
+int mac_te_insert(MacRuntime *rt, uint32_t h, int at, uint32_t text, int n) {
+    uint32_t r = rec_ptr(rt, h), t; int len = r ? s16(rt, r + LEN) : 0;
+    if (!r || at < 0 || at > len || n < 0 || len + n > MAX_TEXT || (n && !ok(rt, text, (size_t)n))) return fail(rt, "TextEdit insertion is outside the text or too long.");
+    if (text_at(rt, r, &t)) return -1;
+    static uint8_t buf[MAX_TEXT + 1];
+    memcpy(buf, mac_cpu_ram(rt->cpu) + t, (size_t)at); memcpy(buf + at, mac_cpu_ram(rt->cpu) + text, (size_t)n); memcpy(buf + at + n, mac_cpu_ram(rt->cpu) + t + (unsigned)at, (size_t)(len - at));
+    uint32_t th = rd(rt, r + HTEXT, 4);
+    if (set_size(rt, th, (uint32_t)(len + n))) return fail(rt, "TextEdit could not size its text handle.");
+    MacHandle *m = record_of(rt, th);
+    if (!m || (len + n && !ok(rt, m->pointer, (size_t)(len + n)))) return fail(rt, "TextEdit text handle is invalid.");
+    memcpy(mac_cpu_ram(rt->cpu) + m->pointer, buf, (size_t)(len + n));
+    r = rec_ptr(rt, h); wr(rt, r + LEN, 2, (uint16_t)(len + n));
+    return styled(rt, r) ? mac_testyle_edit(rt, r, at, 0, n) : 0;
 }
 
 /* TEDispatch ($A83D), selector word on top of the stack. Only selector 8, TEGetPoint(offset, hTE): Point, is implemented: the
@@ -225,25 +305,33 @@ static int te_dispatch(MacRuntime *rt) {
         uint32_t r9;
         if (!ok(rt, sp, 18)) return fail(rt, "TEDispatch has an invalid stack.");
         if (te_of(rt, rd(rt, sp + 2, 4), &r9)) return -1;
-        long n9 = (long)(int32_t)rd(rt, sp + 10, 4) - (long)(int32_t)rd(rt, sp + 6, 4);
-        wr(rt, sp + 14, 4, (uint32_t)(n9 > 0 ? n9 * s16(rt, r9 + LINE_H) : 0));
+        long n9 = (long)(int32_t)rd(rt, sp + 10, 4) - (long)(int32_t)rd(rt, sp + 6, 4), h9 = 0, from9 = (int32_t)rd(rt, sp + 6, 4);
+        for (long q = 0; q < n9 && q < MAX_LINES; q++) h9 += line_h(rt, r9, (int)(from9 + q));   /* every line of a monostyled record is lineHeight tall; a multistyled one's come from its table */
+        wr(rt, sp + 14, 4, (uint32_t)h9);
         mac_cpu_set(rt->cpu, MAC_A7, sp + 14);
         return 1;
     }
-    if (sel != 8) return fail(rt, "TEDispatch selectors other than 8 (TEGetPoint) and 9 (TEGetHeight) are unsupported.");
+    { int sty = mac_testyle_dispatch(rt, sel, sp); if (sty) return sty; }
+    if (sel != 8) { char w[96]; snprintf(w, sizeof w, "TEDispatch selector %u is unsupported.", sel); return fail(rt, w); }
     uint32_t r; MacTextFace f, *fp = &f; uint32_t t = 0;
     if (te_of(rt, rd(rt, sp + 2, 4), &r) || face_of(rt, r, fp) || text_at(rt, r, &t)) return -1;
-    int off = s16(rt, sp + 6), n = s16(rt, r + LEN), lines = s16(rt, r + NLINES), lh = s16(rt, r + LINE_H);
+    int off = s16(rt, sp + 6), n = s16(rt, r + LEN), lines = s16(rt, r + NLINES);
     if (off < 0) off = 0; if (off > n) off = n;
     int k = lines ? line_of(rt, r, off) : 0, h = s16(rt, r + DEST + 2);
-    if (lines) { int e = text_end(rt, r, t, k); h = line_left(rt, r, fp, t, k) + width_of(rt, fp, t, line_start(rt, r, k), off < e ? off : e); }
-    wr(rt, sp + 8, 2, (uint16_t)(s16(rt, r + DEST) + (k + 1) * lh)); wr(rt, sp + 10, 2, (uint16_t)h);
+    if (lines) { int e = text_end(rt, r, t, k); h = line_left(rt, r, fp, t, k) + width_of(rt, r, fp, t, line_start(rt, r, k), off < e ? off : e); }
+    wr(rt, sp + 8, 2, (uint16_t)(line_top(rt, r, k) + line_h(rt, r, k))); wr(rt, sp + 10, 2, (uint16_t)h);
     mac_cpu_set(rt->cpu, MAC_A7, sp + 8);
     return 1;
 }
 
 int mac_textedit_service(MacRuntime *rt, uint16_t op) {
     if (op == 0xa83d) { if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1; return te_dispatch(rt); }
+    if (op == 0xa83e) {                                          /* TEStyleNew(destRect, viewRect): TEHandle */
+        if (!rt || !rt->cpu || mac_cpu_halted(rt->cpu)) return -1;
+        uint32_t sp0 = mac_cpu_get(rt->cpu, MAC_A7);
+        if ((sp0 & 1) || !ok(rt, sp0, 12)) return fail(rt, "TextEdit call has an invalid stack.");
+        return do_new(rt, sp0, 1);
+    }
     if (op < 0xa9c8 || op > 0xa9e0) return 0;
     static const struct { uint16_t op; unsigned args; } calls[] = {
         {0xa9cc, 0}, {0xa9d2, 8}, {0xa9cd, 4}, {0xa9cb, 4}, {0xa9cf, 12}, {0xa9d1, 12}, {0xa9d3, 8}, {0xa9d4, 10}, {0xa9d8, 4}, {0xa9d9, 4}, {0xa9da, 4}, {0xa9dc, 6}, {0xa9df, 6}, {0xa9d0, 4}};
@@ -254,7 +342,7 @@ int mac_textedit_service(MacRuntime *rt, uint16_t op) {
     uint32_t sp = mac_cpu_get(rt->cpu, MAC_A7);
     if ((sp & 1) || !ok(rt, sp, args + 4)) return fail(rt, "TextEdit call has an invalid stack.");
     if (op == 0xa9cc) return 1;                                  /* TEInit: nothing to set up */
-    if (op == 0xa9d2) return do_new(rt, sp);
+    if (op == 0xa9d2) return do_new(rt, sp, 0);
     uint32_t hte = rd(rt, sp, 4), r, h = hte;
     if (op == 0xa9dc || op == 0xa9df) hte = rd(rt, sp, 4);       /* TEKey and TESetJust also take the handle last (lowest address) */
     if (te_of(rt, hte, &r)) return -1;
@@ -264,6 +352,7 @@ int mac_textedit_service(MacRuntime *rt, uint16_t op) {
     case 0xa9cd: {                                               /* TEDispose */
         if (clear_marks(rt, r)) return -1;
         uint32_t th = rd(rt, r + HTEXT, 4);
+        if (styled(rt, r)) mac_testyle_dispose(rt, r);
         if (dispose(rt, th) || dispose(rt, h)) return fail(rt, "TEDispose could not release its handles.");
         break; }
     case 0xa9d0: if (recalc(rt, h, r)) return -1; break;         /* TECalText(hTE): line starts again from the text */
@@ -280,6 +369,7 @@ int mac_textedit_service(MacRuntime *rt, uint16_t op) {
         if (a < 0) a = 0; if (b < 0) b = 0; if (a > n) a = n; if (b > n) b = n; if (a > b) { long x = a; a = b; b = x; }
         if (clear_marks(rt, r)) return -1;
         wr(rt, r + SEL_S, 2, (uint16_t)a); wr(rt, r + SEL_E, 2, (uint16_t)b);
+        if (styled(rt, r)) mac_testyle_clear_null(rt, r);
         if (show_marks(rt, r)) return -1;
         break; }
     case 0xa9d3: {                                               /* TEUpdate(rUpdate, hTE) */
@@ -303,6 +393,7 @@ int mac_textedit_service(MacRuntime *rt, uint16_t op) {
         if (clear_marks(rt, r)) return -1;
         if (extend) { if (off < a) a = off; else b = off; } else a = b = off;
         wr(rt, r + SEL_S, 2, (uint16_t)a); wr(rt, r + SEL_E, 2, (uint16_t)b); wr(rt, r + CTIME, 4, rt->ticks);
+        if (styled(rt, r)) mac_testyle_clear_null(rt, r);
         if (show_marks(rt, r)) return -1;
         break; }
     case 0xa9dc: {                                               /* TEKey(key, hTE) */
@@ -328,12 +419,12 @@ int mac_textedit_service(MacRuntime *rt, uint16_t op) {
           MacHandle *tm = record_of(rt, tmp);
           if (!tm || !ok(rt, tm->pointer, m ? m : 1)) return fail(rt, "TEKey scratch handle is invalid.");
           memcpy(mac_cpu_ram(rt->cpu) + tm->pointer, buf, m);
-          int rc = set_text(rt, h, r, tm->pointer, m); dispose(rt, tmp); if (rc) return -1; }
+          pending.valid = 1; pending.at = a; pending.removed = b - a; pending.added = key == 8 ? 0 : 1;
+          int rc = set_text(rt, h, r, tm->pointer, m); pending.valid = 0; dispose(rt, tmp); if (rc) return -1; }
         r = rec_ptr(rt, h);
         int p = a + (key == 8 ? 0 : 1);
         wr(rt, r + SEL_S, 2, (uint16_t)p); wr(rt, r + SEL_E, 2, (uint16_t)p); wr(rt, r + CTIME, 4, rt->ticks);
-        { int view[4], k = line_of(rt, r, a > 0 ? a - 1 : 0), lh = s16(rt, r + LINE_H); rect4(rt, r + VIEW, view);   /* from the line of the previous character: a reflow can change it */
-          int upd[4] = {s16(rt, r + DEST) + k * lh, view[1], view[2], view[3]}; if (draw_lines(rt, r, upd, 1)) return -1; }
+        if (after_repaint(rt, r, a)) return -1;
         break; }
     default: return fail(rt, "TextEdit call is not implemented.");
     }
