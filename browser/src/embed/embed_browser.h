@@ -7,6 +7,7 @@
 #include <string>
 
 #include "embed_frames.h"
+#include "load_diag.h"
 #include "include/cef_client.h"
 #include "os999_browser_ipc.h"
 
@@ -44,6 +45,9 @@ class EmbedBrowser : public CefClient,
       const CefString&, bool&) override { return this; }
   ReturnValue OnBeforeResourceLoad(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>,
       CefRefPtr<CefRequest>, CefRefPtr<CefCallback>) override;
+  void OnResourceLoadComplete(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>,
+      CefRefPtr<CefRequest>, CefRefPtr<CefResponse> response, URLRequestStatus status,
+      int64_t received_content_length) override;
   bool OnCertificateError(CefRefPtr<CefBrowser>, cef_errorcode_t, const CefString&,
       CefRefPtr<CefSSLInfo>, CefRefPtr<CefCallback>) override;
   bool OnBeforeBrowse(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame,
@@ -84,6 +88,7 @@ class EmbedBrowser : public CefClient,
                    const CefString& text, const CefString& url) override;
   void OnLoadStart(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame,
                    TransitionType) override;
+  void OnLoadEnd(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame, int http_status) override;
 
   bool OnBeforeDownload(CefRefPtr<CefBrowser>, CefRefPtr<CefDownloadItem> item,
                         const CefString& suggested_name,
@@ -92,6 +97,15 @@ class EmbedBrowser : public CefClient,
                          CefRefPtr<CefDownloadItemCallback>) override;
 
  private:
+  // OS999_LOAD_DIAG=1: one log line per main-frame load plus a resource summary.
+  void LogLoad(CefRefPtr<CefBrowser>, int http_status, int net_error);
+  bool load_diag_ = load_diag::Enabled();
+  load_diag::Tracker tracker_;
+  std::string title_;
+  int load_error_ = 0;
+#ifdef OS999_ENABLE_TEST_HOOKS
+  bool next_done_ = false;  // OS999_LOAD_DIAG_NEXT already used
+#endif
   void Security(bool verified, const std::string& message = "");
   bool security_denied_ = false;
   void Key(const Os999BrowserMsg& m);

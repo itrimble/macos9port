@@ -2,13 +2,23 @@
 
 #include <sys/stat.h>
 
+#include <chrono>
+
 #include "browser_stats.h"
 #include "embed_host.h"
 #include "version_guard.h"
 #include "network_policy.h"
 #include "web_apps.h"
+#include "include/base/cef_callback.h"
 #include "include/cef_parser.h"
+#include "include/cef_task.h"
+#include "include/wrapper/cef_closure_task.h"
 #include "include/wrapper/cef_helpers.h"
+
+static double NowMs() {
+  using namespace std::chrono;
+  return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
+}
 
 EmbedBrowser::EmbedBrowser(EmbedHost* host, int id, int width, int height, float scale)
     : host_(host), id_(id), width_(width), height_(height), scale_(scale),
@@ -248,6 +258,7 @@ void EmbedBrowser::OnAddressChange(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> fr
 }
 
 void EmbedBrowser::OnTitleChange(CefRefPtr<CefBrowser>, const CefString& title) {
+  title_ = title.ToString();
   if (host_) host_->Send(OS999B_TITLE, id_, 0, 0, title.ToString());
 }
 
@@ -317,17 +328,93 @@ void EmbedBrowser::OnDownloadUpdated(CefRefPtr<CefBrowser>, CefRefPtr<CefDownloa
 void EmbedBrowser::OnLoadError(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame, ErrorCode code,
                                const CefString& text, const CefString& url) {
   if (frame->IsMain() && !security_denied_) Security(false, "Page load failed");
+  if (frame->IsMain() && code != ERR_ABORTED) {
+    load_error_ = code;
+    if (load_diag_ && BrowserStats::Get().logging())
+      BrowserStats::Get().Log("load error tab " + std::to_string(id_) + " net_error=" +
+                              std::to_string(code) + " url=" +
+                              load_diag::Sanitize(url.ToString(), 300));
+  }
   BrowserStats::Get().Log("tab " + std::to_string(id_) + " load error " + std::to_string(code));
 }
 
 void EmbedBrowser::OnLoadStart(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame> frame, TransitionType) {
-  if (frame->IsMain())
+  if (frame->IsMain()) {
     BrowserStats::Get().Log("tab " + std::to_string(id_) + " load start");
+    load_error_ = 0;
+  }
+}
+
+// ---- Page-load diagnostics (opt-in, OS999_LOAD_DIAG=1) ----------------------
+
+void EmbedBrowser::OnLoadEnd(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
+                             int http_status) {
+  if (frame->IsMain() && load_diag_ && BrowserStats::Get().logging())
+    LogLoad(browser, http_status, load_error_);
+}
+
+void EmbedBrowser::LogLoad(CefRefPtr<CefBrowser> browser, int http_status, int net_error) {
+  load_diag::Load l;
+  l.seq = tracker_.seq();
+  l.requested = tracker_.requested();
+  l.final_url = browser->GetMainFrame()->GetURL().ToString();
+  l.title = title_;
+  l.http_status = http_status;
+  l.net_error = net_error;
+  l.cert_errors = tracker_.cert_errors();
+  l.load_ms = NowMs() - tracker_.start_ms();
+  auto entry = browser->GetHost()->GetVisibleNavigationEntry();
+  auto ssl = entry ? entry->GetSSLStatus() : nullptr;
+  l.cert_status = ssl ? (unsigned)ssl->GetCertStatus() : 0;
+  l.tls_verified = BrowserVerified(browser, false);
+  BrowserStats::Get().Log(load_diag::FormatLoad(l));
+  // Sub-resources keep arriving after the load event; summarise again later.
+  int seq = l.seq;
+  CefRefPtr<EmbedBrowser> self(this);
+  CefPostDelayedTask(TID_UI, base::BindOnce([](CefRefPtr<EmbedBrowser> b, int s) {
+    if (b->tracker_.seq() == s)
+      BrowserStats::Get().Log(load_diag::FormatResources(s, b->tracker_.Snapshot(), 10.0));
+  }, self, seq), 10000);
+#ifdef OS999_ENABLE_TEST_HOOKS
+  // Test hook: after the first good load, navigate once to this https URL.
+  const char* next = getenv("OS999_LOAD_DIAG_NEXT");
+  if (!next_done_ && http_status == 200 && load_diag::ValidNextUrl(next)) {
+    next_done_ = true;
+    std::string url = next;
+    CefPostDelayedTask(TID_UI, base::BindOnce([](CefRefPtr<EmbedBrowser> b, std::string u) {
+      if (b->browser_) b->browser_->GetMainFrame()->LoadURL(u);
+    }, self, url), 4000);
+  }
+#endif
+}
+
+void EmbedBrowser::OnResourceLoadComplete(CefRefPtr<CefBrowser>, CefRefPtr<CefFrame>,
+                                          CefRefPtr<CefRequest> request,
+                                          CefRefPtr<CefResponse> response,
+                                          URLRequestStatus status, int64_t received) {
+  if (!load_diag_) return;
+  load_diag::Result r = status == UR_SUCCESS ? load_diag::Result::kOk
+                        : status == UR_CANCELED ? load_diag::Result::kCanceled
+                                                : load_diag::Result::kFailed;
+  tracker_.AddResource(r, response ? response->GetStatus() : 0, received);
+  // Name the first few failures by origin only (no path or query).
+  auto res = tracker_.Snapshot();
+  if (r != load_diag::Result::kOk && res.failed + res.canceled <= 25 && request)
+    BrowserStats::Get().Log(std::string("resource ") +
+        (r == load_diag::Result::kFailed ? "failed " : "canceled ") + "load #" +
+        std::to_string(tracker_.seq()) + " " + load_diag::Origin(request->GetURL().ToString()));
 }
 
 bool EmbedBrowser::OnBeforeBrowse(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame,
-    CefRefPtr<CefRequest> request, bool, bool) {
+    CefRefPtr<CefRequest> request, bool, bool is_redirect) {
   const auto url = request->GetURL().ToString();
+  if (load_diag_ && frame->IsMain() && !is_redirect) {
+    if (tracker_.seq() > 0 && BrowserStats::Get().logging())  // final counts of the previous load
+      BrowserStats::Get().Log(load_diag::FormatResources(
+          tracker_.seq(), tracker_.Snapshot(), (NowMs() - tracker_.start_ms()) / 1000.0) +
+          " (at next navigation)");
+    tracker_.Begin(url, NowMs());
+  }
   auto& guard = VersionGuard::Get();
   if (frame->IsMain()) { security_denied_ = false; Security(false); }
   if (guard.ShouldBlock(browser, url)) {
@@ -346,6 +433,7 @@ CefResourceRequestHandler::ReturnValue EmbedBrowser::OnBeforeResourceLoad(
 }
 bool EmbedBrowser::OnCertificateError(CefRefPtr<CefBrowser>, cef_errorcode_t,
     const CefString&, CefRefPtr<CefSSLInfo>, CefRefPtr<CefCallback>) {
+  if (load_diag_) tracker_.AddCertError();
   security_denied_ = true; Security(false, "Blocked: certificate verification failed");
   return false;  // Never continue or store a certificate exception.
 }

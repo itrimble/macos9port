@@ -29,7 +29,7 @@ Part of the [development checklist](DEVELOPMENT-CHECKLIST.md). Stable requiremen
 | Classic QuickTime | Multiple 68k/PPC installers in compressed image | Open the actual guest player and play a video with sound, seeking, and correct timing | Required; not run in our runtime |
 | MacSurf | Correct identity/link needed; supplied Garden link repeats Castle of Dr. Brain | Selected browser's rendering and network flows | Identity pending; do not silently substitute another app |
 | Chromium | Modern host-native browser track | Sandboxed browsing, GPU, updates, network/security tests | Not built or integrated |
-| Thurrott.com | User-selected live website | Browse articles, navigate, scroll, and display media correctly in the integrated browser | Not tested |
+| Thurrott.com | User-selected live website | Browse articles, navigate, scroll, and display media correctly in the integrated browser | Scripted load of the home page and one article succeeded in the embedded browser (12 Nov 2026, [record](DEMO-THURROTT.md)); human browsing, scrolling and media not tested |
 | YouTube.com | User-selected live website | Sustained video/audio playback with proven hardware decode and GPU composition | Not tested |
 
 The Macintosh minimums above are documented by [PixelatedArcade's MI1
@@ -66,6 +66,13 @@ Add QuickDraw 3D/RAVE/OpenGL gates when an identified target requires them.
   scroll, resize, and verify text, images, menus, and permitted embedded media.
   Record date and exact URLs because site content changes. Authentication and
   paywalls must retain their normal behavior; do not bypass access controls.
+  *Note, 12 November 2026 (no box ticked):* in a scripted run on Mac17,5 / macOS 27.2 / CEF
+  156.0.26, OS999's own embedded Web Browser loaded `https://thurrott.com` (final URL
+  `https://www.thurrott.com/`, HTTP 200, title "Home - Thurrott.com", TLS verified, no certificate
+  error) and then one article URL (HTTP 200), with OS999 as the only window of the run
+  ([record](DEMO-THURROTT.md)). Not shown: a person reading it, scrolling, links, back/forward,
+  resize, menus, images judged by eye, embedded media, consent dialogs; 10 to 13 sub-resources per
+  page failed (ad and tracker hosts plus one thurrott.com request) and were not investigated.
 - [ ] B08 Browse `https://youtube.com`, search, select a video, and test playback,
   pause/resume, seeking, volume, captions, fullscreen, and windowed return.
   Initial proposed baseline: 1080p60 for ten minutes on each target host;
