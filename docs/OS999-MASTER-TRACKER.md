@@ -2,7 +2,47 @@
 
 ## Current integration status
 
-Build 24 is the promoted baseline as of 10 November 2026. Local main contains
+Build 32 is the promoted baseline as of 12 November 2026. Local main is
+`8950fd6`, the promotion of `integration/r11` (`aba87e1`). Main was pushed to
+origin on 12 November (`552a235..8950fd6`, from the MBP; the Neo's synced `.git`
+was missing an object). YouTube: hardware decode was verified from Chromium's
+diagnostics in the standalone browser helper, and Ian heard and saw playback there,
+but playback inside the OS999 desktop window is not yet verified. Builds 25–32 are summarised below and in
+the build table; the Build 24 text that follows is kept as the earlier record.
+
+Builds 25–32, in order:
+
+- Build 25 failed on a merge conflict with the stale tracker text in the base
+  of `d8f8dea`.
+- Build 26 failed at the Quake stage. The watcher pinned Quake `a0448ae`, the
+  bridge header had changed, and Builds 21–24 had used `06688bc` by hand. The
+  CEF root was also stale (156.0.15 against the pinned 156.0.26); a
+  gate-owned CEF folder fixed that on 11 November.
+- Build 27 was cut off by a watcher reload.
+- Build 28 passed (caption fix `c2b64bb`) and became main `7d3b652`.
+- Build 29 passed (internal disk capacity `417a6d3`) and became `a9712ec`.
+- Build 30 failed with "Main changed during validation". An untracked
+  `abandonware/` symlink had appeared in the main checkout; it is now listed
+  in `.git/info/exclude`.
+- Build 31 passed (Quake III retail paks `61704f3`) and became `3aa79ea`.
+- Build 32 passed (`integration/r11` `aba87e1`) and became `8950fd6`: gate pins
+  now owned by the candidate, a native in-window file dialog for Movie Player,
+  guest RAM as an opt-in (256 MB, 32-bit; the default stays 16 MB, 24-bit),
+  an app classifier with per-app launch profiles, a PowerPC runtime with a
+  custom MDEF and GWorlds, a .sit expansion dialog, a desktop menu audit, and
+  the MI1 save/reload evidence document.
+
+Since 12 November the watcher plist holds only `OS999_QUAKE_REPOSITORY`; all
+other pins come from the candidate.
+
+Evidence limits for Builds 28–32: everything is headless. Nothing in them has
+been seen in a real window. MI1 save, quit, relaunch and load was proven
+headlessly (`docs/RUNTIME-LOOP-2026-11-11.md`). The PowerPC test app halts at
+the Printing Manager (`PrOpen`) with no window drawn. The required
+demonstrations (Thurrott.com browsing, YouTube with verified hardware decode,
+classic QuickTime playback) have no runtime pass.
+
+Build 24 was the promoted baseline as of 10 November 2026. Local main contained
 merge `18ca9ab`, which carries gate-validated commit `3a854b2` (tree
 `145760afbf7ff452c6054b3c6b34df4a20bda0b7`, the tree in the Build 24 gate
 receipt `runs/r10-integration-24`, 15 of 15 stages, 10 November 11:57). No push.
@@ -105,6 +145,14 @@ builds is not deleted; Quake demo data is copied across once.
 
 | Candidate | Recorded outcome | Remaining work |
 | --- | --- | --- |
+| Build 32 | Gate passed: `integration/r11` `aba87e1`, candidate-owned pins, Movie Player file dialog, guest RAM opt-in, launch profiles, PowerPC runtime, .sit dialog, menu audit, MI1 evidence | Promoted as main `8950fd6`; headless only, not seen in a window; PowerPC test app halts at `PrOpen` |
+| Build 31 | Gate passed: Quake III retail paks `61704f3` | Promoted as `3aa79ea`; headless only |
+| Build 30 | Failed: "Main changed during validation" (untracked `abandonware/` symlink in the main checkout) | Symlink added to `.git/info/exclude`; no package |
+| Build 29 | Gate passed: internal disk capacity `417a6d3` | Promoted as `a9712ec`; headless only |
+| Build 28 | Gate passed: caption fix `c2b64bb` | Promoted as `7d3b652`; headless only |
+| Build 27 | Cut off by a watcher reload | No result recorded |
+| Build 26 | Failed at the Quake stage: watcher pinned Quake `a0448ae`, bridge header changed; CEF root stale (156.0.15 vs pin 156.0.26) | Fixed 11 November with a gate-owned CEF folder; pins now come from the candidate |
+| Build 25 | Failed: merge conflict on the stale tracker text in the base of `d8f8dea` | No package |
 | Build 24 | Gate passed: 30 desktop sizes in landscape and portrait, chosen in Monitors & Display and saved per volume | Promoted 10 November; unseen items and open gaps listed above; caption fix `d8f8dea` queued for Build 25 |
 | Build 23 | Gate passed: OS999 name, Window menu, `.os999` storage, screen size, sample extensions, browser helpers off the keychain | Promoted 10 November; loading sample extensions at startup not watched |
 | Build 21 | Gate passed: usage-log consent, 1.1.0 version string, Movie Player 999 title, CEF 156.0.26 | Superseded by Build 22 |
