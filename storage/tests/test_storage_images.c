@@ -335,11 +335,138 @@ static void test_plain_and_limits(void) {
     st_bytes_free(&m1); st_bytes_free(&m2);
 }
 
+/* ---- NDIF (Disk Copy 6) variants, and the failures Ian hit ---- */
+static void make_fork(StBytes *f, uint32_t type, int16_t id, const void *payload, size_t pl) {
+    size_t data_len = 4 + pl, map_len = 28 + 2 + 8 + 12;
+    f->n = 0;
+    st_bytes_reserve(f, 256 + data_len + map_len);
+    memset(f->p, 0, 256 + data_len + map_len);
+    f->n = 256 + data_len + map_len;
+    uint8_t *h = f->p, *m = h + 256 + data_len;
+    be32(h, 256); be32(h + 4, (uint32_t)(256 + data_len));
+    be32(h + 8, (uint32_t)data_len); be32(h + 12, (uint32_t)map_len);
+    be32(h + 256, (uint32_t)pl);
+    memcpy(h + 260, payload, pl);
+    memcpy(m, h, 16);
+    be16(m + 24, 28); be16(m + 26, (uint16_t)map_len);
+    be32(m + 30, type); be16(m + 36, 10);
+    be16(m + 38, (uint16_t)id); be16(m + 40, 0xFFFF);
+}
+
+static uint32_t dc6_crc(const uint8_t *p, size_t n) {
+    uint32_t crc = 0xFFFFFFFFu;
+    for (size_t i = 0; i < n; i++) {
+        crc ^= p[i];
+        for (int k = 0; k < 8; k++) crc = (crc & 1) ? (crc >> 1) ^ 0x04C11DB7u : crc >> 1;
+    }
+    return crc;
+}
+
+/* chunks: 2 raw (blocks 0..z), 0 zero (z..z+8), 0x83 ADC literal runs, or
+ * `kind` forced onto the last chunk (0x80 KenCode, 0x81 unknown). */
+static void build_ndif(const StBytes *img, uint32_t zs, uint8_t last_type, StBytes *data, StBytes *rsrc) {
+    StBytes bcem = {0};
+    uint32_t sectors = (uint32_t)(img->n / 512);
+    uint8_t hdr[128] = {0};
+    hdr[1] = 10; hdr[4] = 4; memcpy(hdr + 5, "Test", 4);
+    be32(hdr + 68, sectors);
+    be32(hdr + 80, dc6_crc(img->p, img->n));
+    be32(hdr + 124, 4);
+    st_bytes_append(&bcem, hdr, 128);
+    uint32_t starts[4] = {0, zs, zs + 8, sectors};
+    uint8_t types[4] = {2, 0, last_type, 0xFF};
+    data->n = 0;
+    for (int c = 0; c < 4; c++) {
+        uint8_t e[12] = {(uint8_t)(starts[c] >> 16), (uint8_t)(starts[c] >> 8), (uint8_t)starts[c], types[c]};
+        size_t at = data->n;
+        if (types[c] == 2) st_bytes_append(data, img->p, (size_t)zs * 512);
+        if (types[c] >= 0x80 && types[c] != 0xFF)
+            for (size_t k = (size_t)(zs + 8) * 512; k < img->n; k += 128) {
+                size_t len = img->n - k < 128 ? img->n - k : 128;
+                uint8_t op = (uint8_t)(0x80 | (len - 1));
+                st_bytes_append(data, &op, 1);
+                st_bytes_append(data, img->p + k, len);
+            }
+        be32(e + 4, (uint32_t)at);
+        be32(e + 8, (uint32_t)(data->n - at));
+        st_bytes_append(&bcem, e, 12);
+    }
+    make_fork(rsrc, 0x6263656Du, 128, bcem.p, bcem.n);
+    st_bytes_free(&bcem);
+}
+
+static void test_ndif_variants(void) {
+    StArchive a = {0}, b = {0};
+    StMacFile f;
+    st_make_file(&f, "Setup", 30000, 500, 7);
+    st_archive_add(&a, "Install/Setup", 0, &f, NULL, NULL);
+    StBytes img = {0}, data = {0}, rsrc = {0}, raw = {0};
+    StErr err = {0};
+    StUnpackInfo info;
+    CHECK_RC(st_hfs_write(&a, "Install Disk", 819200, &img, &err), ST_OK);
+    uint32_t zs = 0;
+    for (uint32_t s = 200; s + 8 < 1500 && !zs; s++) {
+        int zero = 1;
+        for (size_t k = (size_t)s * 512; k < (size_t)(s + 8) * 512 && zero; k++) zero = !img.p[k];
+        if (zero) zs = s;
+    }
+    CHECK(zs > 0);
+    /* The compressed data fork starts like a plain HFS volume, so without
+     * its bcem map it passes for one. That must now say what is wrong. */
+    build_ndif(&img, zs, 0x83, &data, &rsrc);
+    CHECK(st_image_detect(data.p, data.n, rsrc.p, rsrc.n) == ST_IMG_NDIF);
+    CHECK_RC(st_unpack(data.p, data.n, rsrc.p, rsrc.n, "x.img", &b, &info, NULL, &err), ST_OK);
+    CHECK(strstr(info.chain, "NDIF") && strstr(info.chain, "HFS") && !strcmp(info.volume, "Install Disk"));
+    st_archive_free(&b);
+    memset(&err, 0, sizeof err);
+    CHECK_RC(st_unpack(data.p, 40 * 512, NULL, 0, "x.img", &b, &info, NULL, &err), ST_EFORMAT);
+    CHECK(strstr(err.msg, "NDIF") && strstr(err.msg, "bcem") && !strstr(err.msg, "B-tree header"));
+    /* Compression this build cannot decode names the format and chunk. */
+    memset(&err, 0, sizeof err);
+    build_ndif(&img, zs, 0x80, &data, &rsrc);
+    CHECK_RC(st_image_decode(data.p, data.n, rsrc.p, rsrc.n, &raw, NULL, &err), ST_EUNSUPPORTED);
+    CHECK(strstr(err.msg, "NDIF (Disk Copy 6)") && strstr(err.msg, "KenCode"));
+    memset(&err, 0, sizeof err);
+    build_ndif(&img, zs, 0x81, &data, &rsrc);
+    CHECK_RC(st_image_decode(data.p, data.n, rsrc.p, rsrc.n, &raw, NULL, &err), ST_EUNSUPPORTED);
+    CHECK(strstr(err.msg, "NDIF (Disk Copy 6)") && strstr(err.msg, "0x81"));
+    /* Corrupt images: a chunk that points past the data, a lying count, and a
+     * damaged ADC stream all fail cleanly. */
+    build_ndif(&img, zs, 0x83, &data, &rsrc);
+    uint8_t *bc = rsrc.p + 256 + 4;
+    be32(bc + 128 + 12 * 2 + 8, 0x7FFFFFF0u); /* ADC length beyond the fork */
+    CHECK_RC(st_image_decode(data.p, data.n, rsrc.p, rsrc.n, &raw, NULL, &err), ST_EFORMAT);
+    build_ndif(&img, zs, 0x83, &data, &rsrc);
+    bc = rsrc.p + 256 + 4;
+    be32(bc + 124, 4000);
+    CHECK(st_image_decode(data.p, data.n, rsrc.p, rsrc.n, &raw, NULL, &err) != ST_OK);
+    build_ndif(&img, zs, 0x83, &data, &rsrc);
+    data.p[data.n - 200] = 0x40; /* turns a literal run into a copy opcode */
+    CHECK(st_image_decode(data.p, data.n, rsrc.p, rsrc.n, &raw, NULL, &err) != ST_OK);
+    /* Disk Copy 4.2 around the same volume, and a bare volume behind a
+     * 512-byte header. */
+    StBytes dc = {0}, hdr512 = {0};
+    CHECK_RC(st_dc42_encode(img.p, img.n, "Install Disk", &dc, &err), ST_OK);
+    CHECK_RC(st_unpack(dc.p, dc.n, NULL, 0, "x.dc42", &b, &info, NULL, &err), ST_OK);
+    CHECK(!strcmp(info.chain, "Disk Copy 4.2 > HFS"));
+    st_archive_free(&b);
+    uint8_t pad[512] = {0};
+    st_bytes_append(&hdr512, pad, 512);
+    st_bytes_append(&hdr512, img.p, img.n);
+    CHECK_RC(st_unpack(hdr512.p, hdr512.n, NULL, 0, "x.img", &b, &info, NULL, &err), ST_OK);
+    CHECK(!strcmp(info.volume, "Install Disk"));
+    st_archive_free(&b);
+    st_archive_free(&a);
+    st_bytes_free(&img); st_bytes_free(&data); st_bytes_free(&rsrc); st_bytes_free(&raw);
+    st_bytes_free(&dc); st_bytes_free(&hdr512);
+}
+
 int main(void) {
     test_hfs_roundtrip();
     test_dc42();
     test_udif_and_maps();
     test_hfs_overflow();
     test_plain_and_limits();
+    test_ndif_variants();
     return st_test_done("test_storage_images");
 }

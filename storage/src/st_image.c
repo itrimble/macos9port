@@ -138,9 +138,12 @@ static int ndif_decode(const uint8_t *p, size_t n, const uint8_t *rsrc, size_t r
             int rc = st_adc_decode(p + off, (size_t)len, raw, want, err);
             if (rc) return rc;
         } else if (type == 0x80) {
-            return st_fail(err, ST_EUNSUPPORTED, "NDIF KenCode chunks");
+            return st_fail(err, ST_EUNSUPPORTED,
+                           "NDIF (Disk Copy 6) chunk %u uses KenCode compression, which OS999 does not decode", i);
         } else {
-            return st_fail(err, ST_EUNSUPPORTED, "NDIF chunk type 0x%02x", type);
+            return st_fail(err, ST_EUNSUPPORTED,
+                           "NDIF (Disk Copy 6) chunk %u has compression type 0x%02x, which OS999 does not decode",
+                           i, type);
         }
     }
     if (raw->n != sectors * 512) return st_fail(err, ST_EFORMAT, "NDIF image is incomplete");
@@ -180,6 +183,12 @@ static int hfs_sig_at(const uint8_t *raw, size_t n, uint64_t off) {
 
 int st_find_hfs(const uint8_t *raw, size_t n, size_t *off, size_t *len, StErr *err) {
     if (hfs_sig_at(raw, n, 0)) { *off = 0; *len = n; return ST_OK; }
+    /* A bare volume behind a one-block (512-byte) header. */
+    if (!(n >= 1024 && st_be16(raw) == 0x4552) && hfs_sig_at(raw, n, 512) && !hfs_sig_at(raw, n, 0)) {
+        *off = 512;
+        *len = n - 512;
+        return ST_OK;
+    }
     /* Apple partition map: DDM 'ER' at block 0, entries 'PM'. */
     if (n >= 1024 && st_be16(raw) == 0x4552) {
         uint32_t bs = st_be16(raw + 2);
@@ -229,4 +238,19 @@ int st_find_hfs(const uint8_t *raw, size_t n, size_t *off, size_t *len, StErr *e
             }
     }
     return st_fail(err, ST_EFORMAT, "no HFS or HFS+ volume found");
+}
+
+/* A volume whose Master Directory Block claims more bytes than the image
+ * holds is usually a compressed NDIF data fork read without its 'bcem'
+ * resource. Replace the generic parse error with a precise one. */
+int st_explain_short_hfs(const uint8_t *vol, size_t len, StErr *err) {
+    if (len < 1024 + 512 || st_be16(vol + 1024) != 0x4244) return 0;
+    uint64_t need = (uint64_t)st_be16(vol + 1024 + 28) * 512 +
+                    (uint64_t)st_be16(vol + 1024 + 18) * st_be32(vol + 1024 + 20);
+    if (need <= len) return 0;
+    st_fail(err, ST_EFORMAT,
+            "the image holds %zu bytes but its HFS volume needs %llu; it looks like a compressed Disk Copy 6 "
+            "(NDIF) image whose resource fork ('bcem' map, the .rsrc file beside it) is missing",
+            len, (unsigned long long)need);
+    return 1;
 }

@@ -1,6 +1,7 @@
 /* Content-based detection and the unwrap chain. */
 #include "os999_unpack.h"
 #include "st_int.h"
+#include "st_image.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -94,6 +95,7 @@ static int unwrap(const uint8_t *p, size_t n, const uint8_t *rsrc, size_t rn, co
             char vol[256] = "";
             StArchive vola = {0};
             rc = st_hfs_read(raw.p + off, len, &vola, vol, sizeof vol, lim, err);
+            if (rc == ST_EFORMAT) st_explain_short_hfs(raw.p + off, len, err);
             if (rc == ST_OK) {
                 chain_add(info, raw.p[off + 1024] == 'B' ? "HFS" : "HFS+");
                 if (info) snprintf(info->volume, sizeof info->volume, "%s", vol);

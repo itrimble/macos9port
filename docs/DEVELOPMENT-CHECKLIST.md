@@ -135,6 +135,18 @@ See [the preserved baseline](DEVELOPMENT-BASELINE.md). Newer acceptance evidence
   A real HFS floppy matches the independent machfs reader; a real UDIF
   dmg reads through GPT to HFS+ (`storage/FEATURES.md` SF09-SF15). No
   real NDIF image was available; QuickTime's own image is not yet tried.
+  12 November 2026: QuickTime.img from Build 35 is an NDIF (Disk Copy 6.3.3,
+  "Mac OS HFS 49152K image") data fork, 47,094,678 bytes, with a 'bcem' 128 map in
+  its resource fork (192 chunks: raw, zero and ADC 0x83; no KenCode). Expanded with
+  its `.rsrc` sidecar it decodes, matches the image's stored CRC $01AD6053 and reads as
+  HFS volume "QuickTime" (34 entries, 12 folders, 23 files with forks). The double-clicked
+  copy had no sidecar, so the raw data fork, whose first blocks are stored raw, passed
+  for a bare HFS volume and failed in the B-tree. It now reports that the image is
+  shorter than its volume and that the 'bcem' map is missing; unsupported NDIF chunk
+  types name NDIF and the chunk. A bare HFS volume behind a 512-byte header is also
+  found. Synthetic NDIF/DC42/corrupt cases are in `storage/tests/test_storage_images.c`.
+  Not verified: why the top-level copy lost its sidecar; a windowed double-click;
+  KenCode, which still has no decoder.
 - [ ] L04 Implement guest volumes and writable files with path containment,
   symlink/traversal defense, quotas, atomic save updates, and restart recovery.
   6 November 2026: `storage/include/os999_volume.h` resolves every path
