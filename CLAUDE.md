@@ -191,7 +191,19 @@ and `make app` converts HD wallpaper masters with `sips` at package time.
 - Keep every file under 500 lines (`src/typeface.c` is at 499). Split rather
   than cross it.
 - Do not commit or push unless Ian asks. Author stays `Ian <ian@example.com>`.
-  No `Co-Authored-By`. No force-push.
+  No `Co-Authored-By`. No force-push. Standing authorisation (Ian, 12 Nov 2026):
+  after a gate run merges into main on the MBP, push main to origin from the
+  MBP, once a scan finds no game data, archives or secrets in the pushed range.
+- One writer per checkout. `~/projects/macos9port` on the MBP is the gate's
+  checkout: only the integration watcher writes to its main. Every other
+  session (Claude, Codex, ZCode or a person) works in its own worktree or clone
+  and hands work over as a branch. Never edit, stage or reset files in the
+  gate's checkout.
+- The repository is not file-synced. macos9port and `macos9port-*` are excluded
+  from Mutagen; each Mac has its own clone. Move work between Macs only with
+  git (push a branch to `ssh://mbp/Users/ian/projects/macos9port`, or GitHub).
+- After a branch's work is merged by the gate, delete the branch and remove its
+  worktree, once nothing in it is unmerged.
 - Never claim a GUI behaviour you did not see in a real window; report
   headless results, windowed results and device results separately. A launch
   or splash is not gameplay acceptance.

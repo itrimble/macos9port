@@ -149,7 +149,9 @@ def process(repo, state, gate):
                 artifact = Path(receipt['artifact'])
                 if not artifact.is_dir():
                     raise ValueError('Passing artifact is missing')
-                message = 'Integrate ready OS999 work ' + item['commit'][:12]
+                # Readable history: the build number and the submitted title, then the source commit.
+                message = (f"Build {item['number']}: {item.get('title') or 'OS999 feature integration'}"
+                           f"\n\nIntegrates ready commit {item['commit']}.")
                 env = dict(os.environ, GIT_AUTHOR_NAME='Ian', GIT_AUTHOR_EMAIL='ian@example.com',
                            GIT_COMMITTER_NAME='Ian', GIT_COMMITTER_EMAIL='ian@example.com')
                 result = subprocess.check_output(['git', '-C', str(candidate), 'commit-tree',
